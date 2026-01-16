@@ -2,6 +2,8 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useEffect, useRef, useState } from "react";
+import QuickCaptureModal from "./QuickCaptureModal";
 import styles from "./Shell.module.css";
 
 const routes = {
@@ -50,6 +52,42 @@ export default function Shell({ children }) {
   const pathname = usePathname();
   const title = routes[pathname] ?? "";
   const isHome = pathname === "/";
+  const [captureOpen, setCaptureOpen] = useState(false);
+  const [captureValue, setCaptureValue] = useState("");
+  const capturesRef = useRef([]);
+  const inputRef = useRef(null);
+
+  useEffect(() => {
+    if (!captureOpen) return;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [captureOpen]);
+
+  const handleOpenCapture = () => {
+    setCaptureOpen(true);
+  };
+
+  const handleCloseCapture = () => {
+    setCaptureOpen(false);
+    setCaptureValue("");
+  };
+
+  const handleSaveCapture = () => {
+    const trimmed = captureValue.trim();
+    if (!trimmed) return;
+    capturesRef.current = [...capturesRef.current, trimmed];
+    handleCloseCapture();
+  };
+
+  const handleBackdrop = (event) => {
+    if (event.target !== event.currentTarget) return;
+    if (captureValue.trim().length === 0) {
+      handleCloseCapture();
+    }
+  };
 
   return (
     <div className={styles.shell}>
@@ -76,10 +114,24 @@ export default function Shell({ children }) {
       </header>
       {children}
       <div className={styles.fabContainer}>
-        <button type="button" className={styles.fab} aria-label="Quick capture">
+        <button
+          type="button"
+          className={styles.fab}
+          aria-label="Quick capture"
+          onClick={handleOpenCapture}
+        >
           +
         </button>
       </div>
+      <QuickCaptureModal
+        isOpen={captureOpen}
+        value={captureValue}
+        inputRef={inputRef}
+        onChange={setCaptureValue}
+        onSave={handleSaveCapture}
+        onCancel={handleCloseCapture}
+        onBackdrop={handleBackdrop}
+      />
     </div>
   );
 }
