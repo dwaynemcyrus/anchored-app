@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.0 - 2026-01-16
+- Add local notes store with debounced localStorage persistence and derived title rules.
+- Ship Notes list with empty state and new-note flow at `/knowledge/notes`.
+- Introduce CodeMirror-based editor at `/knowledge/notes/[id]` with autosave status and not-found state.
+- Add a temporary “Notes (v0)” link in the home menu overlay.
+
 ## 0.1.0 - 2026-01-16
 - Add App Router scaffolding for Home, Command, Knowledge, and Strategy with placeholder content.
 - Introduce a floating shell with overlay header, FAB, and back/menu behavior across routes.
