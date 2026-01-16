@@ -1,5 +1,6 @@
 import NoteEditor from "../../../../components/notes/NoteEditor";
 
-export default function NoteEditorPage({ params }) {
-  return <NoteEditor noteId={params.id} />;
+export default async function NoteEditorPage({ params }) {
+  const { id } = await params;
+  return <NoteEditor noteId={id} />;
 }

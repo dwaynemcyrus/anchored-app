@@ -5,7 +5,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { EditorState } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
 import { markdown } from "@codemirror/lang-markdown";
-import { basicSetup } from "@codemirror/basic-setup";
+import { basicSetup } from "codemirror";
 import { getDerivedTitle, useNotesStore } from "../../store/notesStore";
 import styles from "../../styles/noteEditor.module.css";
 

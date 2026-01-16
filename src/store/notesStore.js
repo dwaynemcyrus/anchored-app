@@ -43,6 +43,10 @@ export const useNotesStore = create((set, get) => ({
   hasHydrated: false,
   hydrate: () => {
     if (get().hasHydrated) return;
+    if (get().notes.length > 0) {
+      set({ hasHydrated: true });
+      return;
+    }
     const stored = loadNotesFromStorage();
     const normalized = stored.map(normalizeNote).filter(Boolean);
     set({
