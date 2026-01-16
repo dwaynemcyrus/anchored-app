@@ -54,6 +54,7 @@ export default function Shell({ children }) {
   const title = routes[pathname] ?? "";
   const isHome = pathname === "/";
   const [captureOpen, setCaptureOpen] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
   const [captureValue, setCaptureValue] = useState("");
   const [captureShouldFocus, setCaptureShouldFocus] = useState(false);
   const [rapidEnabled, setRapidEnabled] = useState(false);
@@ -78,6 +79,28 @@ export default function Shell({ children }) {
     ],
     []
   );
+
+  const menuLinks = useMemo(
+    () => [
+      { href: "/", label: "Home" },
+      { href: "/command", label: "Command" },
+      { href: "/knowledge", label: "Knowledge" },
+      { href: "/knowledge/notes", label: "Notes (v0)" },
+      { href: "/strategy", label: "Strategy" },
+    ],
+    []
+  );
+
+  useEffect(() => {
+    if (!menuOpen) return;
+    const handleKeydown = (event) => {
+      if (event.key === "Escape") {
+        setMenuOpen(false);
+      }
+    };
+    window.addEventListener("keydown", handleKeydown);
+    return () => window.removeEventListener("keydown", handleKeydown);
+  }, [menuOpen]);
 
   useEffect(() => {
     if (!captureOpen) return;
@@ -248,6 +271,16 @@ export default function Shell({ children }) {
     handleOpenCapture();
   };
 
+  const handleMenuToggle = () => {
+    if (captureOpen) return;
+    setMenuOpen((prev) => !prev);
+  };
+
+  const handleMenuBackdrop = (event) => {
+    if (event.target !== event.currentTarget) return;
+    setMenuOpen(false);
+  };
+
   const handleTouchStart = (event) => {
     if (captureOpen) return;
     const touch = event.touches[0];
@@ -306,8 +339,10 @@ export default function Shell({ children }) {
         {isHome ? (
           <button
             type="button"
-            className={`${styles.headerButton} ${styles.headerButtonPlaceholder}`}
+            className={styles.headerButton}
             aria-label="Open menu"
+            aria-expanded={menuOpen}
+            onClick={handleMenuToggle}
           >
             <MenuIcon />
           </button>
@@ -389,6 +424,25 @@ export default function Shell({ children }) {
         onCancel={handleCloseCapture}
         onBackdrop={handleBackdrop}
       />
+      {menuOpen ? (
+        <div className={styles.menuOverlay} onClick={handleMenuBackdrop}>
+          <nav className={styles.menuPanel} aria-label="Primary">
+            <div className={styles.menuTitle}>Navigate</div>
+            <div className={styles.menuLinks}>
+              {menuLinks.map((link) => (
+                <Link
+                  key={link.href}
+                  href={link.href}
+                  className={styles.menuLink}
+                  onClick={() => setMenuOpen(false)}
+                >
+                  {link.label}
+                </Link>
+              ))}
+            </div>
+          </nav>
+        </div>
+      ) : null}
     </div>
   );
 }
