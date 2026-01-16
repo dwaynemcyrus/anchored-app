@@ -56,6 +56,7 @@ export default function Shell({ children }) {
   const [captureOpen, setCaptureOpen] = useState(false);
   const [captureValue, setCaptureValue] = useState("");
   const [captureShouldFocus, setCaptureShouldFocus] = useState(false);
+  const [rapidEnabled, setRapidEnabled] = useState(false);
   const capturesRef = useRef([]);
   const inputRef = useRef(null);
   const [dragActive, setDragActive] = useState(false);
@@ -142,6 +143,11 @@ export default function Shell({ children }) {
     const trimmed = captureValue.trim();
     if (!trimmed) return;
     capturesRef.current = [...capturesRef.current, trimmed];
+    if (rapidEnabled) {
+      setCaptureValue("");
+      setCaptureShouldFocus(true);
+      return;
+    }
     handleCloseCapture();
   };
 
@@ -373,6 +379,8 @@ export default function Shell({ children }) {
         inputRef={inputRef}
         shouldFocus={captureShouldFocus}
         onFocused={() => setCaptureShouldFocus(false)}
+        rapidEnabled={rapidEnabled}
+        onToggleRapid={() => setRapidEnabled((prev) => !prev)}
         onChange={setCaptureValue}
         onSave={handleSaveCapture}
         onCancel={handleCloseCapture}

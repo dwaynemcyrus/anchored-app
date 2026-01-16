@@ -9,6 +9,8 @@ export default function QuickCaptureModal({
   inputRef,
   shouldFocus,
   onFocused,
+  rapidEnabled,
+  onToggleRapid,
   onChange,
   onSave,
   onCancel,
@@ -69,6 +71,18 @@ export default function QuickCaptureModal({
           autoFocus
         />
         <div className={styles.actions}>
+          <label className={styles.toggle}>
+            <input
+              type="checkbox"
+              checked={rapidEnabled}
+              onChange={onToggleRapid}
+              className={styles.toggleInput}
+            />
+            <span className={styles.toggleTrack} aria-hidden="true">
+              <span className={styles.toggleThumb} />
+            </span>
+            <span className={styles.toggleText}>Rapid capture</span>
+          </label>
           <button type="button" className={styles.button} onClick={onCancel}>
             Cancel
           </button>
