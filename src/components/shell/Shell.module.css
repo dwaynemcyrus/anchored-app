@@ -76,6 +76,10 @@
   touch-action: none;
 }
 
+.fab:disabled {
+  opacity: 0.6;
+}
+
 .fab:focus-visible {
   outline: 2px solid #f6f2ea;
   outline-offset: 2px;

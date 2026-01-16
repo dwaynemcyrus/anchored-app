@@ -14,7 +14,16 @@ export default function QuickCaptureModal({
 }) {
   useEffect(() => {
     if (!isOpen || !inputRef?.current) return;
-    inputRef.current.focus();
+    const focusInput = () => {
+      if (!inputRef.current) return;
+      try {
+        inputRef.current.focus({ preventScroll: true });
+      } catch {
+        inputRef.current.focus();
+      }
+    };
+    const rafId = window.requestAnimationFrame(focusInput);
+    return () => window.cancelAnimationFrame(rafId);
   }, [isOpen, inputRef]);
 
   if (!isOpen) return null;
