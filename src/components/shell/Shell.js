@@ -98,6 +98,11 @@ export default function Shell({ children }) {
     };
   }, [dragActive]);
 
+  const touchEnabled =
+    typeof window !== "undefined" &&
+    (window.matchMedia("(pointer: coarse)").matches ||
+      window.matchMedia("(hover: none)").matches);
+
   const handleOpenCapture = () => {
     setCaptureOpen(true);
   };
@@ -149,7 +154,7 @@ export default function Shell({ children }) {
   };
 
   const handleFabPointerDown = (event) => {
-    if (event.button !== 0) return;
+    if (event.pointerType === "mouse" && event.button !== 0) return;
     longPressTriggeredRef.current = false;
     pointerStartRef.current = { x: event.clientX, y: event.clientY };
     const rect = event.currentTarget.getBoundingClientRect();
@@ -208,6 +213,57 @@ export default function Shell({ children }) {
     handleOpenCapture();
   };
 
+  const handleTouchStart = (event) => {
+    const touch = event.touches[0];
+    if (!touch) return;
+    longPressTriggeredRef.current = false;
+    pointerStartRef.current = { x: touch.clientX, y: touch.clientY };
+    const rect = event.currentTarget.getBoundingClientRect();
+    setDragOffset({
+      x: touch.clientX - rect.left,
+      y: touch.clientY - rect.top,
+    });
+    longPressTimerRef.current = window.setTimeout(() => {
+      activateDrag();
+    }, 300);
+  };
+
+  const handleTouchMove = (event) => {
+    const touch = event.touches[0];
+    if (!touch) return;
+    if (!dragActive) {
+      if (!longPressTimerRef.current) return;
+      pointerStartRef.current = { x: touch.clientX, y: touch.clientY };
+      const rect = event.currentTarget.getBoundingClientRect();
+      setDragOffset({
+        x: touch.clientX - rect.left,
+        y: touch.clientY - rect.top,
+      });
+      return;
+    }
+    setDragPosition({ x: touch.clientX, y: touch.clientY });
+    const hitTarget = targets.find((target) => {
+      const [offsetX, offsetY] = target.offset;
+      const centerX = dragOrigin.x + offsetX;
+      const centerY = dragOrigin.y + offsetY;
+      const distance = Math.hypot(touch.clientX - centerX, touch.clientY - centerY);
+      return distance < 48;
+    });
+    setActiveTarget(hitTarget?.id ?? null);
+  };
+
+  const handleTouchEnd = () => {
+    handleFabPointerUp();
+  };
+
+  const touchHandlers = touchEnabled
+    ? {
+        onTouchStart: handleTouchStart,
+        onTouchMove: handleTouchMove,
+        onTouchEnd: handleTouchEnd,
+      }
+    : {};
+
   return (
     <div className={styles.shell}>
       <header className={styles.header}>
@@ -244,6 +300,7 @@ export default function Shell({ children }) {
           onPointerMove={handleFabPointerMove}
           onPointerUp={handleFabPointerUp}
           onPointerCancel={handleFabPointerCancel}
+          {...touchHandlers}
           style={
             dragActive
               ? {
