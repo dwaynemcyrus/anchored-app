@@ -1,0 +1,131 @@
+.page {
+  min-height: 100vh;
+  background: #f6f2ea;
+  color: #14110f;
+  font-family: var(--font-geist-sans);
+}
+
+.main {
+  min-height: 100vh;
+  max-width: 900px;
+  margin: 0 auto;
+  padding: 104px 24px 120px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.backLink {
+  border: 1px solid rgba(20, 17, 15, 0.2);
+  background: #fcfbf8;
+  color: #14110f;
+  border-radius: 999px;
+  padding: 6px 14px;
+  font-size: 13px;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.backLink:focus-visible {
+  outline: 2px solid #14110f;
+  outline-offset: 2px;
+}
+
+.title {
+  flex: 1;
+  font-size: 14px;
+  font-weight: 600;
+  text-align: center;
+  color: #3b3227;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.status {
+  min-width: 64px;
+  text-align: right;
+  font-size: 12px;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: #6a5f54;
+}
+
+.editorWrap {
+  flex: 1;
+  border-radius: 16px;
+  border: 1px solid rgba(20, 17, 15, 0.15);
+  background: #fcfbf8;
+  padding: 8px;
+  min-height: 50vh;
+  display: flex;
+}
+
+.editor {
+  flex: 1;
+}
+
+.notFound {
+  border-radius: 16px;
+  border: 1px dashed #c8bfb1;
+  background: #fcfbf8;
+  padding: 28px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.notFoundTitle {
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.notFoundAction {
+  align-self: flex-start;
+  border: none;
+  background: #14110f;
+  color: #f6f2ea;
+  border-radius: 999px;
+  padding: 10px 18px;
+  font-size: 14px;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.notFoundAction:focus-visible {
+  outline: 2px solid #14110f;
+  outline-offset: 2px;
+}
+
+:global(.cm-editor) {
+  height: 100%;
+}
+
+:global(.cm-scroller) {
+  font-family: var(--font-geist-sans);
+  font-size: 16px;
+  line-height: 1.6;
+}
+
+:global(.cm-focused) {
+  outline: none;
+}
+
+@media (max-width: 600px) {
+  .main {
+    padding: 92px 18px 120px;
+  }
+
+  .title {
+    font-size: 12px;
+  }
+}
