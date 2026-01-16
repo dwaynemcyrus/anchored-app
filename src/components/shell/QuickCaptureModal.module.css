@@ -1,6 +1,9 @@
 .backdrop {
   position: fixed;
-  inset: 0;
+  top: var(--vv-offset-top, 0px);
+  left: 0;
+  right: 0;
+  height: var(--vv-height, 100vh);
   background: rgba(15, 12, 10, 0.4);
   display: flex;
   align-items: flex-end;

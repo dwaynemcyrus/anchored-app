@@ -86,6 +86,12 @@ export default function Shell({ children }) {
     const previousWidth = document.body.style.width;
     const previousHtmlOverflow = document.documentElement.style.overflow;
     const previousHtmlHeight = document.documentElement.style.height;
+    const previousVvOffset = document.documentElement.style.getPropertyValue(
+      "--vv-offset-top"
+    );
+    const previousVvHeight = document.documentElement.style.getPropertyValue(
+      "--vv-height"
+    );
     const scrollY = window.scrollY;
 
     document.body.style.overflow = "hidden";
@@ -94,6 +100,25 @@ export default function Shell({ children }) {
     document.body.style.width = "100%";
     document.documentElement.style.overflow = "hidden";
     document.documentElement.style.height = "100%";
+
+    const updateVisualViewport = () => {
+      if (!window.visualViewport) return;
+      document.documentElement.style.setProperty(
+        "--vv-offset-top",
+        `${window.visualViewport.offsetTop}px`
+      );
+      document.documentElement.style.setProperty(
+        "--vv-height",
+        `${window.visualViewport.height}px`
+      );
+    };
+
+    updateVisualViewport();
+    if (window.visualViewport) {
+      window.visualViewport.addEventListener("resize", updateVisualViewport);
+      window.visualViewport.addEventListener("scroll", updateVisualViewport);
+    }
+
     return () => {
       const offset = parseInt(document.body.style.top || "0", 10) * -1;
       document.body.style.overflow = previousOverflow;
@@ -102,6 +127,15 @@ export default function Shell({ children }) {
       document.body.style.width = previousWidth;
       document.documentElement.style.overflow = previousHtmlOverflow;
       document.documentElement.style.height = previousHtmlHeight;
+      document.documentElement.style.setProperty(
+        "--vv-offset-top",
+        previousVvOffset
+      );
+      document.documentElement.style.setProperty("--vv-height", previousVvHeight);
+      if (window.visualViewport) {
+        window.visualViewport.removeEventListener("resize", updateVisualViewport);
+        window.visualViewport.removeEventListener("scroll", updateVisualViewport);
+      }
       window.scrollTo(0, Number.isNaN(offset) ? scrollY : offset);
     };
   }, [captureOpen]);
