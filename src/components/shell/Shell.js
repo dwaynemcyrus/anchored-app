@@ -80,9 +80,22 @@ export default function Shell({ children }) {
   useEffect(() => {
     if (!captureOpen) return;
     const previousOverflow = document.body.style.overflow;
+    const previousPosition = document.body.style.position;
+    const previousTop = document.body.style.top;
+    const previousWidth = document.body.style.width;
+    const scrollY = window.scrollY;
+
     document.body.style.overflow = "hidden";
+    document.body.style.position = "fixed";
+    document.body.style.top = `-${scrollY}px`;
+    document.body.style.width = "100%";
     return () => {
+      const offset = parseInt(document.body.style.top || "0", 10) * -1;
       document.body.style.overflow = previousOverflow;
+      document.body.style.position = previousPosition;
+      document.body.style.top = previousTop;
+      document.body.style.width = previousWidth;
+      window.scrollTo(0, Number.isNaN(offset) ? scrollY : offset);
     };
   }, [captureOpen]);
 
