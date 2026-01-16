@@ -1,8 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
-import { useEffect, useRef, useState } from "react";
+import { usePathname, useRouter } from "next/navigation";
+import { useEffect, useMemo, useRef, useState } from "react";
 import QuickCaptureModal from "./QuickCaptureModal";
 import styles from "./Shell.module.css";
 
@@ -49,6 +49,7 @@ function BackIcon() {
 }
 
 export default function Shell({ children }) {
+  const router = useRouter();
   const pathname = usePathname();
   const title = routes[pathname] ?? "";
   const isHome = pathname === "/";
@@ -56,6 +57,25 @@ export default function Shell({ children }) {
   const [captureValue, setCaptureValue] = useState("");
   const capturesRef = useRef([]);
   const inputRef = useRef(null);
+  const [dragActive, setDragActive] = useState(false);
+  const [dragPosition, setDragPosition] = useState({ x: 0, y: 0 });
+  const [dragOrigin, setDragOrigin] = useState({ x: 0, y: 0 });
+  const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
+  const [activeTarget, setActiveTarget] = useState(null);
+  const longPressTimerRef = useRef(null);
+  const dragPointerIdRef = useRef(null);
+  const longPressTriggeredRef = useRef(false);
+  const fabRef = useRef(null);
+  const pointerStartRef = useRef({ x: 0, y: 0 });
+
+  const targets = useMemo(
+    () => [
+      { id: "command", label: "Command", href: "/command", offset: [-96, 0] },
+      { id: "knowledge", label: "Knowledge", href: "/knowledge", offset: [96, 0] },
+      { id: "strategy", label: "Strategy", href: "/strategy", offset: [0, -96] },
+    ],
+    []
+  );
 
   useEffect(() => {
     if (!captureOpen) return;
@@ -65,6 +85,18 @@ export default function Shell({ children }) {
       document.body.style.overflow = previousOverflow;
     };
   }, [captureOpen]);
+
+  useEffect(() => {
+    if (!dragActive) return;
+    const previousTouchAction = document.body.style.touchAction;
+    const previousUserSelect = document.body.style.userSelect;
+    document.body.style.touchAction = "none";
+    document.body.style.userSelect = "none";
+    return () => {
+      document.body.style.touchAction = previousTouchAction;
+      document.body.style.userSelect = previousUserSelect;
+    };
+  }, [dragActive]);
 
   const handleOpenCapture = () => {
     setCaptureOpen(true);
@@ -87,6 +119,93 @@ export default function Shell({ children }) {
     if (captureValue.trim().length === 0) {
       handleCloseCapture();
     }
+  };
+
+  const clearLongPressTimer = () => {
+    if (longPressTimerRef.current) {
+      window.clearTimeout(longPressTimerRef.current);
+      longPressTimerRef.current = null;
+    }
+  };
+
+  const resetDragState = () => {
+    clearLongPressTimer();
+    setDragActive(false);
+    setActiveTarget(null);
+    dragPointerIdRef.current = null;
+  };
+
+  const activateDrag = () => {
+    if (!fabRef.current) return;
+    const rect = fabRef.current.getBoundingClientRect();
+    const origin = {
+      x: rect.left + rect.width / 2,
+      y: rect.top + rect.height / 2,
+    };
+    setDragOrigin(origin);
+    setDragPosition({ x: pointerStartRef.current.x, y: pointerStartRef.current.y });
+    setDragActive(true);
+    longPressTriggeredRef.current = true;
+  };
+
+  const handleFabPointerDown = (event) => {
+    if (event.button !== 0) return;
+    longPressTriggeredRef.current = false;
+    pointerStartRef.current = { x: event.clientX, y: event.clientY };
+    const rect = event.currentTarget.getBoundingClientRect();
+    setDragOffset({
+      x: event.clientX - rect.left,
+      y: event.clientY - rect.top,
+    });
+    dragPointerIdRef.current = event.pointerId;
+    event.currentTarget.setPointerCapture(event.pointerId);
+    longPressTimerRef.current = window.setTimeout(() => {
+      activateDrag();
+    }, 300);
+  };
+
+  const handleFabPointerMove = (event) => {
+    if (!dragActive) {
+      if (!longPressTimerRef.current) return;
+      pointerStartRef.current = { x: event.clientX, y: event.clientY };
+      const rect = event.currentTarget.getBoundingClientRect();
+      setDragOffset({
+        x: event.clientX - rect.left,
+        y: event.clientY - rect.top,
+      });
+      return;
+    }
+    if (!dragActive) return;
+    event.preventDefault();
+    setDragPosition({ x: event.clientX, y: event.clientY });
+    const hitTarget = targets.find((target) => {
+      const [offsetX, offsetY] = target.offset;
+      const centerX = dragOrigin.x + offsetX;
+      const centerY = dragOrigin.y + offsetY;
+      const distance = Math.hypot(event.clientX - centerX, event.clientY - centerY);
+      return distance < 48;
+    });
+    setActiveTarget(hitTarget?.id ?? null);
+  };
+
+  const handleFabPointerUp = () => {
+    if (dragActive && activeTarget) {
+      const target = targets.find((item) => item.id === activeTarget);
+      if (target) router.push(target.href);
+    }
+    resetDragState();
+  };
+
+  const handleFabPointerCancel = () => {
+    resetDragState();
+  };
+
+  const handleFabClick = () => {
+    if (longPressTriggeredRef.current) {
+      longPressTriggeredRef.current = false;
+      return;
+    }
+    handleOpenCapture();
   };
 
   return (
@@ -116,13 +235,48 @@ export default function Shell({ children }) {
       <div className={styles.fabContainer}>
         <button
           type="button"
-          className={styles.fab}
+          className={`${styles.fab} ${dragActive ? styles.fabDragging : ""}`}
           aria-label="Quick capture"
-          onClick={handleOpenCapture}
+          ref={fabRef}
+          onClick={handleFabClick}
+          onContextMenu={(event) => event.preventDefault()}
+          onPointerDown={handleFabPointerDown}
+          onPointerMove={handleFabPointerMove}
+          onPointerUp={handleFabPointerUp}
+          onPointerCancel={handleFabPointerCancel}
+          style={
+            dragActive
+              ? {
+                  left: `${dragPosition.x - dragOffset.x}px`,
+                  top: `${dragPosition.y - dragOffset.y}px`,
+                }
+              : undefined
+          }
         >
           +
         </button>
       </div>
+      {dragActive ? (
+        <div className={styles.targetsLayer} aria-hidden="true">
+          {targets.map((target) => {
+            const [offsetX, offsetY] = target.offset;
+            return (
+              <div
+                key={target.id}
+                className={`${styles.target} ${
+                  activeTarget === target.id ? styles.targetActive : ""
+                }`}
+                style={{
+                  left: `${dragOrigin.x + offsetX}px`,
+                  top: `${dragOrigin.y + offsetY}px`,
+                }}
+              >
+                {target.label}
+              </div>
+            );
+          })}
+        </div>
+      ) : null}
       <QuickCaptureModal
         isOpen={captureOpen}
         value={captureValue}
