@@ -126,6 +126,7 @@ export default function Shell({ children }) {
 
   const handleOpenCapture = () => {
     resetDragState();
+    clearLongPressTimer();
     setCaptureShouldFocus(true);
     setCaptureOpen(true);
   };
@@ -166,6 +167,7 @@ export default function Shell({ children }) {
   };
 
   const activateDrag = () => {
+    if (captureOpen) return;
     if (!fabRef.current) return;
     const rect = fabRef.current.getBoundingClientRect();
     const origin = {
@@ -236,6 +238,7 @@ export default function Shell({ children }) {
       longPressTriggeredRef.current = false;
       return;
     }
+    clearLongPressTimer();
     handleOpenCapture();
   };
 
@@ -318,7 +321,9 @@ export default function Shell({ children }) {
       <div className={styles.fabContainer}>
         <button
           type="button"
-          className={`${styles.fab} ${dragActive ? styles.fabDragging : ""}`}
+          className={`${styles.fab} ${dragActive ? styles.fabDragging : ""} ${
+            captureOpen ? styles.fabHidden : ""
+          }`}
           aria-label="Quick capture"
           ref={fabRef}
           onClick={handleFabClick}
@@ -341,7 +346,7 @@ export default function Shell({ children }) {
           +
         </button>
       </div>
-      {dragActive ? (
+      {dragActive && !captureOpen ? (
         <div className={styles.targetsLayer} aria-hidden="true">
           {targets.map((target) => {
             const [offsetX, offsetY] = target.offset;
