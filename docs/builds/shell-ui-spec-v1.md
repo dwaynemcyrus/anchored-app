@@ -1,4 +1,5 @@
 # Shell UI Build Spec — v1 (Personal OS PWA)
+To continue this session, run `codex resume 019bc488-a71f-7ee3-a4f3-aca31d8ffd68`
 
 ## Purpose
 Build the **foundational UI shell** for a Personal OS PWA (iOS-first), with:

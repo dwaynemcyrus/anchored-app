@@ -1,4 +1,4 @@
-Active build spec: docs/builds/shell-ui-spec-v1.md
+Active build spec: docs/builds/editor-spec-v0.md
 
 Instruction:
 - Follow AGENT.md and SCOPE.md.
