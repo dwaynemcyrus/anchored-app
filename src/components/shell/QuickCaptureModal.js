@@ -1,30 +1,38 @@
 "use client";
 
-import { useEffect } from "react";
+import { useLayoutEffect } from "react";
 import styles from "./QuickCaptureModal.module.css";
 
 export default function QuickCaptureModal({
   isOpen,
   value,
   inputRef,
+  shouldFocus,
+  onFocused,
   onChange,
   onSave,
   onCancel,
   onBackdrop,
 }) {
-  useEffect(() => {
-    if (!isOpen || !inputRef?.current) return;
+  useLayoutEffect(() => {
+    if (!isOpen || !inputRef?.current || !shouldFocus) return;
     const focusInput = () => {
       if (!inputRef.current) return;
-      try {
-        inputRef.current.focus({ preventScroll: true });
-      } catch {
-        inputRef.current.focus();
+      inputRef.current.focus();
+      if (document.activeElement !== inputRef.current) {
+        setTimeout(() => {
+          if (!inputRef.current) return;
+          inputRef.current.focus();
+          if (document.activeElement === inputRef.current) {
+            onFocused?.();
+          }
+        }, 0);
+        return;
       }
+      onFocused?.();
     };
-    const rafId = window.requestAnimationFrame(focusInput);
-    return () => window.cancelAnimationFrame(rafId);
-  }, [isOpen, inputRef]);
+    focusInput();
+  }, [isOpen, inputRef, shouldFocus, onFocused]);
 
   if (!isOpen) return null;
 
@@ -58,6 +66,7 @@ export default function QuickCaptureModal({
           onChange={(event) => onChange(event.target.value)}
           onKeyDown={handleKeyDown}
           placeholder="Write a quick note..."
+          autoFocus
         />
         <div className={styles.actions}>
           <button type="button" className={styles.button} onClick={onCancel}>

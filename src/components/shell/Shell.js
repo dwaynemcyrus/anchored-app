@@ -55,6 +55,7 @@ export default function Shell({ children }) {
   const isHome = pathname === "/";
   const [captureOpen, setCaptureOpen] = useState(false);
   const [captureValue, setCaptureValue] = useState("");
+  const [captureShouldFocus, setCaptureShouldFocus] = useState(false);
   const capturesRef = useRef([]);
   const inputRef = useRef(null);
   const [dragActive, setDragActive] = useState(false);
@@ -124,6 +125,7 @@ export default function Shell({ children }) {
 
   const handleOpenCapture = () => {
     resetDragState();
+    setCaptureShouldFocus(true);
     setCaptureOpen(true);
   };
 
@@ -131,6 +133,7 @@ export default function Shell({ children }) {
     resetDragState();
     setCaptureOpen(false);
     setCaptureValue("");
+    setCaptureShouldFocus(false);
   };
 
   const handleSaveCapture = () => {
@@ -362,6 +365,8 @@ export default function Shell({ children }) {
         isOpen={captureOpen}
         value={captureValue}
         inputRef={inputRef}
+        shouldFocus={captureShouldFocus}
+        onFocused={() => setCaptureShouldFocus(false)}
         onChange={setCaptureValue}
         onSave={handleSaveCapture}
         onCancel={handleCloseCapture}
