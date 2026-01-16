@@ -380,7 +380,10 @@ export default function Shell({ children }) {
         shouldFocus={captureShouldFocus}
         onFocused={() => setCaptureShouldFocus(false)}
         rapidEnabled={rapidEnabled}
-        onToggleRapid={() => setRapidEnabled((prev) => !prev)}
+        onToggleRapid={() => {
+          setRapidEnabled((prev) => !prev);
+          setCaptureShouldFocus(true);
+        }}
         onChange={setCaptureValue}
         onSave={handleSaveCapture}
         onCancel={handleCloseCapture}

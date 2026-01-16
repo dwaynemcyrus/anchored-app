@@ -71,18 +71,28 @@ export default function QuickCaptureModal({
           autoFocus
         />
         <div className={styles.actions}>
-          <label className={styles.toggle}>
-            <input
-              type="checkbox"
-              checked={rapidEnabled}
-              onChange={onToggleRapid}
-              className={styles.toggleInput}
-            />
-            <span className={styles.toggleTrack} aria-hidden="true">
-              <span className={styles.toggleThumb} />
+          <button
+            type="button"
+            className={styles.toggle}
+            aria-pressed={rapidEnabled}
+            onClick={onToggleRapid}
+            onMouseDown={(event) => event.preventDefault()}
+            onTouchStart={(event) => event.preventDefault()}
+          >
+            <span
+              className={`${styles.toggleTrack} ${
+                rapidEnabled ? styles.toggleTrackActive : ""
+              }`}
+              aria-hidden="true"
+            >
+              <span
+                className={`${styles.toggleThumb} ${
+                  rapidEnabled ? styles.toggleThumbActive : ""
+                }`}
+              />
             </span>
             <span className={styles.toggleText}>Rapid capture</span>
-          </label>
+          </button>
           <button type="button" className={styles.button} onClick={onCancel}>
             Cancel
           </button>

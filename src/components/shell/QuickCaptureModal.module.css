@@ -81,12 +81,14 @@
   font-size: 13px;
   letter-spacing: 0.02em;
   color: #5a4e41;
+  border: none;
+  background: transparent;
+  padding: 0;
 }
 
-.toggleInput {
-  position: absolute;
-  opacity: 0;
-  pointer-events: none;
+.toggle:focus-visible {
+  outline: 2px solid #14110f;
+  outline-offset: 2px;
 }
 
 .toggleTrack {
@@ -100,6 +102,10 @@
   transition: background 0.2s ease;
 }
 
+.toggleTrackActive {
+  background: #14110f;
+}
+
 .toggleThumb {
   width: 20px;
   height: 20px;
@@ -110,16 +116,7 @@
   transition: transform 0.2s ease;
 }
 
-.toggleInput:focus-visible + .toggleTrack {
-  outline: 2px solid #14110f;
-  outline-offset: 2px;
-}
-
-.toggleInput:checked + .toggleTrack {
-  background: #14110f;
-}
-
-.toggleInput:checked + .toggleTrack .toggleThumb {
+.toggleThumbActive {
   transform: translateX(18px);
 }
 
