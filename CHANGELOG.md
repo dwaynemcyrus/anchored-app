@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.2.1 - 2026-01-17
 - Add documents contract helpers, IndexedDB bootstrap, and repo interface.
 - Implement IndexedDB documents repo with legacy localStorage migration.
 - Refactor notes store/UI to use repo-backed persistence and on-demand loading.
