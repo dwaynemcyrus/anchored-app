@@ -6,6 +6,9 @@
 - Refactor notes store/UI to use repo-backed persistence and on-demand loading.
 - Remove legacy localStorage persistence module.
 - Avoid flashing new notes in the list before navigation.
+- Move note title and save status into the shell header.
+- Remove the content-level back link from the note editor.
+- Refine shell header sizing and spacing for mobile tap targets.
 
 ## 0.2.0 - 2026-01-16
 - Add local notes store with debounced localStorage persistence and derived title rules.
