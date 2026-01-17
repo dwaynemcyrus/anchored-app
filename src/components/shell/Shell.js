@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import QuickCaptureModal from "./QuickCaptureModal";
+import { useShellHeaderStore } from "../../store/shellHeaderStore";
 import styles from "./Shell.module.css";
 
 const routes = {
@@ -52,6 +53,8 @@ export default function Shell({ children }) {
   const router = useRouter();
   const pathname = usePathname();
   const title = routes[pathname] ?? "";
+  const overrideTitle = useShellHeaderStore((state) => state.title);
+  const headerTitle = overrideTitle ?? title;
   const isHome = pathname === "/";
   const [captureOpen, setCaptureOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -336,27 +339,31 @@ export default function Shell({ children }) {
   return (
     <div className={styles.shell}>
       <header className={styles.header}>
-        {isHome ? (
-          <button
-            type="button"
-            className={styles.headerButton}
-            aria-label="Open menu"
-            aria-expanded={menuOpen}
-            onClick={handleMenuToggle}
-          >
-            <MenuIcon />
-          </button>
-        ) : (
-          <Link
-            href="/"
-            className={styles.headerButton}
-            aria-label="Back to home"
-          >
-            <BackIcon />
-          </Link>
-        )}
-        <div className={styles.headerTitle}>{title}</div>
-        <div className={styles.headerButton} aria-hidden="true" />
+        <div className={styles.headerLeft}>
+          {isHome ? (
+            <button
+              type="button"
+              className={styles.headerButton}
+              aria-label="Open menu"
+              aria-expanded={menuOpen}
+              onClick={handleMenuToggle}
+            >
+              <MenuIcon />
+            </button>
+          ) : (
+            <Link
+              href="/"
+              className={styles.headerButton}
+              aria-label="Back to home"
+            >
+              <BackIcon />
+            </Link>
+          )}
+          <div className={styles.headerTitle}>{headerTitle}</div>
+        </div>
+        <div className={styles.headerActions}>
+          <div className={styles.headerButton} aria-hidden="true" />
+        </div>
       </header>
       {children}
       <div className={styles.fabContainer}>

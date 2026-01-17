@@ -7,6 +7,7 @@ import { EditorView } from "@codemirror/view";
 import { markdown } from "@codemirror/lang-markdown";
 import { basicSetup } from "codemirror";
 import { getDerivedTitle, useNotesStore } from "../../store/notesStore";
+import { useShellHeaderStore } from "../../store/shellHeaderStore";
 import styles from "../../styles/noteEditor.module.css";
 
 const SAVED_LABEL = "Saved";
@@ -18,6 +19,8 @@ export default function NoteEditor({ noteId }) {
   const hasHydrated = useNotesStore((state) => state.hasHydrated);
   const updateNoteBody = useNotesStore((state) => state.updateNoteBody);
   const note = useNotesStore((state) => state.notesById[noteId]);
+  const setHeaderTitle = useShellHeaderStore((state) => state.setTitle);
+  const clearHeaderTitle = useShellHeaderStore((state) => state.clearTitle);
 
   const editorHostRef = useRef(null);
   const editorViewRef = useRef(null);
@@ -122,6 +125,17 @@ export default function NoteEditor({ noteId }) {
   }, [note]);
 
   const title = useMemo(() => (note ? getDerivedTitle(note) : ""), [note]);
+
+  useEffect(() => {
+    if (!note) {
+      clearHeaderTitle();
+      return;
+    }
+    setHeaderTitle(title);
+    return () => {
+      clearHeaderTitle();
+    };
+  }, [note, title, setHeaderTitle, clearHeaderTitle]);
 
   if (!note && hasHydrated && loadedNoteId === noteId) {
     return (
