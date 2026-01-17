@@ -1,4 +1,6 @@
 # Editor Build Spec — v0 (Codex-Ready Build Spec) 
+To continue this session, run `codex resume 019bc79c-189e-7f21-ab66-a88889fad001`
+
 Scope: Knowledge → Notes → Editor  
 Objective: Ship the smallest *complete* loop: list → open → write → autosave → back → list reflects update.
 

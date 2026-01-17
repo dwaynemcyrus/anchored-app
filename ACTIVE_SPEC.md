@@ -1,4 +1,4 @@
-Active build spec: docs/builds/editor-spec-v0.md
+Active build spec: docs/builds/documents-repo-spec-v0.md
 
 Instruction:
 - Follow AGENT.md and SCOPE.md.
