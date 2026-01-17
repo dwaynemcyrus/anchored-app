@@ -1,4 +1,6 @@
 # Documents Repo v0 — Local-First Persistence Spine
+To continue this session, run `codex resume 019bcb8d-fffb-71c0-ae8f-5fdff56fb174`
+
 Version: 0.1  
 Purpose: Replace ad-hoc localStorage notes with a scalable, swappable, local-first persistence layer.
 
