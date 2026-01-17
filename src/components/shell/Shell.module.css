@@ -67,6 +67,12 @@
   justify-content: center;
 }
 
+.headerButtonActive {
+  border-color: rgba(20, 17, 15, 0.4);
+  background: #14110f;
+  color: #f6f2ea;
+}
+
 .headerButton:focus-visible {
   outline: 2px solid #14110f;
   outline-offset: 2px;

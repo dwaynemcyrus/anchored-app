@@ -5,6 +5,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import QuickCaptureModal from "./QuickCaptureModal";
 import { useShellHeaderStore } from "../../store/shellHeaderStore";
+import { useEditorSettingsStore } from "../../store/editorSettingsStore";
 import styles from "./Shell.module.css";
 
 const routes = {
@@ -49,6 +50,51 @@ function BackIcon() {
   );
 }
 
+function FocusModeIcon() {
+  return (
+    <svg
+      aria-hidden="true"
+      viewBox="0 0 24 24"
+      className={styles.icon}
+    >
+      <path
+        d="M5 7h14M5 12h9M5 17h12"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinecap="round"
+      />
+      <circle cx="17" cy="12" r="2" fill="currentColor" />
+    </svg>
+  );
+}
+
+function TextSizeIcon() {
+  return (
+    <svg
+      aria-hidden="true"
+      viewBox="0 0 24 24"
+      className={styles.icon}
+    >
+      <path
+        d="M6 17l3-10h2l3 10M8 13h6"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        fill="none"
+      />
+      <path
+        d="M16 17l1.5-5h1.5l1.5 5M16.5 15h3"
+        stroke="currentColor"
+        strokeWidth="1.6"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        fill="none"
+      />
+    </svg>
+  );
+}
+
 export default function Shell({ children }) {
   const router = useRouter();
   const pathname = usePathname();
@@ -56,7 +102,16 @@ export default function Shell({ children }) {
   const overrideTitle = useShellHeaderStore((state) => state.title);
   const headerStatus = useShellHeaderStore((state) => state.status);
   const headerTitle = overrideTitle ?? title;
+  const hydrateEditorSettings = useEditorSettingsStore((state) => state.hydrate);
+  const focusMode = useEditorSettingsStore((state) => state.focusMode);
+  const fontSize = useEditorSettingsStore((state) => state.fontSize);
+  const toggleFocusMode = useEditorSettingsStore((state) => state.toggleFocusMode);
+  const cycleFontSize = useEditorSettingsStore((state) => state.cycleFontSize);
   const isHome = pathname === "/";
+  const isNoteEditorRoute =
+    typeof pathname === "string" &&
+    pathname.startsWith("/knowledge/notes/") &&
+    pathname !== "/knowledge/notes";
   const [captureOpen, setCaptureOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [captureValue, setCaptureValue] = useState("");
@@ -94,6 +149,10 @@ export default function Shell({ children }) {
     ],
     []
   );
+
+  useEffect(() => {
+    hydrateEditorSettings();
+  }, [hydrateEditorSettings]);
 
   useEffect(() => {
     if (!menuOpen) return;
@@ -337,6 +396,10 @@ export default function Shell({ children }) {
       }
     : {};
 
+  const preventPointerFocus = (event) => {
+    event.preventDefault();
+  };
+
   return (
     <div className={styles.shell}>
       <header className={styles.header}>
@@ -366,7 +429,33 @@ export default function Shell({ children }) {
           {headerStatus ? (
             <div className={styles.headerStatus}>{headerStatus}</div>
           ) : null}
-          <div className={styles.headerButton} aria-hidden="true" />
+          {isNoteEditorRoute ? (
+            <>
+              <button
+                type="button"
+                className={`${styles.headerButton} ${
+                  focusMode ? styles.headerButtonActive : ""
+                }`}
+                aria-label="Toggle focus mode"
+                aria-pressed={focusMode}
+                onPointerDown={preventPointerFocus}
+                onClick={toggleFocusMode}
+              >
+                <FocusModeIcon />
+              </button>
+              <button
+                type="button"
+                className={styles.headerButton}
+                aria-label={`Font size: ${fontSize}`}
+                onPointerDown={preventPointerFocus}
+                onClick={cycleFontSize}
+              >
+                <TextSizeIcon />
+              </button>
+            </>
+          ) : (
+            <div className={styles.headerButton} aria-hidden="true" />
+          )}
         </div>
       </header>
       {children}
