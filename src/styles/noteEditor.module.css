@@ -18,10 +18,6 @@
 
 .editorWrap {
   flex: 1;
-  border-radius: 16px;
-  border: 1px solid rgba(20, 17, 15, 0.15);
-  background: #fcfbf8;
-  padding: 8px;
   min-height: 50vh;
   display: flex;
   width: 100%;
@@ -75,14 +71,34 @@
   font-family: var(--font-atten);
   font-size: max(16px, var(--editor-font-size));
   line-height: 1.7;
-  padding: 12px 14px 24px;
 }
 
 :global(.cm-content) {
   font-family: var(--font-atten);
 }
 
+:global(.cm-gutters) {
+  font-family: var(--font-atten);
+  font-size: 14px;
+}
+
+:global(.cm-editor .cm-gutters) {
+  background-color: transparent;
+  border: none;
+}
+
+:global(.cm-lineNumbers) {
+  font-family: var(--font-atten);
+  font-size: 12px;
+  padding-top: 2px;
+  opacity: 0.4;
+}
+
 :global(.cm-focused) {
+  outline: none;
+}
+
+:global(.ͼ1.cm-focused) {
   outline: none;
 }
 
