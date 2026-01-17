@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.3 - 2026-01-18
+- Set New Atten as the default UI font with full weight/italic support.
+- Update editor typography to use New Atten for content and gutters.
+- Simplify editor chrome and gutter presentation (padding/border/background).
+- Adjust CodeMirror line number sizing, spacing, and focus outline styling.
+
 ## 0.2.2 - 2026-01-17
 - Add editor focus mode and font size toggles with local persistence.
 - Implement paragraph focus dimming and typewriter scroll behavior.
