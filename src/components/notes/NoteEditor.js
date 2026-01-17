@@ -15,7 +15,7 @@ const SAVED_LABEL = "Saved";
 const SAVING_LABEL = "Saving...";
 const TYPEWRITER_OFFSET = 0.5;
 const FONT_SIZE_MAP = {
-  small: "15px",
+  small: "16px",
   default: "17px",
   large: "19px",
 };

@@ -72,7 +72,7 @@
 
 :global(.cm-scroller) {
   font-family: var(--font-geist-sans);
-  font-size: var(--editor-font-size);
+  font-size: max(16px, var(--editor-font-size));
   line-height: 1.7;
   padding: 12px 14px 24px;
 }
