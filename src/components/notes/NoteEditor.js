@@ -141,13 +141,6 @@ export default function NoteEditor({ noteId }) {
   return (
     <div className={styles.page}>
       <main className={styles.main}>
-        <header className={styles.header}>
-          <Link href="/knowledge/notes" className={styles.backLink}>
-            Back
-          </Link>
-          <div className={styles.title}>{title}</div>
-          <div className={styles.status}>{saveStatus}</div>
-        </header>
         <section className={styles.editorWrap}>
           <div className={styles.editor} ref={editorHostRef} />
         </section>

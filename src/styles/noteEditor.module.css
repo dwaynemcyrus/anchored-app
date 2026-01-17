@@ -15,50 +15,6 @@
   gap: 16px;
 }
 
-.header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-}
-
-.backLink {
-  border: 1px solid rgba(20, 17, 15, 0.2);
-  background: #fcfbf8;
-  color: #14110f;
-  border-radius: 999px;
-  padding: 6px 14px;
-  font-size: 13px;
-  font-weight: 600;
-  text-decoration: none;
-}
-
-.backLink:focus-visible {
-  outline: 2px solid #14110f;
-  outline-offset: 2px;
-}
-
-.title {
-  flex: 1;
-  font-size: 14px;
-  font-weight: 600;
-  text-align: center;
-  color: #3b3227;
-  letter-spacing: 0.02em;
-  text-transform: uppercase;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.status {
-  min-width: 64px;
-  text-align: right;
-  font-size: 12px;
-  letter-spacing: 0.02em;
-  text-transform: uppercase;
-  color: #6a5f54;
-}
 
 .editorWrap {
   flex: 1;
@@ -123,9 +79,5 @@
 @media (max-width: 600px) {
   .main {
     padding: 92px 18px 120px;
-  }
-
-  .title {
-    font-size: 12px;
   }
 }
