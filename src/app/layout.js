@@ -1,15 +1,22 @@
-import { Geist, Geist_Mono } from "next/font/google";
+import localFont from "next/font/local";
 import "./globals.css";
 import Shell from "../components/shell/Shell";
 
-const geistSans = Geist({
-  variable: "--font-geist-sans",
-  subsets: ["latin"],
-});
-
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
-  subsets: ["latin"],
+const atten = localFont({
+  variable: "--font-atten",
+  display: "swap",
+  src: [
+    { path: "../../public/fonts/new-atten-book.woff2", weight: "350", style: "normal" },
+    { path: "../../public/fonts/new-atten-book-italic.woff2", weight: "350", style: "italic" },
+    { path: "../../public/fonts/new-atten-regular.woff2", weight: "400", style: "normal" },
+    { path: "../../public/fonts/new-atten-regular-italic.woff2", weight: "400", style: "italic" },
+    { path: "../../public/fonts/new-atten-medium.woff2", weight: "500", style: "normal" },
+    { path: "../../public/fonts/new-atten-medium-italic.woff2", weight: "500", style: "italic" },
+    { path: "../../public/fonts/new-atten-bold.woff2", weight: "700", style: "normal" },
+    { path: "../../public/fonts/new-atten-bold-italic.woff2", weight: "700", style: "italic" },
+    { path: "../../public/fonts/new-atten-extrabold.woff2", weight: "800", style: "normal" },
+    { path: "../../public/fonts/new-atten-extrabold-italic.woff2", weight: "800", style: "italic" },
+  ],
 });
 
 export const metadata = {
@@ -20,7 +27,7 @@ export const metadata = {
 export default function RootLayout({ children }) {
   return (
     <html lang="en">
-      <body className={`${geistSans.variable} ${geistMono.variable}`}>
+      <body className={atten.variable}>
         <Shell>{children}</Shell>
       </body>
     </html>

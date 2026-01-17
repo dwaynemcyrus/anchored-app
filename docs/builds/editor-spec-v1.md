@@ -1,4 +1,6 @@
 # Editor v1 — Focus + Flow (iA Writer–Inspired)
+To continue this session, run `codex resume 019bcc58-6b56-7c80-8695-033b560432a6`
+
 Version: 1.0  
 Depends on: Editor v0, Documents Repo v0  
 Purpose: Turn a functional editor into a calm, premium writing instrument.
