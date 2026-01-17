@@ -1,102 +1,130 @@
 import { create } from "zustand";
-import { createDebouncedSaver, loadNotesFromStorage } from "../lib/notesPersistence";
-
-const debouncedPersist = createDebouncedSaver(500);
+import { getDocumentsRepo } from "../lib/repo/getDocumentsRepo";
+import { deriveDocumentTitle } from "../lib/documents/deriveTitle";
+import { DOCUMENT_TYPE_NOTE } from "../types/document";
 
 const sortNotes = (notes) => notes.slice().sort((a, b) => b.updatedAt - a.updatedAt);
 
-const createNoteId = () => {
-  if (typeof crypto !== "undefined" && crypto.randomUUID) {
-    return crypto.randomUUID();
+const toListItem = (document) => ({
+  id: document.id,
+  type: document.type,
+  title: deriveDocumentTitle(document),
+  updatedAt: document.updatedAt,
+});
+
+const upsertListItem = (notes, item) => {
+  const next = notes.slice();
+  const index = next.findIndex((note) => note.id === item.id);
+  if (index === -1) {
+    next.push(item);
+  } else {
+    next[index] = { ...next[index], ...item };
   }
-  return `note_${Date.now()}_${Math.random().toString(16).slice(2)}`;
+  return sortNotes(next);
 };
 
-const normalizeNote = (note) => {
-  if (!note || typeof note !== "object") return null;
-  if (typeof note.id !== "string") return null;
-  const createdAt = Number.isFinite(note.createdAt) ? note.createdAt : Date.now();
-  const updatedAt = Number.isFinite(note.updatedAt) ? note.updatedAt : createdAt;
-  return {
-    id: note.id,
-    title: typeof note.title === "string" || note.title === null ? note.title : null,
-    body: typeof note.body === "string" ? note.body : "",
-    createdAt,
-    updatedAt,
-  };
-};
-
-export const getDerivedTitle = (note) => {
-  const title = typeof note?.title === "string" ? note.title.trim() : "";
-  if (title) return title;
-  if (!note || typeof note.body !== "string") return "Untitled";
-  const lines = note.body.split(/\r?\n/);
-  for (const line of lines) {
-    const trimmed = line.trim();
-    if (trimmed) return trimmed;
-  }
-  return "Untitled";
-};
+export const getDerivedTitle = (note) => deriveDocumentTitle(note);
 
 export const useNotesStore = create((set, get) => ({
   notes: [],
+  notesById: {},
   hasHydrated: false,
-  hydrate: () => {
+  hydrate: async () => {
     if (get().hasHydrated) return;
-    if (get().notes.length > 0) {
-      set({ hasHydrated: true });
-      return;
-    }
-    const stored = loadNotesFromStorage();
-    const normalized = stored.map(normalizeNote).filter(Boolean);
-    set({
-      notes: sortNotes(normalized),
-      hasHydrated: true,
-    });
-  },
-  createNote: () => {
-    const now = Date.now();
-    const note = {
-      id: createNoteId(),
-      title: null,
-      body: "",
-      createdAt: now,
-      updatedAt: now,
-    };
-    set((state) => {
-      const next = sortNotes([note, ...state.notes]);
-      debouncedPersist(next);
-      return { notes: next };
-    });
-    return note.id;
-  },
-  updateNoteBody: (id, body) => {
-    if (typeof id !== "string") return;
-    set((state) => {
-      const next = state.notes.map((note) =>
-        note.id === id
-          ? { ...note, body, updatedAt: Date.now() }
-          : note
-      );
-      const sorted = sortNotes(next);
-      debouncedPersist(sorted);
-      return { notes: sorted };
-    });
-  },
-  updateNote: (id, updates) => {
-    if (typeof id !== "string" || !updates) return;
-    set((state) => {
-      const next = state.notes.map((note) => {
-        if (note.id !== id) return note;
-        const updated = { ...note, ...updates };
-        if (!Number.isFinite(updated.updatedAt)) {
-          updated.updatedAt = Date.now();
-        }
-        return updated;
+    try {
+      const repo = getDocumentsRepo();
+      const list = await repo.list({ type: DOCUMENT_TYPE_NOTE });
+      set({
+        notes: sortNotes(list),
+        hasHydrated: true,
       });
-      const sorted = sortNotes(next);
-      debouncedPersist(sorted);
-      return { notes: sorted };
+    } catch (error) {
+      console.error("Failed to hydrate notes list", error);
+      set({ notes: [], hasHydrated: true });
+    }
+  },
+  loadNote: async (id) => {
+    if (typeof id !== "string") return null;
+    const cached = get().notesById[id];
+    if (cached) return cached;
+    try {
+      const repo = getDocumentsRepo();
+      const document = await repo.get(id);
+      if (!document) return null;
+      set((state) => ({
+        notesById: { ...state.notesById, [id]: document },
+        notes: upsertListItem(state.notes, toListItem(document)),
+      }));
+      return document;
+    } catch (error) {
+      console.error("Failed to load note", error);
+      return null;
+    }
+  },
+  createNote: async () => {
+    try {
+      const repo = getDocumentsRepo();
+      const document = await repo.create({
+        type: DOCUMENT_TYPE_NOTE,
+        body: "",
+        meta: {},
+      });
+      set((state) => ({
+        notesById: { ...state.notesById, [document.id]: document },
+        notes: upsertListItem(state.notes, toListItem(document)),
+      }));
+      return document.id;
+    } catch (error) {
+      console.error("Failed to create note", error);
+      return null;
+    }
+  },
+  updateNoteBody: async (id, body) => {
+    if (typeof id !== "string") return;
+    const now = Date.now();
+    set((state) => {
+      const existing = state.notesById[id];
+      const updated = existing
+        ? { ...existing, body, updatedAt: now }
+        : {
+            id,
+            type: DOCUMENT_TYPE_NOTE,
+            title: null,
+            body,
+            meta: {},
+            createdAt: now,
+            updatedAt: now,
+            deletedAt: null,
+          };
+      return {
+        notesById: { ...state.notesById, [id]: updated },
+        notes: upsertListItem(state.notes, toListItem(updated)),
+      };
     });
+    try {
+      const repo = getDocumentsRepo();
+      await repo.update(id, { body });
+    } catch (error) {
+      console.error("Failed to update note body", error);
+    }
+  },
+  updateNote: async (id, updates) => {
+    if (typeof id !== "string" || !updates) return;
+    const now = Date.now();
+    set((state) => {
+      const existing = state.notesById[id];
+      if (!existing) return state;
+      const updated = { ...existing, ...updates, updatedAt: now };
+      return {
+        notesById: { ...state.notesById, [id]: updated },
+        notes: upsertListItem(state.notes, toListItem(updated)),
+      };
+    });
+    try {
+      const repo = getDocumentsRepo();
+      await repo.update(id, updates);
+    } catch (error) {
+      console.error("Failed to update note", error);
+    }
   },
 }));

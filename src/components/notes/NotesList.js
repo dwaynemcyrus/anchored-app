@@ -13,14 +13,16 @@ export default function NotesList() {
   const createNote = useNotesStore((state) => state.createNote);
 
   useEffect(() => {
-    hydrate();
+    void hydrate();
   }, [hydrate]);
 
   const sortedNotes = useMemo(() => notes, [notes]);
 
-  const handleCreate = () => {
-    const id = createNote();
-    router.push(`/knowledge/notes/${id}`);
+  const handleCreate = async () => {
+    const id = await createNote();
+    if (id) {
+      router.push(`/knowledge/notes/${id}`);
+    }
   };
 
   return (

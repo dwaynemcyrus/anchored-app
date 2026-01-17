@@ -14,21 +14,22 @@ const SAVING_LABEL = "Saving...";
 
 export default function NoteEditor({ noteId }) {
   const hydrate = useNotesStore((state) => state.hydrate);
+  const loadNote = useNotesStore((state) => state.loadNote);
   const hasHydrated = useNotesStore((state) => state.hasHydrated);
   const updateNoteBody = useNotesStore((state) => state.updateNoteBody);
-  const note = useNotesStore((state) =>
-    state.notes.find((item) => item.id === noteId)
-  );
+  const note = useNotesStore((state) => state.notesById[noteId]);
 
   const editorHostRef = useRef(null);
   const editorViewRef = useRef(null);
   const lastBodyRef = useRef("");
   const saveTimerRef = useRef(null);
+  const updateTimerRef = useRef(null);
 
   const [saveStatus, setSaveStatus] = useState(SAVED_LABEL);
+  const [loadedNoteId, setLoadedNoteId] = useState(null);
 
   useEffect(() => {
-    hydrate();
+    void hydrate();
   }, [hydrate]);
 
   useEffect(() => {
@@ -45,8 +46,23 @@ export default function NoteEditor({ noteId }) {
       if (saveTimerRef.current) {
         window.clearTimeout(saveTimerRef.current);
       }
+      if (updateTimerRef.current) {
+        window.clearTimeout(updateTimerRef.current);
+      }
     };
   }, []);
+
+  useEffect(() => {
+    let isActive = true;
+    loadNote(noteId).then(() => {
+      if (isActive) {
+        setLoadedNoteId(noteId);
+      }
+    });
+    return () => {
+      isActive = false;
+    };
+  }, [loadNote, noteId]);
 
   const scheduleSavedState = () => {
     setSaveStatus(SAVING_LABEL);
@@ -70,7 +86,13 @@ export default function NoteEditor({ noteId }) {
       const nextBody = update.state.doc.toString();
       if (nextBody === lastBodyRef.current) return;
       lastBodyRef.current = nextBody;
-      updateNoteBody(note.id, nextBody);
+      if (updateTimerRef.current) {
+        window.clearTimeout(updateTimerRef.current);
+      }
+      updateTimerRef.current = window.setTimeout(() => {
+        updateNoteBody(note.id, nextBody);
+        updateTimerRef.current = null;
+      }, 500);
       scheduleSavedState();
     });
 
@@ -101,7 +123,7 @@ export default function NoteEditor({ noteId }) {
 
   const title = useMemo(() => (note ? getDerivedTitle(note) : ""), [note]);
 
-  if (!note && hasHydrated) {
+  if (!note && hasHydrated && loadedNoteId === noteId) {
     return (
       <div className={styles.page}>
         <main className={styles.main}>
