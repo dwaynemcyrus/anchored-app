@@ -54,6 +54,7 @@ export default function Shell({ children }) {
   const pathname = usePathname();
   const title = routes[pathname] ?? "";
   const overrideTitle = useShellHeaderStore((state) => state.title);
+  const headerStatus = useShellHeaderStore((state) => state.status);
   const headerTitle = overrideTitle ?? title;
   const isHome = pathname === "/";
   const [captureOpen, setCaptureOpen] = useState(false);
@@ -362,6 +363,9 @@ export default function Shell({ children }) {
           <div className={styles.headerTitle}>{headerTitle}</div>
         </div>
         <div className={styles.headerActions}>
+          {headerStatus ? (
+            <div className={styles.headerStatus}>{headerStatus}</div>
+          ) : null}
           <div className={styles.headerButton} aria-hidden="true" />
         </div>
       </header>

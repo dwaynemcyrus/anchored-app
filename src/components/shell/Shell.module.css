@@ -44,6 +44,14 @@
   min-width: 48px;
 }
 
+.headerStatus {
+  font-size: 12px;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: #6a5f54;
+  white-space: nowrap;
+}
+
 .headerButton {
   appearance: none;
   border: 1px solid rgba(20, 17, 15, 0.15);

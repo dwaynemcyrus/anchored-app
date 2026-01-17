@@ -21,6 +21,8 @@ export default function NoteEditor({ noteId }) {
   const note = useNotesStore((state) => state.notesById[noteId]);
   const setHeaderTitle = useShellHeaderStore((state) => state.setTitle);
   const clearHeaderTitle = useShellHeaderStore((state) => state.clearTitle);
+  const setHeaderStatus = useShellHeaderStore((state) => state.setStatus);
+  const clearHeaderStatus = useShellHeaderStore((state) => state.clearStatus);
 
   const editorHostRef = useRef(null);
   const editorViewRef = useRef(null);
@@ -136,6 +138,13 @@ export default function NoteEditor({ noteId }) {
       clearHeaderTitle();
     };
   }, [note, title, setHeaderTitle, clearHeaderTitle]);
+
+  useEffect(() => {
+    setHeaderStatus(saveStatus);
+    return () => {
+      clearHeaderStatus();
+    };
+  }, [saveStatus, setHeaderStatus, clearHeaderStatus]);
 
   if (!note && hasHydrated && loadedNoteId === noteId) {
     return (
