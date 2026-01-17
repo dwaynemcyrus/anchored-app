@@ -68,6 +68,7 @@
 
 :global(.cm-editor) {
   height: 100%;
+  font-family: var(--font-atten);
 }
 
 :global(.cm-scroller) {
@@ -75,6 +76,10 @@
   font-size: max(16px, var(--editor-font-size));
   line-height: 1.7;
   padding: 12px 14px 24px;
+}
+
+:global(.cm-content) {
+  font-family: var(--font-atten);
 }
 
 :global(.cm-focused) {
