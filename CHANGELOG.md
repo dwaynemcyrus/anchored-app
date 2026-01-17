@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.2.2 - 2026-01-17
+- Add editor focus mode and font size toggles with local persistence.
+- Implement paragraph focus dimming and typewriter scroll behavior.
+- Refine editor typography, width, and save-status timing.
+- Prevent iOS focus zoom by enforcing a 16px minimum editor font size.
+- Document fixed typewriter scroll offset limitation.
+
 ## 0.2.1 - 2026-01-17
 - Add documents contract helpers, IndexedDB bootstrap, and repo interface.
 - Implement IndexedDB documents repo with legacy localStorage migration.
