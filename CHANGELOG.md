@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+- Add documents contract helpers, IndexedDB bootstrap, and repo interface.
+- Implement IndexedDB documents repo with legacy localStorage migration.
+- Refactor notes store/UI to use repo-backed persistence and on-demand loading.
+- Remove legacy localStorage persistence module.
+- Avoid flashing new notes in the list before navigation.
+
 ## 0.2.0 - 2026-01-16
 - Add local notes store with debounced localStorage persistence and derived title rules.
 - Ship Notes list with empty state and new-note flow at `/knowledge/notes`.

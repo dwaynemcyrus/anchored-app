@@ -61,7 +61,8 @@ export const useNotesStore = create((set, get) => ({
       return null;
     }
   },
-  createNote: async () => {
+  createNote: async (options = {}) => {
+    const { suppressListUpdate = false } = options;
     try {
       const repo = getDocumentsRepo();
       const document = await repo.create({
@@ -71,7 +72,9 @@ export const useNotesStore = create((set, get) => ({
       });
       set((state) => ({
         notesById: { ...state.notesById, [document.id]: document },
-        notes: upsertListItem(state.notes, toListItem(document)),
+        notes: suppressListUpdate
+          ? state.notes
+          : upsertListItem(state.notes, toListItem(document)),
       }));
       return document.id;
     } catch (error) {

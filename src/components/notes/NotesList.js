@@ -19,7 +19,7 @@ export default function NotesList() {
   const sortedNotes = useMemo(() => notes, [notes]);
 
   const handleCreate = async () => {
-    const id = await createNote();
+    const id = await createNote({ suppressListUpdate: true });
     if (id) {
       router.push(`/knowledge/notes/${id}`);
     }
