@@ -8,6 +8,7 @@ import { useShellHeaderStore } from "../../store/shellHeaderStore";
 import { useEditorSettingsStore } from "../../store/editorSettingsStore";
 import styles from "./Shell.module.css";
 import layout from "./AppShell.module.css";
+import useVisualViewportInsets from "../../hooks/useVisualViewportInsets";
 
 const routes = {
   "/": "Home",
@@ -130,6 +131,8 @@ export default function Shell({ children }) {
   const longPressTriggeredRef = useRef(false);
   const fabRef = useRef(null);
   const pointerStartRef = useRef({ x: 0, y: 0 });
+  const shellRootRef = useRef(null);
+  const contentScrollerRef = useRef(null);
 
   const targets = useMemo(
     () => [
@@ -154,6 +157,8 @@ export default function Shell({ children }) {
   useEffect(() => {
     hydrateEditorSettings();
   }, [hydrateEditorSettings]);
+
+  useVisualViewportInsets(shellRootRef, contentScrollerRef);
 
   useEffect(() => {
     if (!menuOpen) return;
@@ -402,9 +407,13 @@ export default function Shell({ children }) {
   };
 
   return (
-    <div className={layout.shell} data-shell-root>
+    <div className={layout.shell} data-shell-root ref={shellRootRef}>
       <div className={layout.contentViewport} data-content-viewport>
-        <main className={layout.contentScroller} data-content-scroller>
+        <main
+          className={layout.contentScroller}
+          data-content-scroller
+          ref={contentScrollerRef}
+        >
           {children}
         </main>
       </div>
