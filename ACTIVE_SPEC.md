@@ -1,4 +1,4 @@
-Active build spec: docs/builds/shell-overlay-layer-spec.md
+Active build spec: docs/builds/local-search-v0.md
 
 Instruction:
 - Follow AGENT.md and SCOPE.md.
