@@ -71,6 +71,7 @@
   font-family: var(--font-atten);
   font-size: max(16px, var(--editor-font-size));
   line-height: 1.7;
+  padding-bottom: calc(120px + var(--shell-keyboard-inset) + env(safe-area-inset-bottom));
 }
 
 :global(.cm-content) {
