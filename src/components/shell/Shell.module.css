@@ -79,6 +79,7 @@
 .headerButtonActive {
   border-color: rgba(20, 17, 15, 0.4);
   background: #14110f;
+  background-color: red;
   color: #f6f2ea;
 }
 
