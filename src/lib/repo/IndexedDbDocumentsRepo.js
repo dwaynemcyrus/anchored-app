@@ -156,4 +156,30 @@ export class IndexedDbDocumentsRepo {
       request.onerror = () => reject(request.error);
     });
   }
+
+  async getSearchableDocs(options = {}) {
+    const { type } = options;
+    const db = await getDb();
+
+    return new Promise((resolve, reject) => {
+      const transaction = db.transaction(DOCUMENTS_STORE, "readonly");
+      const store = transaction.objectStore(DOCUMENTS_STORE);
+      const source = type ? store.index("type") : store;
+      const request = type ? source.getAll(type) : source.getAll();
+
+      request.onsuccess = () => {
+        const items = Array.isArray(request.result) ? request.result : [];
+        const docs = items
+          .filter((doc) => doc.deletedAt == null)
+          .map((doc) => ({
+            id: doc.id,
+            title: deriveDocumentTitle(doc),
+            body: doc.body || "",
+            updatedAt: doc.updatedAt,
+          }));
+        resolve(docs);
+      };
+      request.onerror = () => reject(request.error);
+    });
+  }
 }
