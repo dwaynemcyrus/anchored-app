@@ -19,21 +19,6 @@
   scrollbar-gutter: stable;
 }
 
-.contentInner {
-  min-height: 100%;
-  box-sizing: border-box;
-  padding-top: calc(var(--shell-header-h) + env(safe-area-inset-top));
-  padding-bottom: calc(
-    var(--shell-fab-safe) + var(--shell-keyboard-inset) + env(safe-area-inset-bottom)
-  );
-}
-
-.contentInner:empty {
-  min-height: 0;
-  padding-top: 0;
-  padding-bottom: 0;
-}
-
 .overlayLayer {
   position: absolute;
   inset: 0;
