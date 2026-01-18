@@ -1,6 +1,6 @@
 .shell {
-  height: 100dvh;
   height: 100vh;
+  height: 100dvh;
   display: block;
   position: relative;
   overflow: hidden;
@@ -17,6 +17,8 @@
   -webkit-overflow-scrolling: touch;
   overscroll-behavior: contain;
   scrollbar-gutter: stable;
+  padding-top: calc(var(--shell-header-h) + env(safe-area-inset-top));
+  padding-bottom: calc(var(--shell-fab-safe) + var(--shell-keyboard-inset) + env(safe-area-inset-bottom));
 }
 
 .overlayLayer {

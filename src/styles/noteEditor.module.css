@@ -1,15 +1,13 @@
 .page {
-  min-height: 100vh;
   background: #f6f2ea;
   color: #14110f;
   font-family: var(--font-atten);
 }
 
 .main {
-  min-height: 100vh;
   max-width: 100%;
   margin: 0 auto;
-  padding: 104px 24px 120px;
+  padding: 24px;
   display: flex;
   flex-direction: column;
   gap: 16px;
@@ -109,7 +107,7 @@
 
 @media (max-width: 600px) {
   .main {
-    padding: 92px 18px 120px;
+    padding: 18px;
   }
   .editorWrap {
     max-width: 100%;

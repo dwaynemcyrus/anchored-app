@@ -1,5 +1,4 @@
 .page {
-  min-height: 100vh;
   background: #f6f2ea;
   color: #14110f;
   font-family: var(--font-atten);
@@ -8,7 +7,7 @@
 .main {
   max-width: 720px;
   margin: 0 auto;
-  padding: 120px 24px 80px;
+  padding: 24px;
   display: flex;
   flex-direction: column;
   gap: 24px;
@@ -29,7 +28,7 @@
 
 @media (max-width: 600px) {
   .main {
-    padding: 96px 20px 72px;
+    padding: 20px;
   }
 
   .title {
