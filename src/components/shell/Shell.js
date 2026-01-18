@@ -414,7 +414,7 @@ export default function Shell({ children }) {
           data-content-scroller
           ref={contentScrollerRef}
         >
-          {children}
+          <div className={layout.contentInner}>{children}</div>
         </main>
       </div>
       <div className={layout.overlayLayer} data-overlay-layer aria-hidden="false">
