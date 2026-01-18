@@ -240,7 +240,9 @@ export default function NoteEditor({ noteId }) {
     editorViewRef.current.scrollDOM.addEventListener("scroll", handleManualScroll, {
       passive: true,
     });
-    editorViewRef.current.focus();
+    if (note.body.trim().length === 0) {
+      editorViewRef.current.focus();
+    }
 
     return () => {
       if (editorViewRef.current) {
