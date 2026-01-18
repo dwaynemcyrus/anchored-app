@@ -22,8 +22,22 @@ export default function useVisualViewportInsets(shellRootRef, scrollerRef) {
       const insetDelta = keyboardInset - lastInsetRef.current;
       if (insetDelta > 40 && scrollerRef?.current) {
         const active = document.activeElement;
-        if (active && scrollerRef.current.contains(active)) {
-          active.scrollIntoView({ block: "center", behavior: "smooth" });
+        const scroller = scrollerRef.current;
+        if (active && scroller.contains(active)) {
+          const rect = active.getBoundingClientRect();
+          const headerHeight =
+            parseFloat(getComputedStyle(shellRoot).getPropertyValue("--shell-header-h")) || 0;
+          const visibleTop = headerHeight + 8;
+          const visibleBottom = visualHeight - 8;
+          let delta = 0;
+          if (rect.top < visibleTop) {
+            delta = rect.top - visibleTop;
+          } else if (rect.bottom > visibleBottom) {
+            delta = rect.bottom - visibleBottom;
+          }
+          if (delta !== 0) {
+            scroller.scrollBy({ top: delta, behavior: "smooth" });
+          }
         }
       }
 
@@ -54,8 +68,20 @@ export default function useVisualViewportInsets(shellRootRef, scrollerRef) {
       requestAnimationFrame(() => {
         const rect = target.getBoundingClientRect();
         const visualHeight = window.visualViewport?.height ?? window.innerHeight;
-        if (rect.bottom > visualHeight - 8) {
-          target.scrollIntoView({ block: "center", behavior: "smooth" });
+        const headerHeight =
+          parseFloat(
+            getComputedStyle(document.documentElement).getPropertyValue("--shell-header-h")
+          ) || 0;
+        const visibleTop = headerHeight + 8;
+        const visibleBottom = visualHeight - 8;
+        let delta = 0;
+        if (rect.top < visibleTop) {
+          delta = rect.top - visibleTop;
+        } else if (rect.bottom > visibleBottom) {
+          delta = rect.bottom - visibleBottom;
+        }
+        if (delta !== 0) {
+          scroller.scrollBy({ top: delta, behavior: "smooth" });
         }
       });
     };
