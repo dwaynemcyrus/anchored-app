@@ -51,11 +51,16 @@
   outline-offset: 2px;
 }
 
-.body {
+.results {
   flex: 1;
   border-radius: 18px;
   border: 1px dashed rgba(20, 17, 15, 0.12);
   background: #fcfbf8;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  overflow: auto;
 }
 
 .actions {
@@ -86,6 +91,67 @@
 .buttonDisabled {
   opacity: 0.5;
   cursor: not-allowed;
+}
+
+.resultsHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+}
+
+.sectionTitle {
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #5a4e41;
+}
+
+.helper {
+  font-size: 12px;
+  color: #7b6f61;
+}
+
+.emptyState {
+  font-size: 14px;
+  color: #7b6f61;
+  padding: 8px;
+}
+
+.list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.listItem {
+  margin: 0;
+  padding: 0;
+}
+
+.listButton {
+  width: 100%;
+  text-align: left;
+  border-radius: 12px;
+  border: 1px solid transparent;
+  background: #ffffff;
+  color: #14110f;
+  padding: 10px 12px;
+  font-size: 15px;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+}
+
+.listButton:hover {
+  border-color: rgba(20, 17, 15, 0.2);
+}
+
+.listButton:focus-visible {
+  outline: 2px solid #14110f;
+  outline-offset: 2px;
 }
 
 .toggle {

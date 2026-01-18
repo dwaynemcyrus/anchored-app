@@ -109,7 +109,7 @@ export default function NotesList() {
   }, []);
 
   const handleCreate = async () => {
-    const id = await createNote({ suppressListUpdate: true });
+    const id = await createNote({}, { suppressListUpdate: true });
     if (id) {
       router.push(`/knowledge/notes/${id}`);
     }

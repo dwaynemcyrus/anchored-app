@@ -6,6 +6,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import QuickCaptureModal from "./QuickCaptureModal";
 import { useShellHeaderStore } from "../../store/shellHeaderStore";
 import { useEditorSettingsStore } from "../../store/editorSettingsStore";
+import { useNotesStore } from "../../store/notesStore";
 import styles from "./Shell.module.css";
 import layout from "./AppShell.module.css";
 import useVisualViewportInsets from "../../hooks/useVisualViewportInsets";
@@ -109,6 +110,7 @@ export default function Shell({ children }) {
   const fontSize = useEditorSettingsStore((state) => state.fontSize);
   const toggleFocusMode = useEditorSettingsStore((state) => state.toggleFocusMode);
   const cycleFontSize = useEditorSettingsStore((state) => state.cycleFontSize);
+  const createNote = useNotesStore((state) => state.createNote);
   const isHome = pathname === "/";
   const isNoteEditorRoute =
     typeof pathname === "string" &&
@@ -119,7 +121,6 @@ export default function Shell({ children }) {
   const [captureValue, setCaptureValue] = useState("");
   const [captureShouldFocus, setCaptureShouldFocus] = useState(false);
   const [rapidEnabled, setRapidEnabled] = useState(false);
-  const capturesRef = useRef([]);
   const inputRef = useRef(null);
   const [dragActive, setDragActive] = useState(false);
   const [dragPosition, setDragPosition] = useState({ x: 0, y: 0 });
@@ -231,10 +232,13 @@ export default function Shell({ children }) {
     setCaptureShouldFocus(false);
   };
 
-  const handleSaveCapture = () => {
+  const handleSaveCapture = async () => {
     const trimmed = captureValue.trim();
-    if (!trimmed) return;
-    capturesRef.current = [...capturesRef.current, trimmed];
+    const body = trimmed ? `${trimmed}\n\n` : "\n";
+    const id = await createNote({ body, title: null });
+    if (id) {
+      router.push(`/knowledge/notes/${id}`);
+    }
     if (rapidEnabled) {
       setCaptureValue("");
       setCaptureShouldFocus(true);

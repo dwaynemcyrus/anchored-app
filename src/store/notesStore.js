@@ -61,14 +61,16 @@ export const useNotesStore = create((set, get) => ({
       return null;
     }
   },
-  createNote: async (options = {}) => {
+  createNote: async (input = {}, options = {}) => {
     const { suppressListUpdate = false } = options;
+    const { body = "", title = null, meta = {} } = input;
     try {
       const repo = getDocumentsRepo();
       const document = await repo.create({
         type: DOCUMENT_TYPE_NOTE,
-        body: "",
-        meta: {},
+        body,
+        title,
+        meta,
       });
       set((state) => ({
         notesById: { ...state.notesById, [document.id]: document },
