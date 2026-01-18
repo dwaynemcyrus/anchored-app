@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.4.0 - 2026-01-18
+- Rebuild Quick Capture as a full-screen action center with 2-line input and top actions.
+- Create notes from capture input and route directly to the editor.
+- Add recent notes (3) and debounced search results with title-only rows.
+- Add keyboard selection mode with listbox semantics and quick open.
+- Add archive/trash match counts with session archive toggle.
+- Extend documents with `archivedAt` and IndexedDB support (schema + index).
+- Fix FAB touch warning from passive listeners.
+
 ## 0.3.0 - 2026-01-18
 - Add local search in Notes list with URL-persisted queries.
 - Rank results by title/body matches with generated snippets.
