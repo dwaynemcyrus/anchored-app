@@ -10,6 +10,7 @@ const toListItem = (document) => ({
   type: document.type,
   title: deriveDocumentTitle(document),
   updatedAt: document.updatedAt,
+  archivedAt: document.archivedAt ?? null,
 });
 
 const upsertListItem = (notes, item) => {
@@ -71,6 +72,7 @@ export const useNotesStore = create((set, get) => ({
         body,
         title,
         meta,
+        archivedAt: input.archivedAt ?? null,
       });
       set((state) => ({
         notesById: { ...state.notesById, [document.id]: document },
@@ -100,6 +102,7 @@ export const useNotesStore = create((set, get) => ({
             createdAt: now,
             updatedAt: now,
             deletedAt: null,
+            archivedAt: null,
           };
       return {
         notesById: { ...state.notesById, [id]: updated },

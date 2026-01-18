@@ -113,6 +113,26 @@
   color: #7b6f61;
 }
 
+.matchLine {
+  font-size: 13px;
+  color: #5a4e41;
+}
+
+.matchToggle {
+  border: none;
+  background: none;
+  color: #14110f;
+  text-decoration: underline;
+  padding: 0;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.matchToggle:focus-visible {
+  outline: 2px solid #14110f;
+  outline-offset: 2px;
+}
+
 .emptyState {
   font-size: 14px;
   color: #7b6f61;
@@ -148,6 +168,11 @@
 
 .listButton:hover {
   border-color: rgba(20, 17, 15, 0.2);
+}
+
+.listButtonSelected {
+  border-color: #14110f;
+  background: #f6f2ea;
 }
 
 .listButton:focus-visible {

@@ -30,7 +30,11 @@ export default function QuickCaptureModal({
   const hydrate = useNotesStore((state) => state.hydrate);
   const [searchResults, setSearchResults] = useState([]);
   const [isSearching, setIsSearching] = useState(false);
+  const [includeArchived, setIncludeArchived] = useState(false);
+  const [selectionMode, setSelectionMode] = useState(false);
+  const [selectedIndex, setSelectedIndex] = useState(0);
   const searchDebounceRef = useRef(null);
+  const listRef = useRef(null);
 
   useLayoutEffect(() => {
     if (!isOpen || !inputRef?.current || !shouldFocus) return;
@@ -61,6 +65,9 @@ export default function QuickCaptureModal({
     if (!isOpen) {
       setSearchResults([]);
       setIsSearching(false);
+      setIncludeArchived(false);
+      setSelectionMode(false);
+      setSelectedIndex(0);
       return;
     }
     if (searchDebounceRef.current) {
@@ -78,9 +85,13 @@ export default function QuickCaptureModal({
     searchDebounceRef.current = setTimeout(async () => {
       try {
         const repo = getDocumentsRepo();
-        const docs = await repo.getSearchableDocs({ type: DOCUMENT_TYPE_NOTE });
+        const docs = await repo.getSearchableDocs({
+          type: DOCUMENT_TYPE_NOTE,
+          includeDeleted: true,
+          includeArchived: true,
+        });
         const results = searchDocs(docs, trimmedQuery);
-        setSearchResults(results.slice(0, RESULTS_LIMIT));
+        setSearchResults(results);
       } catch (error) {
         console.error("Quick capture search failed:", error);
         setSearchResults([]);
@@ -98,13 +109,47 @@ export default function QuickCaptureModal({
 
   const trimmedValue = value.trim();
   const isSearchMode = trimmedValue.length >= 2;
-  const recentNotes = useMemo(() => notes.slice(0, RECENTS_LIMIT), [notes]);
-  const displayList = isSearchMode ? searchResults : recentNotes;
+  const displayRecents = useMemo(() => {
+    const filtered = includeArchived
+      ? notes
+      : notes.filter((note) => note.archivedAt == null);
+    return filtered.slice(0, RECENTS_LIMIT);
+  }, [includeArchived, notes]);
+  const visibleSearchResults = useMemo(() => {
+    const filtered = searchResults.filter((result) => result.deletedAt == null);
+    const visible = filtered.filter((result) =>
+      includeArchived ? true : result.archivedAt == null
+    );
+    return visible.slice(0, RESULTS_LIMIT);
+  }, [includeArchived, searchResults]);
+  const displayList = isSearchMode ? visibleSearchResults : displayRecents;
+
+  const trashedMatchCount = useMemo(
+    () => searchResults.filter((result) => result.deletedAt != null).length,
+    [searchResults]
+  );
+  const archivedMatchCount = useMemo(
+    () =>
+      searchResults.filter(
+        (result) => result.deletedAt == null && result.archivedAt != null
+      ).length,
+    [searchResults]
+  );
+  const shouldShowArchiveToggle =
+    isSearchMode && (archivedMatchCount > 0 || includeArchived);
 
   const handleKeyDown = (event) => {
     if (event.key === "Enter" && !event.shiftKey) {
       event.preventDefault();
       onSave();
+    }
+    if (event.key === "Tab" && displayList.length > 0) {
+      event.preventDefault();
+      setSelectionMode(true);
+      setSelectedIndex(0);
+      requestAnimationFrame(() => {
+        listRef.current?.focus();
+      });
     }
     if (event.key === "Escape") {
       event.preventDefault();
@@ -120,6 +165,48 @@ export default function QuickCaptureModal({
     },
     [router, onCancel]
   );
+
+  const handleListKeyDown = (event) => {
+    if (!selectionMode) return;
+    if (event.key === "ArrowDown") {
+      event.preventDefault();
+      setSelectedIndex((prev) =>
+        displayList.length === 0 ? 0 : (prev + 1) % displayList.length
+      );
+    }
+    if (event.key === "ArrowUp") {
+      event.preventDefault();
+      setSelectedIndex((prev) =>
+        displayList.length === 0
+          ? 0
+          : (prev - 1 + displayList.length) % displayList.length
+      );
+    }
+    if (event.key === "Enter") {
+      event.preventDefault();
+      const selected = displayList[selectedIndex];
+      if (selected) {
+        handleOpenNote(selected.id);
+      }
+    }
+    if (event.key === "Escape" || (event.key === "Tab" && event.ctrlKey)) {
+      event.preventDefault();
+      setSelectionMode(false);
+      inputRef?.current?.focus();
+    }
+  };
+
+  useEffect(() => {
+    if (!selectionMode) return;
+    if (displayList.length === 0) {
+      setSelectionMode(false);
+      setSelectedIndex(0);
+      return;
+    }
+    if (selectedIndex > displayList.length - 1) {
+      setSelectedIndex(0);
+    }
+  }, [displayList.length, selectedIndex, selectionMode]);
 
   const helperText =
     !isSearchMode && trimmedValue.length > 0 ? "Type 2+ characters to search" : "";
@@ -189,6 +276,21 @@ export default function QuickCaptureModal({
             </div>
             {helperText ? <div className={styles.helper}>{helperText}</div> : null}
           </div>
+          {isSearchMode && trashedMatchCount > 0 ? (
+            <div className={styles.matchLine}>Trash matches: {trashedMatchCount}</div>
+          ) : null}
+          {shouldShowArchiveToggle ? (
+            <div className={styles.matchLine}>
+              Archived matches: {archivedMatchCount}{" "}
+              <button
+                type="button"
+                className={styles.matchToggle}
+                onClick={() => setIncludeArchived((prev) => !prev)}
+              >
+                {includeArchived ? "Hide" : "Show"}
+              </button>
+            </div>
+          ) : null}
           {displayList.length === 0 ? (
             <div className={styles.emptyState}>
               {isSearchMode
@@ -198,18 +300,40 @@ export default function QuickCaptureModal({
                 : "No recent notes yet"}
             </div>
           ) : (
-            <ul className={styles.list} aria-label="Quick capture results">
-              {displayList.map((item) => (
-                <li key={item.id} className={styles.listItem}>
-                  <button
-                    type="button"
-                    className={styles.listButton}
-                    onClick={() => handleOpenNote(item.id)}
-                  >
-                    {item.title || "Untitled"}
-                  </button>
-                </li>
-              ))}
+            <ul
+              className={styles.list}
+              role="listbox"
+              aria-label="Quick capture results"
+              aria-activedescendant={
+                selectionMode && displayList[selectedIndex]
+                  ? `quick-capture-option-${displayList[selectedIndex].id}`
+                  : undefined
+              }
+              tabIndex={selectionMode ? 0 : -1}
+              ref={listRef}
+              onKeyDown={handleListKeyDown}
+              onBlur={() => setSelectionMode(false)}
+            >
+              {displayList.map((item, index) => {
+                const isSelected = selectionMode && index === selectedIndex;
+                return (
+                  <li key={item.id} className={styles.listItem}>
+                    <button
+                      type="button"
+                      id={`quick-capture-option-${item.id}`}
+                      role="option"
+                      aria-selected={isSelected}
+                      className={`${styles.listButton} ${
+                        isSelected ? styles.listButtonSelected : ""
+                      }`}
+                      tabIndex={-1}
+                      onClick={() => handleOpenNote(item.id)}
+                    >
+                      {item.title || "Untitled"}
+                    </button>
+                  </li>
+                );
+              })}
             </ul>
           )}
         </div>

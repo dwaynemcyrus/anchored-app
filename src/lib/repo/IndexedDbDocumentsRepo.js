@@ -41,6 +41,7 @@ function toListItem(document) {
     type: document.type,
     title: deriveDocumentTitle(document),
     updatedAt: document.updatedAt,
+    archivedAt: document.archivedAt ?? null,
   };
 }
 
@@ -50,7 +51,7 @@ async function getDb() {
 
 export class IndexedDbDocumentsRepo {
   async list(options = {}) {
-    const { type, limit = DEFAULT_PAGE_LIMIT, offset = 0 } = options;
+    const { type, limit = DEFAULT_PAGE_LIMIT, offset = 0, includeArchived = true } = options;
     const db = await getDb();
 
     return new Promise((resolve, reject) => {
@@ -63,6 +64,9 @@ export class IndexedDbDocumentsRepo {
         const items = Array.isArray(request.result) ? request.result : [];
         const filtered = items
           .filter((document) => document.deletedAt == null)
+          .filter((document) =>
+            includeArchived ? true : document.archivedAt == null
+          )
           .sort((a, b) => b.updatedAt - a.updatedAt);
         resolve(filtered.slice(offset, offset + limit).map(toListItem));
       };
@@ -102,6 +106,7 @@ export class IndexedDbDocumentsRepo {
       createdAt: now,
       updatedAt: now,
       deletedAt: null,
+      archivedAt: input.archivedAt ?? null,
     };
 
     const db = await getDb();
@@ -158,7 +163,7 @@ export class IndexedDbDocumentsRepo {
   }
 
   async getSearchableDocs(options = {}) {
-    const { type } = options;
+    const { type, includeDeleted = false, includeArchived = true } = options;
     const db = await getDb();
 
     return new Promise((resolve, reject) => {
@@ -170,12 +175,15 @@ export class IndexedDbDocumentsRepo {
       request.onsuccess = () => {
         const items = Array.isArray(request.result) ? request.result : [];
         const docs = items
-          .filter((doc) => doc.deletedAt == null)
+          .filter((doc) => (includeDeleted ? true : doc.deletedAt == null))
+          .filter((doc) => (includeArchived ? true : doc.archivedAt == null))
           .map((doc) => ({
             id: doc.id,
             title: deriveDocumentTitle(doc),
             body: doc.body || "",
             updatedAt: doc.updatedAt,
+            deletedAt: doc.deletedAt ?? null,
+            archivedAt: doc.archivedAt ?? null,
           }));
         resolve(docs);
       };

@@ -8,6 +8,7 @@
  * @property {number} createdAt
  * @property {number} updatedAt
  * @property {number | null | undefined} deletedAt
+ * @property {number | null | undefined} archivedAt
  */
 
 export const DOCUMENT_TYPE_NOTE = "note";

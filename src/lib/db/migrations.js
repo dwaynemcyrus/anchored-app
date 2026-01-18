@@ -44,6 +44,7 @@ function normalizeLegacyNote(note) {
     createdAt,
     updatedAt,
     deletedAt: null,
+    archivedAt: null,
   };
 }
 
@@ -65,17 +66,17 @@ async function insertDocuments(db, documents) {
 export async function migrateLegacyNotes() {
   if (typeof window === "undefined") return;
   const currentVersion = getSchemaVersion();
-  if (currentVersion >= 1) return;
+  if (currentVersion >= 2) return;
 
   const legacyNotes = readLegacyNotes();
   if (legacyNotes.length === 0) {
-    setSchemaVersion(1);
+    setSchemaVersion(2);
     return;
   }
 
   const documents = legacyNotes.map(normalizeLegacyNote).filter(Boolean);
   if (documents.length === 0) {
-    setSchemaVersion(1);
+    setSchemaVersion(2);
     return;
   }
 
@@ -85,7 +86,7 @@ export async function migrateLegacyNotes() {
 
     window.localStorage.setItem(NOTES_BACKUP_KEY, JSON.stringify(legacyNotes));
     window.localStorage.removeItem(NOTES_STORAGE_KEY);
-    setSchemaVersion(1);
+    setSchemaVersion(2);
   } catch (error) {
     console.error("Failed to migrate legacy notes", error);
   }
