@@ -51,7 +51,13 @@ async function getDb() {
 
 export class IndexedDbDocumentsRepo {
   async list(options = {}) {
-    const { type, limit = DEFAULT_PAGE_LIMIT, offset = 0, includeArchived = true } = options;
+    const {
+      type,
+      limit = DEFAULT_PAGE_LIMIT,
+      offset = 0,
+      includeArchived = false,
+      includeTrashed = false,
+    } = options;
     const db = await getDb();
 
     return new Promise((resolve, reject) => {
@@ -63,10 +69,15 @@ export class IndexedDbDocumentsRepo {
       request.onsuccess = () => {
         const items = Array.isArray(request.result) ? request.result : [];
         const filtered = items
-          .filter((document) => document.deletedAt == null)
-          .filter((document) =>
-            includeArchived ? true : document.archivedAt == null
-          )
+          .filter((document) => {
+            if (document.deletedAt != null) {
+              return includeTrashed;
+            }
+            if (!includeArchived && document.archivedAt != null) {
+              return false;
+            }
+            return true;
+          })
           .sort((a, b) => b.updatedAt - a.updatedAt);
         resolve(filtered.slice(offset, offset + limit).map(toListItem));
       };
@@ -83,12 +94,7 @@ export class IndexedDbDocumentsRepo {
       const request = store.get(id);
 
       request.onsuccess = () => {
-        const document = request.result;
-        if (!document || document.deletedAt != null) {
-          resolve(null);
-          return;
-        }
-        resolve(document);
+        resolve(request.result || null);
       };
       request.onerror = () => reject(request.error);
     });
@@ -149,6 +155,126 @@ export class IndexedDbDocumentsRepo {
     });
   }
 
+  async trash(id) {
+    ensureId(id);
+    const db = await getDb();
+    return new Promise((resolve, reject) => {
+      const transaction = db.transaction(DOCUMENTS_STORE, "readwrite");
+      const store = transaction.objectStore(DOCUMENTS_STORE);
+      const getRequest = store.get(id);
+
+      getRequest.onsuccess = () => {
+        const existing = getRequest.result;
+        if (!existing) {
+          reject(new Error("Document not found"));
+          return;
+        }
+        const now = Date.now();
+        const updated = {
+          ...existing,
+          deletedAt: now,
+          updatedAt: now,
+        };
+        const putRequest = store.put(updated);
+        putRequest.onsuccess = () => resolve();
+        putRequest.onerror = () => reject(putRequest.error);
+      };
+      getRequest.onerror = () => reject(getRequest.error);
+    });
+  }
+
+  async restore(id) {
+    ensureId(id);
+    const db = await getDb();
+    return new Promise((resolve, reject) => {
+      const transaction = db.transaction(DOCUMENTS_STORE, "readwrite");
+      const store = transaction.objectStore(DOCUMENTS_STORE);
+      const getRequest = store.get(id);
+
+      getRequest.onsuccess = () => {
+        const existing = getRequest.result;
+        if (!existing) {
+          reject(new Error("Document not found"));
+          return;
+        }
+        const now = Date.now();
+        const updated = {
+          ...existing,
+          deletedAt: null,
+          updatedAt: now,
+        };
+        const putRequest = store.put(updated);
+        putRequest.onsuccess = () => resolve();
+        putRequest.onerror = () => reject(putRequest.error);
+      };
+      getRequest.onerror = () => reject(getRequest.error);
+    });
+  }
+
+  async archive(id) {
+    ensureId(id);
+    const db = await getDb();
+    return new Promise((resolve, reject) => {
+      const transaction = db.transaction(DOCUMENTS_STORE, "readwrite");
+      const store = transaction.objectStore(DOCUMENTS_STORE);
+      const getRequest = store.get(id);
+
+      getRequest.onsuccess = () => {
+        const existing = getRequest.result;
+        if (!existing) {
+          reject(new Error("Document not found"));
+          return;
+        }
+        if (existing.deletedAt != null) {
+          reject(new Error("Cannot archive trashed document"));
+          return;
+        }
+        const now = Date.now();
+        const updated = {
+          ...existing,
+          archivedAt: now,
+          updatedAt: now,
+        };
+        const putRequest = store.put(updated);
+        putRequest.onsuccess = () => resolve();
+        putRequest.onerror = () => reject(putRequest.error);
+      };
+      getRequest.onerror = () => reject(getRequest.error);
+    });
+  }
+
+  async unarchive(id) {
+    ensureId(id);
+    const db = await getDb();
+    return new Promise((resolve, reject) => {
+      const transaction = db.transaction(DOCUMENTS_STORE, "readwrite");
+      const store = transaction.objectStore(DOCUMENTS_STORE);
+      const getRequest = store.get(id);
+
+      getRequest.onsuccess = () => {
+        const existing = getRequest.result;
+        if (!existing) {
+          reject(new Error("Document not found"));
+          return;
+        }
+        if (existing.deletedAt != null) {
+          reject(new Error("Cannot unarchive trashed document"));
+          return;
+        }
+        const now = Date.now();
+        const updated = {
+          ...existing,
+          archivedAt: null,
+          updatedAt: now,
+        };
+        const putRequest = store.put(updated);
+        putRequest.onsuccess = () => resolve();
+        putRequest.onerror = () => reject(putRequest.error);
+      };
+      getRequest.onerror = () => reject(getRequest.error);
+    });
+  }
+
   async delete(id) {
     ensureId(id);
     const db = await getDb();
@@ -163,7 +289,7 @@ export class IndexedDbDocumentsRepo {
   }
 
   async getSearchableDocs(options = {}) {
-    const { type, includeDeleted = false, includeArchived = true } = options;
+    const { type, includeTrashed = false, includeArchived = false } = options;
     const db = await getDb();
 
     return new Promise((resolve, reject) => {
@@ -175,8 +301,15 @@ export class IndexedDbDocumentsRepo {
       request.onsuccess = () => {
         const items = Array.isArray(request.result) ? request.result : [];
         const docs = items
-          .filter((doc) => (includeDeleted ? true : doc.deletedAt == null))
-          .filter((doc) => (includeArchived ? true : doc.archivedAt == null))
+          .filter((doc) => {
+            if (doc.deletedAt != null) {
+              return includeTrashed;
+            }
+            if (!includeArchived && doc.archivedAt != null) {
+              return false;
+            }
+            return true;
+          })
           .map((doc) => ({
             id: doc.id,
             title: deriveDocumentTitle(doc),

@@ -3,7 +3,7 @@
  */
 export class DocumentsRepo {
   /**
-   * @param {{ type?: string, limit?: number, offset?: number }=} options
+   * @param {{ type?: string, limit?: number, offset?: number, includeArchived?: boolean, includeTrashed?: boolean }=} options
    * @returns {Promise<Array<{ id: string, type: string, title: string | null, updatedAt: number }>>}
    */
   async list(options) {
@@ -33,6 +33,38 @@ export class DocumentsRepo {
    */
   async update(id, patch) {
     throw new Error("DocumentsRepo.update not implemented");
+  }
+
+  /**
+   * @param {string} id
+   * @returns {Promise<void>}
+   */
+  async trash(id) {
+    throw new Error("DocumentsRepo.trash not implemented");
+  }
+
+  /**
+   * @param {string} id
+   * @returns {Promise<void>}
+   */
+  async restore(id) {
+    throw new Error("DocumentsRepo.restore not implemented");
+  }
+
+  /**
+   * @param {string} id
+   * @returns {Promise<void>}
+   */
+  async archive(id) {
+    throw new Error("DocumentsRepo.archive not implemented");
+  }
+
+  /**
+   * @param {string} id
+   * @returns {Promise<void>}
+   */
+  async unarchive(id) {
+    throw new Error("DocumentsRepo.unarchive not implemented");
   }
 
   /**
