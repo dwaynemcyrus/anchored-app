@@ -359,7 +359,6 @@ export default function Shell({ children }) {
     if (captureOpen) return;
     const touch = event.touches[0];
     if (!touch) return;
-    event.preventDefault();
     longPressTriggeredRef.current = false;
     pointerStartRef.current = { x: touch.clientX, y: touch.clientY };
     const rect = event.currentTarget.getBoundingClientRect();
