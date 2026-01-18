@@ -68,6 +68,7 @@ export default function NoteEditor({ noteId }) {
   const loadNote = useNotesStore((state) => state.loadNote);
   const hasHydrated = useNotesStore((state) => state.hasHydrated);
   const updateNoteBody = useNotesStore((state) => state.updateNoteBody);
+  const restoreNote = useNotesStore((state) => state.restoreNote);
   const note = useNotesStore((state) => state.notesById[noteId]);
   const setHeaderTitle = useShellHeaderStore((state) => state.setTitle);
   const clearHeaderTitle = useShellHeaderStore((state) => state.clearTitle);
@@ -91,6 +92,7 @@ export default function NoteEditor({ noteId }) {
 
   const [saveStatus, setSaveStatus] = useState(SAVED_LABEL);
   const [loadedNoteId, setLoadedNoteId] = useState(null);
+  const isTrashed = note?.deletedAt != null;
 
   useEffect(() => {
     void hydrate();
@@ -185,6 +187,13 @@ export default function NoteEditor({ noteId }) {
     }, 1200);
   }, []);
 
+  const destroyEditor = useCallback(() => {
+    if (!editorViewRef.current) return;
+    editorViewRef.current.scrollDOM.removeEventListener("scroll", handleManualScroll);
+    editorViewRef.current.destroy();
+    editorViewRef.current = null;
+  }, [handleManualScroll]);
+
   const applyTypewriterScroll = useCallback((view) => {
     if (manualScrollRef.current) return;
     const pos = view.state.selection.main.head;
@@ -205,6 +214,14 @@ export default function NoteEditor({ noteId }) {
   }, []);
 
   useEffect(() => {
+    if (isTrashed) {
+      if (saveTimerRef.current) {
+        window.clearTimeout(saveTimerRef.current);
+        saveTimerRef.current = null;
+      }
+      destroyEditor();
+      return;
+    }
     if (!note) return;
     if (!editorHostRef.current) return;
     if (editorViewRef.current) return;
@@ -250,7 +267,15 @@ export default function NoteEditor({ noteId }) {
       }
       flushPendingSave();
     };
-  }, [note, applyTypewriterScroll, flushPendingSave, handleManualScroll, queueSave]);
+  }, [
+    note,
+    isTrashed,
+    applyTypewriterScroll,
+    destroyEditor,
+    flushPendingSave,
+    handleManualScroll,
+    queueSave,
+  ]);
 
   useEffect(() => {
     if (!note) return;
@@ -311,11 +336,34 @@ export default function NoteEditor({ noteId }) {
   return (
     <div className={styles.page}>
       <main className={styles.main}>
+        {note && isTrashed ? (
+          <div className={styles.trashBanner} role="status">
+            <div className={styles.trashBannerText}>This note is in Trash.</div>
+            <div className={styles.trashBannerActions}>
+              <button
+                type="button"
+                className={styles.trashBannerButton}
+                onClick={() => restoreNote(note.id)}
+              >
+                Restore
+              </button>
+              <Link href="/knowledge/notes" className={styles.trashBannerLink}>
+                Back to notes
+              </Link>
+            </div>
+          </div>
+        ) : null}
         <section
           className={styles.editorWrap}
           style={{ "--editor-font-size": editorFontSize }}
         >
-          <div className={styles.editor} ref={editorHostRef} />
+          {note && isTrashed ? (
+            <div className={styles.trashedContent}>
+              {note.body || "This note is empty."}
+            </div>
+          ) : (
+            <div className={styles.editor} ref={editorHostRef} />
+          )}
         </section>
       </main>
     </div>

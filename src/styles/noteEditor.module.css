@@ -12,7 +12,56 @@
   flex-direction: column;
   gap: 16px;
 }
+.trashBanner {
+  border-radius: 14px;
+  border: 1px solid #e1d4be;
+  background: #fff6df;
+  padding: 14px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
 
+.trashBannerText {
+  font-size: 14px;
+  font-weight: 600;
+  color: #5a4f45;
+}
+
+.trashBannerActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.trashBannerButton {
+  border: 1px solid rgba(20, 17, 15, 0.2);
+  background: #14110f;
+  color: #f6f2ea;
+  border-radius: 999px;
+  padding: 8px 16px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.trashBannerButton:focus-visible {
+  outline: 2px solid #14110f;
+  outline-offset: 2px;
+}
+
+.trashBannerLink {
+  align-self: center;
+  color: #14110f;
+  font-size: 13px;
+  font-weight: 600;
+  text-decoration: none;
+  border-bottom: 1px solid rgba(20, 17, 15, 0.3);
+}
+
+.trashBannerLink:focus-visible {
+  outline: 2px solid #14110f;
+  outline-offset: 2px;
+}
 
 .editorWrap {
   flex: 1;
@@ -26,6 +75,19 @@
 
 .editor {
   flex: 1;
+}
+
+.trashedContent {
+  flex: 1;
+  width: 100%;
+  white-space: pre-wrap;
+  line-height: 1.7;
+  font-size: max(16px, var(--editor-font-size));
+  background: #fcfbf8;
+  border: 1px solid rgba(20, 17, 15, 0.12);
+  border-radius: 16px;
+  padding: 18px;
+  color: #5a4f45;
 }
 
 .notFound {
