@@ -136,6 +136,15 @@ export default function QuickCaptureModal({
         onPointerDown={(event) => event.stopPropagation()}
       >
         <div className={styles.header}>
+          <textarea
+            ref={inputRef}
+            className={styles.input}
+            value={value}
+            onChange={(event) => onChange(event.target.value)}
+            onKeyDown={handleKeyDown}
+            placeholder="Capture..."
+            autoFocus
+          />
           <div className={styles.actions}>
             <button
               type="button"
@@ -172,15 +181,6 @@ export default function QuickCaptureModal({
               </button>
             </div>
           </div>
-          <textarea
-            ref={inputRef}
-            className={styles.input}
-            value={value}
-            onChange={(event) => onChange(event.target.value)}
-            onKeyDown={handleKeyDown}
-            placeholder="Capture..."
-            autoFocus
-          />
         </div>
         <div className={styles.results}>
           <div className={styles.resultsHeader}>
