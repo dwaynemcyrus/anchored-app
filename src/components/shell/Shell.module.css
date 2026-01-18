@@ -1,9 +1,10 @@
 .header {
   display: flex;
-  align-items: center;
+  /* align-items: center; */
+  align-items: flex-start;
   justify-content: space-between;
-  background: rgba(246, 242, 234, 0.88);
-  backdrop-filter: blur(10px);
+  /* background: rgba(246, 242, 234, 0.88); */
+  /* backdrop-filter: blur(10px); */
 }
 
 .headerLeft {
@@ -27,10 +28,12 @@
 
 .headerActions {
   display: flex;
-  align-items: center;
-  justify-content: flex-end;
+  flex-direction: column;
+  align-items: flex-end;
+  justify-content: center;
+  gap: 6px;
   gap: 12px;
-  min-width: 48px;
+  min-width: 72px;
 }
 
 .headerStatus {
@@ -39,6 +42,20 @@
   text-transform: uppercase;
   color: #6a5f54;
   white-space: nowrap;
+}
+
+.headerActionsTop {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+  min-height: 36px;
+}
+
+.headerActionsBottom {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
 }
 
 .headerButton {

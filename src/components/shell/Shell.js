@@ -444,11 +444,26 @@ export default function Shell({ children }) {
           <div className={styles.headerTitle}>{headerTitle}</div>
         </div>
         <div className={styles.headerActions}>
-          {headerStatus ? (
-            <div className={styles.headerStatus}>{headerStatus}</div>
-          ) : null}
+          <div className={styles.headerActionsTop}>
+            {headerStatus ? (
+              <div className={styles.headerStatus}>{headerStatus}</div>
+            ) : null}
+            {isNoteEditorRoute ? (
+              <button
+                type="button"
+                className={styles.headerButton}
+                aria-label={`Font size: ${fontSize}`}
+                onPointerDown={preventPointerFocus}
+                onClick={cycleFontSize}
+              >
+                <TextSizeIcon />
+              </button>
+            ) : (
+              <div className={styles.headerButton} aria-hidden="true" />
+            )}
+          </div>
           {isNoteEditorRoute ? (
-            <>
+            <div className={styles.headerActionsBottom}>
               <button
                 type="button"
                 className={`${styles.headerButton} ${
@@ -461,21 +476,10 @@ export default function Shell({ children }) {
               >
                 <FocusModeIcon />
               </button>
-              <button
-                type="button"
-                className={styles.headerButton}
-                aria-label={`Font size: ${fontSize}`}
-                onPointerDown={preventPointerFocus}
-                onClick={cycleFontSize}
-              >
-                <TextSizeIcon />
-              </button>
-            </>
-          ) : (
-            <div className={styles.headerButton} aria-hidden="true" />
-          )}
+            </div>
+          ) : null}
         </div>
-        </header>
+      </header>
         <button
           type="button"
           className={`${layout.fab} ${styles.fab} ${
