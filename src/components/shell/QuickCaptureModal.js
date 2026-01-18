@@ -10,6 +10,7 @@ import styles from "./QuickCaptureModal.module.css";
 
 const SEARCH_DEBOUNCE_MS = 200;
 const RESULTS_LIMIT = 12;
+const RECENTS_LIMIT = 3;
 
 export default function QuickCaptureModal({
   isOpen,
@@ -97,7 +98,7 @@ export default function QuickCaptureModal({
 
   const trimmedValue = value.trim();
   const isSearchMode = trimmedValue.length >= 2;
-  const recentNotes = useMemo(() => notes.slice(0, RESULTS_LIMIT), [notes]);
+  const recentNotes = useMemo(() => notes.slice(0, RECENTS_LIMIT), [notes]);
   const displayList = isSearchMode ? searchResults : recentNotes;
 
   const handleKeyDown = (event) => {
@@ -135,7 +136,42 @@ export default function QuickCaptureModal({
         onPointerDown={(event) => event.stopPropagation()}
       >
         <div className={styles.header}>
-          <div className={styles.label}>Quick Capture</div>
+          <div className={styles.actions}>
+            <button
+              type="button"
+              className={styles.toggle}
+              aria-pressed={rapidEnabled}
+              onClick={onToggleRapid}
+              onMouseDown={(event) => event.preventDefault()}
+              onTouchStart={(event) => event.preventDefault()}
+            >
+              <span
+                className={`${styles.toggleTrack} ${
+                  rapidEnabled ? styles.toggleTrackActive : ""
+                }`}
+                aria-hidden="true"
+              >
+                <span
+                  className={`${styles.toggleThumb} ${
+                    rapidEnabled ? styles.toggleThumbActive : ""
+                  }`}
+                />
+              </span>
+              <span className={styles.toggleText}>Rapid capture</span>
+            </button>
+            <div className={styles.actionButtons}>
+              <button type="button" className={styles.button} onClick={onCancel}>
+                Cancel
+              </button>
+              <button
+                type="button"
+                className={`${styles.button} ${styles.buttonPrimary}`}
+                onClick={onSave}
+              >
+                Save
+              </button>
+            </div>
+          </div>
           <textarea
             ref={inputRef}
             className={styles.input}
@@ -176,40 +212,6 @@ export default function QuickCaptureModal({
               ))}
             </ul>
           )}
-        </div>
-        <div className={styles.actions}>
-          <button
-            type="button"
-            className={styles.toggle}
-            aria-pressed={rapidEnabled}
-            onClick={onToggleRapid}
-            onMouseDown={(event) => event.preventDefault()}
-            onTouchStart={(event) => event.preventDefault()}
-          >
-            <span
-              className={`${styles.toggleTrack} ${
-                rapidEnabled ? styles.toggleTrackActive : ""
-              }`}
-              aria-hidden="true"
-            >
-              <span
-                className={`${styles.toggleThumb} ${
-                  rapidEnabled ? styles.toggleThumbActive : ""
-                }`}
-              />
-            </span>
-            <span className={styles.toggleText}>Rapid capture</span>
-          </button>
-          <button type="button" className={styles.button} onClick={onCancel}>
-            Cancel
-          </button>
-          <button
-            type="button"
-            className={`${styles.button} ${styles.buttonPrimary}`}
-            onClick={onSave}
-          >
-            Save
-          </button>
         </div>
       </div>
     </div>
