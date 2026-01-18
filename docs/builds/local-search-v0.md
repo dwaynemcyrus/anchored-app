@@ -1,4 +1,6 @@
 # Knowledge v0.5 — Local Search (Title + Body) + Results Navigation
+To continue this session, run `codex resume 019bcff8-01b9-7511-bf8a-a69b0e43659c`
+
 Version: 0.5  
 Depends on: Documents Repo v0 + Editor v0 + Focus Mode + Typewriter Scroll  
 Purpose: Once writing feels good, the next bottleneck is retrieval. Add fast, local search that scales to thousands of docs.

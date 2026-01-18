@@ -60,16 +60,19 @@ export default function QuickCaptureModal({
         aria-label="Quick capture"
         onPointerDown={(event) => event.stopPropagation()}
       >
-        <div className={styles.label}>Quick Capture</div>
-        <textarea
-          ref={inputRef}
-          className={styles.input}
-          value={value}
-          onChange={(event) => onChange(event.target.value)}
-          onKeyDown={handleKeyDown}
-          placeholder="Write a quick note..."
-          autoFocus
-        />
+        <div className={styles.header}>
+          <div className={styles.label}>Quick Capture</div>
+          <textarea
+            ref={inputRef}
+            className={styles.input}
+            value={value}
+            onChange={(event) => onChange(event.target.value)}
+            onKeyDown={handleKeyDown}
+            placeholder="Write a quick note..."
+            autoFocus
+          />
+        </div>
+        <div className={styles.body} aria-hidden="true" />
         <div className={styles.actions}>
           <button
             type="button"

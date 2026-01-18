@@ -1,24 +1,24 @@
 .backdrop {
   position: fixed;
   inset: 0;
-  background: rgba(15, 12, 10, 0.4);
-  display: flex;
-  align-items: flex-end;
-  justify-content: center;
-  padding: 24px 16px calc(24px + env(safe-area-inset-bottom));
+  background: #f6f2ea;
+  display: block;
+  padding: 0;
   z-index: 40;
 }
 
 .modal {
-  width: min(520px, 100%);
-  background: #fbf8f1;
-  border-radius: 24px 24px 0 0;
-  border: 1px solid rgba(20, 17, 15, 0.12);
-  padding: 20px;
-  box-shadow: 0 22px 48px rgba(15, 12, 10, 0.3);
+  width: 100%;
+  height: 100%;
+  background: #f6f2ea;
+  border-radius: 0;
+  border: none;
+  padding: calc(20px + env(safe-area-inset-top)) 16px
+    calc(20px + env(safe-area-inset-bottom));
+  box-shadow: none;
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 20px;
 }
 
 .label {
@@ -28,9 +28,15 @@
   color: #5a4e41;
 }
 
+.header {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
 .input {
   width: 100%;
-  min-height: 120px;
+  min-height: 140px;
   resize: vertical;
   border-radius: 16px;
   border: 1px solid rgba(20, 17, 15, 0.12);
@@ -45,7 +51,15 @@
   outline-offset: 2px;
 }
 
+.body {
+  flex: 1;
+  border-radius: 18px;
+  border: 1px dashed rgba(20, 17, 15, 0.12);
+  background: #fcfbf8;
+}
+
 .actions {
+  margin-top: auto;
   display: flex;
   flex-wrap: wrap;
   justify-content: space-between;
@@ -125,11 +139,8 @@
 }
 
 @media (min-width: 700px) {
-  .backdrop {
-    align-items: center;
-  }
-
   .modal {
-    border-radius: 24px;
+    padding-left: 32px;
+    padding-right: 32px;
   }
 }

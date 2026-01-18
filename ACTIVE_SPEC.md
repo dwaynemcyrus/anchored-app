@@ -1,4 +1,4 @@
-Active build spec: docs/builds/local-search-v0.md
+Active build spec: docs/builds/quick-capture-v1.md
 
 Instruction:
 - Follow AGENT.md and SCOPE.md.

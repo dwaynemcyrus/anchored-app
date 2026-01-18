@@ -426,60 +426,60 @@ export default function Shell({ children }) {
               <button
                 type="button"
                 className={styles.headerButton}
-              aria-label="Open menu"
-              aria-expanded={menuOpen}
-              onClick={handleMenuToggle}
-            >
-              <MenuIcon />
-            </button>
-          ) : (
-            <Link
-              href="/"
-              className={styles.headerButton}
-              aria-label="Back to home"
-            >
-              <BackIcon />
-            </Link>
-          )}
-          <div className={styles.headerTitle}>{headerTitle}</div>
-        </div>
-        <div className={styles.headerActions}>
-          <div className={styles.headerActionsTop}>
-            {headerStatus ? (
-              <div className={styles.headerStatus}>{headerStatus}</div>
-            ) : null}
-            {isNoteEditorRoute ? (
-              <button
-                type="button"
-                className={styles.headerButton}
-                aria-label={`Font size: ${fontSize}`}
-                onPointerDown={preventPointerFocus}
-                onClick={cycleFontSize}
+                aria-label="Open menu"
+                aria-expanded={menuOpen}
+                onClick={handleMenuToggle}
               >
-                <TextSizeIcon />
+                <MenuIcon />
               </button>
             ) : (
-              <div className={styles.headerButton} aria-hidden="true" />
-            )}
-          </div>
-          {isNoteEditorRoute ? (
-            <div className={styles.headerActionsBottom}>
-              <button
-                type="button"
-                className={`${styles.headerButton} ${
-                  focusMode ? styles.headerButtonActive : ""
-                }`}
-                aria-label="Toggle focus mode"
-                aria-pressed={focusMode}
-                onPointerDown={preventPointerFocus}
-                onClick={toggleFocusMode}
+              <Link
+                href="/"
+                className={styles.headerButton}
+                aria-label="Back to home"
               >
-                <FocusModeIcon />
-              </button>
+                <BackIcon />
+              </Link>
+            )}
+            <div className={styles.headerTitle}>{headerTitle}</div>
+          </div>
+          <div className={styles.headerActions}>
+            <div className={styles.headerActionsTop}>
+              {headerStatus ? (
+                <div className={styles.headerStatus}>{headerStatus}</div>
+              ) : null}
+              {isNoteEditorRoute ? (
+                <button
+                  type="button"
+                  className={styles.headerButton}
+                  aria-label={`Font size: ${fontSize}`}
+                  onPointerDown={preventPointerFocus}
+                  onClick={cycleFontSize}
+                >
+                  <TextSizeIcon />
+                </button>
+              ) : (
+                <div className={styles.headerButton} aria-hidden="true" />
+              )}
             </div>
-          ) : null}
-        </div>
-      </header>
+            {isNoteEditorRoute ? (
+              <div className={styles.headerActionsBottom}>
+                <button
+                  type="button"
+                  className={`${styles.headerButton} ${
+                    focusMode ? styles.headerButtonActive : ""
+                  }`}
+                  aria-label="Toggle focus mode"
+                  aria-pressed={focusMode}
+                  onPointerDown={preventPointerFocus}
+                  onClick={toggleFocusMode}
+                >
+                  <FocusModeIcon />
+                </button>
+              </div>
+            ) : null}
+          </div>
+        </header>
         <button
           type="button"
           className={`${layout.fab} ${styles.fab} ${
