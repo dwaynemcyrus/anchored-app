@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.5.0 - 2026-01-18
+- Add trash/archive actions and filtering defaults to the documents repo.
+- Expose archive/trash actions with undo and archived toggle in the notes list.
+- Show trashed-note banner with restore action and read-only body view.
+- Align search results with archived/trashed visibility rules.
+
 ## 0.4.0 - 2026-01-18
 - Rebuild Quick Capture as a full-screen action center with 2-line input and top actions.
 - Create notes from capture input and route directly to the editor.
