@@ -83,6 +83,7 @@ export default function NoteEditor({ noteId }) {
 
   const editorHostRef = useRef(null);
   const editorViewRef = useRef(null);
+  const shellScrollerRef = useRef(null);
   const lastBodyRef = useRef("");
   const pendingBodyRef = useRef("");
   const saveRequestIdRef = useRef(0);
@@ -211,16 +212,16 @@ export default function NoteEditor({ noteId }) {
       if (!typewriterEnabled) return;
       if (manualScrollRef.current) return;
       if (pendingTypewriterScrollRef.current) return;
+      const scroller = shellScrollerRef.current;
+      if (!scroller) return;
       pendingTypewriterScrollRef.current = true;
       typewriterFrameRef.current = window.requestAnimationFrame(() => {
         pendingTypewriterScrollRef.current = false;
         const pos = view.state.selection.main.head;
         const coords = view.coordsAtPos(pos);
         if (!coords) return;
-        const scroller = view.scrollDOM;
-        const scrollerRect = scroller.getBoundingClientRect();
-        const viewportHeight = viewportHeightRef.current ?? scrollerRect.height;
-        const targetY = scrollerRect.top + viewportHeight * TYPEWRITER_TARGET_RATIO;
+        const viewportHeight = viewportHeightRef.current ?? window.innerHeight;
+        const targetY = viewportHeight * TYPEWRITER_TARGET_RATIO;
         const delta = coords.top - targetY;
         if (Math.abs(delta) <= TYPEWRITER_DEADZONE_PX) return;
         const maxTop = scroller.scrollHeight - scroller.clientHeight;
@@ -240,6 +241,9 @@ export default function NoteEditor({ noteId }) {
     if (!note) return;
     if (!editorHostRef.current) return;
     if (editorViewRef.current) return;
+
+    const shellScroller = document.querySelector("[data-content-scroller]");
+    shellScrollerRef.current = shellScroller;
 
     lastBodyRef.current = note.body;
     pendingBodyRef.current = note.body;
@@ -272,16 +276,18 @@ export default function NoteEditor({ noteId }) {
       parent: editorHostRef.current,
     });
 
-    editorViewRef.current.scrollDOM.addEventListener("scroll", handleManualScroll, {
-      passive: true,
-    });
+    if (shellScroller) {
+      shellScroller.addEventListener("scroll", handleManualScroll, {
+        passive: true,
+      });
+    }
     if (note.body.trim().length === 0) {
       editorViewRef.current.focus();
     }
 
     return () => {
-      if (editorViewRef.current) {
-        editorViewRef.current.scrollDOM.removeEventListener("scroll", handleManualScroll);
+      if (shellScroller) {
+        shellScroller.removeEventListener("scroll", handleManualScroll);
       }
       flushPendingSave();
     };
