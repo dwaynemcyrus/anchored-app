@@ -29,16 +29,31 @@ export default function NotesList() {
   const notes = useNotesStore((state) => state.notes);
   const hydrate = useNotesStore((state) => state.hydrate);
   const createNote = useNotesStore((state) => state.createNote);
+  const listIncludeArchived = useNotesStore((state) => state.listIncludeArchived);
+  const archiveNote = useNotesStore((state) => state.archiveNote);
+  const unarchiveNote = useNotesStore((state) => state.unarchiveNote);
+  const trashNote = useNotesStore((state) => state.trashNote);
+  const restoreNote = useNotesStore((state) => state.restoreNote);
 
   const [query, setQuery] = useState(initialQuery);
   const [searchResults, setSearchResults] = useState([]);
   const [isSearching, setIsSearching] = useState(false);
+  const [lastTrashed, setLastTrashed] = useState(null);
   const debounceRef = useRef(null);
   const searchDebounceRef = useRef(null);
+  const undoTimerRef = useRef(null);
 
   useEffect(() => {
     void hydrate();
   }, [hydrate]);
+
+  useEffect(() => {
+    return () => {
+      if (undoTimerRef.current) {
+        clearTimeout(undoTimerRef.current);
+      }
+    };
+  }, []);
 
   // Sync URL with debounce
   useEffect(() => {
@@ -82,9 +97,21 @@ export default function NotesList() {
     searchDebounceRef.current = setTimeout(async () => {
       try {
         const repo = getDocumentsRepo();
-        const docs = await repo.getSearchableDocs({ type: DOCUMENT_TYPE_NOTE });
+        const docs = await repo.getSearchableDocs({
+          type: DOCUMENT_TYPE_NOTE,
+          includeArchived: listIncludeArchived,
+        });
         const results = searchDocs(docs, trimmedQuery);
-        setSearchResults(results);
+        const docsById = new Map(docs.map((doc) => [doc.id, doc]));
+        const withStatus = results.map((result) => {
+          const match = docsById.get(result.id);
+          return {
+            ...result,
+            archivedAt: match?.archivedAt ?? null,
+            deletedAt: match?.deletedAt ?? null,
+          };
+        });
+        setSearchResults(withStatus);
       } catch (error) {
         console.error("Search failed:", error);
         setSearchResults([]);
@@ -98,7 +125,7 @@ export default function NotesList() {
         clearTimeout(searchDebounceRef.current);
       }
     };
-  }, [query]);
+  }, [listIncludeArchived, query]);
 
   const handleQueryChange = useCallback((e) => {
     setQuery(e.target.value);
@@ -115,17 +142,97 @@ export default function NotesList() {
     }
   };
 
+  const handleToggleArchived = () => {
+    void hydrate({ includeArchived: !listIncludeArchived });
+  };
+
+  const scheduleUndo = useCallback((note) => {
+    if (undoTimerRef.current) {
+      clearTimeout(undoTimerRef.current);
+    }
+    setLastTrashed(note);
+    undoTimerRef.current = setTimeout(() => {
+      setLastTrashed(null);
+      undoTimerRef.current = null;
+    }, 5000);
+  }, []);
+
+  const handleTrash = useCallback(
+    async (note) => {
+      await trashNote(note.id);
+      setSearchResults((prev) => prev.filter((item) => item.id !== note.id));
+      scheduleUndo({
+        id: note.id,
+        title: note.title || "Untitled",
+      });
+    },
+    [scheduleUndo, trashNote]
+  );
+
+  const handleUndoTrash = useCallback(async () => {
+    if (!lastTrashed) return;
+    await restoreNote(lastTrashed.id);
+    setLastTrashed(null);
+  }, [lastTrashed, restoreNote]);
+
+  const handleArchive = useCallback(
+    async (note) => {
+      await archiveNote(note.id);
+      if (!listIncludeArchived) {
+        setSearchResults((prev) => prev.filter((item) => item.id !== note.id));
+      } else {
+        setSearchResults((prev) =>
+          prev.map((item) =>
+            item.id === note.id ? { ...item, archivedAt: Date.now() } : item
+          )
+        );
+      }
+    },
+    [archiveNote, listIncludeArchived]
+  );
+
+  const handleUnarchive = useCallback(
+    async (note) => {
+      await unarchiveNote(note.id);
+      setSearchResults((prev) =>
+        prev.map((item) =>
+          item.id === note.id ? { ...item, archivedAt: null } : item
+        )
+      );
+    },
+    [unarchiveNote]
+  );
+
   const isSearchMode = query.trim().length >= 2;
-  const displayList = isSearchMode ? searchResults : notes;
+  const visibleNotes = useMemo(
+    () =>
+      listIncludeArchived
+        ? notes
+        : notes.filter((note) => note.archivedAt == null),
+    [listIncludeArchived, notes]
+  );
+  const displayList = isSearchMode ? searchResults : visibleNotes;
 
   return (
     <div className={styles.page}>
       <main className={styles.main}>
         <header className={styles.header}>
           <h1 className={styles.title}>Notes</h1>
-          <button type="button" className={styles.newButton} onClick={handleCreate}>
-            New
-          </button>
+          <div className={styles.headerActions}>
+            <button
+              type="button"
+              className={`${styles.toggleButton} ${
+                listIncludeArchived ? styles.toggleButtonActive : ""
+              }`}
+              aria-pressed={listIncludeArchived}
+              onClick={handleToggleArchived}
+            >
+              Show archived
+            </button>
+            <button type="button" className={styles.newButton} onClick={handleCreate}>
+              New
+            </button>
+          </div>
         </header>
 
         <div className={styles.searchContainer}>
@@ -152,6 +259,21 @@ export default function NotesList() {
           )}
         </div>
 
+        {lastTrashed ? (
+          <div className={styles.undoBanner} role="status">
+            <div className={styles.undoText}>
+              Trashed. <span className={styles.undoTitle}>{lastTrashed.title}</span>
+            </div>
+            <button
+              type="button"
+              className={styles.undoButton}
+              onClick={handleUndoTrash}
+            >
+              Undo
+            </button>
+          </div>
+        ) : null}
+
         {displayList.length === 0 ? (
           isSearchMode ? (
             <div className={styles.emptyState}>
@@ -170,19 +292,48 @@ export default function NotesList() {
         ) : (
           <section className={styles.list} aria-label="Notes list">
             {displayList.map((item) => (
-              <Link
-                key={item.id}
-                href={`/knowledge/notes/${item.id}`}
-                className={styles.listItem}
-              >
-                <div className={styles.listItemTitle}>
-                  {isSearchMode ? item.title : getDerivedTitle(item)}
+              <div key={item.id} className={styles.listItem}>
+                <Link
+                  href={`/knowledge/notes/${item.id}`}
+                  className={styles.listItemLink}
+                >
+                  <div className={styles.listItemTitle}>
+                    {isSearchMode ? item.title : getDerivedTitle(item)}
+                  </div>
+                  {isSearchMode && item.snippet && (
+                    <div className={styles.listItemSnippet}>{item.snippet}</div>
+                  )}
+                  <div className={styles.listItemMeta}>
+                    {formatUpdatedAt(item.updatedAt)}
+                  </div>
+                </Link>
+                <div className={styles.listItemActions}>
+                  {item.archivedAt == null ? (
+                    <button
+                      type="button"
+                      className={styles.listAction}
+                      onClick={() => handleArchive(item)}
+                    >
+                      Archive
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      className={styles.listAction}
+                      onClick={() => handleUnarchive(item)}
+                    >
+                      Unarchive
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    className={`${styles.listAction} ${styles.listActionDanger}`}
+                    onClick={() => handleTrash(item)}
+                  >
+                    Trash
+                  </button>
                 </div>
-                {isSearchMode && item.snippet && (
-                  <div className={styles.listItemSnippet}>{item.snippet}</div>
-                )}
-                <div className={styles.listItemMeta}>{formatUpdatedAt(item.updatedAt)}</div>
-              </Link>
+              </div>
             ))}
           </section>
         )}

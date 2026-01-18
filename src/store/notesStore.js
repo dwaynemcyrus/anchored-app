@@ -13,6 +13,9 @@ const toListItem = (document) => ({
   archivedAt: document.archivedAt ?? null,
 });
 
+const shouldIncludeInList = (document, includeArchived) =>
+  document.deletedAt == null && (includeArchived || document.archivedAt == null);
+
 const upsertListItem = (notes, item) => {
   const next = notes.slice();
   const index = next.findIndex((note) => note.id === item.id);
@@ -24,24 +27,35 @@ const upsertListItem = (notes, item) => {
   return sortNotes(next);
 };
 
+const removeListItem = (notes, id) => notes.filter((note) => note.id !== id);
+
 export const getDerivedTitle = (note) => deriveDocumentTitle(note);
 
 export const useNotesStore = create((set, get) => ({
   notes: [],
   notesById: {},
   hasHydrated: false,
-  hydrate: async () => {
-    if (get().hasHydrated) return;
+  listIncludeArchived: false,
+  hydrate: async (options = {}) => {
+    const { includeArchived, force = false } = options;
+    const currentIncludeArchived = get().listIncludeArchived;
+    const nextIncludeArchived =
+      typeof includeArchived === "boolean" ? includeArchived : currentIncludeArchived;
+    if (get().hasHydrated && !force && nextIncludeArchived === currentIncludeArchived) return;
     try {
       const repo = getDocumentsRepo();
-      const list = await repo.list({ type: DOCUMENT_TYPE_NOTE });
+      const list = await repo.list({
+        type: DOCUMENT_TYPE_NOTE,
+        includeArchived: nextIncludeArchived,
+      });
       set({
         notes: sortNotes(list),
         hasHydrated: true,
+        listIncludeArchived: nextIncludeArchived,
       });
     } catch (error) {
       console.error("Failed to hydrate notes list", error);
-      set({ notes: [], hasHydrated: true });
+      set({ notes: [], hasHydrated: true, listIncludeArchived: nextIncludeArchived });
     }
   },
   loadNote: async (id) => {
@@ -54,7 +68,9 @@ export const useNotesStore = create((set, get) => ({
       if (!document) return null;
       set((state) => ({
         notesById: { ...state.notesById, [id]: document },
-        notes: upsertListItem(state.notes, toListItem(document)),
+        notes: shouldIncludeInList(document, state.listIncludeArchived)
+          ? upsertListItem(state.notes, toListItem(document))
+          : removeListItem(state.notes, document.id),
       }));
       return document;
     } catch (error) {
@@ -78,7 +94,9 @@ export const useNotesStore = create((set, get) => ({
         notesById: { ...state.notesById, [document.id]: document },
         notes: suppressListUpdate
           ? state.notes
-          : upsertListItem(state.notes, toListItem(document)),
+          : shouldIncludeInList(document, state.listIncludeArchived)
+            ? upsertListItem(state.notes, toListItem(document))
+            : state.notes,
       }));
       return document.id;
     } catch (error) {
@@ -106,7 +124,9 @@ export const useNotesStore = create((set, get) => ({
           };
       return {
         notesById: { ...state.notesById, [id]: updated },
-        notes: upsertListItem(state.notes, toListItem(updated)),
+        notes: shouldIncludeInList(updated, state.listIncludeArchived)
+          ? upsertListItem(state.notes, toListItem(updated))
+          : removeListItem(state.notes, id),
       };
     });
     try {
@@ -125,7 +145,9 @@ export const useNotesStore = create((set, get) => ({
       const updated = { ...existing, ...updates, updatedAt: now };
       return {
         notesById: { ...state.notesById, [id]: updated },
-        notes: upsertListItem(state.notes, toListItem(updated)),
+        notes: shouldIncludeInList(updated, state.listIncludeArchived)
+          ? upsertListItem(state.notes, toListItem(updated))
+          : removeListItem(state.notes, id),
       };
     });
     try {
@@ -133,6 +155,88 @@ export const useNotesStore = create((set, get) => ({
       await repo.update(id, updates);
     } catch (error) {
       console.error("Failed to update note", error);
+    }
+  },
+  archiveNote: async (id) => {
+    if (typeof id !== "string") return;
+    const now = Date.now();
+    set((state) => {
+      const existing = state.notesById[id];
+      if (!existing) return state;
+      const updated = { ...existing, archivedAt: now, updatedAt: now };
+      return {
+        notesById: { ...state.notesById, [id]: updated },
+        notes: shouldIncludeInList(updated, state.listIncludeArchived)
+          ? upsertListItem(state.notes, toListItem(updated))
+          : removeListItem(state.notes, id),
+      };
+    });
+    try {
+      const repo = getDocumentsRepo();
+      await repo.archive(id);
+    } catch (error) {
+      console.error("Failed to archive note", error);
+    }
+  },
+  unarchiveNote: async (id) => {
+    if (typeof id !== "string") return;
+    const now = Date.now();
+    set((state) => {
+      const existing = state.notesById[id];
+      if (!existing) return state;
+      const updated = { ...existing, archivedAt: null, updatedAt: now };
+      return {
+        notesById: { ...state.notesById, [id]: updated },
+        notes: shouldIncludeInList(updated, state.listIncludeArchived)
+          ? upsertListItem(state.notes, toListItem(updated))
+          : removeListItem(state.notes, id),
+      };
+    });
+    try {
+      const repo = getDocumentsRepo();
+      await repo.unarchive(id);
+    } catch (error) {
+      console.error("Failed to unarchive note", error);
+    }
+  },
+  trashNote: async (id) => {
+    if (typeof id !== "string") return;
+    const now = Date.now();
+    set((state) => {
+      const existing = state.notesById[id];
+      if (!existing) return state;
+      const updated = { ...existing, deletedAt: now, updatedAt: now };
+      return {
+        notesById: { ...state.notesById, [id]: updated },
+        notes: removeListItem(state.notes, id),
+      };
+    });
+    try {
+      const repo = getDocumentsRepo();
+      await repo.trash(id);
+    } catch (error) {
+      console.error("Failed to trash note", error);
+    }
+  },
+  restoreNote: async (id) => {
+    if (typeof id !== "string") return;
+    const now = Date.now();
+    set((state) => {
+      const existing = state.notesById[id];
+      if (!existing) return state;
+      const updated = { ...existing, deletedAt: null, updatedAt: now };
+      return {
+        notesById: { ...state.notesById, [id]: updated },
+        notes: shouldIncludeInList(updated, state.listIncludeArchived)
+          ? upsertListItem(state.notes, toListItem(updated))
+          : removeListItem(state.notes, id),
+      };
+    });
+    try {
+      const repo = getDocumentsRepo();
+      await repo.restore(id);
+    } catch (error) {
+      console.error("Failed to restore note", error);
     }
   },
 }));

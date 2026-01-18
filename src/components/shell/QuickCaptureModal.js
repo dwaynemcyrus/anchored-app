@@ -87,11 +87,20 @@ export default function QuickCaptureModal({
         const repo = getDocumentsRepo();
         const docs = await repo.getSearchableDocs({
           type: DOCUMENT_TYPE_NOTE,
-          includeDeleted: true,
+          includeTrashed: true,
           includeArchived: true,
         });
         const results = searchDocs(docs, trimmedQuery);
-        setSearchResults(results);
+        const docsById = new Map(docs.map((doc) => [doc.id, doc]));
+        const withStatus = results.map((result) => {
+          const match = docsById.get(result.id);
+          return {
+            ...result,
+            deletedAt: match?.deletedAt ?? null,
+            archivedAt: match?.archivedAt ?? null,
+          };
+        });
+        setSearchResults(withStatus);
       } catch (error) {
         console.error("Quick capture search failed:", error);
         setSearchResults([]);

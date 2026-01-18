@@ -20,10 +20,38 @@
   gap: 16px;
 }
 
+.headerActions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
 .title {
   font-size: 28px;
   font-weight: 600;
   letter-spacing: -0.02em;
+}
+
+.toggleButton {
+  border: 1px solid rgba(20, 17, 15, 0.2);
+  background: transparent;
+  color: #14110f;
+  border-radius: 999px;
+  padding: 8px 14px;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
+
+.toggleButtonActive {
+  background: #14110f;
+  color: #f6f2ea;
+  border-color: #14110f;
+}
+
+.toggleButton:focus-visible {
+  outline: 2px solid #14110f;
+  outline-offset: 2px;
 }
 
 .newButton {
@@ -104,19 +132,24 @@
 }
 
 .listItem {
-  display: block;
-  padding: 16px 18px;
+  display: flex;
+  align-items: stretch;
   border-radius: 14px;
   background: #fcfbf8;
   border: 1px solid rgba(20, 17, 15, 0.12);
-  color: inherit;
-  text-decoration: none;
   transition: border-color 160ms ease, box-shadow 160ms ease;
 }
 
 .listItem:hover {
   border-color: rgba(20, 17, 15, 0.3);
   box-shadow: 0 10px 20px rgba(20, 17, 15, 0.08);
+}
+
+.listItemLink {
+  flex: 1;
+  padding: 16px 18px;
+  color: inherit;
+  text-decoration: none;
 }
 
 .listItemTitle {
@@ -140,6 +173,70 @@
 .listItemMeta {
   font-size: 13px;
   color: #5a4f45;
+}
+
+.listItemActions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 16px;
+  border-left: 1px solid rgba(20, 17, 15, 0.08);
+}
+
+.listAction {
+  border: 1px solid rgba(20, 17, 15, 0.2);
+  background: transparent;
+  color: #14110f;
+  border-radius: 999px;
+  padding: 6px 12px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.listActionDanger {
+  border-color: rgba(120, 24, 24, 0.35);
+  color: #7b1b1b;
+}
+
+.listAction:focus-visible {
+  outline: 2px solid #14110f;
+  outline-offset: 2px;
+}
+
+.undoBanner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border-radius: 14px;
+  border: 1px solid #e1d4be;
+  background: #fff6df;
+  padding: 12px 16px;
+}
+
+.undoText {
+  font-size: 14px;
+  color: #5a4f45;
+}
+
+.undoTitle {
+  font-weight: 600;
+  color: #14110f;
+}
+
+.undoButton {
+  border: 1px solid rgba(20, 17, 15, 0.2);
+  background: #14110f;
+  color: #f6f2ea;
+  border-radius: 999px;
+  padding: 6px 14px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.undoButton:focus-visible {
+  outline: 2px solid #14110f;
+  outline-offset: 2px;
 }
 
 .emptyState {
@@ -180,5 +277,22 @@
 
   .title {
     font-size: 24px;
+  }
+
+  .headerActions {
+    flex-direction: column;
+    align-items: flex-end;
+  }
+
+  .listItem {
+    flex-direction: column;
+  }
+
+  .listItemActions {
+    width: 100%;
+    border-left: none;
+    border-top: 1px solid rgba(20, 17, 15, 0.08);
+    padding: 10px 16px;
+    justify-content: flex-end;
   }
 }
