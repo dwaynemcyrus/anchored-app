@@ -7,6 +7,7 @@ import QuickCaptureModal from "./QuickCaptureModal";
 import { useShellHeaderStore } from "../../store/shellHeaderStore";
 import { useEditorSettingsStore } from "../../store/editorSettingsStore";
 import styles from "./Shell.module.css";
+import layout from "./AppShell.module.css";
 
 const routes = {
   "/": "Home",
@@ -401,13 +402,19 @@ export default function Shell({ children }) {
   };
 
   return (
-    <div className={styles.shell}>
-      <header className={styles.header}>
-        <div className={styles.headerLeft}>
-          {isHome ? (
-            <button
-              type="button"
-              className={styles.headerButton}
+    <div className={layout.shell} data-shell-root>
+      <div className={layout.contentViewport} data-content-viewport>
+        <main className={layout.contentScroller} data-content-scroller>
+          {children}
+        </main>
+      </div>
+      <div className={layout.overlayLayer} data-overlay-layer aria-hidden="false">
+        <header className={`${layout.shellHeader} ${styles.header}`}>
+          <div className={styles.headerLeft}>
+            {isHome ? (
+              <button
+                type="button"
+                className={styles.headerButton}
               aria-label="Open menu"
               aria-expanded={menuOpen}
               onClick={handleMenuToggle}
@@ -457,14 +464,12 @@ export default function Shell({ children }) {
             <div className={styles.headerButton} aria-hidden="true" />
           )}
         </div>
-      </header>
-      {children}
-      <div className={styles.fabContainer}>
+        </header>
         <button
           type="button"
-          className={`${styles.fab} ${dragActive ? styles.fabDragging : ""} ${
-            captureOpen ? styles.fabHidden : ""
-          }`}
+          className={`${layout.fab} ${styles.fab} ${
+            dragActive ? styles.fabDragging : ""
+          } ${captureOpen ? styles.fabHidden : ""}`}
           aria-label="Quick capture"
           ref={fabRef}
           onClick={handleFabClick}

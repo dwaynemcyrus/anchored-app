@@ -1,18 +1,7 @@
-.shell {
-  position: relative;
-  min-height: 100vh;
-}
-
 .header {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  z-index: 20;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: calc(12px + env(safe-area-inset-top)) 16px 12px;
   background: rgba(246, 242, 234, 0.88);
   backdrop-filter: blur(10px);
 }
@@ -78,20 +67,7 @@
   outline-offset: 2px;
 }
 
-.fabContainer {
-  position: fixed;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  z-index: 20;
-  display: flex;
-  justify-content: center;
-  padding: 16px 16px calc(24px + env(safe-area-inset-bottom));
-  pointer-events: none;
-}
-
 .fab {
-  pointer-events: auto;
   width: 56px;
   height: 56px;
   border-radius: 20px;
@@ -104,7 +80,6 @@
   user-select: none;
   -webkit-user-select: none;
   -webkit-touch-callout: none;
-  touch-action: none;
 }
 
 .fab:disabled {
@@ -212,12 +187,4 @@
 }
 
 @media (min-width: 900px) {
-  .header {
-    padding-left: 32px;
-    padding-right: 32px;
-  }
-
-  .fabContainer {
-    padding-bottom: calc(32px + env(safe-area-inset-bottom));
-  }
 }

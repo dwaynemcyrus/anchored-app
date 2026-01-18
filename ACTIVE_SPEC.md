@@ -1,4 +1,4 @@
-Active build spec: docs/builds/editor-spec-v1.md
+Active build spec: docs/builds/shell-overlay-layer-spec.md
 
 Instruction:
 - Follow AGENT.md and SCOPE.md.

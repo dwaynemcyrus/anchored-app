@@ -1,0 +1,56 @@
+.shell {
+  height: 100dvh;
+  height: 100vh;
+  display: block;
+  position: relative;
+  overflow: hidden;
+}
+
+.contentViewport {
+  height: 100%;
+  position: relative;
+}
+
+.contentScroller {
+  height: 100%;
+  overflow: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  padding-top: calc(var(--shell-header-h) + env(safe-area-inset-top));
+  padding-bottom: calc(
+    var(--shell-fab-safe) + var(--shell-keyboard-inset) + env(safe-area-inset-bottom)
+  );
+}
+
+.overlayLayer {
+  position: absolute;
+  inset: 0;
+  z-index: 20;
+  pointer-events: none;
+}
+
+.shellHeader {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: calc(var(--shell-header-h) + env(safe-area-inset-top));
+  padding: calc(12px + env(safe-area-inset-top)) 16px 12px;
+  pointer-events: auto;
+}
+
+.fab {
+  position: absolute;
+  right: var(--shell-fab-x);
+  bottom: var(--shell-fab-y);
+  pointer-events: auto;
+  touch-action: manipulation;
+}
+
+@media (min-width: 900px) {
+  .shellHeader {
+    padding-left: 32px;
+    padding-right: 32px;
+  }
+}
