@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.2.4 - 2026-01-18
+- Rework the shell layout into a single internal scroller with overlay header/FAB.
+- Add VisualViewport-based keyboard inset handling and safer focus scrolling.
+- Adjust note editor focus behavior to avoid iOS header jumps on long notes.
+- Add editor-only keyboard-safe bottom padding for caret visibility.
+- Center the FAB with safe-area offsets and stack header actions into two rows.
+
 ## 0.2.3 - 2026-01-18
 - Set New Atten as the default UI font with full weight/italic support.
 - Update editor typography to use New Atten for content and gutters.
