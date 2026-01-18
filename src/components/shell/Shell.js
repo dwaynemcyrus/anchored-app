@@ -496,6 +496,7 @@ export default function Shell({ children }) {
               ? {
                   left: `${dragPosition.x - dragOffset.x}px`,
                   top: `${dragPosition.y - dragOffset.y}px`,
+                  transform: "none",
                 }
               : undefined
           }
