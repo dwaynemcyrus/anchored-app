@@ -35,13 +35,17 @@ export const useNotesStore = create((set, get) => ({
   notes: [],
   notesById: {},
   hasHydrated: false,
+  hydrateError: null,
   listIncludeArchived: false,
   hydrate: async (options = {}) => {
     const { includeArchived, force = false } = options;
     const currentIncludeArchived = get().listIncludeArchived;
     const nextIncludeArchived =
       typeof includeArchived === "boolean" ? includeArchived : currentIncludeArchived;
-    if (get().hasHydrated && !force && nextIncludeArchived === currentIncludeArchived) return;
+    // Skip if already hydrated successfully and no changes requested
+    if (get().hasHydrated && !get().hydrateError && !force && nextIncludeArchived === currentIncludeArchived) {
+      return { success: true };
+    }
     try {
       const repo = getDocumentsRepo();
       const list = await repo.list({
@@ -51,11 +55,19 @@ export const useNotesStore = create((set, get) => ({
       set({
         notes: sortNotes(list),
         hasHydrated: true,
+        hydrateError: null,
         listIncludeArchived: nextIncludeArchived,
       });
+      return { success: true };
     } catch (error) {
       console.error("Failed to hydrate notes list", error);
-      set({ notes: [], hasHydrated: true, listIncludeArchived: nextIncludeArchived });
+      set({
+        notes: [],
+        hasHydrated: true,
+        hydrateError: error.message,
+        listIncludeArchived: nextIncludeArchived,
+      });
+      return { success: false, error: error.message };
     }
   },
   loadNote: async (id) => {
@@ -105,8 +117,12 @@ export const useNotesStore = create((set, get) => ({
     }
   },
   updateNoteBody: async (id, body) => {
-    if (typeof id !== "string") return;
+    if (typeof id !== "string") return { success: false, error: "Invalid id" };
     const now = Date.now();
+    const previousState = {
+      note: get().notesById[id],
+      notes: get().notes,
+    };
     set((state) => {
       const existing = state.notesById[id];
       const updated = existing
@@ -132,13 +148,26 @@ export const useNotesStore = create((set, get) => ({
     try {
       const repo = getDocumentsRepo();
       await repo.update(id, { body });
+      return { success: true };
     } catch (error) {
       console.error("Failed to update note body", error);
+      // Rollback to previous state
+      set((state) => ({
+        notesById: previousState.note
+          ? { ...state.notesById, [id]: previousState.note }
+          : state.notesById,
+        notes: previousState.notes,
+      }));
+      return { success: false, error: error.message };
     }
   },
   updateNote: async (id, updates) => {
-    if (typeof id !== "string" || !updates) return;
+    if (typeof id !== "string" || !updates) return { success: false, error: "Invalid input" };
     const now = Date.now();
+    const previousState = {
+      note: get().notesById[id],
+      notes: get().notes,
+    };
     set((state) => {
       const existing = state.notesById[id];
       if (!existing) return state;
@@ -153,8 +182,17 @@ export const useNotesStore = create((set, get) => ({
     try {
       const repo = getDocumentsRepo();
       await repo.update(id, updates);
+      return { success: true };
     } catch (error) {
       console.error("Failed to update note", error);
+      // Rollback to previous state
+      set((state) => ({
+        notesById: previousState.note
+          ? { ...state.notesById, [id]: previousState.note }
+          : state.notesById,
+        notes: previousState.notes,
+      }));
+      return { success: false, error: error.message };
     }
   },
   archiveNote: async (id) => {

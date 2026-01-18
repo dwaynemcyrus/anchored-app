@@ -28,6 +28,7 @@ export default function NotesList() {
 
   const notes = useNotesStore((state) => state.notes);
   const hydrate = useNotesStore((state) => state.hydrate);
+  const hydrateError = useNotesStore((state) => state.hydrateError);
   const createNote = useNotesStore((state) => state.createNote);
   const listIncludeArchived = useNotesStore((state) => state.listIncludeArchived);
   const archiveNote = useNotesStore((state) => state.archiveNote);
@@ -42,10 +43,15 @@ export default function NotesList() {
   const debounceRef = useRef(null);
   const searchDebounceRef = useRef(null);
   const undoTimerRef = useRef(null);
+  const listIncludeArchivedRef = useRef(listIncludeArchived);
 
   useEffect(() => {
     void hydrate();
   }, [hydrate]);
+
+  useEffect(() => {
+    listIncludeArchivedRef.current = listIncludeArchived;
+  }, [listIncludeArchived]);
 
   useEffect(() => {
     return () => {
@@ -97,9 +103,10 @@ export default function NotesList() {
     searchDebounceRef.current = setTimeout(async () => {
       try {
         const repo = getDocumentsRepo();
+        // Use ref to get current value at execution time, not closure capture time
         const docs = await repo.getSearchableDocs({
           type: DOCUMENT_TYPE_NOTE,
-          includeArchived: listIncludeArchived,
+          includeArchived: listIncludeArchivedRef.current,
         });
         const results = searchDocs(docs, trimmedQuery);
         const docsById = new Map(docs.map((doc) => [doc.id, doc]));
@@ -144,6 +151,10 @@ export default function NotesList() {
 
   const handleToggleArchived = () => {
     void hydrate({ includeArchived: !listIncludeArchived });
+  };
+
+  const handleRetryHydrate = () => {
+    void hydrate({ force: true });
   };
 
   const scheduleUndo = useCallback((note) => {
@@ -274,7 +285,14 @@ export default function NotesList() {
           </div>
         ) : null}
 
-        {displayList.length === 0 ? (
+        {hydrateError ? (
+          <div className={styles.emptyState}>
+            <div className={styles.emptyTitle}>Failed to load notes</div>
+            <button type="button" className={styles.emptyAction} onClick={handleRetryHydrate}>
+              Retry
+            </button>
+          </div>
+        ) : displayList.length === 0 ? (
           isSearchMode ? (
             <div className={styles.emptyState}>
               <div className={styles.emptyTitle}>

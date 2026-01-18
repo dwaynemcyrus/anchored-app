@@ -5,33 +5,43 @@ const SNIPPET_LENGTH = 120;
 const SNIPPET_CONTEXT = 40;
 
 /**
+ * Escape special regex characters in a string.
+ * @param {string} str
+ * @returns {string}
+ */
+function escapeRegex(str) {
+  return str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+/**
  * Generate a snippet around the first match in text.
  * @param {string} text - Original text
- * @param {string} normalizedText - Normalized version for matching
  * @param {string} normalizedQuery - Normalized query
  * @returns {string}
  */
-function generateSnippet(text, normalizedText, normalizedQuery) {
-  const matchIndex = normalizedText.indexOf(normalizedQuery);
+function generateSnippet(text, normalizedQuery) {
+  // Clean text for display (replace newlines with spaces)
+  const cleanText = text.replace(/[\r\n]+/g, " ");
+
+  // Find actual match position in the cleaned text (case-insensitive)
+  const lowerClean = cleanText.toLowerCase();
+  const matchIndex = lowerClean.indexOf(normalizedQuery);
+
   if (matchIndex === -1) {
-    // No match in body, return first portion
-    const clean = text.replace(/[\r\n]+/g, " ").trim();
-    return clean.slice(0, SNIPPET_LENGTH);
+    // No match found, return first portion
+    return cleanText.trim().slice(0, SNIPPET_LENGTH);
   }
 
-  // Find approximate position in original text
-  // Since normalization collapses whitespace, find closest match
-  const beforeNormalized = normalizedText.slice(0, matchIndex);
-  const roughStart = Math.max(0, beforeNormalized.length - SNIPPET_CONTEXT);
-  const roughEnd = Math.min(text.length, roughStart + SNIPPET_LENGTH);
+  // Calculate snippet boundaries around the match
+  const snippetStart = Math.max(0, matchIndex - SNIPPET_CONTEXT);
+  const snippetEnd = Math.min(cleanText.length, snippetStart + SNIPPET_LENGTH);
 
-  let snippet = text.slice(roughStart, roughEnd);
-  snippet = snippet.replace(/[\r\n]+/g, " ").trim();
+  let snippet = cleanText.slice(snippetStart, snippetEnd).trim();
 
-  if (roughStart > 0) {
+  if (snippetStart > 0) {
     snippet = "…" + snippet;
   }
-  if (roughEnd < text.length) {
+  if (snippetEnd < cleanText.length) {
     snippet = snippet + "…";
   }
 
@@ -41,14 +51,13 @@ function generateSnippet(text, normalizedText, normalizedQuery) {
 /**
  * Score a document against a search query.
  * Higher score = better match.
- * @param {{ title: string, body: string }} doc
+ * @param {string} normalizedTitle
+ * @param {string} normalizedBody
  * @param {string} normalizedQuery
- * @returns {{ score: number, matchInTitle: boolean, matchIndex: number }}
+ * @param {RegExp} queryRegex - Pre-compiled regex for counting occurrences
+ * @returns {{ score: number, matchInTitle: boolean, bodyHasMatch: boolean }}
  */
-function scoreDocument(doc, normalizedQuery) {
-  const normalizedTitle = normalizeText(doc.title || "");
-  const normalizedBody = normalizeText(doc.body || "");
-
+function scoreDocument(normalizedTitle, normalizedBody, normalizedQuery, queryRegex) {
   const titleIndex = normalizedTitle.indexOf(normalizedQuery);
   const bodyIndex = normalizedBody.indexOf(normalizedQuery);
 
@@ -56,7 +65,7 @@ function scoreDocument(doc, normalizedQuery) {
   const matchInBody = bodyIndex !== -1;
 
   if (!matchInTitle && !matchInBody) {
-    return { score: -1, matchInTitle: false, matchIndex: -1 };
+    return { score: -1, matchInTitle: false, bodyHasMatch: false };
   }
 
   // Base score: title match = 1000, body only = 100
@@ -68,23 +77,14 @@ function scoreDocument(doc, normalizedQuery) {
 
   // Count occurrences (optional bonus)
   const titleCount = matchInTitle
-    ? (normalizedTitle.match(new RegExp(escapeRegex(normalizedQuery), "g")) || []).length
+    ? (normalizedTitle.match(queryRegex) || []).length
     : 0;
   const bodyCount = matchInBody
-    ? (normalizedBody.match(new RegExp(escapeRegex(normalizedQuery), "g")) || []).length
+    ? (normalizedBody.match(queryRegex) || []).length
     : 0;
   score += (titleCount + bodyCount) * 0.5;
 
-  return { score, matchInTitle, matchIndex };
-}
-
-/**
- * Escape special regex characters in a string.
- * @param {string} str
- * @returns {string}
- */
-function escapeRegex(str) {
-  return str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return { score, matchInTitle, bodyHasMatch: matchInBody };
 }
 
 /**
@@ -102,16 +102,26 @@ export function searchDocs(docs, query) {
     return [];
   }
 
+  // Pre-compile regex once for the entire search
+  const queryRegex = new RegExp(escapeRegex(normalizedQuery), "g");
+
   const results = [];
 
   for (const doc of docs) {
-    const { score, matchInTitle } = scoreDocument(doc, normalizedQuery);
+    const normalizedTitle = normalizeText(doc.title || "");
+    const normalizedBody = normalizeText(doc.body || "");
+
+    const { score, matchInTitle, bodyHasMatch } = scoreDocument(
+      normalizedTitle,
+      normalizedBody,
+      normalizedQuery,
+      queryRegex
+    );
     if (score < 0) continue;
 
-    const normalizedBody = normalizeText(doc.body || "");
-    const snippet = matchInTitle && normalizedBody.indexOf(normalizedQuery) === -1
+    const snippet = matchInTitle && !bodyHasMatch
       ? (doc.body || "").replace(/[\r\n]+/g, " ").trim().slice(0, SNIPPET_LENGTH)
-      : generateSnippet(doc.body || "", normalizedBody, normalizedQuery);
+      : generateSnippet(doc.body || "", normalizedQuery);
 
     results.push({
       id: doc.id,

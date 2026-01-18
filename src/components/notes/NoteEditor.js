@@ -13,6 +13,7 @@ import styles from "../../styles/noteEditor.module.css";
 
 const SAVED_LABEL = "Saved";
 const SAVING_LABEL = "Saving...";
+const SAVE_FAILED_LABEL = "Save failed";
 const TYPEWRITER_OFFSET = 0.5;
 const FONT_SIZE_MAP = {
   small: "16px",
@@ -134,21 +135,18 @@ export default function NoteEditor({ noteId }) {
     };
   }, [loadNote, noteId]);
 
-  const resolveSavedState = useCallback((requestId) => {
-    if (requestId !== saveRequestIdRef.current) return;
-    setSaveStatus(SAVED_LABEL);
-  }, []);
-
   const runSave = useCallback(
     async (body, requestId) => {
-      try {
-        await updateNoteBody(noteId, body);
-        resolveSavedState(requestId);
-      } catch (error) {
-        console.error("Failed to save note", error);
+      const result = await updateNoteBody(noteId, body);
+      if (requestId !== saveRequestIdRef.current) return;
+      if (result?.success) {
+        setSaveStatus(SAVED_LABEL);
+      } else {
+        console.error("Failed to save note", result?.error);
+        setSaveStatus(SAVE_FAILED_LABEL);
       }
     },
-    [noteId, resolveSavedState, updateNoteBody]
+    [noteId, updateNoteBody]
   );
 
   const queueSave = useCallback(
