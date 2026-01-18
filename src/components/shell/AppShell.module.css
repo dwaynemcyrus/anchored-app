@@ -38,8 +38,9 @@
 
 .fab {
   position: absolute;
-  right: var(--shell-fab-x);
-  bottom: var(--shell-fab-y);
+  left: 50%;
+  bottom: calc(var(--shell-fab-y) + env(safe-area-inset-bottom));
+  transform: translateX(-50%);
   pointer-events: auto;
   touch-action: manipulation;
 }
