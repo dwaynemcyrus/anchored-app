@@ -30,7 +30,7 @@
 
 .shellHeader {
   position: absolute;
-  top: 0;
+  top: var(--vv-offset-top, 0);
   left: 0;
   right: 0;
   height: calc(var(--shell-header-h) + env(safe-area-inset-top));

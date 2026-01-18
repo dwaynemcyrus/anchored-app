@@ -16,8 +16,10 @@ export default function useVisualViewportInsets(shellRootRef, scrollerRef) {
       const visualViewport = window.visualViewport;
       const visualHeight = visualViewport?.height ?? layoutHeight;
       const keyboardInset = clampInset(layoutHeight - visualHeight);
+      const offsetTop = visualViewport?.offsetTop ?? 0;
       shellRoot.style.setProperty("--vvh", `${visualHeight}px`);
       shellRoot.style.setProperty("--shell-keyboard-inset", `${keyboardInset}px`);
+      shellRoot.style.setProperty("--vv-offset-top", `${offsetTop}px`);
 
       const insetDelta = keyboardInset - lastInsetRef.current;
       if (insetDelta > 40 && scrollerRef?.current) {
