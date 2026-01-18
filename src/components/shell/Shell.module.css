@@ -99,6 +99,7 @@
 .fabDragging {
   position: fixed;
   z-index: 30;
+  transform: none;
 }
 
 .icon {

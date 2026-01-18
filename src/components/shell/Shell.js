@@ -281,6 +281,7 @@ export default function Shell({ children }) {
   const handleFabPointerDown = (event) => {
     if (captureOpen) return;
     if (event.pointerType === "mouse" && event.button !== 0) return;
+    event.preventDefault();
     longPressTriggeredRef.current = false;
     pointerStartRef.current = { x: event.clientX, y: event.clientY };
     const rect = event.currentTarget.getBoundingClientRect();
@@ -354,6 +355,7 @@ export default function Shell({ children }) {
     if (captureOpen) return;
     const touch = event.touches[0];
     if (!touch) return;
+    event.preventDefault();
     longPressTriggeredRef.current = false;
     pointerStartRef.current = { x: touch.clientX, y: touch.clientY };
     const rect = event.currentTarget.getBoundingClientRect();
