@@ -1,4 +1,6 @@
 # Shell Overlay Layer Build Spec (PWA / iOS Safari Safe)
+To continue this session, run `codex resume 019bce65-6a69-7d92-9bb7-4f69642724a4`
+
 version: v1.0
 status: ready
 scope: Shell header + FAB live on an overlay layer above scrollable content. Body is locked. Single internal scroller. Keyboard-safe via dvh + VisualViewport “truth source”.

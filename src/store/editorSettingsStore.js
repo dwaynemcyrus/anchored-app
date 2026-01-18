@@ -1,6 +1,7 @@
 import { create } from "zustand";
 
 const STORAGE_KEY = "anchored.editor.settings.v1";
+const TYPEWRITER_STORAGE_KEY = "anchored.editor.typewriter.enabled";
 const FONT_SIZES = ["small", "default", "large"];
 
 const readStoredSettings = () => {
@@ -23,22 +24,43 @@ const writeStoredSettings = (settings) => {
   }
 };
 
+const readTypewriterSetting = () => {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = window.localStorage.getItem(TYPEWRITER_STORAGE_KEY);
+    if (raw === "true") return true;
+    if (raw === "false") return false;
+    return null;
+  } catch (error) {
+    console.warn("Failed to read typewriter setting", error);
+    return null;
+  }
+};
+
+const writeTypewriterSetting = (enabled) => {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(TYPEWRITER_STORAGE_KEY, enabled ? "true" : "false");
+  } catch (error) {
+    console.warn("Failed to persist typewriter setting", error);
+  }
+};
+
 export const useEditorSettingsStore = create((set, get) => ({
   focusMode: false,
   fontSize: "default",
+  typewriterEnabled: false,
   hasHydrated: false,
   hydrate: () => {
     if (get().hasHydrated) return;
     const stored = readStoredSettings();
-    if (stored) {
-      set({
-        focusMode: Boolean(stored.focusMode),
-        fontSize: FONT_SIZES.includes(stored.fontSize) ? stored.fontSize : "default",
-        hasHydrated: true,
-      });
-      return;
-    }
-    set({ hasHydrated: true });
+    const typewriterSetting = readTypewriterSetting();
+    set({
+      focusMode: stored ? Boolean(stored.focusMode) : false,
+      fontSize: stored && FONT_SIZES.includes(stored.fontSize) ? stored.fontSize : "default",
+      typewriterEnabled: typewriterSetting ?? false,
+      hasHydrated: true,
+    });
   },
   toggleFocusMode: () => {
     set((state) => {
@@ -54,6 +76,13 @@ export const useEditorSettingsStore = create((set, get) => ({
       const next = { ...state, fontSize: FONT_SIZES[nextIndex] };
       writeStoredSettings({ focusMode: next.focusMode, fontSize: next.fontSize });
       return next;
+    });
+  },
+  toggleTypewriter: () => {
+    set((state) => {
+      const nextEnabled = !state.typewriterEnabled;
+      writeTypewriterSetting(nextEnabled);
+      return { ...state, typewriterEnabled: nextEnabled };
     });
   },
 }));

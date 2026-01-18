@@ -97,6 +97,26 @@ function TextSizeIcon() {
   );
 }
 
+function TypewriterIcon() {
+  return (
+    <svg
+      aria-hidden="true"
+      viewBox="0 0 24 24"
+      className={styles.icon}
+    >
+      <path
+        d="M4 7h16M6.5 7v10M17.5 7v10M9 17h6"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        fill="none"
+      />
+      <rect x="9" y="10" width="6" height="4" rx="1.2" fill="currentColor" />
+    </svg>
+  );
+}
+
 export default function Shell({ children }) {
   const router = useRouter();
   const pathname = usePathname();
@@ -107,8 +127,10 @@ export default function Shell({ children }) {
   const hydrateEditorSettings = useEditorSettingsStore((state) => state.hydrate);
   const focusMode = useEditorSettingsStore((state) => state.focusMode);
   const fontSize = useEditorSettingsStore((state) => state.fontSize);
+  const typewriterEnabled = useEditorSettingsStore((state) => state.typewriterEnabled);
   const toggleFocusMode = useEditorSettingsStore((state) => state.toggleFocusMode);
   const cycleFontSize = useEditorSettingsStore((state) => state.cycleFontSize);
+  const toggleTypewriter = useEditorSettingsStore((state) => state.toggleTypewriter);
   const isHome = pathname === "/";
   const isNoteEditorRoute =
     typeof pathname === "string" &&
@@ -464,6 +486,18 @@ export default function Shell({ children }) {
           </div>
           {isNoteEditorRoute ? (
             <div className={styles.headerActionsBottom}>
+              <button
+                type="button"
+                className={`${styles.headerButton} ${
+                  typewriterEnabled ? styles.headerButtonActive : ""
+                }`}
+                aria-label="Toggle typewriter mode"
+                aria-pressed={typewriterEnabled}
+                onPointerDown={preventPointerFocus}
+                onClick={toggleTypewriter}
+              >
+                <TypewriterIcon />
+              </button>
               <button
                 type="button"
                 className={`${styles.headerButton} ${
