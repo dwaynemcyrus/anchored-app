@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.3.0 - 2026-01-18
+- Add local search in Notes list with URL-persisted queries.
+- Rank results by title/body matches with generated snippets.
+- Keep list hydration lightweight while scanning bodies on demand.
+
 ## 0.2.4 - 2026-01-18
 - Rework the shell layout into a single internal scroller with overlay header/FAB.
 - Add VisualViewport-based keyboard inset handling and safer focus scrolling.
