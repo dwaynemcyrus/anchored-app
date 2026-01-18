@@ -13,7 +13,10 @@ import styles from "../../styles/noteEditor.module.css";
 
 const SAVED_LABEL = "Saved";
 const SAVING_LABEL = "Saving...";
-const TYPEWRITER_OFFSET = 0.5;
+const TYPEWRITER_TARGET_RATIO = 0.45;
+const TYPEWRITER_DEADZONE_PX = 24;
+const TYPEWRITER_SUSPEND_MS = 1200;
+const VIEWPORT_SETTLE_MS = 150;
 const FONT_SIZE_MAP = {
   small: "16px",
   default: "17px",
@@ -76,6 +79,7 @@ export default function NoteEditor({ noteId }) {
   const hydrateEditorSettings = useEditorSettingsStore((state) => state.hydrate);
   const focusMode = useEditorSettingsStore((state) => state.focusMode);
   const fontSize = useEditorSettingsStore((state) => state.fontSize);
+  const typewriterEnabled = useEditorSettingsStore((state) => state.typewriterEnabled);
 
   const editorHostRef = useRef(null);
   const editorViewRef = useRef(null);
@@ -86,6 +90,11 @@ export default function NoteEditor({ noteId }) {
   const manualScrollRef = useRef(false);
   const manualScrollTimerRef = useRef(null);
   const typewriterScrollRef = useRef(false);
+  const pendingTypewriterScrollRef = useRef(false);
+  const typewriterFrameRef = useRef(null);
+  const viewportHeightRef = useRef(null);
+  const viewportSettleTimerRef = useRef(null);
+  const pendingViewportSnapRef = useRef(false);
   const focusCompartmentRef = useRef(new Compartment());
   const focusFieldRef = useRef(createFocusField());
 
@@ -116,6 +125,14 @@ export default function NoteEditor({ noteId }) {
       }
       if (manualScrollTimerRef.current) {
         window.clearTimeout(manualScrollTimerRef.current);
+      }
+      if (typewriterFrameRef.current) {
+        window.cancelAnimationFrame(typewriterFrameRef.current);
+        typewriterFrameRef.current = null;
+      }
+      if (viewportSettleTimerRef.current) {
+        window.clearTimeout(viewportSettleTimerRef.current);
+        viewportSettleTimerRef.current = null;
       }
     };
   }, []);
@@ -182,27 +199,42 @@ export default function NoteEditor({ noteId }) {
     }
     manualScrollTimerRef.current = window.setTimeout(() => {
       manualScrollRef.current = false;
-    }, 1200);
+    }, TYPEWRITER_SUSPEND_MS);
   }, []);
 
-  const applyTypewriterScroll = useCallback((view) => {
-    if (manualScrollRef.current) return;
-    const pos = view.state.selection.main.head;
-    const coords = view.coordsAtPos(pos);
-    if (!coords) return;
-    const scroller = view.scrollDOM;
-    const scrollerRect = scroller.getBoundingClientRect();
-    const targetTop =
-      scroller.scrollTop + (coords.top - scrollerRect.top) - scroller.clientHeight * TYPEWRITER_OFFSET;
-    const maxTop = scroller.scrollHeight - scroller.clientHeight;
-    const nextTop = Math.max(0, Math.min(targetTop, maxTop));
-    if (Math.abs(nextTop - scroller.scrollTop) < 1) return;
-    typewriterScrollRef.current = true;
-    scroller.scrollTo({ top: nextTop });
-    window.requestAnimationFrame(() => {
-      typewriterScrollRef.current = false;
-    });
+  const updateViewportHeight = useCallback(() => {
+    viewportHeightRef.current = window.visualViewport?.height ?? window.innerHeight;
   }, []);
+
+  const scheduleTypewriterScroll = useCallback(
+    (view) => {
+      if (!typewriterEnabled) return;
+      if (manualScrollRef.current) return;
+      if (pendingTypewriterScrollRef.current) return;
+      pendingTypewriterScrollRef.current = true;
+      typewriterFrameRef.current = window.requestAnimationFrame(() => {
+        pendingTypewriterScrollRef.current = false;
+        const pos = view.state.selection.main.head;
+        const coords = view.coordsAtPos(pos);
+        if (!coords) return;
+        const scroller = view.scrollDOM;
+        const scrollerRect = scroller.getBoundingClientRect();
+        const viewportHeight = viewportHeightRef.current ?? scrollerRect.height;
+        const targetY = scrollerRect.top + viewportHeight * TYPEWRITER_TARGET_RATIO;
+        const delta = coords.top - targetY;
+        if (Math.abs(delta) <= TYPEWRITER_DEADZONE_PX) return;
+        const maxTop = scroller.scrollHeight - scroller.clientHeight;
+        const nextTop = Math.max(0, Math.min(scroller.scrollTop + delta, maxTop));
+        if (Math.abs(nextTop - scroller.scrollTop) < 1) return;
+        typewriterScrollRef.current = true;
+        scroller.scrollTop = nextTop;
+        window.requestAnimationFrame(() => {
+          typewriterScrollRef.current = false;
+        });
+      });
+    },
+    [typewriterEnabled]
+  );
 
   useEffect(() => {
     if (!note) return;
@@ -218,7 +250,10 @@ export default function NoteEditor({ noteId }) {
       if (nextBody === lastBodyRef.current) return;
       lastBodyRef.current = nextBody;
       queueSave(nextBody);
-      applyTypewriterScroll(update.view);
+      if (pendingViewportSnapRef.current) {
+        pendingViewportSnapRef.current = false;
+      }
+      scheduleTypewriterScroll(update.view);
     });
 
     const state = EditorState.create({
@@ -250,7 +285,7 @@ export default function NoteEditor({ noteId }) {
       }
       flushPendingSave();
     };
-  }, [note, applyTypewriterScroll, flushPendingSave, handleManualScroll, queueSave]);
+  }, [note, flushPendingSave, handleManualScroll, queueSave, scheduleTypewriterScroll]);
 
   useEffect(() => {
     if (!note) return;
@@ -271,6 +306,38 @@ export default function NoteEditor({ noteId }) {
       effects: focusCompartmentRef.current.reconfigure(nextExtension),
     });
   }, [focusMode]);
+
+  useEffect(() => {
+    if (!editorViewRef.current) return;
+    updateViewportHeight();
+    const viewport = window.visualViewport;
+    const handleResize = () => {
+      updateViewportHeight();
+      pendingViewportSnapRef.current = true;
+      if (viewportSettleTimerRef.current) {
+        window.clearTimeout(viewportSettleTimerRef.current);
+      }
+      viewportSettleTimerRef.current = window.setTimeout(() => {
+        viewportSettleTimerRef.current = null;
+        if (!editorViewRef.current) return;
+        if (!pendingViewportSnapRef.current) return;
+        pendingViewportSnapRef.current = false;
+        scheduleTypewriterScroll(editorViewRef.current);
+      }, VIEWPORT_SETTLE_MS);
+    };
+
+    if (viewport) {
+      viewport.addEventListener("resize", handleResize);
+    }
+    window.addEventListener("resize", handleResize);
+
+    return () => {
+      if (viewport) {
+        viewport.removeEventListener("resize", handleResize);
+      }
+      window.removeEventListener("resize", handleResize);
+    };
+  }, [scheduleTypewriterScroll, updateViewportHeight]);
 
   const title = useMemo(() => (note ? getDerivedTitle(note) : ""), [note]);
   const editorFontSize = FONT_SIZE_MAP[fontSize] ?? FONT_SIZE_MAP.default;
