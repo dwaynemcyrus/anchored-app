@@ -1,4 +1,6 @@
 # Quick Capture v1 — Full-Screen Action Center (Notes Only)
+To continue this session, run `codex resume 019bd1dc-25b9-7a33-8d27-66daa073b7c6`
+
 Version: 1.0  
 Depends on: Documents Repo v0 + Local Search v0 + Trash/Archive v0 + Shell UI  
 Purpose: A full-screen action center for instant capture and fast jumping. Capture-first. Keyboard-first on desktop.
