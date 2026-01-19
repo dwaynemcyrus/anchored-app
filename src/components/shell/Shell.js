@@ -151,6 +151,7 @@ export default function Shell({ children }) {
       { href: "/knowledge", label: "Knowledge" },
       { href: "/knowledge/notes", label: "Notes (v0)" },
       { href: "/strategy", label: "Strategy" },
+      { href: "/settings", label: "Settings" },
     ],
     []
   );

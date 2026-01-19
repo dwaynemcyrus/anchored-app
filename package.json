@@ -13,6 +13,7 @@
     "@codemirror/state": "^6.5.4",
     "@codemirror/view": "^6.39.11",
     "codemirror": "^6.0.2",
+    "jszip": "^3.10.1",
     "next": "16.1.2",
     "react": "19.2.3",
     "react-dom": "19.2.3",

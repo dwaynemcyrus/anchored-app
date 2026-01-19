@@ -323,4 +323,100 @@ export class IndexedDbDocumentsRepo {
       request.onerror = () => reject(request.error);
     });
   }
+
+  /**
+   * Get all notes (full documents) for backup export.
+   * Includes trashed and archived notes.
+   * @returns {Promise<Array>}
+   */
+  async listAllForBackup() {
+    const db = await getDb();
+    return new Promise((resolve, reject) => {
+      const transaction = db.transaction(DOCUMENTS_STORE, "readonly");
+      const store = transaction.objectStore(DOCUMENTS_STORE);
+      const index = store.index("type");
+      const request = index.getAll(DOCUMENT_TYPE_NOTE);
+
+      request.onsuccess = () => {
+        const items = Array.isArray(request.result) ? request.result : [];
+        resolve(items);
+      };
+      request.onerror = () => reject(request.error);
+    });
+  }
+
+  /**
+   * Delete all notes. Used for Replace All import.
+   * @returns {Promise<void>}
+   */
+  async deleteAllNotes() {
+    const db = await getDb();
+    return new Promise((resolve, reject) => {
+      const transaction = db.transaction(DOCUMENTS_STORE, "readwrite");
+      const store = transaction.objectStore(DOCUMENTS_STORE);
+      const index = store.index("type");
+      const request = index.getAllKeys(DOCUMENT_TYPE_NOTE);
+
+      request.onsuccess = () => {
+        const keys = request.result || [];
+        let deleted = 0;
+        if (keys.length === 0) {
+          resolve();
+          return;
+        }
+        for (const key of keys) {
+          const deleteRequest = store.delete(key);
+          deleteRequest.onsuccess = () => {
+            deleted++;
+            if (deleted === keys.length) {
+              resolve();
+            }
+          };
+          deleteRequest.onerror = () => reject(deleteRequest.error);
+        }
+      };
+      request.onerror = () => reject(request.error);
+    });
+  }
+
+  /**
+   * Bulk upsert notes for import.
+   * @param {Array} notes - Array of full document objects
+   * @returns {Promise<{ created: number, updated: number }>}
+   */
+  async bulkUpsert(notes) {
+    if (!Array.isArray(notes) || notes.length === 0) {
+      return { created: 0, updated: 0 };
+    }
+
+    const db = await getDb();
+    return new Promise((resolve, reject) => {
+      const transaction = db.transaction(DOCUMENTS_STORE, "readwrite");
+      const store = transaction.objectStore(DOCUMENTS_STORE);
+      let created = 0;
+      let updated = 0;
+      let processed = 0;
+
+      for (const note of notes) {
+        const getRequest = store.get(note.id);
+        getRequest.onsuccess = () => {
+          const existing = getRequest.result;
+          const putRequest = store.put(note);
+          putRequest.onsuccess = () => {
+            if (existing) {
+              updated++;
+            } else {
+              created++;
+            }
+            processed++;
+            if (processed === notes.length) {
+              resolve({ created, updated });
+            }
+          };
+          putRequest.onerror = () => reject(putRequest.error);
+        };
+        getRequest.onerror = () => reject(getRequest.error);
+      }
+    });
+  }
 }

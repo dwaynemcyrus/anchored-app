@@ -21,10 +21,13 @@ function formatUpdatedAt(timestamp) {
   });
 }
 
+const CONFLICT_PREFIX = "CONFLICT — ";
+
 export default function NotesList() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const initialQuery = searchParams.get("q") || "";
+  const filterConflicts = searchParams.get("filter") === "conflicts";
 
   const notes = useNotesStore((state) => state.notes);
   const hydrate = useNotesStore((state) => state.hydrate);
@@ -215,34 +218,73 @@ export default function NotesList() {
   );
 
   const isSearchMode = query.trim().length >= 2;
-  const visibleNotes = useMemo(
-    () =>
-      listIncludeArchived
-        ? notes
-        : notes.filter((note) => note.archivedAt == null),
-    [listIncludeArchived, notes]
-  );
+  const visibleNotes = useMemo(() => {
+    let filtered = listIncludeArchived
+      ? notes
+      : notes.filter((note) => note.archivedAt == null);
+
+    if (filterConflicts) {
+      filtered = filtered.filter(
+        (note) => getDerivedTitle(note).startsWith(CONFLICT_PREFIX)
+      );
+    }
+
+    return filtered;
+  }, [listIncludeArchived, notes, filterConflicts]);
+
+  const conflictCount = useMemo(() => {
+    const allNotes = listIncludeArchived
+      ? notes
+      : notes.filter((note) => note.archivedAt == null);
+    return allNotes.filter(
+      (note) => getDerivedTitle(note).startsWith(CONFLICT_PREFIX)
+    ).length;
+  }, [listIncludeArchived, notes]);
+
   const displayList = isSearchMode ? searchResults : visibleNotes;
+
+  const handleClearConflictFilter = useCallback(() => {
+    const params = new URLSearchParams(searchParams.toString());
+    params.delete("filter");
+    const newUrl = params.toString()
+      ? `/knowledge/notes?${params.toString()}`
+      : "/knowledge/notes";
+    router.replace(newUrl, { scroll: false });
+  }, [router, searchParams]);
 
   return (
     <div className={styles.page}>
       <main className={styles.main}>
         <header className={styles.header}>
-          <h1 className={styles.title}>Notes</h1>
+          <h1 className={styles.title}>
+            {filterConflicts ? "Import Conflicts" : "Notes"}
+          </h1>
           <div className={styles.headerActions}>
-            <button
-              type="button"
-              className={`${styles.toggleButton} ${
-                listIncludeArchived ? styles.toggleButtonActive : ""
-              }`}
-              aria-pressed={listIncludeArchived}
-              onClick={handleToggleArchived}
-            >
-              Show archived
-            </button>
-            <button type="button" className={styles.newButton} onClick={handleCreate}>
-              New
-            </button>
+            {filterConflicts ? (
+              <button
+                type="button"
+                className={styles.toggleButton}
+                onClick={handleClearConflictFilter}
+              >
+                Show all notes
+              </button>
+            ) : (
+              <>
+                <button
+                  type="button"
+                  className={`${styles.toggleButton} ${
+                    listIncludeArchived ? styles.toggleButtonActive : ""
+                  }`}
+                  aria-pressed={listIncludeArchived}
+                  onClick={handleToggleArchived}
+                >
+                  Show archived
+                </button>
+                <button type="button" className={styles.newButton} onClick={handleCreate}>
+                  New
+                </button>
+              </>
+            )}
           </div>
         </header>
 
