@@ -1,5 +1,5 @@
 # Inbox Processing v0 (Command-to-Note Clarification)
-
+To continue this session, run `codex resume 019bd888-75e3-7ea1-8fc9-1c8f80783986`
 
 version: 0.1
 status: spec
