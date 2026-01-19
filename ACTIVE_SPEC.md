@@ -1,4 +1,4 @@
-Active build spec: docs/builds/backup-restore-v0.md
+Active build spec: docs/builds/inbox-processing-v0.md
 
 Instruction:
 - Follow AGENT.md and SCOPE.md.

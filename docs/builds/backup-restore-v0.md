@@ -1,4 +1,6 @@
 # Backup & Restore v0 (Local Vault Portability)
+To continue this session, run `codex resume 019bd7b4-fdd6-7011-94b7-b187fdc5ae51`
+
 version: 0.1
 status: spec
 owner: Anchored OS

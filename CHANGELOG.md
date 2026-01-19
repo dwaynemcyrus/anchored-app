@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.6.0 - 2026-01-18
+- Add Settings > Data exports for backup JSON and Markdown bundle.
+- Add import flow with dry-run summary, merge defaults, and conflict handling.
+- Add Replace All restore option for backup JSON with explicit confirmation gating.
+
 ## 0.5.0 - 2026-01-18
 - Add trash/archive actions and filtering defaults to the documents repo.
 - Expose archive/trash actions with undo and archived toggle in the notes list.
