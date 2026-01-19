@@ -1,4 +1,6 @@
 # Trash / Archive v0 — Soft Delete Contract + Minimal UI Hooks
+To continue this session, run `codex resume 019bd23d-b58f-7801-9000-3985cabf1f37`
+
 Version: 0.1  
 Depends on: Documents Contract v0 + Documents Repo v0 + Local Search v0  
 Purpose: Add a safety net so deletion is reversible. This is a **contract upgrade**, not a full trash system.
