@@ -148,6 +148,7 @@ export default function Shell({ children }) {
     () => [
       { href: "/", label: "Home" },
       { href: "/command", label: "Command" },
+      { href: "/inbox", label: "Inbox" },
       { href: "/knowledge", label: "Knowledge" },
       { href: "/knowledge/notes", label: "Notes (v0)" },
       { href: "/strategy", label: "Strategy" },
@@ -236,10 +237,8 @@ export default function Shell({ children }) {
   const handleSaveCapture = async () => {
     const trimmed = captureValue.trim();
     const body = trimmed ? `${trimmed}\n\n` : "\n";
-    const id = await createNote({ body, title: null });
-    if (id) {
-      router.push(`/knowledge/notes/${id}`);
-    }
+    const now = Date.now();
+    await createNote({ body, title: null, inboxAt: now });
     if (rapidEnabled) {
       setCaptureValue("");
       setCaptureShouldFocus(true);

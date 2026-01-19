@@ -1,0 +1,116 @@
+.page {
+  background: #f6f2ea;
+  color: #14110f;
+  font-family: var(--font-atten);
+  min-height: 100vh;
+}
+
+.main {
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.title {
+  font-size: 32px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.sectionTitle {
+  font-size: 14px;
+  font-weight: 600;
+  color: #5a4f45;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.actionCard {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 18px 20px;
+  border-radius: 14px;
+  background: #fcfbf8;
+  border: 1px solid rgba(20, 17, 15, 0.12);
+  text-decoration: none;
+  color: inherit;
+  transition: border-color 160ms ease, box-shadow 160ms ease;
+}
+
+.actionCard:hover {
+  border-color: rgba(20, 17, 15, 0.3);
+  box-shadow: 0 4px 12px rgba(20, 17, 15, 0.08);
+}
+
+.actionCardContent {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.actionCardTitle {
+  font-size: 17px;
+  font-weight: 600;
+}
+
+.actionCardDescription {
+  font-size: 14px;
+  color: #5a4f45;
+}
+
+.actionCardRight {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 24px;
+  height: 24px;
+  padding: 0 8px;
+  border-radius: 12px;
+  background: #14110f;
+  color: #f6f2ea;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.badgeEmpty {
+  background: rgba(20, 17, 15, 0.1);
+  color: #5a4f45;
+}
+
+.arrow {
+  color: #8a7f73;
+  font-size: 18px;
+}
+
+.placeholder {
+  min-height: 20vh;
+  border-radius: 18px;
+  border: 1px dashed #c8bfb1;
+  background: #fcfbf8;
+}
+
+@media (max-width: 600px) {
+  .main {
+    padding: 20px;
+  }
+
+  .title {
+    font-size: 28px;
+  }
+}

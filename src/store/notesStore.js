@@ -92,7 +92,7 @@ export const useNotesStore = create((set, get) => ({
   },
   createNote: async (input = {}, options = {}) => {
     const { suppressListUpdate = false } = options;
-    const { body = "", title = null, meta = {} } = input;
+    const { body = "", title = null, meta = {}, inboxAt = null } = input;
     try {
       const repo = getDocumentsRepo();
       const document = await repo.create({
@@ -101,6 +101,7 @@ export const useNotesStore = create((set, get) => ({
         title,
         meta,
         archivedAt: input.archivedAt ?? null,
+        inboxAt,
       });
       set((state) => ({
         notesById: { ...state.notesById, [document.id]: document },

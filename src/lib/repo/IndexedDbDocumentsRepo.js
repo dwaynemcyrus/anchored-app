@@ -1,6 +1,7 @@
 import { DOCUMENTS_STORE, openAnchoredDb } from "../db/indexedDb";
 import { deriveDocumentTitle } from "../documents/deriveTitle";
 import { DOCUMENT_TYPE_NOTE } from "../../types/document";
+import { parseTimestamp } from "../backup/parseTimestamp";
 
 const DEFAULT_PAGE_LIMIT = 200;
 
@@ -113,6 +114,7 @@ export class IndexedDbDocumentsRepo {
       updatedAt: now,
       deletedAt: null,
       archivedAt: input.archivedAt ?? null,
+      inboxAt: input.inboxAt ?? null,
     };
 
     const db = await getDb();
@@ -174,6 +176,7 @@ export class IndexedDbDocumentsRepo {
           ...existing,
           deletedAt: now,
           updatedAt: now,
+          inboxAt: null,
         };
         const putRequest = store.put(updated);
         putRequest.onsuccess = () => resolve();
@@ -234,6 +237,7 @@ export class IndexedDbDocumentsRepo {
           ...existing,
           archivedAt: now,
           updatedAt: now,
+          inboxAt: null,
         };
         const putRequest = store.put(updated);
         putRequest.onsuccess = () => resolve();
@@ -418,5 +422,71 @@ export class IndexedDbDocumentsRepo {
         getRequest.onerror = () => reject(getRequest.error);
       }
     });
+  }
+
+  /**
+   * List notes in inbox state.
+   * Inbox = inboxAt != null AND deletedAt == null AND archivedAt == null
+   * Sorted oldest-first by inboxAt, then createdAt, then id.
+   * @returns {Promise<Array>}
+   */
+  async listInboxNotes() {
+    const db = await getDb();
+    return new Promise((resolve, reject) => {
+      const transaction = db.transaction(DOCUMENTS_STORE, "readonly");
+      const store = transaction.objectStore(DOCUMENTS_STORE);
+      const index = store.index("type");
+      const request = index.getAll(DOCUMENT_TYPE_NOTE);
+
+      request.onsuccess = () => {
+        const items = Array.isArray(request.result) ? request.result : [];
+        const inboxNotes = items.filter(
+          (doc) =>
+            doc.inboxAt != null &&
+            doc.deletedAt == null &&
+            doc.archivedAt == null
+        );
+
+        // Sort: oldest inboxAt first, then createdAt, then id
+        inboxNotes.sort((a, b) => {
+          const aInbox = parseTimestamp(a.inboxAt);
+          const bInbox = parseTimestamp(b.inboxAt);
+
+          // Notes with unparseable inboxAt go to the end
+          if (aInbox === null && bInbox === null) {
+            // Both unparseable, use createdAt
+            const aCreated = parseTimestamp(a.createdAt) ?? 0;
+            const bCreated = parseTimestamp(b.createdAt) ?? 0;
+            if (aCreated !== bCreated) return aCreated - bCreated;
+            return (a.id || "").localeCompare(b.id || "");
+          }
+          if (aInbox === null) return 1;
+          if (bInbox === null) return -1;
+
+          // Both parseable
+          if (aInbox !== bInbox) return aInbox - bInbox;
+
+          // Tie-breaker: createdAt
+          const aCreated = parseTimestamp(a.createdAt) ?? 0;
+          const bCreated = parseTimestamp(b.createdAt) ?? 0;
+          if (aCreated !== bCreated) return aCreated - bCreated;
+
+          // Tie-breaker: id
+          return (a.id || "").localeCompare(b.id || "");
+        });
+
+        resolve(inboxNotes);
+      };
+      request.onerror = () => reject(request.error);
+    });
+  }
+
+  /**
+   * Get count of notes in inbox.
+   * @returns {Promise<number>}
+   */
+  async getInboxCount() {
+    const notes = await this.listInboxNotes();
+    return notes.length;
   }
 }

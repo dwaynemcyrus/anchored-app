@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.7.0 - 2026-01-19
+- Add inbox processing wizard at `/inbox` for one-at-a-time note triage.
+- Extend notes with `inboxAt` field and DB index (schema version 3).
+- Set `inboxAt` on Quick Capture saves; clear on process/archive/trash.
+- Add title extraction from note body with markdown marker stripping.
+- Show inbox count badge on Command page with link to processing wizard.
+- Add Inbox to shell navigation menu.
+
 ## 0.6.0 - 2026-01-18
 - Add Settings > Data exports for backup JSON and Markdown bundle.
 - Add import flow with dry-run summary, merge defaults, and conflict handling.

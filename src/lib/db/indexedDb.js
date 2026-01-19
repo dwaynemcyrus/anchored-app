@@ -1,5 +1,5 @@
 export const DB_NAME = "anchored_db";
-export const DB_VERSION = 2;
+export const DB_VERSION = 3;
 export const DOCUMENTS_STORE = "documents";
 
 export function openAnchoredDb() {
@@ -29,6 +29,9 @@ export function openAnchoredDb() {
       }
       if (!store.indexNames.contains("archivedAt")) {
         store.createIndex("archivedAt", "archivedAt", { unique: false });
+      }
+      if (!store.indexNames.contains("inboxAt")) {
+        store.createIndex("inboxAt", "inboxAt", { unique: false });
       }
     };
 
