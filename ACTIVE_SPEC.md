@@ -1,4 +1,4 @@
-Active build spec: docs/builds/inbox-processing-v0.md
+Active build spec: docs/builds/now-view-spec-v1.md
 
 Instruction:
 - Follow AGENT.md and SCOPE.md.
