@@ -1,5 +1,9 @@
 import { create } from "zustand";
 import { getDocumentsRepo } from "../lib/repo/getDocumentsRepo";
+import {
+  buildSearchIndex,
+  updateSearchIndex,
+} from "../lib/search/searchNotes";
 import { deriveDocumentTitle } from "../lib/documents/deriveTitle";
 import { DOCUMENT_TYPE_NOTE, DOCUMENT_TYPE_DAILY } from "../types/document";
 
@@ -72,6 +76,12 @@ export const useNotesStore = create((set, get) => ({
         type: DOCUMENT_TYPE_NOTE,
         includeArchived: nextIncludeArchived,
       });
+      const searchableDocs = await repo.getSearchableDocs({
+        type: DOCUMENT_TYPE_NOTE,
+        includeArchived: true,
+        includeTrashed: true,
+      });
+      buildSearchIndex(searchableDocs);
       set({
         notes: sortNotes(list),
         hasHydrated: true,
@@ -123,6 +133,7 @@ export const useNotesStore = create((set, get) => ({
         archivedAt: input.archivedAt ?? null,
         inboxAt,
       });
+      updateSearchIndex(document);
       set((state) => ({
         notesById: { ...state.notesById, [document.id]: document },
         notes: suppressListUpdate
@@ -171,6 +182,10 @@ export const useNotesStore = create((set, get) => ({
     try {
       const repo = getDocumentsRepo();
       await repo.update(id, { body });
+      const updated = get().notesById[id];
+      if (updated) {
+        updateSearchIndex(updated);
+      }
       return { success: true };
     } catch (error) {
       console.error("Failed to update note body", error);
@@ -205,6 +220,10 @@ export const useNotesStore = create((set, get) => ({
     try {
       const repo = getDocumentsRepo();
       await repo.update(id, updates);
+      const updated = get().notesById[id];
+      if (updated) {
+        updateSearchIndex(updated);
+      }
       return { success: true };
     } catch (error) {
       console.error("Failed to update note", error);
@@ -246,6 +265,10 @@ export const useNotesStore = create((set, get) => ({
     try {
       const repo = getDocumentsRepo();
       await repo.archive(id);
+      const refreshed = await repo.get(id);
+      if (refreshed) {
+        updateSearchIndex(refreshed);
+      }
     } catch (error) {
       console.error("Failed to archive note", error);
     }
@@ -271,6 +294,10 @@ export const useNotesStore = create((set, get) => ({
     try {
       const repo = getDocumentsRepo();
       await repo.unarchive(id);
+      const refreshed = await repo.get(id);
+      if (refreshed) {
+        updateSearchIndex(refreshed);
+      }
     } catch (error) {
       console.error("Failed to unarchive note", error);
     }
@@ -298,6 +325,10 @@ export const useNotesStore = create((set, get) => ({
     try {
       const repo = getDocumentsRepo();
       await repo.trash(id);
+      const refreshed = await repo.get(id);
+      if (refreshed) {
+        updateSearchIndex(refreshed);
+      }
     } catch (error) {
       console.error("Failed to trash note", error);
     }
@@ -313,6 +344,7 @@ export const useNotesStore = create((set, get) => ({
       // Fetch the restored note to get current data
       const restored = await repo.get(id);
       if (!restored) return;
+      updateSearchIndex(restored);
       set((state) => {
         const nextNotesById = { ...state.notesById, [id]: restored };
         const nextNotes = shouldIncludeInList(restored, state.listIncludeArchived)

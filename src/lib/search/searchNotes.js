@@ -62,6 +62,11 @@ export function buildSearchIndex(docs = []) {
   indexState.ready = true;
 }
 
+export function ensureSearchIndex(docs = []) {
+  if (indexState.ready) return;
+  buildSearchIndex(docs);
+}
+
 export function updateSearchIndex(doc) {
   if (!doc || typeof doc.id !== "string") return;
   const entry = buildIndexEntry(doc);

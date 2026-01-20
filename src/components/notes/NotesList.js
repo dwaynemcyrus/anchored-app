@@ -5,7 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { useNotesStore, getDerivedTitle } from "../../store/notesStore";
 import { getDocumentsRepo } from "../../lib/repo/getDocumentsRepo";
-import { buildSearchIndex, searchNotes } from "../../lib/search/searchNotes";
+import { ensureSearchIndex, searchNotes } from "../../lib/search/searchNotes";
 import { DOCUMENT_TYPE_NOTE } from "../../types/document";
 import styles from "../../styles/notesList.module.css";
 
@@ -112,7 +112,7 @@ export default function NotesList() {
           type: DOCUMENT_TYPE_NOTE,
           includeArchived: listIncludeArchivedRef.current,
         });
-        buildSearchIndex(docs);
+        ensureSearchIndex(docs);
         const results = searchNotes(trimmedQuery, RESULTS_LIMIT);
         const docsById = new Map(docs.map((doc) => [doc.id, doc]));
         const withStatus = results.map((result) => {

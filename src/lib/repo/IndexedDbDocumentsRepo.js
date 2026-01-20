@@ -1,5 +1,6 @@
 import { DOCUMENTS_STORE, openAnchoredDb } from "../db/indexedDb";
 import { deriveDocumentTitle } from "../documents/deriveTitle";
+import { clearSearchIndex, removeFromSearchIndex } from "../search/searchNotes";
 import { DOCUMENT_TYPE_NOTE } from "../../types/document";
 import { parseTimestamp } from "../backup/parseTimestamp";
 
@@ -306,7 +307,10 @@ export class IndexedDbDocumentsRepo {
       const store = transaction.objectStore(DOCUMENTS_STORE);
       const request = store.delete(id);
 
-      request.onsuccess = () => resolve();
+      request.onsuccess = () => {
+        removeFromSearchIndex(id);
+        resolve();
+      };
       request.onerror = () => reject(request.error);
     });
   }
@@ -386,14 +390,17 @@ export class IndexedDbDocumentsRepo {
         const keys = request.result || [];
         let deleted = 0;
         if (keys.length === 0) {
+          clearSearchIndex();
           resolve();
           return;
         }
         for (const key of keys) {
           const deleteRequest = store.delete(key);
           deleteRequest.onsuccess = () => {
+            removeFromSearchIndex(key);
             deleted++;
             if (deleted === keys.length) {
+              clearSearchIndex();
               resolve();
             }
           };

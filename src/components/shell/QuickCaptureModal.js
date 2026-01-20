@@ -4,7 +4,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import { useRouter } from "next/navigation";
 import { useNotesStore } from "../../store/notesStore";
 import { getDocumentsRepo } from "../../lib/repo/getDocumentsRepo";
-import { buildSearchIndex, searchNotes } from "../../lib/search/searchNotes";
+import { ensureSearchIndex, searchNotes } from "../../lib/search/searchNotes";
 import { DOCUMENT_TYPE_NOTE } from "../../types/document";
 import styles from "./QuickCaptureModal.module.css";
 
@@ -93,7 +93,7 @@ export default function QuickCaptureModal({
           includeTrashed: true,
           includeArchived: true,
         });
-        buildSearchIndex(docs);
+        ensureSearchIndex(docs);
         const results = searchNotes(trimmedQuery, RESULTS_LIMIT);
         const docsById = new Map(docs.map((doc) => [doc.id, doc]));
         const withStatus = results.map((result) => {
