@@ -5,11 +5,12 @@ import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { useNotesStore, getDerivedTitle } from "../../store/notesStore";
 import { getDocumentsRepo } from "../../lib/repo/getDocumentsRepo";
-import { searchDocs } from "../../lib/search/searchDocs";
+import { buildSearchIndex, searchNotes } from "../../lib/search/searchNotes";
 import { DOCUMENT_TYPE_NOTE } from "../../types/document";
 import styles from "../../styles/notesList.module.css";
 
 const DEBOUNCE_MS = 250;
+const RESULTS_LIMIT = 50;
 
 function formatUpdatedAt(timestamp) {
   if (!Number.isFinite(timestamp)) return "";
@@ -111,7 +112,8 @@ export default function NotesList() {
           type: DOCUMENT_TYPE_NOTE,
           includeArchived: listIncludeArchivedRef.current,
         });
-        const results = searchDocs(docs, trimmedQuery);
+        buildSearchIndex(docs);
+        const results = searchNotes(trimmedQuery, RESULTS_LIMIT);
         const docsById = new Map(docs.map((doc) => [doc.id, doc]));
         const withStatus = results.map((result) => {
           const match = docsById.get(result.id);
@@ -217,7 +219,8 @@ export default function NotesList() {
     [unarchiveNote]
   );
 
-  const isSearchMode = query.trim().length >= 2;
+  const trimmedQuery = query.trim();
+  const isSearchMode = trimmedQuery.length >= 2;
   const visibleNotes = useMemo(() => {
     // When "Show archived" is active, show ONLY archived notes
     // Otherwise show only non-archived notes
@@ -244,6 +247,32 @@ export default function NotesList() {
   }, [listIncludeArchived, notes]);
 
   const displayList = isSearchMode ? searchResults : visibleNotes;
+
+  const renderHighlightedText = (text, highlight) => {
+    if (!highlight) return text;
+    const lowerText = text.toLowerCase();
+    const lowerHighlight = highlight.toLowerCase();
+    if (!lowerHighlight) return text;
+    const parts = [];
+    let cursor = 0;
+    while (cursor < text.length) {
+      const matchIndex = lowerText.indexOf(lowerHighlight, cursor);
+      if (matchIndex === -1) {
+        parts.push(text.slice(cursor));
+        break;
+      }
+      if (matchIndex > cursor) {
+        parts.push(text.slice(cursor, matchIndex));
+      }
+      parts.push(
+        <mark key={`highlight-${matchIndex}`} className={styles.highlight}>
+          {text.slice(matchIndex, matchIndex + lowerHighlight.length)}
+        </mark>
+      );
+      cursor = matchIndex + lowerHighlight.length;
+    }
+    return parts;
+  };
 
   const handleClearConflictFilter = useCallback(() => {
     const params = new URLSearchParams(searchParams.toString());
@@ -360,10 +389,14 @@ export default function NotesList() {
                   className={styles.listItemLink}
                 >
                   <div className={styles.listItemTitle}>
-                    {isSearchMode ? item.title : getDerivedTitle(item)}
+                    {isSearchMode
+                      ? renderHighlightedText(item.title || "Untitled", trimmedQuery)
+                      : getDerivedTitle(item)}
                   </div>
                   {isSearchMode && item.snippet && (
-                    <div className={styles.listItemSnippet}>{item.snippet}</div>
+                    <div className={styles.listItemSnippet}>
+                      {renderHighlightedText(item.snippet, trimmedQuery)}
+                    </div>
                   )}
                   <div className={styles.listItemMeta}>
                     {formatUpdatedAt(item.updatedAt)}

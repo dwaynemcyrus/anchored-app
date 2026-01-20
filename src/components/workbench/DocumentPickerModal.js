@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { getDocumentsRepo } from "@/lib/repo/getDocumentsRepo";
-import { searchDocs } from "@/lib/search/searchDocs";
+import { buildSearchIndex, searchNotes } from "@/lib/search/searchNotes";
 import { DOCUMENT_TYPE_NOTE, DOCUMENT_TYPE_DAILY } from "@/types/document";
 import styles from "./DocumentPickerModal.module.css";
 
@@ -88,7 +88,8 @@ export default function DocumentPickerModal({
           type: DOCUMENT_TYPE_NOTE,
           includeArchived: false,
         });
-        const results = searchDocs(docs, trimmedQuery);
+        buildSearchIndex(docs);
+        const results = searchNotes(trimmedQuery, RESULTS_LIMIT);
         // Filter out excluded IDs, daily notes, and inbox items
         const docsById = new Map(docs.map((d) => [d.id, d]));
         const filtered = results.filter((doc) => {
@@ -117,6 +118,33 @@ export default function DocumentPickerModal({
 
   const isSearchMode = query.trim().length >= 2;
   const displayList = isSearchMode ? searchResults : recentDocs;
+  const trimmedQuery = query.trim();
+
+  const renderHighlightedTitle = (text, highlight) => {
+    if (!highlight) return text;
+    const lowerText = text.toLowerCase();
+    const lowerHighlight = highlight.toLowerCase();
+    if (!lowerHighlight) return text;
+    const parts = [];
+    let cursor = 0;
+    while (cursor < text.length) {
+      const matchIndex = lowerText.indexOf(lowerHighlight, cursor);
+      if (matchIndex === -1) {
+        parts.push(text.slice(cursor));
+        break;
+      }
+      if (matchIndex > cursor) {
+        parts.push(text.slice(cursor, matchIndex));
+      }
+      parts.push(
+        <mark key={`highlight-${matchIndex}`} className={styles.highlight}>
+          {text.slice(matchIndex, matchIndex + lowerHighlight.length)}
+        </mark>
+      );
+      cursor = matchIndex + lowerHighlight.length;
+    }
+    return parts;
+  };
 
   const handleSelect = useCallback(
     (doc) => {
@@ -201,7 +229,7 @@ export default function DocumentPickerModal({
                     onClick={() => handleSelect(doc)}
                   >
                     <span className={styles.listButtonTitle}>
-                      {doc.title || "Untitled"}
+                      {renderHighlightedTitle(doc.title || "Untitled", trimmedQuery)}
                     </span>
                   </button>
                 </li>

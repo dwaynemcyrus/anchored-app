@@ -170,6 +170,13 @@
   -webkit-box-orient: vertical;
 }
 
+.highlight {
+  background: rgba(255, 209, 102, 0.55);
+  color: inherit;
+  padding: 0 2px;
+  border-radius: 4px;
+}
+
 .listItemMeta {
   font-size: 13px;
   color: #5a4f45;

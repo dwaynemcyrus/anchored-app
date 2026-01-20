@@ -101,6 +101,12 @@
   gap: 12px;
 }
 
+.resultsHeaderActions {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+
 .sectionTitle {
   font-size: 13px;
   text-transform: uppercase;
@@ -129,6 +135,21 @@
 }
 
 .matchToggle:focus-visible {
+  outline: 2px solid #14110f;
+  outline-offset: 2px;
+}
+
+.snippetToggle {
+  border: none;
+  background: none;
+  color: #14110f;
+  text-decoration: underline;
+  padding: 0;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.snippetToggle:focus-visible {
   outline: 2px solid #14110f;
   outline-offset: 2px;
 }
@@ -185,7 +206,24 @@
 }
 
 .listButtonTitle {
+  font-weight: 600;
+}
+
+.listButtonContent {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
   flex: 1;
+  min-width: 0;
+}
+
+.listButtonSnippet {
+  font-size: 12px;
+  font-weight: 400;
+  color: #5a4e41;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .archiveBadge {

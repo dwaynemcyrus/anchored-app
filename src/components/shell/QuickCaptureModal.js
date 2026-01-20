@@ -10,7 +10,7 @@ import styles from "./QuickCaptureModal.module.css";
 
 const SEARCH_DEBOUNCE_MS = 60;
 const RESULTS_LIMIT = 12;
-const RECENTS_LIMIT = 3;
+const RECENTS_LIMIT = 9;
 
 export default function QuickCaptureModal({
   isOpen,
@@ -31,6 +31,7 @@ export default function QuickCaptureModal({
   const [searchResults, setSearchResults] = useState([]);
   const [isSearching, setIsSearching] = useState(false);
   const [includeArchived, setIncludeArchived] = useState(false);
+  const [showSnippets, setShowSnippets] = useState(false);
   const [selectionMode, setSelectionMode] = useState(false);
   const [selectedIndex, setSelectedIndex] = useState(0);
   const searchDebounceRef = useRef(null);
@@ -66,6 +67,7 @@ export default function QuickCaptureModal({
       setSearchResults([]);
       setIsSearching(false);
       setIncludeArchived(false);
+      setShowSnippets(false);
       setSelectionMode(false);
       setSelectedIndex(0);
       return;
@@ -315,7 +317,19 @@ export default function QuickCaptureModal({
             <div className={styles.sectionTitle}>
               {isSearchMode ? "Results" : "Recently edited"}
             </div>
-            {helperText ? <div className={styles.helper}>{helperText}</div> : null}
+            <div className={styles.resultsHeaderActions}>
+              {isSearchMode ? (
+                <button
+                  type="button"
+                  className={styles.snippetToggle}
+                  aria-pressed={showSnippets}
+                  onClick={() => setShowSnippets((prev) => !prev)}
+                >
+                  {showSnippets ? "Hide snippets" : "Show snippets"}
+                </button>
+              ) : null}
+              {helperText ? <div className={styles.helper}>{helperText}</div> : null}
+            </div>
           </div>
           {isSearchMode && trashedMatchCount > 0 ? (
             <div className={styles.matchLine}>Trash matches: {trashedMatchCount}</div>
@@ -367,11 +381,18 @@ export default function QuickCaptureModal({
                       className={`${styles.listButton} ${
                         isSelected ? styles.listButtonSelected : ""
                       }`}
-                      tabIndex={-1}
-                      onClick={() => handleOpenNote(item.id)}
-                    >
-                      <span className={styles.listButtonTitle}>
-                        {item.title || "Untitled"}
+                    tabIndex={-1}
+                    onClick={() => handleOpenNote(item.id)}
+                  >
+                      <span className={styles.listButtonContent}>
+                        <span className={styles.listButtonTitle}>
+                          {item.title || "Untitled"}
+                        </span>
+                        {showSnippets && isSearchMode && item.snippet ? (
+                          <span className={styles.listButtonSnippet}>
+                            {item.snippet}
+                          </span>
+                        ) : null}
                       </span>
                       {item.archivedAt != null ? (
                         <span className={styles.archiveBadge} aria-label="Archived">
