@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.10.0 - 2026-01-20
+- Add Search v1.5 ranking with tiered matches, fuzzy fallback, and body snippets.
+- Build and maintain an in-memory search index with incremental updates.
+- Add Cmd/Ctrl+K quick search shortcut with updated modal behaviors.
+- Show up to 9 recent notes in Quick Capture and enable snippet toggles.
+- Highlight search matches in notes list and document picker results.
+- Mark archived matches in Quick Capture search results.
+
 ## 0.9.1 - 2026-01-20
 - Fix wiki-link autocomplete not appearing due to closeBrackets conflict.
 - Fix archive/trash actions not updating notes list UI without refresh.
