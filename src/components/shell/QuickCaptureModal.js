@@ -4,11 +4,11 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import { useRouter } from "next/navigation";
 import { useNotesStore } from "../../store/notesStore";
 import { getDocumentsRepo } from "../../lib/repo/getDocumentsRepo";
-import { searchDocs } from "../../lib/search/searchDocs";
+import { buildSearchIndex, searchNotes } from "../../lib/search/searchNotes";
 import { DOCUMENT_TYPE_NOTE } from "../../types/document";
 import styles from "./QuickCaptureModal.module.css";
 
-const SEARCH_DEBOUNCE_MS = 200;
+const SEARCH_DEBOUNCE_MS = 60;
 const RESULTS_LIMIT = 12;
 const RECENTS_LIMIT = 3;
 
@@ -75,7 +75,7 @@ export default function QuickCaptureModal({
     }
 
     const trimmedQuery = value.trim();
-    if (trimmedQuery.length < 2) {
+    if (trimmedQuery.length === 0) {
       setSearchResults([]);
       setIsSearching(false);
       return;
@@ -90,7 +90,8 @@ export default function QuickCaptureModal({
           includeTrashed: true,
           includeArchived: true,
         });
-        const results = searchDocs(docs, trimmedQuery);
+        buildSearchIndex(docs);
+        const results = searchNotes(trimmedQuery, RESULTS_LIMIT);
         const docsById = new Map(docs.map((doc) => [doc.id, doc]));
         const withStatus = results.map((result) => {
           const match = docsById.get(result.id);
@@ -118,7 +119,7 @@ export default function QuickCaptureModal({
   }, [isOpen, value]);
 
   const trimmedValue = value.trim();
-  const isSearchMode = trimmedValue.length >= 2;
+  const isSearchMode = trimmedValue.length > 0;
   const displayRecents = useMemo(() => {
     // Filter out inbox items (inboxAt != null) and optionally archived
     const filtered = notes.filter(
@@ -157,6 +158,22 @@ export default function QuickCaptureModal({
   const handleKeyDown = (event) => {
     if (event.key === "Enter" && !event.shiftKey) {
       event.preventDefault();
+      if (selectionMode) {
+        const selected = displayList[selectedIndex];
+        if (selected) {
+          handleOpenNote(selected.id);
+        }
+        return;
+      }
+      if (isSearchMode) {
+        const bestMatch = visibleSearchResults[0];
+        if (bestMatch?.matchMeta?.tier === 0) {
+          handleOpenNote(bestMatch.id);
+          return;
+        }
+        onSave();
+        return;
+      }
       onSave();
     }
     if (event.key === "Tab" && displayList.length > 0) {
@@ -169,6 +186,15 @@ export default function QuickCaptureModal({
     }
     if (event.key === "Escape") {
       event.preventDefault();
+      if (selectionMode) {
+        setSelectionMode(false);
+        inputRef?.current?.focus();
+        return;
+      }
+      if (trimmedValue.length > 0) {
+        onChange("");
+        return;
+      }
       onCancel();
     }
   };
@@ -224,8 +250,7 @@ export default function QuickCaptureModal({
     }
   }, [displayList.length, selectedIndex, selectionMode]);
 
-  const helperText =
-    !isSearchMode && trimmedValue.length > 0 ? "Type 2+ characters to search" : "";
+  const helperText = "";
 
   if (!isOpen) return null;
 
@@ -312,7 +337,7 @@ export default function QuickCaptureModal({
               {isSearchMode
                 ? isSearching
                   ? "Searching..."
-                  : "No results found"
+                  : `No matches. Press Enter to create: ${trimmedValue}`
                 : "No recent notes yet"}
             </div>
           ) : (

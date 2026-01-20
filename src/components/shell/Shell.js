@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import QuickCaptureModal from "./QuickCaptureModal";
 import { useShellHeaderStore } from "../../store/shellHeaderStore";
 import { useEditorSettingsStore } from "../../store/editorSettingsStore";
@@ -223,12 +223,37 @@ export default function Shell({ children }) {
     (window.matchMedia("(pointer: coarse)").matches ||
       window.matchMedia("(hover: none)").matches);
 
-  const handleOpenCapture = () => {
+  const clearLongPressTimer = useCallback(() => {
+    if (longPressTimerRef.current) {
+      window.clearTimeout(longPressTimerRef.current);
+      longPressTimerRef.current = null;
+    }
+  }, []);
+
+  const resetDragState = useCallback(() => {
+    clearLongPressTimer();
+    setDragActive(false);
+    setActiveTarget(null);
+    dragPointerIdRef.current = null;
+  }, [clearLongPressTimer]);
+
+  const handleOpenCapture = useCallback(() => {
     resetDragState();
     clearLongPressTimer();
     setCaptureShouldFocus(true);
     setCaptureOpen(true);
-  };
+  }, [clearLongPressTimer, resetDragState]);
+
+  useEffect(() => {
+    const handleSearchShortcut = (event) => {
+      const isK = event.key === "k" || event.key === "K";
+      if (!isK || (!event.metaKey && !event.ctrlKey)) return;
+      event.preventDefault();
+      handleOpenCapture();
+    };
+    window.addEventListener("keydown", handleSearchShortcut);
+    return () => window.removeEventListener("keydown", handleSearchShortcut);
+  }, [handleOpenCapture]);
 
   const handleCloseCapture = () => {
     resetDragState();
@@ -255,20 +280,6 @@ export default function Shell({ children }) {
     if (captureValue.trim().length === 0) {
       handleCloseCapture();
     }
-  };
-
-  const clearLongPressTimer = () => {
-    if (longPressTimerRef.current) {
-      window.clearTimeout(longPressTimerRef.current);
-      longPressTimerRef.current = null;
-    }
-  };
-
-  const resetDragState = () => {
-    clearLongPressTimer();
-    setDragActive(false);
-    setActiveTarget(null);
-    dragPointerIdRef.current = null;
   };
 
   const activateDrag = () => {
