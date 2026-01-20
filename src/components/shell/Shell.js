@@ -275,6 +275,17 @@ export default function Shell({ children }) {
     handleCloseCapture();
   };
 
+  const handleCreateFromQuery = async (query) => {
+    const trimmed = query.trim();
+    if (!trimmed) return;
+    const body = `${trimmed}\n\n`;
+    const id = await createNote({ body, title: null, inboxAt: null });
+    if (id) {
+      handleCloseCapture();
+      router.push(`/knowledge/notes/${id}`);
+    }
+  };
+
   const handleBackdrop = (event) => {
     if (event.target !== event.currentTarget) return;
     if (captureValue.trim().length === 0) {
@@ -559,6 +570,7 @@ export default function Shell({ children }) {
         }}
         onChange={setCaptureValue}
         onSave={handleSaveCapture}
+        onCreateFromQuery={handleCreateFromQuery}
         onCancel={handleCloseCapture}
         onBackdrop={handleBackdrop}
       />

@@ -22,6 +22,7 @@ export default function QuickCaptureModal({
   onToggleRapid,
   onChange,
   onSave,
+  onCreateFromQuery,
   onCancel,
   onBackdrop,
 }) {
@@ -173,7 +174,9 @@ export default function QuickCaptureModal({
           handleOpenNote(bestMatch.id);
           return;
         }
-        onSave();
+        if (trimmedValue.length > 0) {
+          onCreateFromQuery?.(trimmedValue);
+        }
         return;
       }
       onSave();
