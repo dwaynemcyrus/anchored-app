@@ -98,6 +98,7 @@ export default function QuickCaptureModal({
             ...result,
             deletedAt: match?.deletedAt ?? null,
             archivedAt: match?.archivedAt ?? null,
+            inboxAt: match?.inboxAt ?? null,
           };
         });
         setSearchResults(withStatus);
@@ -119,17 +120,23 @@ export default function QuickCaptureModal({
   const trimmedValue = value.trim();
   const isSearchMode = trimmedValue.length >= 2;
   const displayRecents = useMemo(() => {
-    const filtered = includeArchived
-      ? notes
-      : notes.filter((note) => note.archivedAt == null);
+    // Filter out inbox items (inboxAt != null) and optionally archived
+    const filtered = notes.filter(
+      (note) =>
+        note.inboxAt == null &&
+        (includeArchived || note.archivedAt == null)
+    );
     return filtered.slice(0, RECENTS_LIMIT);
   }, [includeArchived, notes]);
   const visibleSearchResults = useMemo(() => {
-    const filtered = searchResults.filter((result) => result.deletedAt == null);
-    const visible = filtered.filter((result) =>
-      includeArchived ? true : result.archivedAt == null
+    // Filter out trashed, inbox items, and optionally archived
+    const filtered = searchResults.filter(
+      (result) =>
+        result.deletedAt == null &&
+        result.inboxAt == null &&
+        (includeArchived || result.archivedAt == null)
     );
-    return visible.slice(0, RESULTS_LIMIT);
+    return filtered.slice(0, RESULTS_LIMIT);
   }, [includeArchived, searchResults]);
   const displayList = isSearchMode ? visibleSearchResults : displayRecents;
 

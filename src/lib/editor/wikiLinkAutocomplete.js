@@ -5,12 +5,10 @@
  * document suggestions with search and ranking.
  */
 
-import { autocompletion, startCompletion } from "@codemirror/autocomplete";
-import { EditorView } from "@codemirror/view";
+import { autocompletion, completionKeymap, startCompletion } from "@codemirror/autocomplete";
+import { EditorView, keymap } from "@codemirror/view";
 import { findWikiLinkAtPosition } from "../wikilinks/parser";
 import { searchDocsForLink, findExactMatch } from "../wikilinks/linkSearch";
-
-const DEBOUNCE_MS = 80;
 
 /**
  * Create a wiki-link completion source.
@@ -33,10 +31,15 @@ function wikiLinkCompletionSource({ getDocs, onCreateDoc }) {
     const region = findWikiLinkAtPosition(text, pos);
 
     // Not inside a wiki-link
-    if (!region) return null;
+    if (!region) {
+      return null;
+    }
 
-    // Already closed - don't show autocomplete
-    if (region.isClosed) return null;
+    // If closed AND has content, user has finished typing - don't show autocomplete
+    // But if closed with empty query (e.g. [[|]] from closeBrackets), still show
+    if (region.isClosed && region.query.length > 0) {
+      return null;
+    }
 
     const query = region.query;
     const from = region.start + 2; // After [[
@@ -54,14 +57,14 @@ function wikiLinkCompletionSource({ getDocs, onCreateDoc }) {
     }
 
     // Search and rank docs
-    const results = searchDocsForLink(cachedDocs, query, 8);
+    const results = searchDocsForLink(cachedDocs || [], query, 8);
 
     // Build completion options
     const options = results.map((doc) => ({
       label: doc.title || "Untitled",
       detail: doc.slug || formatDate(doc.updatedAt),
       type: "text",
-      boost: 0,
+      boost: 1,
       apply: (view, completion, from, to) => {
         applyCompletion(view, doc.title || "Untitled", from, to);
       },
@@ -69,12 +72,13 @@ function wikiLinkCompletionSource({ getDocs, onCreateDoc }) {
 
     // Add "Create" option if query has content and no exact match
     if (query.length > 0) {
-      const hasExactMatch = findExactMatch(cachedDocs, query);
+      const hasExactMatch = findExactMatch(cachedDocs || [], query);
       if (!hasExactMatch) {
         options.push({
           label: `Create "${query}"`,
+          detail: "new note",
           type: "keyword",
-          boost: -1,
+          boost: 0,
           apply: (view, completion, from, to) => {
             // Create the doc and insert link
             if (onCreateDoc) {
@@ -82,6 +86,9 @@ function wikiLinkCompletionSource({ getDocs, onCreateDoc }) {
                 if (doc) {
                   applyCompletion(view, doc.title || query, from, to);
                 }
+              }).catch((err) => {
+                console.error("Failed to create doc:", err);
+                applyCompletion(view, query, from, to);
               });
             } else {
               applyCompletion(view, query, from, to);
@@ -91,7 +98,34 @@ function wikiLinkCompletionSource({ getDocs, onCreateDoc }) {
       }
     }
 
-    if (options.length === 0) return null;
+    // Always return something if we're inside [[ even with no options
+    // This ensures the menu shows the "Create" option
+    if (options.length === 0 && query.length > 0) {
+      options.push({
+        label: `Create "${query}"`,
+        detail: "new note",
+        type: "keyword",
+        boost: 0,
+        apply: (view, completion, from, to) => {
+          if (onCreateDoc) {
+            onCreateDoc(query).then((doc) => {
+              if (doc) {
+                applyCompletion(view, doc.title || query, from, to);
+              }
+            }).catch((err) => {
+              console.error("Failed to create doc:", err);
+              applyCompletion(view, query, from, to);
+            });
+          } else {
+            applyCompletion(view, query, from, to);
+          }
+        },
+      });
+    }
+
+    if (options.length === 0) {
+      return null;
+    }
 
     return {
       from,
@@ -113,10 +147,11 @@ function applyCompletion(view, title, from, to) {
   const hasClosing = afterCursor.startsWith("]]");
 
   const insertText = hasClosing ? title : title + "]]";
-  const cursorPos = from + title.length + (hasClosing ? 0 : 2);
+  // Always position cursor after the closing ]]
+  const cursorPos = from + title.length + 2;
 
   view.dispatch({
-    changes: { from, to: hasClosing ? to : to, insert: insertText },
+    changes: { from, to, insert: insertText },
     selection: { anchor: cursorPos },
   });
 }
@@ -138,26 +173,35 @@ function formatDate(timestamp) {
 }
 
 /**
- * Key handler to trigger autocomplete on [[
+ * Extension that triggers autocomplete when [[ is typed or when
+ * typing continues inside an unclosed wiki-link.
  */
-const wikiLinkKeyHandler = EditorView.domEventHandlers({
-  keydown(event, view) {
-    if (event.key === "[") {
-      const { state } = view;
-      const pos = state.selection.main.head;
-      const text = state.doc.toString();
+function wikiLinkTrigger() {
+  return EditorView.updateListener.of((update) => {
+    if (!update.docChanged) return;
 
-      // Check if previous char is also [
-      if (pos > 0 && text[pos - 1] === "[") {
-        // Schedule autocomplete after the [ is inserted
-        setTimeout(() => {
-          startCompletion(view);
-        }, 10);
-      }
+    const { state } = update;
+    const pos = state.selection.main.head;
+    const text = state.doc.toString();
+
+    // Check if we just typed [[ (cursor is right after it)
+    if (pos >= 2 && text.slice(pos - 2, pos) === "[[") {
+      // Trigger autocomplete after a small delay to let the state settle
+      setTimeout(() => {
+        startCompletion(update.view);
+      }, 0);
+      return;
     }
-    return false;
-  },
-});
+
+    // Also trigger if we're inside an unclosed wiki-link and typing
+    const region = findWikiLinkAtPosition(text, pos);
+    if (region && !region.isClosed) {
+      setTimeout(() => {
+        startCompletion(update.view);
+      }, 0);
+    }
+  });
+}
 
 /**
  * Create the wiki-link autocomplete extension.
@@ -171,12 +215,12 @@ export function wikiLinkAutocomplete({ getDocs, onCreateDoc }) {
   return [
     autocompletion({
       override: [wikiLinkCompletionSource({ getDocs, onCreateDoc })],
-      activateOnTyping: true,
+      activateOnTyping: false, // We trigger manually
       closeOnBlur: true,
       maxRenderedOptions: 10,
       defaultKeymap: true,
       icons: false,
     }),
-    wikiLinkKeyHandler,
+    wikiLinkTrigger(),
   ];
 }

@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.9.1 - 2026-01-20
+- Fix wiki-link autocomplete not appearing due to closeBrackets conflict.
+- Fix archive/trash actions not updating notes list UI without refresh.
+- Fix inbox count on Now View not updating when Quick Capture adds items.
+- Fix "Show archived" toggle displaying all notes instead of only archived.
+- Fix back button on note editor routing to home instead of notes list.
+- Exclude inbox items from Workbench picker, Quick Capture, and wiki-link autocomplete.
+
+## 0.9.0 - 2026-01-20
+- Add wiki-link support with `[[TARGET]]` syntax and autocomplete.
+- Typing `[[` opens autocomplete menu with ranked document suggestions.
+- Search by title and slug with prefix/substring matching and status tie-breakers.
+- Show "Create" option when no exact match exists; creates note without navigating.
+- Render wiki-links as styled clickable links with dimmed brackets.
+- Click navigates to existing doc or creates and opens new doc.
+- Add repository methods for link resolution and doc creation from title.
+- Add IndexedDB slug index for fast lookup (schema version 4).
+
 ## 0.8.0 - 2026-01-20
 - Replace home with Now View including Today, Inbox, and Workbench sections.
 - Add Today Note find-or-create flow using daily slug and Zurich-local date.

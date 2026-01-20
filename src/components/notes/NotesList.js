@@ -219,8 +219,10 @@ export default function NotesList() {
 
   const isSearchMode = query.trim().length >= 2;
   const visibleNotes = useMemo(() => {
+    // When "Show archived" is active, show ONLY archived notes
+    // Otherwise show only non-archived notes
     let filtered = listIncludeArchived
-      ? notes
+      ? notes.filter((note) => note.archivedAt != null)
       : notes.filter((note) => note.archivedAt == null);
 
     if (filterConflicts) {
@@ -233,10 +235,10 @@ export default function NotesList() {
   }, [listIncludeArchived, notes, filterConflicts]);
 
   const conflictCount = useMemo(() => {
-    const allNotes = listIncludeArchived
-      ? notes
+    const filteredNotes = listIncludeArchived
+      ? notes.filter((note) => note.archivedAt != null)
       : notes.filter((note) => note.archivedAt == null);
-    return allNotes.filter(
+    return filteredNotes.filter(
       (note) => getDerivedTitle(note).startsWith(CONFLICT_PREFIX)
     ).length;
   }, [listIncludeArchived, notes]);

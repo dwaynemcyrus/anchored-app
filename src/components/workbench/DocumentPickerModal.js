@@ -43,9 +43,12 @@ export default function DocumentPickerModal({
           limit: RECENTS_LIMIT + excludeIds.length,
           includeArchived: false,
         });
-        // Filter out excluded IDs and daily notes
+        // Filter out excluded IDs, daily notes, and inbox items
         const filtered = docs.filter(
-          (doc) => !excludeIds.includes(doc.id) && doc.type !== DOCUMENT_TYPE_DAILY
+          (doc) =>
+            !excludeIds.includes(doc.id) &&
+            doc.type !== DOCUMENT_TYPE_DAILY &&
+            doc.inboxAt == null
         );
         setRecentDocs(filtered.slice(0, RECENTS_LIMIT));
       } catch (err) {
@@ -86,10 +89,16 @@ export default function DocumentPickerModal({
           includeArchived: false,
         });
         const results = searchDocs(docs, trimmedQuery);
-        // Filter out excluded IDs and daily notes
-        const filtered = results.filter(
-          (doc) => !excludeIds.includes(doc.id) && doc.type !== DOCUMENT_TYPE_DAILY
-        );
+        // Filter out excluded IDs, daily notes, and inbox items
+        const docsById = new Map(docs.map((d) => [d.id, d]));
+        const filtered = results.filter((doc) => {
+          const fullDoc = docsById.get(doc.id);
+          return (
+            !excludeIds.includes(doc.id) &&
+            doc.type !== DOCUMENT_TYPE_DAILY &&
+            fullDoc?.inboxAt == null
+          );
+        });
         setSearchResults(filtered.slice(0, RESULTS_LIMIT));
       } catch (err) {
         console.error("Search failed:", err);

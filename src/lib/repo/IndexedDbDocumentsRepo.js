@@ -561,6 +561,8 @@ export class IndexedDbDocumentsRepo {
           .filter((doc) => {
             // Always exclude trashed
             if (doc.deletedAt != null) return false;
+            // Always exclude inbox items
+            if (doc.inboxAt != null) return false;
             // Optionally exclude archived
             if (!includeArchived && doc.archivedAt != null) return false;
             return true;

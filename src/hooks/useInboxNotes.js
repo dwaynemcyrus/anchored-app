@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { getDocumentsRepo } from "@/lib/repo/getDocumentsRepo";
+import { useNotesStore } from "@/store/notesStore";
 
 /**
  * Hook for managing inbox notes in the inbox processing wizard.
@@ -19,6 +20,7 @@ export function useInboxNotes() {
   const [error, setError] = useState(null);
   const [actionError, setActionError] = useState(null);
   const [processing, setProcessing] = useState(false);
+  const decrementInboxCount = useNotesStore((state) => state.decrementInboxCount);
 
   const currentNote = notes[currentIndex] ?? null;
   const remaining = notes.length - currentIndex;
@@ -66,6 +68,7 @@ export function useInboxNotes() {
           ...updates,
           inboxAt: null,
         });
+        decrementInboxCount();
         advance();
         return { success: true };
       } catch (err) {
@@ -76,7 +79,7 @@ export function useInboxNotes() {
         setProcessing(false);
       }
     },
-    [currentNote, processing, advance]
+    [currentNote, processing, advance, decrementInboxCount]
   );
 
   // Archive - sets archivedAt and clears inboxAt
@@ -88,6 +91,7 @@ export function useInboxNotes() {
     try {
       const repo = getDocumentsRepo();
       await repo.archive(currentNote.id);
+      decrementInboxCount();
       advance();
       return { success: true };
     } catch (err) {
@@ -97,7 +101,7 @@ export function useInboxNotes() {
     } finally {
       setProcessing(false);
     }
-  }, [currentNote, processing, advance]);
+  }, [currentNote, processing, advance, decrementInboxCount]);
 
   // Trash - sets deletedAt and clears inboxAt
   const trashNote = useCallback(async () => {
@@ -108,6 +112,7 @@ export function useInboxNotes() {
     try {
       const repo = getDocumentsRepo();
       await repo.trash(currentNote.id);
+      decrementInboxCount();
       advance();
       return { success: true };
     } catch (err) {
@@ -117,7 +122,7 @@ export function useInboxNotes() {
     } finally {
       setProcessing(false);
     }
-  }, [currentNote, processing, advance]);
+  }, [currentNote, processing, advance, decrementInboxCount]);
 
   // Skip current note (if it was deleted externally)
   const skipCurrent = useCallback(() => {

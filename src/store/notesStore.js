@@ -1,7 +1,7 @@
 import { create } from "zustand";
 import { getDocumentsRepo } from "../lib/repo/getDocumentsRepo";
 import { deriveDocumentTitle } from "../lib/documents/deriveTitle";
-import { DOCUMENT_TYPE_NOTE } from "../types/document";
+import { DOCUMENT_TYPE_NOTE, DOCUMENT_TYPE_DAILY } from "../types/document";
 
 const sortNotes = (notes) => notes.slice().sort((a, b) => b.updatedAt - a.updatedAt);
 
@@ -11,6 +11,7 @@ const toListItem = (document) => ({
   title: deriveDocumentTitle(document),
   updatedAt: document.updatedAt,
   archivedAt: document.archivedAt ?? null,
+  inboxAt: document.inboxAt ?? null,
 });
 
 const shouldIncludeInList = (document, includeArchived) =>
@@ -37,6 +38,25 @@ export const useNotesStore = create((set, get) => ({
   hasHydrated: false,
   hydrateError: null,
   listIncludeArchived: false,
+  inboxCount: 0,
+  inboxCountLoaded: false,
+  loadInboxCount: async () => {
+    try {
+      const repo = getDocumentsRepo();
+      const notes = await repo.listInboxNotes();
+      // Exclude daily notes from inbox count
+      const filtered = notes.filter((note) => note.type !== DOCUMENT_TYPE_DAILY);
+      set({ inboxCount: filtered.length, inboxCountLoaded: true });
+    } catch (error) {
+      console.error("Failed to load inbox count:", error);
+      set({ inboxCountLoaded: true });
+    }
+  },
+  decrementInboxCount: () => {
+    set((state) => ({
+      inboxCount: Math.max(0, state.inboxCount - 1),
+    }));
+  },
   hydrate: async (options = {}) => {
     const { includeArchived, force = false } = options;
     const currentIncludeArchived = get().listIncludeArchived;
@@ -110,6 +130,8 @@ export const useNotesStore = create((set, get) => ({
           : shouldIncludeInList(document, state.listIncludeArchived)
             ? upsertListItem(state.notes, toListItem(document))
             : state.notes,
+        // Increment inbox count if note was added to inbox
+        inboxCount: inboxAt != null ? state.inboxCount + 1 : state.inboxCount,
       }));
       return document.id;
     } catch (error) {
@@ -196,18 +218,29 @@ export const useNotesStore = create((set, get) => ({
       return { success: false, error: error.message };
     }
   },
-  archiveNote: async (id) => {
+  archiveNote: async (id, options = {}) => {
     if (typeof id !== "string") return;
+    const { wasInInbox = false } = options;
     const now = Date.now();
     set((state) => {
       const existing = state.notesById[id];
-      if (!existing) return state;
-      const updated = { ...existing, archivedAt: now, updatedAt: now };
+      // Check if note was in inbox (from cache or caller)
+      const noteWasInInbox = wasInInbox || (existing?.inboxAt != null);
+      // Update notesById if the note is cached there
+      const nextNotesById = existing
+        ? { ...state.notesById, [id]: { ...existing, archivedAt: now, updatedAt: now, inboxAt: null } }
+        : state.notesById;
+      // Always update the list - remove if not showing archived, otherwise update archivedAt
+      const nextNotes = state.listIncludeArchived
+        ? state.notes.map((note) =>
+            note.id === id ? { ...note, archivedAt: now, updatedAt: now } : note
+          )
+        : removeListItem(state.notes, id);
       return {
-        notesById: { ...state.notesById, [id]: updated },
-        notes: shouldIncludeInList(updated, state.listIncludeArchived)
-          ? upsertListItem(state.notes, toListItem(updated))
-          : removeListItem(state.notes, id),
+        notesById: nextNotesById,
+        notes: nextNotes,
+        // Decrement inbox count if note was in inbox
+        inboxCount: noteWasInInbox ? Math.max(0, state.inboxCount - 1) : state.inboxCount,
       };
     });
     try {
@@ -222,13 +255,17 @@ export const useNotesStore = create((set, get) => ({
     const now = Date.now();
     set((state) => {
       const existing = state.notesById[id];
-      if (!existing) return state;
-      const updated = { ...existing, archivedAt: null, updatedAt: now };
+      // Update notesById if the note is cached there
+      const nextNotesById = existing
+        ? { ...state.notesById, [id]: { ...existing, archivedAt: null, updatedAt: now } }
+        : state.notesById;
+      // Update the list item to clear archivedAt
+      const nextNotes = state.notes.map((note) =>
+        note.id === id ? { ...note, archivedAt: null, updatedAt: now } : note
+      );
       return {
-        notesById: { ...state.notesById, [id]: updated },
-        notes: shouldIncludeInList(updated, state.listIncludeArchived)
-          ? upsertListItem(state.notes, toListItem(updated))
-          : removeListItem(state.notes, id),
+        notesById: nextNotesById,
+        notes: sortNotes(nextNotes),
       };
     });
     try {
@@ -238,16 +275,24 @@ export const useNotesStore = create((set, get) => ({
       console.error("Failed to unarchive note", error);
     }
   },
-  trashNote: async (id) => {
+  trashNote: async (id, options = {}) => {
     if (typeof id !== "string") return;
+    const { wasInInbox = false } = options;
     const now = Date.now();
     set((state) => {
       const existing = state.notesById[id];
-      if (!existing) return state;
-      const updated = { ...existing, deletedAt: now, updatedAt: now };
+      // Check if note was in inbox (from cache or caller)
+      const noteWasInInbox = wasInInbox || (existing?.inboxAt != null);
+      // Update notesById if the note is cached there
+      const nextNotesById = existing
+        ? { ...state.notesById, [id]: { ...existing, deletedAt: now, updatedAt: now, inboxAt: null } }
+        : state.notesById;
+      // Always remove from list - trashed notes never show in list
       return {
-        notesById: { ...state.notesById, [id]: updated },
+        notesById: nextNotesById,
         notes: removeListItem(state.notes, id),
+        // Decrement inbox count if note was in inbox
+        inboxCount: noteWasInInbox ? Math.max(0, state.inboxCount - 1) : state.inboxCount,
       };
     });
     try {
@@ -260,20 +305,24 @@ export const useNotesStore = create((set, get) => ({
   restoreNote: async (id) => {
     if (typeof id !== "string") return;
     const now = Date.now();
-    set((state) => {
-      const existing = state.notesById[id];
-      if (!existing) return state;
-      const updated = { ...existing, deletedAt: null, updatedAt: now };
-      return {
-        notesById: { ...state.notesById, [id]: updated },
-        notes: shouldIncludeInList(updated, state.listIncludeArchived)
-          ? upsertListItem(state.notes, toListItem(updated))
-          : removeListItem(state.notes, id),
-      };
-    });
+    // For restore, we need to re-fetch the note to get full data for the list
+    // Since trashed notes aren't in the list, we may not have the data
     try {
       const repo = getDocumentsRepo();
       await repo.restore(id);
+      // Fetch the restored note to get current data
+      const restored = await repo.get(id);
+      if (!restored) return;
+      set((state) => {
+        const nextNotesById = { ...state.notesById, [id]: restored };
+        const nextNotes = shouldIncludeInList(restored, state.listIncludeArchived)
+          ? upsertListItem(state.notes, toListItem(restored))
+          : state.notes;
+        return {
+          notesById: nextNotesById,
+          notes: nextNotes,
+        };
+      });
     } catch (error) {
       console.error("Failed to restore note", error);
     }

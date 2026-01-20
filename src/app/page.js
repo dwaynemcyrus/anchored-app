@@ -5,8 +5,8 @@ import Link from "next/link";
 import { getDocumentsRepo } from "@/lib/repo/getDocumentsRepo";
 import { useTodayNote } from "@/hooks/useTodayNote";
 import { useWorkbenchStore } from "@/store/workbenchStore";
+import { useNotesStore } from "@/store/notesStore";
 import { deriveDocumentTitle } from "@/lib/documents/deriveTitle";
-import { DOCUMENT_TYPE_DAILY } from "@/types/document";
 import DocumentPickerModal from "@/components/workbench/DocumentPickerModal";
 import ReplaceModal from "@/components/workbench/ReplaceModal";
 import styles from "../styles/now.module.css";
@@ -32,8 +32,9 @@ export default function NowView() {
     cleanupInvalidIds,
   } = useWorkbenchStore();
 
-  const [inboxCount, setInboxCount] = useState(0);
-  const [inboxLoading, setInboxLoading] = useState(true);
+  const inboxCount = useNotesStore((state) => state.inboxCount);
+  const inboxCountLoaded = useNotesStore((state) => state.inboxCountLoaded);
+  const loadInboxCount = useNotesStore((state) => state.loadInboxCount);
 
   const [pinnedDocs, setPinnedDocs] = useState([]);
   const [pinnedLoading, setPinnedLoading] = useState(true);
@@ -54,23 +55,12 @@ export default function NowView() {
     hydrateWorkbench();
   }, [hydrateWorkbench]);
 
-  // Load inbox count (excluding daily notes)
+  // Load inbox count from store (excluding daily notes)
   useEffect(() => {
-    async function loadInboxCount() {
-      try {
-        const repo = getDocumentsRepo();
-        const notes = await repo.listInboxNotes();
-        // Exclude daily notes from inbox count
-        const filtered = notes.filter((note) => note.type !== DOCUMENT_TYPE_DAILY);
-        setInboxCount(filtered.length);
-      } catch (err) {
-        console.error("Failed to load inbox count:", err);
-      } finally {
-        setInboxLoading(false);
-      }
+    if (!inboxCountLoaded) {
+      loadInboxCount();
     }
-    loadInboxCount();
-  }, []);
+  }, [inboxCountLoaded, loadInboxCount]);
 
   // Load pinned documents when workbench is hydrated or pinnedIds change
   useEffect(() => {
@@ -221,7 +211,7 @@ export default function NowView() {
               </span>
             </div>
             <div className={styles.actionCardRight}>
-              {!inboxLoading && (
+              {inboxCountLoaded && (
                 <span
                   className={`${styles.badge} ${
                     inboxCount === 0 ? styles.badgeEmpty : ""

@@ -116,6 +116,9 @@ export default function Shell({ children }) {
     typeof pathname === "string" &&
     pathname.startsWith("/knowledge/notes/") &&
     pathname !== "/knowledge/notes";
+
+  // Determine back link based on current route
+  const backHref = isNoteEditorRoute ? "/knowledge/notes" : "/";
   const [captureOpen, setCaptureOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [captureValue, setCaptureValue] = useState("");
@@ -437,9 +440,9 @@ export default function Shell({ children }) {
               </button>
             ) : (
               <Link
-                href="/"
+                href={backHref}
                 className={styles.headerButton}
-                aria-label="Back to home"
+                aria-label={isNoteEditorRoute ? "Back to notes" : "Back to home"}
               >
                 <BackIcon />
               </Link>

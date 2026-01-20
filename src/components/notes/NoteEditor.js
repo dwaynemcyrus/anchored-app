@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import { Compartment, EditorState, RangeSetBuilder, StateField } from "@codemirror/state";
 import { Decoration, EditorView } from "@codemirror/view";
 import { markdown } from "@codemirror/lang-markdown";
-import { basicSetup } from "codemirror";
+import { minimalSetup } from "codemirror";
 import { getDerivedTitle, useNotesStore } from "../../store/notesStore";
 import { useShellHeaderStore } from "../../store/shellHeaderStore";
 import { useEditorSettingsStore } from "../../store/editorSettingsStore";
@@ -278,7 +278,7 @@ export default function NoteEditor({ noteId }) {
     const state = EditorState.create({
       doc: note.body,
       extensions: [
-        basicSetup,
+        minimalSetup,
         markdown(),
         EditorView.lineWrapping,
         focusCompartmentRef.current.of([]),
