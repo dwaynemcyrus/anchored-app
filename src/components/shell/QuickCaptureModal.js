@@ -370,7 +370,14 @@ export default function QuickCaptureModal({
                       tabIndex={-1}
                       onClick={() => handleOpenNote(item.id)}
                     >
-                      {item.title || "Untitled"}
+                      <span className={styles.listButtonTitle}>
+                        {item.title || "Untitled"}
+                      </span>
+                      {item.archivedAt != null ? (
+                        <span className={styles.archiveBadge} aria-label="Archived">
+                          A
+                        </span>
+                      ) : null}
                     </button>
                   </li>
                 );
