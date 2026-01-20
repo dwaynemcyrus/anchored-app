@@ -508,4 +508,91 @@ export class IndexedDbDocumentsRepo {
     const notes = await this.listInboxNotes();
     return notes.length;
   }
+
+  /**
+   * Find document by exact title match.
+   * @param {string} title - Title to match exactly
+   * @returns {Promise<Object | null>}
+   */
+  async findDocByExactTitle(title) {
+    if (typeof title !== "string" || !title.trim()) {
+      return null;
+    }
+    const normalizedTitle = title.trim().toLowerCase();
+    const db = await getDb();
+
+    return new Promise((resolve, reject) => {
+      const transaction = db.transaction(DOCUMENTS_STORE, "readonly");
+      const store = transaction.objectStore(DOCUMENTS_STORE);
+      const request = store.getAll();
+
+      request.onsuccess = () => {
+        const items = Array.isArray(request.result) ? request.result : [];
+        const match = items.find((doc) => {
+          if (doc.deletedAt != null) return false;
+          const docTitle = deriveDocumentTitle(doc);
+          return docTitle.trim().toLowerCase() === normalizedTitle;
+        });
+        resolve(match || null);
+      };
+      request.onerror = () => reject(request.error);
+    });
+  }
+
+  /**
+   * Get all documents with metadata needed for wiki-link search.
+   * Excludes trashed documents by default.
+   * @param {Object} options
+   * @param {boolean} options.includeArchived - Include archived docs (default: false)
+   * @returns {Promise<Array<{id, title, slug, type, updatedAt, archivedAt}>>}
+   */
+  async getDocsForLinkSearch(options = {}) {
+    const { includeArchived = false } = options;
+    const db = await getDb();
+
+    return new Promise((resolve, reject) => {
+      const transaction = db.transaction(DOCUMENTS_STORE, "readonly");
+      const store = transaction.objectStore(DOCUMENTS_STORE);
+      const request = store.getAll();
+
+      request.onsuccess = () => {
+        const items = Array.isArray(request.result) ? request.result : [];
+        const docs = items
+          .filter((doc) => {
+            // Always exclude trashed
+            if (doc.deletedAt != null) return false;
+            // Optionally exclude archived
+            if (!includeArchived && doc.archivedAt != null) return false;
+            return true;
+          })
+          .map((doc) => ({
+            id: doc.id,
+            title: deriveDocumentTitle(doc),
+            slug: doc.slug || null,
+            type: doc.type,
+            updatedAt: doc.updatedAt,
+            archivedAt: doc.archivedAt ?? null,
+          }));
+        resolve(docs);
+      };
+      request.onerror = () => reject(request.error);
+    });
+  }
+
+  /**
+   * Create a new document from a title (for wiki-link creation).
+   * @param {string} title - The title for the new document
+   * @returns {Promise<Object>} - The created document
+   */
+  async createDocFromTitle(title) {
+    if (typeof title !== "string" || !title.trim()) {
+      throw new Error("Title is required");
+    }
+    const trimmedTitle = title.trim();
+    return this.create({
+      type: DOCUMENT_TYPE_NOTE,
+      title: trimmedTitle,
+      body: "",
+    });
+  }
 }

@@ -1,5 +1,5 @@
 # Build Spec — Now View v1  
-
+To continue this session, run `codex resume 019bd8d6-97c1-7713-8119-d533ca4c9fb7`
 
 Today Note • Inbox Count • Workbench (Pinned Documents)
 

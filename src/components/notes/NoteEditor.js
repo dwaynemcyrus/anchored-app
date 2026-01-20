@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import { Compartment, EditorState, RangeSetBuilder, StateField } from "@codemirror/state";
 import { Decoration, EditorView } from "@codemirror/view";
 import { markdown } from "@codemirror/lang-markdown";
@@ -9,6 +10,10 @@ import { basicSetup } from "codemirror";
 import { getDerivedTitle, useNotesStore } from "../../store/notesStore";
 import { useShellHeaderStore } from "../../store/shellHeaderStore";
 import { useEditorSettingsStore } from "../../store/editorSettingsStore";
+import { wikiLinkAutocomplete } from "../../lib/editor/wikiLinkAutocomplete";
+import { wikiLinkDecorations } from "../../lib/editor/wikiLinkDecorations";
+import { wikiLinkClickHandler } from "../../lib/editor/wikiLinkClickHandler";
+import { getDocumentsRepo } from "../../lib/repo/getDocumentsRepo";
 import styles from "../../styles/noteEditor.module.css";
 
 const SAVED_LABEL = "Saved";
@@ -65,6 +70,7 @@ const createFocusField = () =>
   });
 
 export default function NoteEditor({ noteId }) {
+  const router = useRouter();
   const hydrate = useNotesStore((state) => state.hydrate);
   const loadNote = useNotesStore((state) => state.loadNote);
   const hasHydrated = useNotesStore((state) => state.hasHydrated);
@@ -236,6 +242,39 @@ export default function NoteEditor({ noteId }) {
       applyTypewriterScroll(update.view);
     });
 
+    // Wiki-link callbacks
+    const getDocs = async () => {
+      const repo = getDocumentsRepo();
+      return repo.getDocsForLinkSearch({ includeArchived: false });
+    };
+
+    const onCreateDoc = async (title) => {
+      const repo = getDocumentsRepo();
+      return repo.createDocFromTitle(title);
+    };
+
+    // Wiki-link click handling
+    const resolveLink = async (target) => {
+      const repo = getDocumentsRepo();
+      // Try slug first
+      const bySlug = await repo.getBySlug(target);
+      if (bySlug && bySlug.deletedAt == null) return bySlug;
+      // Then try exact title
+      const byTitle = await repo.findDocByExactTitle(target);
+      if (byTitle && byTitle.deletedAt == null) return byTitle;
+      return null;
+    };
+
+    const onNavigate = (doc) => {
+      router.push(`/knowledge/notes/${doc.id}`);
+    };
+
+    const onCreateAndNavigate = async (target) => {
+      const repo = getDocumentsRepo();
+      const doc = await repo.createDocFromTitle(target);
+      router.push(`/knowledge/notes/${doc.id}`);
+    };
+
     const state = EditorState.create({
       doc: note.body,
       extensions: [
@@ -243,6 +282,9 @@ export default function NoteEditor({ noteId }) {
         markdown(),
         EditorView.lineWrapping,
         focusCompartmentRef.current.of([]),
+        wikiLinkAutocomplete({ getDocs, onCreateDoc }),
+        wikiLinkDecorations(),
+        wikiLinkClickHandler({ onNavigate, onCreateAndNavigate, resolveLink }),
         updateListener,
       ],
     });
@@ -273,6 +315,7 @@ export default function NoteEditor({ noteId }) {
     flushPendingSave,
     handleManualScroll,
     queueSave,
+    router,
   ]);
 
   useEffect(() => {
