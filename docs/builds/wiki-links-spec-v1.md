@@ -1,5 +1,5 @@
 # Build Spec — Wiki-Links v1 + Autocomplete (Required)
-
+To continue this session, run `codex resume 019bd8f3-5790-7da0-a0aa-74e54e85846e`
 
 Status: Approved
 Target: Anchored OS
