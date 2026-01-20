@@ -1,0 +1,156 @@
+.backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(20, 17, 15, 0.4);
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  z-index: 50;
+  padding: 20px;
+}
+
+.modal {
+  width: 100%;
+  max-width: 400px;
+  background: #f6f2ea;
+  border-radius: 20px;
+  padding: 24px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  box-shadow: 0 10px 40px rgba(20, 17, 15, 0.25);
+}
+
+.header {
+  text-align: center;
+}
+
+.title {
+  font-size: 20px;
+  font-weight: 600;
+  color: #14110f;
+  margin: 0 0 6px;
+}
+
+.subtitle {
+  font-size: 14px;
+  color: #5a4f45;
+  margin: 0;
+}
+
+.newDocSection {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.sectionLabel {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #5a4f45;
+  font-weight: 600;
+}
+
+.newDocCard {
+  padding: 12px 14px;
+  border-radius: 10px;
+  background: #e8f4e8;
+  border: 1px solid rgba(34, 139, 34, 0.2);
+  color: #14110f;
+  font-size: 15px;
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.replaceSection {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.listItem {
+  margin: 0;
+  padding: 0;
+}
+
+.listButton {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  text-align: left;
+  border-radius: 10px;
+  border: 1px solid rgba(20, 17, 15, 0.08);
+  background: #fcfbf8;
+  color: #14110f;
+  padding: 12px 14px;
+  font-size: 15px;
+  cursor: pointer;
+  transition: border-color 160ms ease, background 160ms ease;
+}
+
+.listButton:hover {
+  border-color: rgba(180, 80, 80, 0.3);
+  background: #fef8f8;
+}
+
+.listButton:active {
+  background: #fdf0f0;
+}
+
+.listButtonTitle {
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+  min-width: 0;
+}
+
+.listButtonArrow {
+  color: #b45050;
+  font-size: 18px;
+  font-weight: 600;
+  flex-shrink: 0;
+  margin-left: 12px;
+}
+
+.footer {
+  display: flex;
+  justify-content: center;
+}
+
+.cancelButton {
+  padding: 10px 24px;
+  border-radius: 10px;
+  border: 1px solid rgba(20, 17, 15, 0.2);
+  background: transparent;
+  color: #14110f;
+  font-size: 15px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: border-color 160ms ease, background 160ms ease;
+}
+
+.cancelButton:hover {
+  border-color: rgba(20, 17, 15, 0.4);
+  background: rgba(20, 17, 15, 0.03);
+}
+
+@media (min-width: 600px) {
+  .backdrop {
+    align-items: center;
+  }
+}

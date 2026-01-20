@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.8.0 - 2026-01-20
+- Replace home with Now View including Today, Inbox, and Workbench sections.
+- Add Today Note find-or-create flow using daily slug and Zurich-local date.
+- Update inbox count on Now View to exclude daily and inactive documents.
+- Introduce Workbench pinning with max 5 items, replace flow, and unpin actions.
+- Persist Workbench pins in settings with safe cleanup of missing documents.
+
 ## 0.7.0 - 2026-01-19
 - Add inbox processing wizard at `/inbox` for one-at-a-time note triage.
 - Extend notes with `inboxAt` field and DB index (schema version 3).

@@ -101,12 +101,31 @@ export class IndexedDbDocumentsRepo {
     });
   }
 
+  async getBySlug(slug) {
+    if (typeof slug !== "string" || !slug.trim()) {
+      throw new Error("Document slug is required");
+    }
+    const db = await getDb();
+    return new Promise((resolve, reject) => {
+      const transaction = db.transaction(DOCUMENTS_STORE, "readonly");
+      const store = transaction.objectStore(DOCUMENTS_STORE);
+      const index = store.index("slug");
+      const request = index.get(slug);
+
+      request.onsuccess = () => {
+        resolve(request.result || null);
+      };
+      request.onerror = () => reject(request.error);
+    });
+  }
+
   async create(input) {
     ensureInput(input);
     const now = Date.now();
     const document = {
       id: generateId(),
       type: input.type || DOCUMENT_TYPE_NOTE,
+      slug: input.slug ?? null,
       title: input.title ?? null,
       body: input.body,
       meta: input.meta || {},

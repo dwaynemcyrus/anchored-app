@@ -2,6 +2,7 @@
  * @typedef {Object} Document
  * @property {string} id
  * @property {string} type
+ * @property {string | null} slug
  * @property {string | null} title
  * @property {string} body
  * @property {Record<string, any>} meta
@@ -12,3 +13,4 @@
  */
 
 export const DOCUMENT_TYPE_NOTE = "note";
+export const DOCUMENT_TYPE_DAILY = "daily";

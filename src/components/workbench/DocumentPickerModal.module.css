@@ -1,0 +1,152 @@
+.backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(20, 17, 15, 0.4);
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  z-index: 50;
+  padding: 20px;
+}
+
+.modal {
+  width: 100%;
+  max-width: 480px;
+  max-height: 70vh;
+  background: #f6f2ea;
+  border-radius: 20px;
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  box-shadow: 0 10px 40px rgba(20, 17, 15, 0.25);
+}
+
+.header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.title {
+  font-size: 18px;
+  font-weight: 600;
+  color: #14110f;
+  margin: 0;
+}
+
+.closeButton {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  border: none;
+  background: rgba(20, 17, 15, 0.08);
+  color: #5a4f45;
+  font-size: 20px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 160ms ease;
+}
+
+.closeButton:hover {
+  background: rgba(20, 17, 15, 0.15);
+}
+
+.searchContainer {
+  position: relative;
+}
+
+.searchInput {
+  width: 100%;
+  border-radius: 12px;
+  border: 1px solid rgba(20, 17, 15, 0.12);
+  background: #fff;
+  padding: 12px 14px;
+  font-size: 16px;
+  color: #14110f;
+}
+
+.searchInput:focus {
+  outline: none;
+  border-color: #14110f;
+}
+
+.results {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.sectionTitle {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #5a4f45;
+  font-weight: 600;
+}
+
+.emptyState {
+  font-size: 14px;
+  color: #8a7f73;
+  padding: 16px;
+  text-align: center;
+}
+
+.list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.listItem {
+  margin: 0;
+  padding: 0;
+}
+
+.listButton {
+  width: 100%;
+  text-align: left;
+  border-radius: 10px;
+  border: 1px solid rgba(20, 17, 15, 0.08);
+  background: #fcfbf8;
+  color: #14110f;
+  padding: 12px 14px;
+  font-size: 15px;
+  cursor: pointer;
+  transition: border-color 160ms ease, background 160ms ease;
+}
+
+.listButton:hover {
+  border-color: rgba(20, 17, 15, 0.2);
+  background: #fff;
+}
+
+.listButton:active {
+  background: #f0ede6;
+}
+
+.listButtonTitle {
+  font-weight: 500;
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@media (min-width: 600px) {
+  .backdrop {
+    align-items: center;
+  }
+
+  .modal {
+    max-height: 60vh;
+  }
+}
