@@ -1,4 +1,5 @@
 # Anchored OS — Search v1.5 Build Spec (Offline, Trust + Speed)
+To continue this session, run codex resume 019bdba6-46e6-7ef3-8b23-c7b1361a5ad2
 
 ## Scope
 Implement Search v1.5 for Anchored OS.
