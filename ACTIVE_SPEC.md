@@ -1,4 +1,4 @@
-Active build spec: docs/builds/wiki-links-spec-v1.md
+Active build spec: docs/builds/local-search-spec-v1.5.md
 
 Instruction:
 - Follow AGENT.md and SCOPE.md.

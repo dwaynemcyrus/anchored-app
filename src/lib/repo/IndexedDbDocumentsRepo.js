@@ -336,8 +336,10 @@ export class IndexedDbDocumentsRepo {
           .map((doc) => ({
             id: doc.id,
             title: deriveDocumentTitle(doc),
+            slug: doc.slug || null,
             body: doc.body || "",
             updatedAt: doc.updatedAt,
+            createdAt: doc.createdAt,
             deletedAt: doc.deletedAt ?? null,
             archivedAt: doc.archivedAt ?? null,
           }));
