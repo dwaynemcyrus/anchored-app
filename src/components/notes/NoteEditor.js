@@ -7,7 +7,7 @@ import { Compartment, EditorState, RangeSetBuilder, StateField } from "@codemirr
 import { Decoration, EditorView } from "@codemirror/view";
 import { markdown } from "@codemirror/lang-markdown";
 import { minimalSetup } from "codemirror";
-import { getDerivedTitle, useNotesStore } from "../../store/notesStore";
+import { getDerivedTitle, useDocumentsStore } from "../../store/documentsStore";
 import { useShellHeaderStore } from "../../store/shellHeaderStore";
 import { useEditorSettingsStore } from "../../store/editorSettingsStore";
 import { wikiLinkAutocomplete } from "../../lib/editor/wikiLinkAutocomplete";
@@ -69,14 +69,14 @@ const createFocusField = () =>
     provide: (field) => EditorView.decorations.from(field),
   });
 
-export default function NoteEditor({ noteId }) {
+export default function NoteEditor({ documentId }) {
   const router = useRouter();
-  const hydrate = useNotesStore((state) => state.hydrate);
-  const loadNote = useNotesStore((state) => state.loadNote);
-  const hasHydrated = useNotesStore((state) => state.hasHydrated);
-  const updateNoteBody = useNotesStore((state) => state.updateNoteBody);
-  const restoreNote = useNotesStore((state) => state.restoreNote);
-  const note = useNotesStore((state) => state.notesById[noteId]);
+  const hydrate = useDocumentsStore((state) => state.hydrate);
+  const loadDocument = useDocumentsStore((state) => state.loadDocument);
+  const hasHydrated = useDocumentsStore((state) => state.hasHydrated);
+  const updateDocumentBody = useDocumentsStore((state) => state.updateDocumentBody);
+  const restoreDocument = useDocumentsStore((state) => state.restoreDocument);
+  const document = useDocumentsStore((state) => state.documentsById[documentId]);
   const setHeaderTitle = useShellHeaderStore((state) => state.setTitle);
   const clearHeaderTitle = useShellHeaderStore((state) => state.clearTitle);
   const setHeaderStatus = useShellHeaderStore((state) => state.setStatus);
@@ -98,8 +98,8 @@ export default function NoteEditor({ noteId }) {
   const focusFieldRef = useRef(createFocusField());
 
   const [saveStatus, setSaveStatus] = useState(SAVED_LABEL);
-  const [loadedNoteId, setLoadedNoteId] = useState(null);
-  const isTrashed = note?.deletedAt != null;
+  const [loadedDocumentId, setLoadedDocumentId] = useState(null);
+  const isTrashed = document?.deletedAt != null;
 
   useEffect(() => {
     void hydrate();
@@ -116,7 +116,7 @@ export default function NoteEditor({ noteId }) {
         editorViewRef.current = null;
       }
     };
-  }, [noteId]);
+  }, [documentId]);
 
   useEffect(() => {
     return () => {
@@ -131,28 +131,28 @@ export default function NoteEditor({ noteId }) {
 
   useEffect(() => {
     let isActive = true;
-    loadNote(noteId).then(() => {
+    loadDocument(documentId).then(() => {
       if (isActive) {
-        setLoadedNoteId(noteId);
+        setLoadedDocumentId(documentId);
       }
     });
     return () => {
       isActive = false;
     };
-  }, [loadNote, noteId]);
+  }, [loadDocument, documentId]);
 
   const runSave = useCallback(
     async (body, requestId) => {
-      const result = await updateNoteBody(noteId, body);
+      const result = await updateDocumentBody(documentId, body);
       if (requestId !== saveRequestIdRef.current) return;
       if (result?.success) {
         setSaveStatus(SAVED_LABEL);
       } else {
-        console.error("Failed to save note", result?.error);
+        console.error("Failed to save document", result?.error);
         setSaveStatus(SAVE_FAILED_LABEL);
       }
     },
-    [noteId, updateNoteBody]
+    [documentId, updateDocumentBody]
   );
 
   const queueSave = useCallback(
@@ -226,12 +226,12 @@ export default function NoteEditor({ noteId }) {
       destroyEditor();
       return;
     }
-    if (!note) return;
+    if (!document) return;
     if (!editorHostRef.current) return;
     if (editorViewRef.current) return;
 
-    lastBodyRef.current = note.body;
-    pendingBodyRef.current = note.body;
+    lastBodyRef.current = document.body;
+    pendingBodyRef.current = document.body;
 
     const updateListener = EditorView.updateListener.of((update) => {
       if (!update.docChanged) return;
@@ -276,7 +276,7 @@ export default function NoteEditor({ noteId }) {
     };
 
     const state = EditorState.create({
-      doc: note.body,
+      doc: document.body,
       extensions: [
         minimalSetup,
         markdown(),
@@ -297,7 +297,7 @@ export default function NoteEditor({ noteId }) {
     editorViewRef.current.scrollDOM.addEventListener("scroll", handleManualScroll, {
       passive: true,
     });
-    if (note.body.trim().length === 0) {
+    if (document.body.trim().length === 0) {
       editorViewRef.current.focus();
     }
 
@@ -308,7 +308,7 @@ export default function NoteEditor({ noteId }) {
       flushPendingSave();
     };
   }, [
-    note,
+    document,
     isTrashed,
     applyTypewriterScroll,
     destroyEditor,
@@ -319,16 +319,16 @@ export default function NoteEditor({ noteId }) {
   ]);
 
   useEffect(() => {
-    if (!note) return;
+    if (!document) return;
     if (!editorViewRef.current) return;
     const currentDoc = editorViewRef.current.state.doc.toString();
-    if (note.body === currentDoc) return;
-    if (note.body === lastBodyRef.current) return;
+    if (document.body === currentDoc) return;
+    if (document.body === lastBodyRef.current) return;
     editorViewRef.current.dispatch({
-      changes: { from: 0, to: currentDoc.length, insert: note.body },
+      changes: { from: 0, to: currentDoc.length, insert: document.body },
     });
-    lastBodyRef.current = note.body;
-  }, [note]);
+    lastBodyRef.current = document.body;
+  }, [document]);
 
   useEffect(() => {
     if (!editorViewRef.current) return;
@@ -338,11 +338,11 @@ export default function NoteEditor({ noteId }) {
     });
   }, [focusMode]);
 
-  const title = useMemo(() => (note ? getDerivedTitle(note) : ""), [note]);
+  const title = useMemo(() => (document ? getDerivedTitle(document) : ""), [document]);
   const editorFontSize = FONT_SIZE_MAP[fontSize] ?? FONT_SIZE_MAP.default;
 
   useEffect(() => {
-    if (!note) {
+    if (!document) {
       clearHeaderTitle();
       return;
     }
@@ -350,7 +350,7 @@ export default function NoteEditor({ noteId }) {
     return () => {
       clearHeaderTitle();
     };
-  }, [note, title, setHeaderTitle, clearHeaderTitle]);
+  }, [document, title, setHeaderTitle, clearHeaderTitle]);
 
   useEffect(() => {
     setHeaderStatus(saveStatus);
@@ -359,7 +359,7 @@ export default function NoteEditor({ noteId }) {
     };
   }, [saveStatus, setHeaderStatus, clearHeaderStatus]);
 
-  if (!note && hasHydrated && loadedNoteId === noteId) {
+  if (!document && hasHydrated && loadedDocumentId === documentId) {
     return (
       <div className={styles.page}>
         <main className={styles.main}>
@@ -377,14 +377,14 @@ export default function NoteEditor({ noteId }) {
   return (
     <div className={styles.page}>
       <main className={styles.main}>
-        {note && isTrashed ? (
+        {document && isTrashed ? (
           <div className={styles.trashBanner} role="status">
             <div className={styles.trashBannerText}>This note is in Trash.</div>
             <div className={styles.trashBannerActions}>
               <button
                 type="button"
                 className={styles.trashBannerButton}
-                onClick={() => restoreNote(note.id)}
+                onClick={() => restoreDocument(document.id)}
               >
                 Restore
               </button>
@@ -398,9 +398,9 @@ export default function NoteEditor({ noteId }) {
           className={styles.editorWrap}
           style={{ "--editor-font-size": editorFontSize }}
         >
-          {note && isTrashed ? (
+          {document && isTrashed ? (
             <div className={styles.trashedContent}>
-              {note.body || "This note is empty."}
+              {document.body || "This note is empty."}
             </div>
           ) : (
             <div className={styles.editor} ref={editorHostRef} />

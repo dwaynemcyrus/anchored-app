@@ -3,9 +3,9 @@
 import { useEffect, useMemo, useState, useCallback, useRef } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
-import { useNotesStore, getDerivedTitle } from "../../store/notesStore";
+import { useDocumentsStore, getDerivedTitle } from "../../store/documentsStore";
 import { getDocumentsRepo } from "../../lib/repo/getDocumentsRepo";
-import { ensureSearchIndex, searchNotes } from "../../lib/search/searchNotes";
+import { ensureSearchIndex, searchDocuments } from "../../lib/search/searchDocuments";
 import { DOCUMENT_TYPE_NOTE } from "../../types/document";
 import styles from "../../styles/notesList.module.css";
 
@@ -30,15 +30,15 @@ export default function NotesList() {
   const initialQuery = searchParams.get("q") || "";
   const filterConflicts = searchParams.get("filter") === "conflicts";
 
-  const notes = useNotesStore((state) => state.notes);
-  const hydrate = useNotesStore((state) => state.hydrate);
-  const hydrateError = useNotesStore((state) => state.hydrateError);
-  const createNote = useNotesStore((state) => state.createNote);
-  const listIncludeArchived = useNotesStore((state) => state.listIncludeArchived);
-  const archiveNote = useNotesStore((state) => state.archiveNote);
-  const unarchiveNote = useNotesStore((state) => state.unarchiveNote);
-  const trashNote = useNotesStore((state) => state.trashNote);
-  const restoreNote = useNotesStore((state) => state.restoreNote);
+  const documents = useDocumentsStore((state) => state.documents);
+  const hydrate = useDocumentsStore((state) => state.hydrate);
+  const hydrateError = useDocumentsStore((state) => state.hydrateError);
+  const createDocument = useDocumentsStore((state) => state.createDocument);
+  const listIncludeArchived = useDocumentsStore((state) => state.listIncludeArchived);
+  const archiveDocument = useDocumentsStore((state) => state.archiveDocument);
+  const unarchiveDocument = useDocumentsStore((state) => state.unarchiveDocument);
+  const trashDocument = useDocumentsStore((state) => state.trashDocument);
+  const restoreDocument = useDocumentsStore((state) => state.restoreDocument);
 
   const [query, setQuery] = useState(initialQuery);
   const [searchResults, setSearchResults] = useState([]);
@@ -113,7 +113,7 @@ export default function NotesList() {
           includeArchived: listIncludeArchivedRef.current,
         });
         ensureSearchIndex(docs);
-        const results = searchNotes(trimmedQuery, RESULTS_LIMIT);
+        const results = searchDocuments(trimmedQuery, RESULTS_LIMIT);
         const docsById = new Map(docs.map((doc) => [doc.id, doc]));
         const withStatus = results.map((result) => {
           const match = docsById.get(result.id);
@@ -148,7 +148,7 @@ export default function NotesList() {
   }, []);
 
   const handleCreate = async () => {
-    const id = await createNote({}, { suppressListUpdate: true });
+    const id = await createDocument({}, { suppressListUpdate: true });
     if (id) {
       router.push(`/knowledge/notes/${id}`);
     }
@@ -162,11 +162,11 @@ export default function NotesList() {
     void hydrate({ force: true });
   };
 
-  const scheduleUndo = useCallback((note) => {
+  const scheduleUndo = useCallback((doc) => {
     if (undoTimerRef.current) {
       clearTimeout(undoTimerRef.current);
     }
-    setLastTrashed(note);
+    setLastTrashed(doc);
     undoTimerRef.current = setTimeout(() => {
       setLastTrashed(null);
       undoTimerRef.current = null;
@@ -174,79 +174,79 @@ export default function NotesList() {
   }, []);
 
   const handleTrash = useCallback(
-    async (note) => {
-      await trashNote(note.id);
-      setSearchResults((prev) => prev.filter((item) => item.id !== note.id));
+    async (doc) => {
+      await trashDocument(doc.id);
+      setSearchResults((prev) => prev.filter((item) => item.id !== doc.id));
       scheduleUndo({
-        id: note.id,
-        title: note.title || "Untitled",
+        id: doc.id,
+        title: doc.title || "Untitled",
       });
     },
-    [scheduleUndo, trashNote]
+    [scheduleUndo, trashDocument]
   );
 
   const handleUndoTrash = useCallback(async () => {
     if (!lastTrashed) return;
-    await restoreNote(lastTrashed.id);
+    await restoreDocument(lastTrashed.id);
     setLastTrashed(null);
-  }, [lastTrashed, restoreNote]);
+  }, [lastTrashed, restoreDocument]);
 
   const handleArchive = useCallback(
-    async (note) => {
-      await archiveNote(note.id);
+    async (doc) => {
+      await archiveDocument(doc.id);
       if (!listIncludeArchived) {
-        setSearchResults((prev) => prev.filter((item) => item.id !== note.id));
+        setSearchResults((prev) => prev.filter((item) => item.id !== doc.id));
       } else {
         setSearchResults((prev) =>
           prev.map((item) =>
-            item.id === note.id ? { ...item, archivedAt: Date.now() } : item
+            item.id === doc.id ? { ...item, archivedAt: Date.now() } : item
           )
         );
       }
     },
-    [archiveNote, listIncludeArchived]
+    [archiveDocument, listIncludeArchived]
   );
 
   const handleUnarchive = useCallback(
-    async (note) => {
-      await unarchiveNote(note.id);
+    async (doc) => {
+      await unarchiveDocument(doc.id);
       setSearchResults((prev) =>
         prev.map((item) =>
-          item.id === note.id ? { ...item, archivedAt: null } : item
+          item.id === doc.id ? { ...item, archivedAt: null } : item
         )
       );
     },
-    [unarchiveNote]
+    [unarchiveDocument]
   );
 
   const trimmedQuery = query.trim();
   const isSearchMode = trimmedQuery.length >= 2;
-  const visibleNotes = useMemo(() => {
-    // When "Show archived" is active, show ONLY archived notes
-    // Otherwise show only non-archived notes
+  const visibleDocuments = useMemo(() => {
+    // When "Show archived" is active, show ONLY archived documents
+    // Otherwise show only non-archived documents
     let filtered = listIncludeArchived
-      ? notes.filter((note) => note.archivedAt != null)
-      : notes.filter((note) => note.archivedAt == null);
+      ? documents.filter((doc) => doc.archivedAt != null)
+      : documents.filter((doc) => doc.archivedAt == null);
 
     if (filterConflicts) {
       filtered = filtered.filter(
-        (note) => getDerivedTitle(note).startsWith(CONFLICT_PREFIX)
+        (doc) => getDerivedTitle(doc).startsWith(CONFLICT_PREFIX)
       );
     }
 
     return filtered;
-  }, [listIncludeArchived, notes, filterConflicts]);
+  }, [listIncludeArchived, documents, filterConflicts]);
 
   const conflictCount = useMemo(() => {
-    const filteredNotes = listIncludeArchived
-      ? notes.filter((note) => note.archivedAt != null)
-      : notes.filter((note) => note.archivedAt == null);
-    return filteredNotes.filter(
-      (note) => getDerivedTitle(note).startsWith(CONFLICT_PREFIX)
+    const filteredDocuments = listIncludeArchived
+      ? documents.filter((doc) => doc.archivedAt != null)
+      : documents.filter((doc) => doc.archivedAt == null);
+    return filteredDocuments.filter(
+      (doc) => getDerivedTitle(doc).startsWith(CONFLICT_PREFIX)
     ).length;
-  }, [listIncludeArchived, notes]);
+  }, [listIncludeArchived, documents]);
 
-  const displayList = isSearchMode ? searchResults : visibleNotes;
+  const displayList = isSearchMode ? searchResults : visibleDocuments;
 
   const renderHighlightedText = (text, highlight) => {
     if (!highlight) return text;

@@ -2,9 +2,9 @@
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { useNotesStore } from "../../store/notesStore";
+import { useDocumentsStore } from "../../store/documentsStore";
 import { getDocumentsRepo } from "../../lib/repo/getDocumentsRepo";
-import { ensureSearchIndex, searchNotes } from "../../lib/search/searchNotes";
+import { ensureSearchIndex, searchDocuments } from "../../lib/search/searchDocuments";
 import { DOCUMENT_TYPE_NOTE } from "../../types/document";
 import styles from "./QuickCaptureModal.module.css";
 
@@ -27,8 +27,8 @@ export default function QuickCaptureModal({
   onBackdrop,
 }) {
   const router = useRouter();
-  const notes = useNotesStore((state) => state.notes);
-  const hydrate = useNotesStore((state) => state.hydrate);
+  const documents = useDocumentsStore((state) => state.documents);
+  const hydrate = useDocumentsStore((state) => state.hydrate);
   const [searchResults, setSearchResults] = useState([]);
   const [isSearching, setIsSearching] = useState(false);
   const [includeArchived, setIncludeArchived] = useState(false);
@@ -94,7 +94,7 @@ export default function QuickCaptureModal({
           includeArchived: true,
         });
         ensureSearchIndex(docs);
-        const results = searchNotes(trimmedQuery, RESULTS_LIMIT);
+        const results = searchDocuments(trimmedQuery, RESULTS_LIMIT);
         const docsById = new Map(docs.map((doc) => [doc.id, doc]));
         const withStatus = results.map((result) => {
           const match = docsById.get(result.id);
@@ -125,13 +125,13 @@ export default function QuickCaptureModal({
   const isSearchMode = trimmedValue.length > 0;
   const displayRecents = useMemo(() => {
     // Filter out inbox items (inboxAt != null) and optionally archived
-    const filtered = notes.filter(
-      (note) =>
-        note.inboxAt == null &&
-        (includeArchived || note.archivedAt == null)
+    const filtered = documents.filter(
+      (doc) =>
+        doc.inboxAt == null &&
+        (includeArchived || doc.archivedAt == null)
     );
     return filtered.slice(0, RECENTS_LIMIT);
-  }, [includeArchived, notes]);
+  }, [includeArchived, documents]);
   const visibleSearchResults = useMemo(() => {
     // Filter out trashed, inbox items, and optionally archived
     const filtered = searchResults.filter(

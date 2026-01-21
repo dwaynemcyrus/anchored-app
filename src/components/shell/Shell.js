@@ -6,7 +6,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import QuickCaptureModal from "./QuickCaptureModal";
 import { useShellHeaderStore } from "../../store/shellHeaderStore";
 import { useEditorSettingsStore } from "../../store/editorSettingsStore";
-import { useNotesStore } from "../../store/notesStore";
+import { useDocumentsStore } from "../../store/documentsStore";
 import styles from "./Shell.module.css";
 import layout from "./AppShell.module.css";
 import useVisualViewportInsets from "../../hooks/useVisualViewportInsets";
@@ -110,7 +110,7 @@ export default function Shell({ children }) {
   const fontSize = useEditorSettingsStore((state) => state.fontSize);
   const toggleFocusMode = useEditorSettingsStore((state) => state.toggleFocusMode);
   const cycleFontSize = useEditorSettingsStore((state) => state.cycleFontSize);
-  const createNote = useNotesStore((state) => state.createNote);
+  const createDocument = useDocumentsStore((state) => state.createDocument);
   const isHome = pathname === "/";
   const isNoteEditorRoute =
     typeof pathname === "string" &&
@@ -266,7 +266,7 @@ export default function Shell({ children }) {
     const trimmed = captureValue.trim();
     const body = trimmed ? `${trimmed}\n\n` : "\n";
     const now = Date.now();
-    await createNote({ body, title: null, inboxAt: now });
+    await createDocument({ body, title: null, inboxAt: now });
     if (rapidEnabled) {
       setCaptureValue("");
       setCaptureShouldFocus(true);
@@ -279,7 +279,7 @@ export default function Shell({ children }) {
     const trimmed = query.trim();
     if (!trimmed) return;
     const body = `${trimmed}\n\n`;
-    const id = await createNote({ body, title: null, inboxAt: null });
+    const id = await createDocument({ body, title: null, inboxAt: null });
     if (id) {
       handleCloseCapture();
       router.push(`/knowledge/notes/${id}`);

@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { getDerivedTitle } from "../../store/notesStore";
+import { getDerivedTitle } from "../../store/documentsStore";
 import styles from "../../styles/notesList.module.css";
 
 function formatUpdatedAt(timestamp) {
@@ -12,11 +12,11 @@ function formatUpdatedAt(timestamp) {
   });
 }
 
-export default function NoteListItem({ note }) {
+export default function NoteListItem({ document }) {
   return (
-    <Link href={`/knowledge/notes/${note.id}`} className={styles.listItem}>
-      <div className={styles.listItemTitle}>{getDerivedTitle(note)}</div>
-      <div className={styles.listItemMeta}>{formatUpdatedAt(note.updatedAt)}</div>
+    <Link href={`/knowledge/notes/${document.id}`} className={styles.listItem}>
+      <div className={styles.listItemTitle}>{getDerivedTitle(document)}</div>
+      <div className={styles.listItemMeta}>{formatUpdatedAt(document.updatedAt)}</div>
     </Link>
   );
 }

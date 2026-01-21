@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { getDocumentsRepo } from "@/lib/repo/getDocumentsRepo";
-import { useNotesStore } from "@/store/notesStore";
+import { useDocumentsStore } from "@/store/documentsStore";
 
 /**
  * Hook for managing inbox notes in the inbox processing wizard.
@@ -13,31 +13,31 @@ import { useNotesStore } from "@/store/notesStore";
  * - Actions: process (keep), archive, trash
  * - Optimistic updates with error recovery
  */
-export function useInboxNotes() {
-  const [notes, setNotes] = useState([]);
+export function useInboxDocuments() {
+  const [documents, setDocuments] = useState([]);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [actionError, setActionError] = useState(null);
   const [processing, setProcessing] = useState(false);
-  const decrementInboxCount = useNotesStore((state) => state.decrementInboxCount);
+  const decrementInboxCount = useDocumentsStore((state) => state.decrementInboxCount);
 
-  const currentNote = notes[currentIndex] ?? null;
-  const remaining = notes.length - currentIndex;
-  const isEmpty = !loading && notes.length === 0;
-  const isComplete = !loading && currentIndex >= notes.length && notes.length > 0;
+  const currentDocument = documents[currentIndex] ?? null;
+  const remaining = documents.length - currentIndex;
+  const isEmpty = !loading && documents.length === 0;
+  const isComplete = !loading && currentIndex >= documents.length && documents.length > 0;
 
-  // Load inbox notes
+  // Load inbox documents
   const loadInbox = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
       const repo = getDocumentsRepo();
-      const inboxNotes = await repo.listInboxNotes();
-      setNotes(inboxNotes);
+      const inboxDocs = await repo.listInboxNotes();
+      setDocuments(inboxDocs);
       setCurrentIndex(0);
     } catch (err) {
-      console.error("Failed to load inbox notes:", err);
+      console.error("Failed to load inbox documents:", err);
       setError(err.message || "Failed to load inbox");
     } finally {
       setLoading(false);
@@ -56,15 +56,15 @@ export function useInboxNotes() {
   }, []);
 
   // Process (Keep) - clears inboxAt, persists title changes
-  const processNote = useCallback(
+  const processDocument = useCallback(
     async (updates = {}) => {
-      if (!currentNote || processing) return { success: false };
+      if (!currentDocument || processing) return { success: false };
       setProcessing(true);
       setActionError(null);
 
       try {
         const repo = getDocumentsRepo();
-        await repo.update(currentNote.id, {
+        await repo.update(currentDocument.id, {
           ...updates,
           inboxAt: null,
         });
@@ -72,57 +72,57 @@ export function useInboxNotes() {
         advance();
         return { success: true };
       } catch (err) {
-        console.error("Failed to process note:", err);
-        setActionError(err.message || "Failed to process note");
+        console.error("Failed to process document:", err);
+        setActionError(err.message || "Failed to process document");
         return { success: false, error: err.message };
       } finally {
         setProcessing(false);
       }
     },
-    [currentNote, processing, advance, decrementInboxCount]
+    [currentDocument, processing, advance, decrementInboxCount]
   );
 
   // Archive - sets archivedAt and clears inboxAt
-  const archiveNote = useCallback(async () => {
-    if (!currentNote || processing) return { success: false };
+  const archiveDocument = useCallback(async () => {
+    if (!currentDocument || processing) return { success: false };
     setProcessing(true);
     setActionError(null);
 
     try {
       const repo = getDocumentsRepo();
-      await repo.archive(currentNote.id);
+      await repo.archive(currentDocument.id);
       decrementInboxCount();
       advance();
       return { success: true };
     } catch (err) {
-      console.error("Failed to archive note:", err);
-      setActionError(err.message || "Failed to archive note");
+      console.error("Failed to archive document:", err);
+      setActionError(err.message || "Failed to archive document");
       return { success: false, error: err.message };
     } finally {
       setProcessing(false);
     }
-  }, [currentNote, processing, advance, decrementInboxCount]);
+  }, [currentDocument, processing, advance, decrementInboxCount]);
 
   // Trash - sets deletedAt and clears inboxAt
-  const trashNote = useCallback(async () => {
-    if (!currentNote || processing) return { success: false };
+  const trashDocument = useCallback(async () => {
+    if (!currentDocument || processing) return { success: false };
     setProcessing(true);
     setActionError(null);
 
     try {
       const repo = getDocumentsRepo();
-      await repo.trash(currentNote.id);
+      await repo.trash(currentDocument.id);
       decrementInboxCount();
       advance();
       return { success: true };
     } catch (err) {
-      console.error("Failed to trash note:", err);
-      setActionError(err.message || "Failed to trash note");
+      console.error("Failed to trash document:", err);
+      setActionError(err.message || "Failed to trash document");
       return { success: false, error: err.message };
     } finally {
       setProcessing(false);
     }
-  }, [currentNote, processing, advance, decrementInboxCount]);
+  }, [currentDocument, processing, advance, decrementInboxCount]);
 
   // Skip current note (if it was deleted externally)
   const skipCurrent = useCallback(() => {
@@ -136,8 +136,8 @@ export function useInboxNotes() {
 
   return {
     // State
-    notes,
-    currentNote,
+    documents,
+    currentDocument,
     currentIndex,
     remaining,
     loading,
@@ -148,10 +148,14 @@ export function useInboxNotes() {
     isComplete,
 
     // Actions
-    processNote,
-    archiveNote,
-    trashNote,
+    processDocument,
+    archiveDocument,
+    trashDocument,
     skipCurrent,
     reload,
   };
 }
+
+// Deprecated alias for backward compatibility
+// @deprecated Use useInboxDocuments instead
+export const useInboxNotes = useInboxDocuments;

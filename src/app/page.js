@@ -5,7 +5,7 @@ import Link from "next/link";
 import { getDocumentsRepo } from "@/lib/repo/getDocumentsRepo";
 import { useTodayNote } from "@/hooks/useTodayNote";
 import { useWorkbenchStore } from "@/store/workbenchStore";
-import { useNotesStore } from "@/store/notesStore";
+import { useDocumentsStore } from "@/store/documentsStore";
 import { deriveDocumentTitle } from "@/lib/documents/deriveTitle";
 import DocumentPickerModal from "@/components/workbench/DocumentPickerModal";
 import ReplaceModal from "@/components/workbench/ReplaceModal";
@@ -32,9 +32,9 @@ export default function NowView() {
     cleanupInvalidIds,
   } = useWorkbenchStore();
 
-  const inboxCount = useNotesStore((state) => state.inboxCount);
-  const inboxCountLoaded = useNotesStore((state) => state.inboxCountLoaded);
-  const loadInboxCount = useNotesStore((state) => state.loadInboxCount);
+  const inboxCount = useDocumentsStore((state) => state.inboxCount);
+  const inboxCountLoaded = useDocumentsStore((state) => state.inboxCountLoaded);
+  const loadInboxCount = useDocumentsStore((state) => state.loadInboxCount);
 
   const [pinnedDocs, setPinnedDocs] = useState([]);
   const [pinnedLoading, setPinnedLoading] = useState(true);

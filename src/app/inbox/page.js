@@ -3,7 +3,7 @@
 import { useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { useInboxNotes } from "@/hooks/useInboxNotes";
+import { useInboxDocuments } from "@/hooks/useInboxNotes";
 import { extractTitleFromBody } from "@/lib/inbox/extractTitle";
 import { deriveDocumentTitle } from "@/lib/documents/deriveTitle";
 import styles from "../../styles/inbox.module.css";
@@ -11,7 +11,7 @@ import styles from "../../styles/inbox.module.css";
 export default function InboxPage() {
   const router = useRouter();
   const {
-    currentNote,
+    currentDocument,
     remaining,
     loading,
     error,
@@ -19,18 +19,18 @@ export default function InboxPage() {
     processing,
     isEmpty,
     isComplete,
-    processNote,
-    archiveNote,
-    trashNote,
+    processDocument,
+    archiveDocument,
+    trashDocument,
     reload,
-  } = useInboxNotes();
+  } = useInboxDocuments();
 
   const [editedTitle, setEditedTitle] = useState("");
   const [titleInitialized, setTitleInitialized] = useState(false);
 
-  // Initialize title when current note changes
-  if (currentNote && !titleInitialized) {
-    const derivedTitle = deriveDocumentTitle(currentNote);
+  // Initialize title when current document changes
+  if (currentDocument && !titleInitialized) {
+    const derivedTitle = deriveDocumentTitle(currentDocument);
     setEditedTitle(derivedTitle === "Untitled" ? "" : derivedTitle);
     setTitleInitialized(true);
   }
@@ -49,29 +49,29 @@ export default function InboxPage() {
     } else {
       updates.title = null;
     }
-    const result = await processNote(updates);
+    const result = await processDocument(updates);
     if (result.success) {
       resetTitleState();
     }
   };
 
   const handleArchive = async () => {
-    const result = await archiveNote();
+    const result = await archiveDocument();
     if (result.success) {
       resetTitleState();
     }
   };
 
   const handleTrash = async () => {
-    const result = await trashNote();
+    const result = await trashDocument();
     if (result.success) {
       resetTitleState();
     }
   };
 
   const handleExtractTitle = () => {
-    if (!currentNote) return;
-    const extracted = extractTitleFromBody(currentNote.body);
+    if (!currentDocument) return;
+    const extracted = extractTitleFromBody(currentDocument.body);
     if (extracted) {
       setEditedTitle(extracted);
     }
@@ -209,7 +209,7 @@ export default function InboxPage() {
             </div>
           </div>
           <div className={styles.noteBody}>
-            <div className={styles.bodyPreview}>{currentNote?.body || ""}</div>
+            <div className={styles.bodyPreview}>{currentDocument?.body || ""}</div>
           </div>
         </div>
 

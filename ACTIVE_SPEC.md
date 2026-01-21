@@ -1,6 +1,6 @@
-Active build spec: docs/builds/local-search-spec-v1.5.md
+Active build spec: docs/builds/rename-core-primitive-spec.md
 
 Instruction:
-- Follow AGENT.md and SCOPE.md.
+- Follow AGENTS.md and SCOPE.md.
 - Explore the existing codebase to understand current structure before creating the plan.
 - Implement ONLY what is in the active build spec.

@@ -1,6 +1,6 @@
 import { DOCUMENTS_STORE, openAnchoredDb } from "../db/indexedDb";
 import { deriveDocumentTitle } from "../documents/deriveTitle";
-import { clearSearchIndex, removeFromSearchIndex } from "../search/searchNotes";
+import { clearSearchIndex, removeFromSearchIndex } from "../search/searchDocuments";
 import { DOCUMENT_TYPE_NOTE } from "../../types/document";
 import { parseTimestamp } from "../backup/parseTimestamp";
 

@@ -6,7 +6,7 @@ import Link from "next/link";
 import styles from "../../../../styles/import.module.css";
 import { getDocumentsRepo } from "@/lib/repo/getDocumentsRepo";
 import { dryRunImport, applyImport, detectImportFormat } from "@/lib/backup/importer";
-import { useNotesStore } from "@/store/notesStore";
+import { useDocumentsStore } from "@/store/documentsStore";
 
 export default function ImportPage() {
   const router = useRouter();
@@ -21,7 +21,7 @@ export default function ImportPage() {
   const [confirmChecked, setConfirmChecked] = useState(false);
   const [confirmText, setConfirmText] = useState("");
 
-  const hydrate = useNotesStore((s) => s.hydrate);
+  const hydrate = useDocumentsStore((s) => s.hydrate);
 
   const showToast = useCallback((message, isError = false) => {
     setToast({ message, isError });

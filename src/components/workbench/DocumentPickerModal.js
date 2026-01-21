@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { getDocumentsRepo } from "@/lib/repo/getDocumentsRepo";
-import { ensureSearchIndex, searchNotes } from "@/lib/search/searchNotes";
+import { ensureSearchIndex, searchDocuments } from "@/lib/search/searchDocuments";
 import { DOCUMENT_TYPE_NOTE, DOCUMENT_TYPE_DAILY } from "@/types/document";
 import styles from "./DocumentPickerModal.module.css";
 
@@ -89,7 +89,7 @@ export default function DocumentPickerModal({
           includeArchived: false,
         });
         ensureSearchIndex(docs);
-        const results = searchNotes(trimmedQuery, RESULTS_LIMIT);
+        const results = searchDocuments(trimmedQuery, RESULTS_LIMIT);
         // Filter out excluded IDs, daily notes, and inbox items
         const docsById = new Map(docs.map((d) => [d.id, d]));
         const filtered = results.filter((doc) => {
