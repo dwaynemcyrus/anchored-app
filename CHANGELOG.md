@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.10.1 - 2026-01-21
+- Rename the core domain primitive from Note to Document across types, stores, and events.
+- Rename system identity fields from noteId to documentId while keeping data behavior unchanged.
+- Preserve frontmatter `type: note` semantics and legacy storage keys where required.
+
 ## 0.10.0 - 2026-01-20
 - Add Search v1.5 ranking with tiered matches, fuzzy fallback, and body snippets.
 - Build and maintain an in-memory search index with incremental updates.
