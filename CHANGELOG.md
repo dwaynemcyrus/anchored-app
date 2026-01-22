@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.12.0 - 2026-01-22
+- Add Manage Templates page at `/settings/templates` with edit, reset, and delete actions.
+- Add Create Template flow with scaffold generation and navigation to editor.
+- Add insert mode to Template Picker for inserting templates into existing documents.
+- Implement frontmatter merge logic with additive merge and array deduplication.
+- Add Cmd/Ctrl+Shift+T keyboard shortcut in editor to insert template at cursor.
+
 ## 0.11.0 - 2026-01-22
 - Add a document frontmatter domain module with base schema parsing and alias handling.
 - Define a registry of known document types with allowed/required keys (advisory).
