@@ -21,6 +21,7 @@ export function useInboxDocuments() {
   const [actionError, setActionError] = useState(null);
   const [processing, setProcessing] = useState(false);
   const decrementInboxCount = useDocumentsStore((state) => state.decrementInboxCount);
+  const inboxVersion = useDocumentsStore((state) => state.inboxVersion);
 
   const currentDocument = documents[currentIndex] ?? null;
   const remaining = documents.length - currentIndex;
@@ -44,10 +45,28 @@ export function useInboxDocuments() {
     }
   }, []);
 
+  // Refresh inbox list without resetting position
+  const refreshInbox = useCallback(async () => {
+    try {
+      const repo = getDocumentsRepo();
+      const inboxDocs = await repo.listInboxNotes();
+      setDocuments(inboxDocs);
+    } catch (err) {
+      console.error("Failed to refresh inbox documents:", err);
+    }
+  }, []);
+
   // Load on mount
   useEffect(() => {
     loadInbox();
   }, [loadInbox]);
+
+  // Refresh when new inbox items are added (inboxVersion changes)
+  useEffect(() => {
+    if (inboxVersion > 0) {
+      refreshInbox();
+    }
+  }, [inboxVersion, refreshInbox]);
 
   // Advance to next note
   const advance = useCallback(() => {

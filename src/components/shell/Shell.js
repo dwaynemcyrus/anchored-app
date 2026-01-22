@@ -113,6 +113,7 @@ export default function Shell({ children }) {
   const cycleFontSize = useEditorSettingsStore((state) => state.cycleFontSize);
   const createDocument = useDocumentsStore((state) => state.createDocument);
   const loadInboxCount = useDocumentsStore((state) => state.loadInboxCount);
+  const incrementInboxVersion = useDocumentsStore((state) => state.incrementInboxVersion);
   const isHome = pathname === "/";
   const isNoteEditorRoute =
     typeof pathname === "string" &&
@@ -279,6 +280,8 @@ export default function Shell({ children }) {
       // Fallback if template not found - uses store which updates inbox count
       await createDocument({ body, title: null, inboxAt: now });
     }
+    // Signal inbox list to reload
+    incrementInboxVersion();
 
     if (rapidEnabled) {
       setCaptureValue("");
@@ -302,6 +305,8 @@ export default function Shell({ children }) {
     } else {
       await createDocument({ body, title: null, inboxAt: now });
     }
+    // Signal inbox list to reload
+    incrementInboxVersion();
 
     handleCloseCapture();
   };

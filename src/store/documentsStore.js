@@ -45,6 +45,7 @@ export const useDocumentsStore = create((set, get) => ({
   listIncludeArchived: false,
   inboxCount: 0,
   inboxCountLoaded: false,
+  inboxVersion: 0,
   loadInboxCount: async () => {
     try {
       const repo = getDocumentsRepo();
@@ -61,6 +62,9 @@ export const useDocumentsStore = create((set, get) => ({
     set((state) => ({
       inboxCount: Math.max(0, state.inboxCount - 1),
     }));
+  },
+  incrementInboxVersion: () => {
+    set((state) => ({ inboxVersion: state.inboxVersion + 1 }));
   },
   hydrate: async (options = {}) => {
     const { includeArchived, force = false } = options;
