@@ -1,4 +1,4 @@
-Active build spec: docs/builds/rename-core-primitive-spec.md
+Active build spec: docs/builds/documents-repo-spec-v0.md
 
 Instruction:
 - Follow AGENTS.md and SCOPE.md.
