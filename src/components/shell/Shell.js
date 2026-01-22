@@ -308,6 +308,11 @@ export default function Shell({ children }) {
     // Signal inbox list to reload
     incrementInboxVersion();
 
+    if (rapidEnabled) {
+      setCaptureValue("");
+      setCaptureShouldFocus(true);
+      return;
+    }
     handleCloseCapture();
   };
 

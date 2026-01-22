@@ -74,7 +74,7 @@ export function useInboxDocuments() {
     setActionError(null);
   }, []);
 
-  // Process (Keep) - clears inboxAt, persists title changes
+  // Process (Keep) - changes type to note, persists title changes
   const processDocument = useCallback(
     async (updates = {}) => {
       if (!currentDocument || processing) return { success: false };
@@ -85,7 +85,7 @@ export function useInboxDocuments() {
         const repo = getDocumentsRepo();
         await repo.update(currentDocument.id, {
           ...updates,
-          inboxAt: null,
+          type: "note",
         });
         decrementInboxCount();
         advance();
