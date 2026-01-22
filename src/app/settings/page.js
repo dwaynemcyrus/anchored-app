@@ -66,6 +66,15 @@ export default function SettingsPage() {
         <section className={styles.section}>
           <h2 className={styles.sectionTitle}>Templates</h2>
           <div className={styles.card}>
+            <Link href="/settings/templates" className={styles.cardItemLink}>
+              <div className={styles.cardItemContent}>
+                <span className={styles.cardItemTitle}>Manage Templates</span>
+                <span className={styles.cardItemDescription}>
+                  View, create, and edit templates
+                </span>
+              </div>
+              <span className={styles.cardItemArrow}>&rarr;</span>
+            </Link>
             <button
               type="button"
               className={styles.cardItemButton}

@@ -14,5 +14,9 @@ export {
   createFromTemplate,
   resetBuiltInTemplate,
   resetAllBuiltInTemplates,
+  createTemplateScaffold,
+  prepareTemplateForInsertion,
+  mergeFrontmatter,
+  serializeFrontmatter,
 } from "./templateService.js";
 export { ensureBuiltInTemplates } from "./seedTemplates.js";

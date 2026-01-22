@@ -20,6 +20,10 @@
   gap: 16px;
 }
 
+.headerAction {
+  margin-left: auto;
+}
+
 .backButton {
   border: none;
   background: transparent;
@@ -160,6 +164,56 @@
 .cardItemArrow {
   color: #8a7f73;
   font-size: 18px;
+}
+
+.cardItemActions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.actionButtonSmall {
+  border: 1px solid rgba(20, 17, 15, 0.2);
+  background: transparent;
+  color: #14110f;
+  border-radius: 8px;
+  padding: 6px 12px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: border-color 160ms ease, background 160ms ease;
+}
+
+.actionButtonSmall:hover {
+  border-color: rgba(20, 17, 15, 0.4);
+  background: rgba(20, 17, 15, 0.03);
+}
+
+.actionButtonSmall:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.actionButtonSmallDanger {
+  border: 1px solid rgba(120, 24, 24, 0.3);
+  background: transparent;
+  color: #7b1b1b;
+  border-radius: 8px;
+  padding: 6px 12px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: border-color 160ms ease, background 160ms ease;
+}
+
+.actionButtonSmallDanger:hover {
+  border-color: rgba(120, 24, 24, 0.5);
+  background: rgba(120, 24, 24, 0.05);
+}
+
+.actionButtonSmallDanger:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 .actionButton {

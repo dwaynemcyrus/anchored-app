@@ -57,9 +57,14 @@ function getTemplateName(template) {
 }
 
 /**
- * Template picker modal for document creation
+ * Template picker modal for document creation or insertion
+ * @param {Object} props
+ * @param {boolean} props.isOpen
+ * @param {Function} props.onSelect - Called with document (create mode) or template (insert mode)
+ * @param {Function} props.onCancel
+ * @param {'create' | 'insert'} [props.mode='create'] - "create" creates new document, "insert" returns template
  */
-export default function TemplatePicker({ isOpen, onSelect, onCancel }) {
+export default function TemplatePicker({ isOpen, onSelect, onCancel, mode = "create" }) {
   const [templates, setTemplates] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isCreating, setIsCreating] = useState(false);
@@ -90,6 +95,13 @@ export default function TemplatePicker({ isOpen, onSelect, onCancel }) {
     async (template) => {
       if (isCreating) return;
 
+      // Insert mode: just return the template for caller to handle
+      if (mode === "insert") {
+        onSelect?.(template);
+        return;
+      }
+
+      // Create mode: create a new document from template
       setIsCreating(true);
       try {
         const doc = await createFromTemplate(template.id);
@@ -102,7 +114,7 @@ export default function TemplatePicker({ isOpen, onSelect, onCancel }) {
         setIsCreating(false);
       }
     },
-    [isCreating, onSelect]
+    [isCreating, onSelect, mode]
   );
 
   const handleBackdropClick = useCallback(
@@ -138,7 +150,9 @@ export default function TemplatePicker({ isOpen, onSelect, onCancel }) {
     <div className={styles.overlay} onClick={handleBackdropClick}>
       <div className={styles.modal}>
         <div className={styles.header}>
-          <h2 className={styles.title}>New Document</h2>
+          <h2 className={styles.title}>
+            {mode === "insert" ? "Insert Template" : "New Document"}
+          </h2>
           <button
             className={styles.closeButton}
             onClick={onCancel}

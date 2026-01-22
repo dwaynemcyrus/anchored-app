@@ -14,6 +14,12 @@ import { wikiLinkAutocomplete } from "../../lib/editor/wikiLinkAutocomplete";
 import { wikiLinkDecorations } from "../../lib/editor/wikiLinkDecorations";
 import { wikiLinkClickHandler } from "../../lib/editor/wikiLinkClickHandler";
 import { getDocumentsRepo } from "../../lib/repo/getDocumentsRepo";
+import {
+  prepareTemplateForInsertion,
+  mergeFrontmatter,
+  serializeFrontmatter,
+} from "../../lib/templates";
+import TemplatePicker from "../templates/TemplatePicker";
 import styles from "../../styles/noteEditor.module.css";
 
 const SAVED_LABEL = "Saved";
@@ -99,6 +105,7 @@ export default function NoteEditor({ documentId }) {
 
   const [saveStatus, setSaveStatus] = useState(SAVED_LABEL);
   const [loadedDocumentId, setLoadedDocumentId] = useState(null);
+  const [showInsertPicker, setShowInsertPicker] = useState(false);
   const isTrashed = document?.deletedAt != null;
 
   useEffect(() => {
@@ -216,6 +223,83 @@ export default function NoteEditor({ documentId }) {
       typewriterScrollRef.current = false;
     });
   }, []);
+
+  // Keyboard shortcut for inserting template (Cmd/Ctrl+Shift+T)
+  useEffect(() => {
+    if (isTrashed || !document) return;
+
+    const handleKeyDown = (e) => {
+      if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key === "t") {
+        e.preventDefault();
+        setShowInsertPicker(true);
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [isTrashed, document]);
+
+  // Handle template insertion
+  const handleInsertTemplate = useCallback(
+    (template) => {
+      setShowInsertPicker(false);
+      if (!editorViewRef.current || !document) return;
+
+      const view = editorViewRef.current;
+      const currentDoc = view.state.doc.toString();
+      const cursorPos = view.state.selection.main.head;
+
+      // Prepare template content
+      const { frontmatter: templateFm, content: templateContent } = prepareTemplateForInsertion(template);
+
+      // Parse current document frontmatter
+      const fmMatch = currentDoc.match(/^---\n([\s\S]*?)\n---\n?([\s\S]*)$/);
+      let existingFm = {};
+      let bodyWithoutFm = currentDoc;
+      let fmEndPos = 0;
+
+      if (fmMatch) {
+        // Parse existing frontmatter
+        const fmLines = fmMatch[1].split("\n");
+        for (const line of fmLines) {
+          const colonIndex = line.indexOf(":");
+          if (colonIndex === -1) continue;
+          const key = line.slice(0, colonIndex).trim();
+          let value = line.slice(colonIndex + 1).trim();
+          // Basic value parsing
+          if (value === '""' || value === "''") value = "";
+          else if (value.startsWith('"') && value.endsWith('"')) value = value.slice(1, -1);
+          else if (value.startsWith("'") && value.endsWith("'")) value = value.slice(1, -1);
+          existingFm[key] = value;
+        }
+        bodyWithoutFm = fmMatch[2] || "";
+        fmEndPos = currentDoc.indexOf(fmMatch[2] || "") || currentDoc.length;
+        if (fmEndPos < 0) fmEndPos = currentDoc.length;
+      }
+
+      // Merge frontmatter
+      const mergedFm = mergeFrontmatter(existingFm, templateFm);
+      const newFmString = serializeFrontmatter(mergedFm);
+
+      // Calculate insertion position relative to body (after frontmatter)
+      let insertionPosInBody = cursorPos - fmEndPos;
+      if (insertionPosInBody < 0) insertionPosInBody = 0;
+
+      // Insert template content at cursor in body
+      const beforeCursor = bodyWithoutFm.slice(0, insertionPosInBody);
+      const afterCursor = bodyWithoutFm.slice(insertionPosInBody);
+      const newBody = beforeCursor + templateContent + afterCursor;
+
+      // Reconstruct full document
+      const newDoc = `---\n${newFmString}\n---\n${newBody}`;
+
+      // Apply changes
+      view.dispatch({
+        changes: { from: 0, to: currentDoc.length, insert: newDoc },
+      });
+    },
+    [document]
+  );
 
   useEffect(() => {
     if (isTrashed) {
@@ -407,6 +491,13 @@ export default function NoteEditor({ documentId }) {
           )}
         </section>
       </main>
+
+      <TemplatePicker
+        isOpen={showInsertPicker}
+        mode="insert"
+        onSelect={handleInsertTemplate}
+        onCancel={() => setShowInsertPicker(false)}
+      />
     </div>
   );
 }

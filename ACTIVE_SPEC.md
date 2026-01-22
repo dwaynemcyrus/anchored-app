@@ -1,4 +1,4 @@
-Active build spec: docs/builds/document-templates-v0-spec.md
+Active build spec: docs/builds/document-templates-v1-spec.md
 
 Instruction:
 - Follow AGENTS.md and SCOPE.md.

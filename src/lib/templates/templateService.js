@@ -132,6 +132,49 @@ export async function resetAllBuiltInTemplates() {
 }
 
 /**
+ * Create a new blank template with scaffold structure
+ * @param {Object} [options]
+ * @param {string} [options.templateFor='note'] - Target document type
+ * @param {string} [options.templateForSubtype] - Optional subtype
+ * @returns {Promise<import('./types.js').Template>}
+ */
+export async function createTemplateScaffold(options = {}) {
+  const { templateFor = "note", templateForSubtype } = options;
+
+  const now = Date.now();
+  const repo = getDocumentsRepo();
+
+  // Build scaffold body with minimal frontmatter
+  const frontmatterLines = [`type: ${templateFor}`];
+  if (templateForSubtype) {
+    frontmatterLines.push(`subtype: ${templateForSubtype}`);
+  }
+  frontmatterLines.push('title: ""');
+
+  const body = `---\n${frontmatterLines.join("\n")}\n---\n\n`;
+
+  const template = {
+    id: `template-${now}`,
+    type: DOCUMENT_TYPE_TEMPLATE,
+    slug: null,
+    title: "New Template",
+    body,
+    meta: {
+      templateFor,
+      templateForSubtype: templateForSubtype || null,
+      isBuiltIn: false,
+    },
+    createdAt: now,
+    updatedAt: now,
+    deletedAt: null,
+    archivedAt: null,
+  };
+
+  await repo.insertTemplate(template);
+  return template;
+}
+
+/**
  * Resolve template variables and return frontmatter + content
  * @param {string} templateBody - Raw template body
  * @returns {{ frontmatter: string, content: string }}
@@ -160,6 +203,106 @@ function resolveTemplate(templateBody) {
     frontmatter: "",
     content: resolved,
   };
+}
+
+/**
+ * Prepare template content for insertion into an existing document
+ * Resolves variables and returns frontmatter fields + body content
+ * @param {import('./types.js').Template} template
+ * @returns {{ frontmatter: Record<string, any>, content: string }}
+ */
+export function prepareTemplateForInsertion(template) {
+  const resolved = resolveTemplate(template.body);
+  const frontmatter = parseFrontmatterBlock(resolved.frontmatter);
+  return {
+    frontmatter,
+    content: resolved.content,
+  };
+}
+
+/**
+ * Merge template frontmatter into existing frontmatter
+ * Rules: additive only, never overwrite, arrays concatenate (dedupe)
+ * @param {Record<string, any>} existing - Current document frontmatter
+ * @param {Record<string, any>} template - Template frontmatter to merge
+ * @returns {Record<string, any>}
+ */
+export function mergeFrontmatter(existing, template) {
+  const result = { ...existing };
+
+  for (const [key, templateValue] of Object.entries(template)) {
+    // Skip if existing has a non-empty value for this key
+    if (key in result) {
+      const existingValue = result[key];
+
+      // Arrays: concatenate and dedupe
+      if (Array.isArray(existingValue) && Array.isArray(templateValue)) {
+        const combined = [...existingValue, ...templateValue];
+        result[key] = [...new Set(combined)];
+        continue;
+      }
+
+      // Objects: shallow merge, existing keys win
+      if (
+        existingValue &&
+        typeof existingValue === "object" &&
+        templateValue &&
+        typeof templateValue === "object" &&
+        !Array.isArray(existingValue)
+      ) {
+        result[key] = { ...templateValue, ...existingValue };
+        continue;
+      }
+
+      // Strings/other: keep existing if non-empty
+      if (existingValue !== "" && existingValue !== null) {
+        continue;
+      }
+    }
+
+    // Add template value
+    result[key] = templateValue;
+  }
+
+  return result;
+}
+
+/**
+ * Serialize frontmatter object back to YAML-like string
+ * @param {Record<string, any>} frontmatter
+ * @returns {string}
+ */
+export function serializeFrontmatter(frontmatter) {
+  const lines = [];
+
+  for (const [key, value] of Object.entries(frontmatter)) {
+    if (value === undefined) continue;
+
+    if (value === null) {
+      lines.push(`${key}: null`);
+    } else if (value === "") {
+      lines.push(`${key}: ""`);
+    } else if (Array.isArray(value)) {
+      if (value.length === 0) {
+        lines.push(`${key}: []`);
+      } else {
+        lines.push(`${key}: [${value.map((v) => JSON.stringify(v)).join(", ")}]`);
+      }
+    } else if (typeof value === "object") {
+      lines.push(`${key}: ${JSON.stringify(value)}`);
+    } else if (typeof value === "string") {
+      // Quote strings that contain special characters
+      if (value.includes(":") || value.includes("#") || value.includes("\n")) {
+        lines.push(`${key}: "${value.replace(/"/g, '\\"')}"`);
+      } else {
+        lines.push(`${key}: ${value}`);
+      }
+    } else {
+      lines.push(`${key}: ${value}`);
+    }
+  }
+
+  return lines.join("\n");
 }
 
 /**

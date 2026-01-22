@@ -83,7 +83,7 @@ Produce a numbered implementation plan broken into chunks.
 Each chunk must include:
 - Goal (one sentence)
 - Files touched (explicit list)
-- Steps (3–9 concrete bullets)
+- Numbered steps for the fulfillment of the chunk
 - Exit conditions:
   - verification requirements
   - behavioral requirements
