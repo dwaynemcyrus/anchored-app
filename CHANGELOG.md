@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.11.0 - 2026-01-22
+- Add a document frontmatter domain module with base schema parsing and alias handling.
+- Define a registry of known document types with allowed/required keys (advisory).
+- Introduce normalize + diff helpers for warnings, missing keys, and unknown keys/types.
+- Add unit tests covering registry contents, deduping, aliases, and warnings.
+
 ## 0.10.1 - 2026-01-21
 - Rename the core domain primitive from Note to Document across types, stores, and events.
 - Rename system identity fields from noteId to documentId while keeping data behavior unchanged.
