@@ -1,4 +1,4 @@
-Active build spec: docs/builds/rename-core-primitive-spec.md
+Active build spec: docs/builds/document-type-frontmatter-registry-spec-v0.md
 
 Instruction:
 - Follow AGENTS.md and SCOPE.md.
