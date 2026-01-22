@@ -6,6 +6,7 @@ import {
 } from "../lib/search/searchDocuments";
 import { deriveDocumentTitle } from "../lib/documents/deriveTitle";
 import { DOCUMENT_TYPE_NOTE, DOCUMENT_TYPE_DAILY } from "../types/document";
+import { ensureBuiltInTemplates } from "../lib/templates/seedTemplates";
 
 const sortDocuments = (documents) => documents.slice().sort((a, b) => b.updatedAt - a.updatedAt);
 
@@ -71,6 +72,9 @@ export const useDocumentsStore = create((set, get) => ({
       return { success: true };
     }
     try {
+      // Ensure built-in templates exist before any operations
+      await ensureBuiltInTemplates();
+
       const repo = getDocumentsRepo();
       const list = await repo.list({
         type: DOCUMENT_TYPE_NOTE,

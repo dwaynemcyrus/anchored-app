@@ -1,0 +1,157 @@
+.overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(20, 17, 15, 0.4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 50;
+  padding: 16px;
+}
+
+.modal {
+  width: 100%;
+  max-width: 400px;
+  max-height: 80vh;
+  background: #f6f2ea;
+  border-radius: 20px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16px 20px;
+  border-bottom: 1px solid rgba(20, 17, 15, 0.08);
+}
+
+.title {
+  font-size: 17px;
+  font-weight: 600;
+  color: #14110f;
+  margin: 0;
+}
+
+.closeButton {
+  width: 32px;
+  height: 32px;
+  border-radius: 999px;
+  border: none;
+  background: rgba(20, 17, 15, 0.08);
+  color: #14110f;
+  font-size: 20px;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.closeButton:hover {
+  background: rgba(20, 17, 15, 0.12);
+}
+
+.closeButton:focus-visible {
+  outline: 2px solid #14110f;
+  outline-offset: 2px;
+}
+
+.content {
+  flex: 1;
+  overflow-y: auto;
+  padding: 12px;
+}
+
+.loading,
+.empty {
+  padding: 24px;
+  text-align: center;
+  font-size: 14px;
+  color: #7b6f61;
+}
+
+.templateList {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.groupHeader {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #5a4e41;
+  padding: 0 8px;
+}
+
+.groupItems {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.templateItem {
+  width: 100%;
+  text-align: left;
+  border-radius: 12px;
+  border: 1px solid transparent;
+  background: #ffffff;
+  color: #14110f;
+  padding: 12px 14px;
+  font-size: 15px;
+  font-weight: 500;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  cursor: pointer;
+}
+
+.templateItem:hover {
+  border-color: rgba(20, 17, 15, 0.2);
+}
+
+.templateItem:focus-visible {
+  outline: 2px solid #14110f;
+  outline-offset: 2px;
+}
+
+.templateItem:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.templateName {
+  flex: 1;
+}
+
+.templateSubtype {
+  font-size: 12px;
+  font-weight: 400;
+  color: #7b6f61;
+  padding: 2px 8px;
+  background: rgba(20, 17, 15, 0.06);
+  border-radius: 6px;
+}
+
+@media (max-width: 480px) {
+  .overlay {
+    padding: 0;
+    align-items: flex-end;
+  }
+
+  .modal {
+    max-width: 100%;
+    max-height: 70vh;
+    border-radius: 20px 20px 0 0;
+  }
+}

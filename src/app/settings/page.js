@@ -1,11 +1,38 @@
 "use client";
 
+import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { resetAllBuiltInTemplates } from "../../lib/templates";
 import styles from "../../styles/settings.module.css";
 
 export default function SettingsPage() {
   const router = useRouter();
+  const [isResetting, setIsResetting] = useState(false);
+  const [resetMessage, setResetMessage] = useState(null);
+
+  const handleResetTemplates = async () => {
+    if (isResetting) return;
+
+    const confirmed = window.confirm(
+      "Reset all templates to their defaults? Your customizations will be lost."
+    );
+    if (!confirmed) return;
+
+    setIsResetting(true);
+    setResetMessage(null);
+
+    try {
+      await resetAllBuiltInTemplates();
+      setResetMessage("Templates reset successfully");
+      setTimeout(() => setResetMessage(null), 3000);
+    } catch (error) {
+      console.error("Failed to reset templates:", error);
+      setResetMessage("Failed to reset templates");
+    } finally {
+      setIsResetting(false);
+    }
+  };
 
   return (
     <div className={styles.page}>
@@ -34,6 +61,30 @@ export default function SettingsPage() {
               <span className={styles.cardItemArrow}>&rarr;</span>
             </Link>
           </div>
+        </section>
+
+        <section className={styles.section}>
+          <h2 className={styles.sectionTitle}>Templates</h2>
+          <div className={styles.card}>
+            <button
+              type="button"
+              className={styles.cardItemButton}
+              onClick={handleResetTemplates}
+              disabled={isResetting}
+            >
+              <div className={styles.cardItemContent}>
+                <span className={styles.cardItemTitle}>
+                  {isResetting ? "Resetting..." : "Reset All Templates"}
+                </span>
+                <span className={styles.cardItemDescription}>
+                  Restore built-in templates to their defaults
+                </span>
+              </div>
+            </button>
+          </div>
+          {resetMessage && (
+            <p className={styles.message}>{resetMessage}</p>
+          )}
         </section>
       </main>
     </div>

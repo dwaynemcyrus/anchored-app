@@ -7,6 +7,7 @@ import { useDocumentsStore, getDerivedTitle } from "../../store/documentsStore";
 import { getDocumentsRepo } from "../../lib/repo/getDocumentsRepo";
 import { ensureSearchIndex, searchDocuments } from "../../lib/search/searchDocuments";
 import { DOCUMENT_TYPE_NOTE } from "../../types/document";
+import TemplatePicker from "../templates/TemplatePicker";
 import styles from "../../styles/notesList.module.css";
 
 const DEBOUNCE_MS = 250;
@@ -44,6 +45,7 @@ export default function NotesList() {
   const [searchResults, setSearchResults] = useState([]);
   const [isSearching, setIsSearching] = useState(false);
   const [lastTrashed, setLastTrashed] = useState(null);
+  const [isPickerOpen, setIsPickerOpen] = useState(false);
   const debounceRef = useRef(null);
   const searchDebounceRef = useRef(null);
   const undoTimerRef = useRef(null);
@@ -147,11 +149,19 @@ export default function NotesList() {
     setQuery("");
   }, []);
 
-  const handleCreate = async () => {
-    const id = await createDocument({}, { suppressListUpdate: true });
-    if (id) {
-      router.push(`/knowledge/notes/${id}`);
+  const handleCreate = () => {
+    setIsPickerOpen(true);
+  };
+
+  const handleTemplateSelect = (doc) => {
+    setIsPickerOpen(false);
+    if (doc?.id) {
+      router.push(`/knowledge/notes/${doc.id}`);
     }
+  };
+
+  const handlePickerCancel = () => {
+    setIsPickerOpen(false);
   };
 
   const handleToggleArchived = () => {
@@ -433,6 +443,12 @@ export default function NotesList() {
           </section>
         )}
       </main>
+
+      <TemplatePicker
+        isOpen={isPickerOpen}
+        onSelect={handleTemplateSelect}
+        onCancel={handlePickerCancel}
+      />
     </div>
   );
 }

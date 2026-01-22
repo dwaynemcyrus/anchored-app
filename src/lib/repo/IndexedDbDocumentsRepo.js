@@ -606,4 +606,25 @@ export class IndexedDbDocumentsRepo {
       body: "",
     });
   }
+
+  /**
+   * Insert a template document with a specific ID.
+   * Used for seeding built-in templates.
+   * @param {Object} template - Full template document with ID
+   * @returns {Promise<Object>}
+   */
+  async insertTemplate(template) {
+    if (!template || !template.id) {
+      throw new Error("Template with id is required");
+    }
+    const db = await getDb();
+    return new Promise((resolve, reject) => {
+      const transaction = db.transaction(DOCUMENTS_STORE, "readwrite");
+      const store = transaction.objectStore(DOCUMENTS_STORE);
+      const request = store.put(template);
+
+      request.onsuccess = () => resolve(template);
+      request.onerror = () => reject(request.error);
+    });
+  }
 }

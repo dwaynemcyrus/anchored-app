@@ -1,4 +1,4 @@
-Active build spec: docs/builds/document-type-frontmatter-registry-spec-v0.md
+Active build spec: docs/builds/document-templates-v0-spec.md
 
 Instruction:
 - Follow AGENTS.md and SCOPE.md.

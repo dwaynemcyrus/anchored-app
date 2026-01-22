@@ -7,6 +7,7 @@ import QuickCaptureModal from "./QuickCaptureModal";
 import { useShellHeaderStore } from "../../store/shellHeaderStore";
 import { useEditorSettingsStore } from "../../store/editorSettingsStore";
 import { useDocumentsStore } from "../../store/documentsStore";
+import { getCaptureTemplate, createFromTemplate } from "../../lib/templates";
 import styles from "./Shell.module.css";
 import layout from "./AppShell.module.css";
 import useVisualViewportInsets from "../../hooks/useVisualViewportInsets";
@@ -111,6 +112,7 @@ export default function Shell({ children }) {
   const toggleFocusMode = useEditorSettingsStore((state) => state.toggleFocusMode);
   const cycleFontSize = useEditorSettingsStore((state) => state.cycleFontSize);
   const createDocument = useDocumentsStore((state) => state.createDocument);
+  const loadInboxCount = useDocumentsStore((state) => state.loadInboxCount);
   const isHome = pathname === "/";
   const isNoteEditorRoute =
     typeof pathname === "string" &&
@@ -266,7 +268,18 @@ export default function Shell({ children }) {
     const trimmed = captureValue.trim();
     const body = trimmed ? `${trimmed}\n\n` : "\n";
     const now = Date.now();
-    await createDocument({ body, title: null, inboxAt: now });
+
+    // Use capture template for quick capture
+    const captureTemplate = await getCaptureTemplate();
+    if (captureTemplate) {
+      await createFromTemplate(captureTemplate.id, { body, inboxAt: now });
+      // Reload inbox count since createFromTemplate bypasses the store
+      void loadInboxCount();
+    } else {
+      // Fallback if template not found - uses store which updates inbox count
+      await createDocument({ body, title: null, inboxAt: now });
+    }
+
     if (rapidEnabled) {
       setCaptureValue("");
       setCaptureShouldFocus(true);
@@ -279,11 +292,18 @@ export default function Shell({ children }) {
     const trimmed = query.trim();
     if (!trimmed) return;
     const body = `${trimmed}\n\n`;
-    const id = await createDocument({ body, title: null, inboxAt: null });
-    if (id) {
-      handleCloseCapture();
-      router.push(`/knowledge/notes/${id}`);
+    const now = Date.now();
+
+    // Use capture template - adds to inbox without navigation
+    const captureTemplate = await getCaptureTemplate();
+    if (captureTemplate) {
+      await createFromTemplate(captureTemplate.id, { body, inboxAt: now });
+      void loadInboxCount();
+    } else {
+      await createDocument({ body, title: null, inboxAt: now });
     }
+
+    handleCloseCapture();
   };
 
   const handleBackdrop = (event) => {
