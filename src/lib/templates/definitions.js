@@ -12,10 +12,10 @@ export const BUILT_IN_TEMPLATES = [
   // Base types
   {
     id: "builtin-capture",
-    templateFor: "capture",
+    templateFor: "inbox",
     title: "Capture",
     body: `---
-type: capture
+type: inbox
 title: ""
 ---`,
   },
@@ -147,5 +147,5 @@ export function getBuiltInTemplateDefinition(id) {
  * @returns {import('./types.js').BuiltInTemplateDefinition}
  */
 export function getCaptureTemplateDefinition() {
-  return BUILT_IN_TEMPLATES.find((t) => t.templateFor === "capture");
+  return BUILT_IN_TEMPLATES.find((t) => t.templateFor === "inbox");
 }

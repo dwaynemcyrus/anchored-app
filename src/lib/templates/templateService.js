@@ -51,7 +51,7 @@ export async function getTemplate(id) {
  * @returns {Promise<import('./types.js').Template | null>}
  */
 export async function getCaptureTemplate() {
-  const templates = await getTemplatesForType("capture");
+  const templates = await getTemplatesForType("inbox");
   return templates[0] || null;
 }
 

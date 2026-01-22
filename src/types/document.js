@@ -15,7 +15,7 @@
 export const DOCUMENT_TYPE_NOTE = "note";
 export const DOCUMENT_TYPE_DAILY = "daily";
 export const DOCUMENT_TYPE_TEMPLATE = "_template";
-export const DOCUMENT_TYPE_CAPTURE = "capture";
+export const DOCUMENT_TYPE_INBOX = "inbox";
 export const DOCUMENT_TYPE_REFERENCE = "reference";
 export const DOCUMENT_TYPE_SOURCE = "source";
 export const DOCUMENT_TYPE_JOURNAL = "journal";

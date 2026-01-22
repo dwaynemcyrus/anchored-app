@@ -18,9 +18,9 @@ export const FRONTMATTER_KEY_ALIASES = {
  * @type {import('./types.js').DocumentTypeRegistry}
  */
 export const DOCUMENT_TYPE_REGISTRY = {
-  capture: {
-    type: "capture",
-    label: "Capture",
+  inbox: {
+    type: "inbox",
+    label: "Inbox",
     allowedKeys: [
       "id",
       "uuid",

@@ -1,7 +1,10 @@
 import { DOCUMENTS_STORE, openAnchoredDb } from "../db/indexedDb";
 import { deriveDocumentTitle } from "../documents/deriveTitle";
 import { clearSearchIndex, removeFromSearchIndex } from "../search/searchDocuments";
-import { DOCUMENT_TYPE_NOTE } from "../../types/document";
+import {
+  DOCUMENT_TYPE_NOTE,
+  DOCUMENT_TYPE_INBOX,
+} from "../../types/document";
 import { parseTimestamp } from "../backup/parseTimestamp";
 
 const DEFAULT_PAGE_LIMIT = 200;
@@ -453,8 +456,8 @@ export class IndexedDbDocumentsRepo {
   }
 
   /**
-   * List notes in inbox state.
-   * Inbox = inboxAt != null AND deletedAt == null AND archivedAt == null
+   * List documents in inbox.
+   * Inbox = type === "inbox" AND deletedAt == null
    * Sorted oldest-first by inboxAt, then createdAt, then id.
    * @returns {Promise<Array>}
    */
@@ -464,15 +467,12 @@ export class IndexedDbDocumentsRepo {
       const transaction = db.transaction(DOCUMENTS_STORE, "readonly");
       const store = transaction.objectStore(DOCUMENTS_STORE);
       const index = store.index("type");
-      const request = index.getAll(DOCUMENT_TYPE_NOTE);
+      const request = index.getAll(DOCUMENT_TYPE_INBOX);
 
       request.onsuccess = () => {
         const items = Array.isArray(request.result) ? request.result : [];
         const inboxNotes = items.filter(
-          (doc) =>
-            doc.inboxAt != null &&
-            doc.deletedAt == null &&
-            doc.archivedAt == null
+          (doc) => doc.deletedAt == null
         );
 
         // Sort: oldest inboxAt first, then createdAt, then id
