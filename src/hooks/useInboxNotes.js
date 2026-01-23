@@ -21,6 +21,7 @@ export function useInboxDocuments() {
   const [actionError, setActionError] = useState(null);
   const [processing, setProcessing] = useState(false);
   const decrementInboxCount = useDocumentsStore((state) => state.decrementInboxCount);
+  const loadDocument = useDocumentsStore((state) => state.loadDocument);
   const inboxVersion = useDocumentsStore((state) => state.inboxVersion);
 
   const currentDocument = documents[currentIndex] ?? null;
@@ -89,6 +90,8 @@ export function useInboxDocuments() {
           meta: { ...(currentDocument.meta || {}), status: "backlog" },
         });
         decrementInboxCount();
+        // Load the processed document into the store so it appears in notes list
+        await loadDocument(currentDocument.id);
         advance();
         return { success: true };
       } catch (err) {
@@ -99,7 +102,7 @@ export function useInboxDocuments() {
         setProcessing(false);
       }
     },
-    [currentDocument, processing, advance, decrementInboxCount]
+    [currentDocument, processing, advance, decrementInboxCount, loadDocument]
   );
 
   // Archive - sets archivedAt and clears inboxAt
