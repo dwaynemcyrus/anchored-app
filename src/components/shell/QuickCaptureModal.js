@@ -126,9 +126,11 @@ export default function QuickCaptureModal({
   const isSearchMode = trimmedValue.length > 0;
   const displayRecents = useMemo(() => {
     // Filter out inbox items (inboxAt != null) and optionally archived
+    // Also exclude items just processed from inbox (no edits since processing)
     const filtered = documents.filter(
       (doc) =>
         doc.inboxAt == null &&
+        !(doc.processedFromInboxAt && doc.processedFromInboxAt === doc.updatedAt) &&
         (includeArchived || doc.archivedAt == null)
     );
     return filtered.slice(0, RECENTS_LIMIT);

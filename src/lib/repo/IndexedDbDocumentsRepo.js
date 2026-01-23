@@ -167,10 +167,15 @@ export class IndexedDbDocumentsRepo {
           reject(new Error("Document not found"));
           return;
         }
+        const now = Date.now();
         const updated = {
           ...existing,
           ...patch,
-          updatedAt: Date.now(),
+          updatedAt: now,
+          // Track when an inbox item is processed to a note
+          ...(existing.type === "inbox" && patch.type === "note"
+            ? { processedFromInboxAt: now }
+            : {}),
         };
         const putRequest = store.put(updated);
         putRequest.onsuccess = () => resolve(updated);
