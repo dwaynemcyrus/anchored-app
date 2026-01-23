@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.13.0 - 2026-01-23
+- Redesign inbox system to use `type: inbox` instead of `inboxAt` timestamp filtering.
+- Quick Capture now creates documents with `type: inbox` that only appear in the Inbox.
+- Inbox processing "Keep" action converts documents from `type: inbox` to `type: note`.
+- Add `/logbook` page for viewing, restoring, and permanently deleting trashed items.
+- Expand Quick Capture search to query all document types (excludes non-trashed inbox items).
+- Add trashed items toggle in Quick Capture search with "T" badge indicator.
+- Fix rapid capture mode not keeping input open after save.
+- Add real-time inbox count updates when capturing from the inbox processing screen.
+
 ## 0.12.0 - 2026-01-22
 - Add Manage Templates page at `/settings/templates` with edit, reset, and delete actions.
 - Add Create Template flow with scaffold generation and navigation to editor.
