@@ -5,7 +5,6 @@ import { useRouter } from "next/navigation";
 import { useDocumentsStore } from "../../store/documentsStore";
 import { getDocumentsRepo } from "../../lib/repo/getDocumentsRepo";
 import { ensureSearchIndex, searchDocuments } from "../../lib/search/searchDocuments";
-import { DOCUMENT_TYPE_NOTE } from "../../types/document";
 import styles from "./QuickCaptureModal.module.css";
 
 const SEARCH_DEBOUNCE_MS = 60;
@@ -91,7 +90,6 @@ export default function QuickCaptureModal({
       try {
         const repo = getDocumentsRepo();
         const docs = await repo.getSearchableDocs({
-          type: DOCUMENT_TYPE_NOTE,
           includeTrashed: true,
           includeArchived: true,
         });
@@ -102,6 +100,7 @@ export default function QuickCaptureModal({
           const match = docsById.get(result.id);
           return {
             ...result,
+            type: match?.type ?? null,
             deletedAt: match?.deletedAt ?? null,
             archivedAt: match?.archivedAt ?? null,
             inboxAt: match?.inboxAt ?? null,
@@ -135,13 +134,22 @@ export default function QuickCaptureModal({
     return filtered.slice(0, RECENTS_LIMIT);
   }, [includeArchived, documents]);
   const visibleSearchResults = useMemo(() => {
-    // Filter out inbox items, and optionally trashed/archived
-    const filtered = searchResults.filter(
-      (result) =>
-        result.inboxAt == null &&
-        (includeTrashed || result.deletedAt == null) &&
-        (includeArchived || result.archivedAt == null)
-    );
+    // Exclude type=inbox unless trashed, and optionally include trashed/archived
+    const filtered = searchResults.filter((result) => {
+      // Exclude non-trashed inbox items
+      if (result.type === "inbox" && result.deletedAt == null) {
+        return false;
+      }
+      // Filter trashed items unless includeTrashed is enabled
+      if (result.deletedAt != null && !includeTrashed) {
+        return false;
+      }
+      // Filter archived items unless includeArchived is enabled
+      if (result.archivedAt != null && !includeArchived) {
+        return false;
+      }
+      return true;
+    });
     return filtered.slice(0, RESULTS_LIMIT);
   }, [includeArchived, includeTrashed, searchResults]);
   const displayList = isSearchMode ? visibleSearchResults : displayRecents;
@@ -153,7 +161,10 @@ export default function QuickCaptureModal({
   const archivedMatchCount = useMemo(
     () =>
       searchResults.filter(
-        (result) => result.deletedAt == null && result.archivedAt != null
+        (result) =>
+          result.deletedAt == null &&
+          result.archivedAt != null &&
+          result.type !== "inbox"
       ).length,
     [searchResults]
   );

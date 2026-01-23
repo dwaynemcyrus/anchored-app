@@ -342,6 +342,7 @@ export class IndexedDbDocumentsRepo {
           })
           .map((doc) => ({
             id: doc.id,
+            type: doc.type,
             title: deriveDocumentTitle(doc),
             slug: doc.slug || null,
             body: doc.body || "",
@@ -349,6 +350,7 @@ export class IndexedDbDocumentsRepo {
             createdAt: doc.createdAt,
             deletedAt: doc.deletedAt ?? null,
             archivedAt: doc.archivedAt ?? null,
+            inboxAt: doc.inboxAt ?? null,
           }));
         resolve(docs);
       };
@@ -516,6 +518,36 @@ export class IndexedDbDocumentsRepo {
   async getInboxCount() {
     const notes = await this.listInboxNotes();
     return notes.length;
+  }
+
+  /**
+   * List trashed documents.
+   * Trashed = deletedAt != null
+   * Sorted by deletedAt descending (most recently trashed first).
+   * @returns {Promise<Array>}
+   */
+  async listTrashed() {
+    const db = await getDb();
+    return new Promise((resolve, reject) => {
+      const transaction = db.transaction(DOCUMENTS_STORE, "readonly");
+      const store = transaction.objectStore(DOCUMENTS_STORE);
+      const request = store.getAll();
+
+      request.onsuccess = () => {
+        const items = Array.isArray(request.result) ? request.result : [];
+        const trashed = items.filter((doc) => doc.deletedAt != null);
+
+        // Sort by deletedAt descending (most recent first)
+        trashed.sort((a, b) => {
+          const aDeleted = parseTimestamp(a.deletedAt) ?? 0;
+          const bDeleted = parseTimestamp(b.deletedAt) ?? 0;
+          return bDeleted - aDeleted;
+        });
+
+        resolve(trashed);
+      };
+      request.onerror = () => reject(request.error);
+    });
   }
 
   /**
