@@ -6,7 +6,7 @@ import Link from "next/link";
 import { useDocumentsStore, getDerivedTitle } from "../../store/documentsStore";
 import { getDocumentsRepo } from "../../lib/repo/getDocumentsRepo";
 import { ensureSearchIndex, searchDocuments } from "../../lib/search/searchDocuments";
-import { DOCUMENT_TYPE_NOTE } from "../../types/document";
+import { DOCUMENT_TYPE_NOTE, DOCUMENT_TYPE_STAGED } from "../../types/document";
 import TemplatePicker from "../templates/TemplatePicker";
 import styles from "../../styles/notesList.module.css";
 
@@ -111,7 +111,7 @@ export default function NotesList() {
         const repo = getDocumentsRepo();
         // Use ref to get current value at execution time, not closure capture time
         const docs = await repo.getSearchableDocs({
-          type: DOCUMENT_TYPE_NOTE,
+          type: [DOCUMENT_TYPE_NOTE, DOCUMENT_TYPE_STAGED],
           includeArchived: listIncludeArchivedRef.current,
         });
         ensureSearchIndex(docs);

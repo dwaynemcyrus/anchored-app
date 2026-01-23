@@ -20,3 +20,4 @@ export const DOCUMENT_TYPE_REFERENCE = "reference";
 export const DOCUMENT_TYPE_SOURCE = "source";
 export const DOCUMENT_TYPE_JOURNAL = "journal";
 export const DOCUMENT_TYPE_ESSAY = "essay";
+export const DOCUMENT_TYPE_STAGED = "staged";

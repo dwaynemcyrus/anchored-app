@@ -85,7 +85,8 @@ export function useInboxDocuments() {
         const repo = getDocumentsRepo();
         await repo.update(currentDocument.id, {
           ...updates,
-          type: "note",
+          type: "staged",
+          meta: { ...(currentDocument.meta || {}), status: "backlog" },
         });
         decrementInboxCount();
         advance();

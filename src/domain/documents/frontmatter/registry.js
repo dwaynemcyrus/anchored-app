@@ -164,4 +164,26 @@ export const DOCUMENT_TYPE_REGISTRY = {
     ],
     requiredKeys: ["id", "createdAt", "type"],
   },
+
+  staged: {
+    type: "staged",
+    label: "Staged",
+    allowedKeys: [
+      "id",
+      "uuid",
+      "createdAt",
+      "updatedAt",
+      "deletedAt",
+      "archivedAt",
+      "visibility",
+      "title",
+      "type",
+      "subtype",
+      "tags",
+      "source",
+      "chains",
+      "status",
+    ],
+    requiredKeys: ["id", "createdAt", "type"],
+  },
 };

@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.14.0 - 2026-01-23
+- Add new `staged` document type for inbox items awaiting further triage.
+- Inbox "Keep" action now creates `type: staged` with `status: backlog` in meta.
+- Staged documents appear in the notes list and are searchable alongside notes.
+- Fix processed inbox items appearing in Quick Capture "Recently edited" list.
+- Add `processedFromInboxAt` timestamp to track inbox-to-staged transitions.
+- Update repository `list()` and `getSearchableDocs()` to support filtering by multiple types.
+
 ## 0.13.0 - 2026-01-23
 - Redesign inbox system to use `type: inbox` instead of `inboxAt` timestamp filtering.
 - Quick Capture now creates documents with `type: inbox` that only appear in the Inbox.

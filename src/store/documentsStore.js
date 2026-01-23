@@ -5,7 +5,7 @@ import {
   updateSearchIndex,
 } from "../lib/search/searchDocuments";
 import { deriveDocumentTitle } from "../lib/documents/deriveTitle";
-import { DOCUMENT_TYPE_NOTE, DOCUMENT_TYPE_DAILY } from "../types/document";
+import { DOCUMENT_TYPE_NOTE, DOCUMENT_TYPE_DAILY, DOCUMENT_TYPE_STAGED } from "../types/document";
 import { ensureBuiltInTemplates } from "../lib/templates/seedTemplates";
 
 const sortDocuments = (documents) => documents.slice().sort((a, b) => b.updatedAt - a.updatedAt);
@@ -81,11 +81,11 @@ export const useDocumentsStore = create((set, get) => ({
 
       const repo = getDocumentsRepo();
       const list = await repo.list({
-        type: DOCUMENT_TYPE_NOTE,
+        type: [DOCUMENT_TYPE_NOTE, DOCUMENT_TYPE_STAGED],
         includeArchived: nextIncludeArchived,
       });
       const searchableDocs = await repo.getSearchableDocs({
-        type: DOCUMENT_TYPE_NOTE,
+        type: [DOCUMENT_TYPE_NOTE, DOCUMENT_TYPE_STAGED],
         includeArchived: true,
         includeTrashed: true,
       });

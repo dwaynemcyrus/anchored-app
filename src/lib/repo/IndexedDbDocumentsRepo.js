@@ -64,17 +64,20 @@ export class IndexedDbDocumentsRepo {
       includeTrashed = false,
     } = options;
     const db = await getDb();
+    const types = Array.isArray(type) ? type : type ? [type] : null;
 
     return new Promise((resolve, reject) => {
       const transaction = db.transaction(DOCUMENTS_STORE, "readonly");
       const store = transaction.objectStore(DOCUMENTS_STORE);
-      const source = type ? store.index("type") : store;
-      const request = type ? source.getAll(type) : source.getAll();
+      const request = store.getAll();
 
       request.onsuccess = () => {
         const items = Array.isArray(request.result) ? request.result : [];
         const filtered = items
           .filter((document) => {
+            if (types && !types.includes(document.type)) {
+              return false;
+            }
             if (document.deletedAt != null) {
               return includeTrashed;
             }
@@ -172,8 +175,8 @@ export class IndexedDbDocumentsRepo {
           ...existing,
           ...patch,
           updatedAt: now,
-          // Track when an inbox item is processed to a note
-          ...(existing.type === "inbox" && patch.type === "note"
+          // Track when an inbox item is processed to staged
+          ...(existing.type === "inbox" && patch.type === "staged"
             ? { processedFromInboxAt: now }
             : {}),
         };
@@ -326,17 +329,20 @@ export class IndexedDbDocumentsRepo {
   async getSearchableDocs(options = {}) {
     const { type, includeTrashed = false, includeArchived = false } = options;
     const db = await getDb();
+    const types = Array.isArray(type) ? type : type ? [type] : null;
 
     return new Promise((resolve, reject) => {
       const transaction = db.transaction(DOCUMENTS_STORE, "readonly");
       const store = transaction.objectStore(DOCUMENTS_STORE);
-      const source = type ? store.index("type") : store;
-      const request = type ? source.getAll(type) : source.getAll();
+      const request = store.getAll();
 
       request.onsuccess = () => {
         const items = Array.isArray(request.result) ? request.result : [];
         const docs = items
           .filter((doc) => {
+            if (types && !types.includes(doc.type)) {
+              return false;
+            }
             if (doc.deletedAt != null) {
               return includeTrashed;
             }
