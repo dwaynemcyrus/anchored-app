@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.14.1 - 2026-01-23
+- Fix processed inbox items not appearing in notes list until page refresh.
+- Remove archive option from inbox processing (now only Keep and Trash).
+
 ## 0.14.0 - 2026-01-23
 - Add new `staged` document type for inbox items awaiting further triage.
 - Inbox "Keep" action now creates `type: staged` with `status: backlog` in meta.

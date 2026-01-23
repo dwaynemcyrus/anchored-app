@@ -20,7 +20,6 @@ export default function InboxPage() {
     isEmpty,
     isComplete,
     processDocument,
-    archiveDocument,
     trashDocument,
     reload,
   } = useInboxDocuments();
@@ -50,13 +49,6 @@ export default function InboxPage() {
       updates.title = null;
     }
     const result = await processDocument(updates);
-    if (result.success) {
-      resetTitleState();
-    }
-  };
-
-  const handleArchive = async () => {
-    const result = await archiveDocument();
     if (result.success) {
       resetTitleState();
     }
@@ -220,13 +212,6 @@ export default function InboxPage() {
             disabled={processing}
           >
             Trash
-          </button>
-          <button
-            className={`${styles.actionButton} ${styles.archiveButton}`}
-            onClick={handleArchive}
-            disabled={processing}
-          >
-            Archive
           </button>
           <button
             className={`${styles.actionButton} ${styles.keepButton}`}

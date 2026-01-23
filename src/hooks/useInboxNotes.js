@@ -105,27 +105,6 @@ export function useInboxDocuments() {
     [currentDocument, processing, advance, decrementInboxCount, loadDocument]
   );
 
-  // Archive - sets archivedAt and clears inboxAt
-  const archiveDocument = useCallback(async () => {
-    if (!currentDocument || processing) return { success: false };
-    setProcessing(true);
-    setActionError(null);
-
-    try {
-      const repo = getDocumentsRepo();
-      await repo.archive(currentDocument.id);
-      decrementInboxCount();
-      advance();
-      return { success: true };
-    } catch (err) {
-      console.error("Failed to archive document:", err);
-      setActionError(err.message || "Failed to archive document");
-      return { success: false, error: err.message };
-    } finally {
-      setProcessing(false);
-    }
-  }, [currentDocument, processing, advance, decrementInboxCount]);
-
   // Trash - sets deletedAt and clears inboxAt
   const trashDocument = useCallback(async () => {
     if (!currentDocument || processing) return { success: false };
@@ -172,7 +151,6 @@ export function useInboxDocuments() {
 
     // Actions
     processDocument,
-    archiveDocument,
     trashDocument,
     skipCurrent,
     reload,
