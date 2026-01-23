@@ -32,6 +32,7 @@ export default function QuickCaptureModal({
   const [searchResults, setSearchResults] = useState([]);
   const [isSearching, setIsSearching] = useState(false);
   const [includeArchived, setIncludeArchived] = useState(false);
+  const [includeTrashed, setIncludeTrashed] = useState(false);
   const [showSnippets, setShowSnippets] = useState(false);
   const [selectionMode, setSelectionMode] = useState(false);
   const [selectedIndex, setSelectedIndex] = useState(0);
@@ -68,6 +69,7 @@ export default function QuickCaptureModal({
       setSearchResults([]);
       setIsSearching(false);
       setIncludeArchived(false);
+      setIncludeTrashed(false);
       setShowSnippets(false);
       setSelectionMode(false);
       setSelectedIndex(0);
@@ -133,15 +135,15 @@ export default function QuickCaptureModal({
     return filtered.slice(0, RECENTS_LIMIT);
   }, [includeArchived, documents]);
   const visibleSearchResults = useMemo(() => {
-    // Filter out trashed, inbox items, and optionally archived
+    // Filter out inbox items, and optionally trashed/archived
     const filtered = searchResults.filter(
       (result) =>
-        result.deletedAt == null &&
         result.inboxAt == null &&
+        (includeTrashed || result.deletedAt == null) &&
         (includeArchived || result.archivedAt == null)
     );
     return filtered.slice(0, RESULTS_LIMIT);
-  }, [includeArchived, searchResults]);
+  }, [includeArchived, includeTrashed, searchResults]);
   const displayList = isSearchMode ? visibleSearchResults : displayRecents;
 
   const trashedMatchCount = useMemo(
@@ -157,6 +159,8 @@ export default function QuickCaptureModal({
   );
   const shouldShowArchiveToggle =
     isSearchMode && (archivedMatchCount > 0 || includeArchived);
+  const shouldShowTrashToggle =
+    isSearchMode && (trashedMatchCount > 0 || includeTrashed);
 
   const handleKeyDown = (event) => {
     if (event.key === "Enter" && !event.shiftKey) {
@@ -334,9 +338,6 @@ export default function QuickCaptureModal({
               {helperText ? <div className={styles.helper}>{helperText}</div> : null}
             </div>
           </div>
-          {isSearchMode && trashedMatchCount > 0 ? (
-            <div className={styles.matchLine}>Trash matches: {trashedMatchCount}</div>
-          ) : null}
           {shouldShowArchiveToggle ? (
             <div className={styles.matchLine}>
               Archived matches: {archivedMatchCount}{" "}
@@ -346,6 +347,18 @@ export default function QuickCaptureModal({
                 onClick={() => setIncludeArchived((prev) => !prev)}
               >
                 {includeArchived ? "Hide" : "Show"}
+              </button>
+            </div>
+          ) : null}
+          {shouldShowTrashToggle ? (
+            <div className={styles.matchLine}>
+              Trashed matches: {trashedMatchCount}{" "}
+              <button
+                type="button"
+                className={styles.matchToggle}
+                onClick={() => setIncludeTrashed((prev) => !prev)}
+              >
+                {includeTrashed ? "Hide" : "Show"}
               </button>
             </div>
           ) : null}
@@ -397,7 +410,11 @@ export default function QuickCaptureModal({
                           </span>
                         ) : null}
                       </span>
-                      {item.archivedAt != null ? (
+                      {item.deletedAt != null ? (
+                        <span className={styles.trashBadge} aria-label="Trashed">
+                          T
+                        </span>
+                      ) : item.archivedAt != null ? (
                         <span className={styles.archiveBadge} aria-label="Archived">
                           A
                         </span>

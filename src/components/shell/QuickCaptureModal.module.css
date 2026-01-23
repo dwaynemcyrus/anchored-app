@@ -240,6 +240,20 @@
   letter-spacing: 0.02em;
 }
 
+.trashBadge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 6px;
+  border: 1px solid rgba(20, 17, 15, 0.25);
+  color: #5a4e41;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
 .toggle {
   display: inline-flex;
   align-items: center;
