@@ -103,7 +103,7 @@ export default function NowView() {
       }
     }
     loadPinnedDocs();
-  }, [pinnedIds, workbenchHydrated]);
+  }, [cleanupInvalidIds, pinnedIds, workbenchHydrated]);
 
   // Handle document selection from picker
   const handleDocumentSelect = useCallback(
