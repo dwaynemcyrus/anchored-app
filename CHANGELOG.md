@@ -12,6 +12,12 @@
 - Gate the app behind authentication with a lightweight session check.
 - Document a manual hybrid sync test checklist.
 
+## 0.15.2 - 2026-01-26
+- Add an env debug page to verify production Supabase env vars.
+- Allow env debug route to bypass auth gate for diagnostics.
+- Fix Supabase client env access for Next.js client builds.
+- Add `.env.example` for local setup guidance.
+
 ## 0.14.2 - 2026-01-23
 - Expand frontmatter parsing/serialization to support multiline values and nested structures.
 - Align template insertion with shared frontmatter parsing logic.
