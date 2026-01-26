@@ -18,6 +18,19 @@ function unwrapResponse({ data, error }) {
   return data;
 }
 
+async function getAuthedUserId() {
+  const client = getSupabaseClient();
+  const { data, error } = await client.auth.getUser();
+  if (error) {
+    throw error;
+  }
+  const userId = data?.user?.id;
+  if (!userId) {
+    throw new Error("No authenticated user available for Supabase");
+  }
+  return userId;
+}
+
 export async function fetchDocumentsUpdatedSince({ since, limit = 500 } = {}) {
   const client = getSupabaseClient();
   let query = client
@@ -37,6 +50,20 @@ export async function fetchDocumentsUpdatedSince({ since, limit = 500 } = {}) {
   return unwrapResponse(response);
 }
 
+export async function fetchDocumentById(id) {
+  if (typeof id !== "string" || !id.trim()) {
+    throw new Error("Document id is required");
+  }
+  const client = getSupabaseClient();
+  const response = await client
+    .from(DOCUMENTS_TABLE)
+    .select("*")
+    .eq("id", id)
+    .maybeSingle();
+
+  return unwrapResponse(response);
+}
+
 export async function fetchDocumentBodiesByIds(documentIds = []) {
   if (!Array.isArray(documentIds) || documentIds.length === 0) {
     return [];
@@ -50,11 +77,26 @@ export async function fetchDocumentBodiesByIds(documentIds = []) {
   return unwrapResponse(response);
 }
 
-export async function insertDocument(document) {
+export async function fetchDocumentBody(documentId) {
+  if (typeof documentId !== "string" || !documentId.trim()) {
+    throw new Error("Document id is required");
+  }
   const client = getSupabaseClient();
   const response = await client
+    .from(BODIES_TABLE)
+    .select("*")
+    .eq("document_id", documentId)
+    .maybeSingle();
+
+  return unwrapResponse(response);
+}
+
+export async function insertDocument(document) {
+  const client = getSupabaseClient();
+  const userId = document.user_id ?? (await getAuthedUserId());
+  const response = await client
     .from(DOCUMENTS_TABLE)
-    .insert(document)
+    .insert({ ...document, user_id: userId })
     .select("*")
     .single();
 

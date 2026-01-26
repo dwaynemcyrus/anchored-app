@@ -7,6 +7,7 @@ import {
 import { deriveDocumentTitle } from "../lib/documents/deriveTitle";
 import { DOCUMENT_TYPE_NOTE, DOCUMENT_TYPE_DAILY, DOCUMENT_TYPE_STAGED } from "../types/document";
 import { ensureBuiltInTemplates } from "../lib/templates/seedTemplates";
+import { addSyncListener, enqueueSyncOperation, initSyncListeners, scheduleSync } from "../lib/sync/syncManager";
 
 const sortDocuments = (documents) => documents.slice().sort((a, b) => b.updatedAt - a.updatedAt);
 
@@ -96,6 +97,8 @@ export const useDocumentsStore = create((set, get) => ({
         hydrateError: null,
         listIncludeArchived: nextIncludeArchived,
       });
+      initSyncListeners();
+      scheduleSync({ reason: "hydrate" });
       return { success: true };
     } catch (error) {
       console.error("Failed to hydrate documents list", error);
@@ -152,6 +155,11 @@ export const useDocumentsStore = create((set, get) => ({
         // Increment inbox count if document was added to inbox
         inboxCount: inboxAt != null ? state.inboxCount + 1 : state.inboxCount,
       }));
+      await enqueueSyncOperation({
+        type: "create",
+        documentId: document.id,
+        payload: { document },
+      });
       return document.id;
     } catch (error) {
       console.error("Failed to create document", error);
@@ -193,6 +201,11 @@ export const useDocumentsStore = create((set, get) => ({
       const updated = get().documentsById[id];
       if (updated) {
         updateSearchIndex(updated);
+        await enqueueSyncOperation({
+          type: "update",
+          documentId: updated.id,
+          payload: { document: updated },
+        });
       }
       return { success: true };
     } catch (error) {
@@ -231,6 +244,11 @@ export const useDocumentsStore = create((set, get) => ({
       const updated = get().documentsById[id];
       if (updated) {
         updateSearchIndex(updated);
+        await enqueueSyncOperation({
+          type: "update",
+          documentId: updated.id,
+          payload: { document: updated },
+        });
       }
       return { success: true };
     } catch (error) {
@@ -276,6 +294,11 @@ export const useDocumentsStore = create((set, get) => ({
       const refreshed = await repo.get(id);
       if (refreshed) {
         updateSearchIndex(refreshed);
+        await enqueueSyncOperation({
+          type: "update",
+          documentId: refreshed.id,
+          payload: { document: refreshed },
+        });
       }
     } catch (error) {
       console.error("Failed to archive document", error);
@@ -305,6 +328,11 @@ export const useDocumentsStore = create((set, get) => ({
       const refreshed = await repo.get(id);
       if (refreshed) {
         updateSearchIndex(refreshed);
+        await enqueueSyncOperation({
+          type: "update",
+          documentId: refreshed.id,
+          payload: { document: refreshed },
+        });
       }
     } catch (error) {
       console.error("Failed to unarchive document", error);
@@ -336,6 +364,11 @@ export const useDocumentsStore = create((set, get) => ({
       const refreshed = await repo.get(id);
       if (refreshed) {
         updateSearchIndex(refreshed);
+        await enqueueSyncOperation({
+          type: "update",
+          documentId: refreshed.id,
+          payload: { document: refreshed },
+        });
       }
     } catch (error) {
       console.error("Failed to trash document", error);
@@ -352,6 +385,11 @@ export const useDocumentsStore = create((set, get) => ({
       const restored = await repo.get(id);
       if (!restored) return;
       updateSearchIndex(restored);
+      await enqueueSyncOperation({
+        type: "update",
+        documentId: restored.id,
+        payload: { document: restored },
+      });
       set((state) => {
         const nextDocumentsById = { ...state.documentsById, [id]: restored };
         const nextDocuments = shouldIncludeInList(restored, state.listIncludeArchived)
@@ -367,6 +405,12 @@ export const useDocumentsStore = create((set, get) => ({
     }
   },
 }));
+
+addSyncListener((event) => {
+  if (event?.type !== "remoteApplied") return;
+  const { hydrate } = useDocumentsStore.getState();
+  hydrate({ force: true });
+});
 
 // Deprecated aliases for backward compatibility
 // @deprecated Use useDocumentsStore instead
