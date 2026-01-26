@@ -1,4 +1,4 @@
-Active build spec: docs/builds/document-templates-v1-spec.md
+Active build spec: docs/builds/hybrid-sync-conflict-spec-v1.md
 
 Instruction:
 - Follow AGENTS.md and SCOPE.md.
