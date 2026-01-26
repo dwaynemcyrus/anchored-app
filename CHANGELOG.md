@@ -18,6 +18,10 @@
 - Fix Supabase client env access for Next.js client builds.
 - Add `.env.example` for local setup guidance.
 
+## 0.15.3 - 2026-01-26
+- Hide shell header/FAB and shortcuts on public routes like `/login`.
+- Set login inputs to 16px font size to prevent iOS zoom.
+
 ## 0.14.2 - 2026-01-23
 - Expand frontmatter parsing/serialization to support multiline values and nested structures.
 - Align template insertion with shared frontmatter parsing logic.
