@@ -1,0 +1,40 @@
+.page {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #f6f2ea;
+  color: #14110f;
+  padding: 24px;
+}
+
+.card {
+  width: min(520px, 100%);
+  background: #fcfbf8;
+  border-radius: 16px;
+  border: 1px solid rgba(20, 17, 15, 0.12);
+  box-shadow: 0 12px 24px rgba(20, 17, 15, 0.12);
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.title {
+  margin: 0 0 8px;
+  font-size: 20px;
+}
+
+.row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 13px;
+}
+
+.label {
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #6a5f54;
+  font-size: 11px;
+}
