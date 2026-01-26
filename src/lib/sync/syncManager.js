@@ -72,6 +72,14 @@ export function initSyncListeners() {
   window.addEventListener("offline", () => {
     getStoreActions().setStatus(SYNC_STATUS.OFFLINE);
   });
+  window.addEventListener("focus", () => {
+    scheduleSync({ reason: "focus" });
+  });
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible") {
+      scheduleSync({ reason: "visibility" });
+    }
+  });
 }
 
 function toIso(value) {

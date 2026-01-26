@@ -408,8 +408,10 @@ export const useDocumentsStore = create((set, get) => ({
 
 addSyncListener((event) => {
   if (event?.type !== "remoteApplied") return;
-  const { hydrate } = useDocumentsStore.getState();
+  const { hydrate, loadInboxCount, incrementInboxVersion } = useDocumentsStore.getState();
   hydrate({ force: true });
+  loadInboxCount();
+  incrementInboxVersion();
 });
 
 // Deprecated aliases for backward compatibility
