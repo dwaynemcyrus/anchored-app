@@ -279,34 +279,7 @@ export function mergeFrontmatter(existing, template) {
  */
 export function serializeFrontmatter(frontmatter) {
   const lines = [];
-
-  for (const [key, value] of Object.entries(frontmatter)) {
-    if (value === undefined) continue;
-
-    if (value === null) {
-      lines.push(`${key}: null`);
-    } else if (value === "") {
-      lines.push(`${key}: ""`);
-    } else if (Array.isArray(value)) {
-      if (value.length === 0) {
-        lines.push(`${key}: []`);
-      } else {
-        lines.push(`${key}: [${value.map((v) => JSON.stringify(v)).join(", ")}]`);
-      }
-    } else if (typeof value === "object") {
-      lines.push(`${key}: ${JSON.stringify(value)}`);
-    } else if (typeof value === "string") {
-      // Quote strings that contain special characters
-      if (value.includes(":") || value.includes("#") || value.includes("\n")) {
-        lines.push(`${key}: "${value.replace(/"/g, '\\"')}"`);
-      } else {
-        lines.push(`${key}: ${value}`);
-      }
-    } else {
-      lines.push(`${key}: ${value}`);
-    }
-  }
-
+  serializeMapping(frontmatter, 0, lines);
   return lines.join("\n");
 }
 
@@ -315,6 +288,97 @@ export function serializeFrontmatter(frontmatter) {
  * @param {string} frontmatter - YAML-like frontmatter content
  * @returns {Record<string, any>}
  */
+function formatScalar(value) {
+  if (value === "") return '""';
+  const needsQuotes =
+    value.includes(":") ||
+    value.includes("#") ||
+    value.includes("\n") ||
+    value.startsWith("-") ||
+    value.startsWith("{") ||
+    value.startsWith("[") ||
+    value !== value.trim();
+  if (needsQuotes) {
+    return `"${value.replace(/"/g, '\\"')}"`;
+  }
+  return value;
+}
+
+function serializeMapping(value, indent, lines) {
+  const indentStr = " ".repeat(indent);
+  for (const [key, entry] of Object.entries(value)) {
+    if (entry === undefined) continue;
+    if (entry === null) {
+      lines.push(`${indentStr}${key}: null`);
+      continue;
+    }
+    if (typeof entry === "string" && entry.includes("\n")) {
+      lines.push(`${indentStr}${key}: |`);
+      const blockIndent = " ".repeat(indent + 2);
+      entry.split("\n").forEach((line) => {
+        lines.push(`${blockIndent}${line}`);
+      });
+      continue;
+    }
+    if (Array.isArray(entry)) {
+      if (entry.length === 0) {
+        lines.push(`${indentStr}${key}: []`);
+        continue;
+      }
+      lines.push(`${indentStr}${key}:`);
+      serializeArray(entry, indent + 2, lines);
+      continue;
+    }
+    if (entry && typeof entry === "object") {
+      lines.push(`${indentStr}${key}:`);
+      serializeMapping(entry, indent + 2, lines);
+      continue;
+    }
+    if (typeof entry === "string") {
+      lines.push(`${indentStr}${key}: ${formatScalar(entry)}`);
+      continue;
+    }
+    lines.push(`${indentStr}${key}: ${entry}`);
+  }
+}
+
+function serializeArray(value, indent, lines) {
+  const indentStr = " ".repeat(indent);
+  value.forEach((item) => {
+    if (item === null) {
+      lines.push(`${indentStr}- null`);
+      return;
+    }
+    if (typeof item === "string") {
+      if (item.includes("\n")) {
+        lines.push(`${indentStr}- |`);
+        const blockIndent = " ".repeat(indent + 2);
+        item.split("\n").forEach((line) => {
+          lines.push(`${blockIndent}${line}`);
+        });
+        return;
+      }
+      lines.push(`${indentStr}- ${formatScalar(item)}`);
+      return;
+    }
+    if (Array.isArray(item)) {
+      if (item.length === 0) {
+        lines.push(`${indentStr}- []`);
+        return;
+      }
+      lines.push(`${indentStr}-`);
+      serializeArray(item, indent + 2, lines);
+      return;
+    }
+    if (typeof item === "object") {
+      lines.push(`${indentStr}-`);
+      serializeMapping(item, indent + 2, lines);
+      return;
+    }
+    lines.push(`${indentStr}- ${item}`);
+  });
+}
+
 function parseScalar(value) {
   if (value === '""' || value === "''") {
     return "";
@@ -381,29 +445,218 @@ function parseInlineArray(value) {
   return items;
 }
 
-export function parseFrontmatterBlock(frontmatter) {
-  const result = {};
-  const lines = frontmatter.split("\n");
+function getIndent(line) {
+  const match = line.match(/^\s*/);
+  return match ? match[0].length : 0;
+}
 
-  for (const line of lines) {
-    const colonIndex = line.indexOf(":");
+function parseMultiline(lines, startIndex, baseIndent, mode) {
+  const collected = [];
+  let i = startIndex;
+  let blockIndent = null;
+
+  for (; i < lines.length; i += 1) {
+    const line = lines[i];
+    if (line.trim() === "") {
+      if (blockIndent !== null) {
+        collected.push("");
+      }
+      continue;
+    }
+    const indent = getIndent(line);
+    if (indent <= baseIndent) break;
+    if (blockIndent === null) {
+      blockIndent = indent;
+    }
+    collected.push(line.slice(blockIndent));
+  }
+
+  if (mode === ">") {
+    return {
+      value: collected.join(" ").replace(/\s+/g, " ").trim(),
+      index: i,
+    };
+  }
+
+  return { value: collected.join("\n"), index: i };
+}
+
+function parseBlock(lines, startIndex, indent) {
+  const nextLine = lines[startIndex] || "";
+  const trimmed = nextLine.trim();
+  if (trimmed.startsWith("-")) {
+    return parseList(lines, startIndex, indent);
+  }
+  return parseMapping(lines, startIndex, indent);
+}
+
+function parseMapping(lines, startIndex, indent) {
+  const result = {};
+  let i = startIndex;
+
+  for (; i < lines.length; i += 1) {
+    const line = lines[i];
+    if (line.trim() === "") continue;
+    if (line.trim().startsWith("#")) continue;
+
+    const lineIndent = getIndent(line);
+    if (lineIndent < indent) break;
+    if (lineIndent > indent) continue;
+
+    const trimmed = line.trim();
+    if (trimmed.startsWith("- ")) break;
+
+    const colonIndex = trimmed.indexOf(":");
     if (colonIndex === -1) continue;
 
-    const key = line.slice(0, colonIndex).trim();
-    const value = line.slice(colonIndex + 1).trim();
+    const key = trimmed.slice(0, colonIndex).trim();
+    const rest = trimmed.slice(colonIndex + 1).trim();
 
-    if (value === "[]") {
+    if (rest === "|" || rest === ">") {
+      const parsed = parseMultiline(lines, i + 1, lineIndent, rest);
+      result[key] = parsed.value;
+      i = parsed.index - 1;
+      continue;
+    }
+
+    if (rest === "") {
+      let nextIndex = i + 1;
+      while (nextIndex < lines.length && lines[nextIndex].trim() === "") {
+        nextIndex += 1;
+      }
+      if (nextIndex < lines.length) {
+        const nextIndent = getIndent(lines[nextIndex]);
+        if (nextIndent > lineIndent) {
+          const parsed = parseBlock(lines, nextIndex, nextIndent);
+          result[key] = parsed.value;
+          i = parsed.index - 1;
+          continue;
+        }
+      }
+      result[key] = null;
+      continue;
+    }
+
+    if (rest === "[]") {
       result[key] = [];
       continue;
     }
 
-    if (value.startsWith("[") && value.endsWith("]")) {
-      result[key] = parseInlineArray(value);
+    if (rest.startsWith("[") && rest.endsWith("]")) {
+      result[key] = parseInlineArray(rest);
       continue;
     }
 
-    result[key] = parseScalar(value);
+    result[key] = parseScalar(rest);
   }
 
-  return result;
+  return { value: result, index: i };
+}
+
+function parseInlineKeyValue(value) {
+  const colonIndex = value.indexOf(":");
+  if (colonIndex === -1) return null;
+  const key = value.slice(0, colonIndex).trim();
+  const rest = value.slice(colonIndex + 1).trim();
+  if (!key) return null;
+  return { key, rest };
+}
+
+function parseList(lines, startIndex, indent) {
+  const result = [];
+  let i = startIndex;
+
+  for (; i < lines.length; i += 1) {
+    const line = lines[i];
+    if (line.trim() === "") continue;
+    if (line.trim().startsWith("#")) continue;
+
+    const lineIndent = getIndent(line);
+    if (lineIndent < indent) break;
+    if (lineIndent > indent) continue;
+
+    const trimmed = line.trim();
+    if (!trimmed.startsWith("- ")) break;
+
+    const itemRest = trimmed.slice(2).trim();
+    let itemValue = null;
+    let nextIndex = i + 1;
+
+    if (itemRest === "") {
+      while (nextIndex < lines.length && lines[nextIndex].trim() === "") {
+        nextIndex += 1;
+      }
+      if (nextIndex < lines.length) {
+        const nextIndent = getIndent(lines[nextIndex]);
+        if (nextIndent > lineIndent) {
+          const parsed = parseBlock(lines, nextIndex, nextIndent);
+          itemValue = parsed.value;
+          nextIndex = parsed.index;
+        }
+      }
+      result.push(itemValue);
+      i = nextIndex - 1;
+      continue;
+    }
+
+    const inlineMapping = parseInlineKeyValue(itemRest);
+    if (inlineMapping) {
+      const value =
+        inlineMapping.rest === ""
+          ? null
+          : inlineMapping.rest === "[]"
+            ? []
+            : inlineMapping.rest.startsWith("[") && inlineMapping.rest.endsWith("]")
+              ? parseInlineArray(inlineMapping.rest)
+              : parseScalar(inlineMapping.rest);
+      itemValue = { [inlineMapping.key]: value };
+      if (inlineMapping.rest === "") {
+        while (nextIndex < lines.length && lines[nextIndex].trim() === "") {
+          nextIndex += 1;
+        }
+        if (nextIndex < lines.length) {
+          const nextIndent = getIndent(lines[nextIndex]);
+          if (nextIndent > lineIndent) {
+            const parsed = parseMapping(lines, nextIndex, nextIndent);
+            Object.assign(itemValue, parsed.value);
+            nextIndex = parsed.index;
+          }
+        }
+      } else {
+        while (nextIndex < lines.length && lines[nextIndex].trim() === "") {
+          nextIndex += 1;
+        }
+        if (nextIndex < lines.length) {
+          const nextIndent = getIndent(lines[nextIndex]);
+          if (nextIndent > lineIndent) {
+            const parsed = parseMapping(lines, nextIndex, nextIndent);
+            Object.assign(itemValue, parsed.value);
+            nextIndex = parsed.index;
+          }
+        }
+      }
+      result.push(itemValue);
+      i = nextIndex - 1;
+      continue;
+    }
+
+    if (itemRest === "|" || itemRest === ">") {
+      const parsed = parseMultiline(lines, i + 1, lineIndent, itemRest);
+      itemValue = parsed.value;
+      result.push(itemValue);
+      i = parsed.index - 1;
+      continue;
+    }
+
+    itemValue = parseScalar(itemRest);
+    result.push(itemValue);
+  }
+
+  return { value: result, index: i };
+}
+
+export function parseFrontmatterBlock(frontmatter) {
+  const lines = frontmatter.split("\n");
+  const parsed = parseMapping(lines, 0, 0);
+  return parsed.value;
 }

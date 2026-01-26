@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.14.2 - 2026-01-23
+- Expand frontmatter parsing/serialization to support multiline values and nested structures.
+- Align template insertion with shared frontmatter parsing logic.
+- Document single-block template scaffold expectations in the templates spec.
+
 ## 0.14.1 - 2026-01-23
 - Fix processed inbox items not appearing in notes list until page refresh.
 - Remove archive option from inbox processing (now only Keep and Trash).
