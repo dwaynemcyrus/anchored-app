@@ -36,9 +36,9 @@ Anything you *read, write, link, search, tag, or archive*.
 * `subtype` (journal | essay | meeting | …)
 * `title`
 * `status` (active | done | archived | trash)
-* `tags`
 * `created_at`
 * `updated_at`
+* tags live in `frontmatter.tags`
 * optional promoted fields (due_at, priority, published_at, etc.)
 
 ### `document_bodies` (content)
