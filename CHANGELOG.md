@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.15.0 - 2026-01-26
+- Add Supabase schema migration and docs for `documents` + `document_bodies`.
+- Introduce Supabase client + document API helpers for sync operations.
+- Persist a durable sync queue in IndexedDB with retry metadata and status store.
+- Add hybrid sync manager with push/pull flows and conflict copy creation.
+- Surface sync status in the shell header and show conflict toast notifications.
+
 ## 0.14.2 - 2026-01-23
 - Expand frontmatter parsing/serialization to support multiline values and nested structures.
 - Align template insertion with shared frontmatter parsing logic.
