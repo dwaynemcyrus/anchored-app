@@ -17,6 +17,7 @@ import { getDocumentsRepo } from "../../lib/repo/getDocumentsRepo";
 import {
   prepareTemplateForInsertion,
   mergeFrontmatter,
+  parseFrontmatterBlock,
   serializeFrontmatter,
 } from "../../lib/templates";
 import TemplatePicker from "../templates/TemplatePicker";
@@ -259,19 +260,7 @@ export default function NoteEditor({ documentId }) {
       let fmEndPos = 0;
 
       if (fmMatch) {
-        // Parse existing frontmatter
-        const fmLines = fmMatch[1].split("\n");
-        for (const line of fmLines) {
-          const colonIndex = line.indexOf(":");
-          if (colonIndex === -1) continue;
-          const key = line.slice(0, colonIndex).trim();
-          let value = line.slice(colonIndex + 1).trim();
-          // Basic value parsing
-          if (value === '""' || value === "''") value = "";
-          else if (value.startsWith('"') && value.endsWith('"')) value = value.slice(1, -1);
-          else if (value.startsWith("'") && value.endsWith("'")) value = value.slice(1, -1);
-          existingFm[key] = value;
-        }
+        existingFm = parseFrontmatterBlock(fmMatch[1]);
         bodyWithoutFm = fmMatch[2] || "";
         fmEndPos = currentDoc.indexOf(fmMatch[2] || "") || currentDoc.length;
         if (fmEndPos < 0) fmEndPos = currentDoc.length;

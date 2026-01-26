@@ -227,10 +227,15 @@ export function prepareTemplateForInsertion(template) {
  * @param {Record<string, any>} template - Template frontmatter to merge
  * @returns {Record<string, any>}
  */
+const FRONTMATTER_SKIP_KEYS = new Set(["type", "id", "createdAt", "updatedAt"]);
+
 export function mergeFrontmatter(existing, template) {
   const result = { ...existing };
 
   for (const [key, templateValue] of Object.entries(template)) {
+    if (FRONTMATTER_SKIP_KEYS.has(key)) {
+      continue;
+    }
     // Skip if existing has a non-empty value for this key
     if (key in result) {
       const existingValue = result[key];
@@ -310,7 +315,73 @@ export function serializeFrontmatter(frontmatter) {
  * @param {string} frontmatter - YAML-like frontmatter content
  * @returns {Record<string, any>}
  */
-function parseFrontmatterBlock(frontmatter) {
+function parseScalar(value) {
+  if (value === '""' || value === "''") {
+    return "";
+  }
+  if (value === "true") return true;
+  if (value === "false") return false;
+  if (value === "null") return null;
+  if (/^-?\d+$/.test(value)) return parseInt(value, 10);
+  if (/^-?\d+\.\d+$/.test(value)) return parseFloat(value);
+  if (value.startsWith('"') && value.endsWith('"')) {
+    return value.slice(1, -1);
+  }
+  if (value.startsWith("'") && value.endsWith("'")) {
+    return value.slice(1, -1);
+  }
+  if (value.startsWith("{") && value.endsWith("}")) {
+    try {
+      return JSON.parse(value);
+    } catch {
+      return value;
+    }
+  }
+  return value;
+}
+
+function parseInlineArray(value) {
+  const inner = value.slice(1, -1).trim();
+  if (inner === "") return [];
+
+  const items = [];
+  let current = "";
+  let quote = null;
+
+  for (let i = 0; i < inner.length; i += 1) {
+    const char = inner[i];
+    if (quote) {
+      if (char === quote) {
+        quote = null;
+      }
+      current += char;
+      continue;
+    }
+    if (char === '"' || char === "'") {
+      quote = char;
+      current += char;
+      continue;
+    }
+    if (char === ",") {
+      const trimmed = current.trim();
+      if (trimmed !== "") {
+        items.push(parseScalar(trimmed));
+      }
+      current = "";
+      continue;
+    }
+    current += char;
+  }
+
+  const finalItem = current.trim();
+  if (finalItem !== "") {
+    items.push(parseScalar(finalItem));
+  }
+
+  return items;
+}
+
+export function parseFrontmatterBlock(frontmatter) {
   const result = {};
   const lines = frontmatter.split("\n");
 
@@ -319,30 +390,19 @@ function parseFrontmatterBlock(frontmatter) {
     if (colonIndex === -1) continue;
 
     const key = line.slice(0, colonIndex).trim();
-    let value = line.slice(colonIndex + 1).trim();
+    const value = line.slice(colonIndex + 1).trim();
 
-    // Parse value types
-    if (value === '""' || value === "''") {
-      result[key] = "";
-    } else if (value === "[]") {
+    if (value === "[]") {
       result[key] = [];
-    } else if (value === "true") {
-      result[key] = true;
-    } else if (value === "false") {
-      result[key] = false;
-    } else if (value === "null") {
-      result[key] = null;
-    } else if (/^-?\d+$/.test(value)) {
-      result[key] = parseInt(value, 10);
-    } else if (/^-?\d+\.\d+$/.test(value)) {
-      result[key] = parseFloat(value);
-    } else if (value.startsWith('"') && value.endsWith('"')) {
-      result[key] = value.slice(1, -1);
-    } else if (value.startsWith("'") && value.endsWith("'")) {
-      result[key] = value.slice(1, -1);
-    } else {
-      result[key] = value;
+      continue;
     }
+
+    if (value.startsWith("[") && value.endsWith("]")) {
+      result[key] = parseInlineArray(value);
+      continue;
+    }
+
+    result[key] = parseScalar(value);
   }
 
   return result;

@@ -83,14 +83,6 @@ Each template item shows:
 
 ```yaml
 ---
-id: <generated>
-type: _template
-templateFor: note
-title: "My Template"
-createdAt: <now>
-isBuiltIn: false
----
----
 type: note
 title: ""
 tags: []
@@ -104,6 +96,8 @@ tags: []
 - `templateFor: note` (most common type)
 - Example frontmatter block in body
 - User changes `templateFor`, `title`, and body content
+
+Note: Template metadata (`type: _template`, `templateFor`, `isBuiltIn`, etc.) is stored in document meta, not in the template body.
 
 ---
 
