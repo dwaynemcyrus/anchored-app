@@ -7,6 +7,11 @@
 - Add hybrid sync manager with push/pull flows and conflict copy creation.
 - Surface sync status in the shell header and show conflict toast notifications.
 
+## 0.15.1 - 2026-01-26
+- Add Supabase auth helpers and a dedicated login page.
+- Gate the app behind authentication with a lightweight session check.
+- Document a manual hybrid sync test checklist.
+
 ## 0.14.2 - 2026-01-23
 - Expand frontmatter parsing/serialization to support multiline values and nested structures.
 - Align template insertion with shared frontmatter parsing logic.
