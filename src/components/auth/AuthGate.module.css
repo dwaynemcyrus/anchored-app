@@ -1,0 +1,17 @@
+.screen {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #f6f2ea;
+  color: #3b3227;
+  font-size: 14px;
+}
+
+.card {
+  background: #fcfbf8;
+  border: 1px solid rgba(20, 17, 15, 0.12);
+  border-radius: 16px;
+  padding: 16px 20px;
+  box-shadow: 0 12px 24px rgba(20, 17, 15, 0.1);
+}

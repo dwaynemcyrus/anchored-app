@@ -7,6 +7,7 @@ import QuickCaptureModal from "./QuickCaptureModal";
 import { useShellHeaderStore } from "../../store/shellHeaderStore";
 import { SYNC_STATUS, useSyncStore } from "../../store/syncStore";
 import SyncToast from "./SyncToast";
+import AuthGate from "../auth/AuthGate";
 import { useEditorSettingsStore } from "../../store/editorSettingsStore";
 import { useDocumentsStore } from "../../store/documentsStore";
 import { getCaptureTemplate, createFromTemplate } from "../../lib/templates";
@@ -483,15 +484,17 @@ export default function Shell({ children }) {
   return (
     <div className={layout.shell} data-shell-root ref={shellRootRef}>
       <SyncToast />
-      <div className={layout.contentViewport} data-content-viewport>
-        <main
-          className={layout.contentScroller}
-          data-content-scroller
-          ref={contentScrollerRef}
-        >
-          {children}
-        </main>
-      </div>
+      <AuthGate>
+        <div className={layout.contentViewport} data-content-viewport>
+          <main
+            className={layout.contentScroller}
+            data-content-scroller
+            ref={contentScrollerRef}
+          >
+            {children}
+          </main>
+        </div>
+      </AuthGate>
       <div className={layout.overlayLayer} data-overlay-layer aria-hidden="false">
         <header className={`${layout.shellHeader} ${styles.header}`}>
           <div className={styles.headerLeft}>
