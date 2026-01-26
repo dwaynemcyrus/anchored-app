@@ -9,7 +9,13 @@ function requireBrowser() {
 }
 
 function getEnvValue(name) {
-  const value = process.env[name];
+  let value = "";
+  if (name === "NEXT_PUBLIC_SUPABASE_URL") {
+    value = process.env.NEXT_PUBLIC_SUPABASE_URL || "";
+  }
+  if (name === "NEXT_PUBLIC_SUPABASE_ANON_KEY") {
+    value = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "";
+  }
   if (!value) {
     throw new Error(`Missing required env var: ${name}`);
   }
