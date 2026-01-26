@@ -1,0 +1,141 @@
+.page {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 32px 20px;
+  background: linear-gradient(160deg, #f6f2ea 0%, #f2ede4 50%, #ede7dd 100%);
+}
+
+.card {
+  width: min(420px, 100%);
+  background: #fcfbf8;
+  border-radius: 20px;
+  border: 1px solid rgba(20, 17, 15, 0.12);
+  box-shadow: 0 20px 40px rgba(20, 17, 15, 0.12);
+  padding: 28px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.heading h1 {
+  font-size: 24px;
+  margin: 0;
+  color: #14110f;
+}
+
+.heading p {
+  margin: 6px 0 0;
+  color: #6a5f54;
+  font-size: 13px;
+}
+
+.toggleRow {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.toggle {
+  border-radius: 12px;
+  border: 1px solid rgba(20, 17, 15, 0.18);
+  background: transparent;
+  padding: 10px 12px;
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #4d4238;
+}
+
+.toggleActive {
+  background: #14110f;
+  color: #f6f2ea;
+  border-color: rgba(20, 17, 15, 0.4);
+}
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #6a5f54;
+}
+
+.input {
+  border: 1px solid rgba(20, 17, 15, 0.2);
+  border-radius: 12px;
+  padding: 12px 14px;
+  font-size: 14px;
+  color: #14110f;
+  background: #fffdf9;
+}
+
+.input:focus {
+  outline: 2px solid rgba(20, 17, 15, 0.6);
+  outline-offset: 2px;
+}
+
+.actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.primary {
+  border: none;
+  border-radius: 12px;
+  padding: 12px 14px;
+  background: #14110f;
+  color: #f6f2ea;
+  font-weight: 600;
+}
+
+.secondary {
+  border-radius: 12px;
+  padding: 12px 14px;
+  border: 1px solid rgba(20, 17, 15, 0.2);
+  background: #f6f2ea;
+  color: #14110f;
+  font-weight: 600;
+}
+
+.primary:disabled,
+.secondary:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.status {
+  font-size: 12px;
+  color: #2b6b3f;
+  background: rgba(43, 107, 63, 0.1);
+  padding: 8px 10px;
+  border-radius: 10px;
+}
+
+.error {
+  font-size: 12px;
+  color: #b3261e;
+  background: rgba(179, 38, 30, 0.12);
+  padding: 8px 10px;
+  border-radius: 10px;
+}
+
+@media (max-width: 520px) {
+  .card {
+    padding: 24px;
+  }
+
+  .actions {
+    grid-template-columns: 1fr;
+  }
+}
