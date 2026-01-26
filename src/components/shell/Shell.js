@@ -134,6 +134,7 @@ export default function Shell({ children }) {
     typeof pathname === "string" &&
     pathname.startsWith("/knowledge/notes/") &&
     pathname !== "/knowledge/notes";
+  const isPublicRoute = pathname === "/login" || pathname === "/debug/env";
 
   // Determine back link based on current route
   const backHref = isNoteEditorRoute ? "/knowledge/notes" : "/";
@@ -186,6 +187,7 @@ export default function Shell({ children }) {
 
   useEffect(() => {
     if (!menuOpen) return;
+    if (isPublicRoute) return;
     const handleKeydown = (event) => {
       if (event.key === "Escape") {
         setMenuOpen(false);
@@ -193,7 +195,7 @@ export default function Shell({ children }) {
     };
     window.addEventListener("keydown", handleKeydown);
     return () => window.removeEventListener("keydown", handleKeydown);
-  }, [menuOpen]);
+  }, [isPublicRoute, menuOpen]);
 
   useEffect(() => {
     if (!captureOpen) return;
@@ -263,6 +265,7 @@ export default function Shell({ children }) {
   }, [clearLongPressTimer, resetDragState]);
 
   useEffect(() => {
+    if (isPublicRoute) return;
     const handleSearchShortcut = (event) => {
       const isK = event.key === "k" || event.key === "K";
       if (!isK || (!event.metaKey && !event.ctrlKey)) return;
@@ -271,7 +274,7 @@ export default function Shell({ children }) {
     };
     window.addEventListener("keydown", handleSearchShortcut);
     return () => window.removeEventListener("keydown", handleSearchShortcut);
-  }, [handleOpenCapture]);
+  }, [handleOpenCapture, isPublicRoute]);
 
   const handleCloseCapture = () => {
     resetDragState();
@@ -483,7 +486,7 @@ export default function Shell({ children }) {
 
   return (
     <div className={layout.shell} data-shell-root ref={shellRootRef}>
-      <SyncToast />
+      {isPublicRoute ? null : <SyncToast />}
       <AuthGate>
         <div className={layout.contentViewport} data-content-viewport>
           <main
@@ -495,6 +498,8 @@ export default function Shell({ children }) {
           </main>
         </div>
       </AuthGate>
+      {isPublicRoute ? null : (
+      <>
       <div className={layout.overlayLayer} data-overlay-layer aria-hidden="false">
         <header className={`${layout.shellHeader} ${styles.header}`}>
           <div className={styles.headerLeft}>
@@ -647,6 +652,8 @@ export default function Shell({ children }) {
           </nav>
         </div>
       ) : null}
+      </>
+      )}
     </div>
   );
 }
