@@ -1,6 +1,8 @@
 export const DB_NAME = "anchored_db";
-export const DB_VERSION = 4;
+export const DB_VERSION = 5;
 export const DOCUMENTS_STORE = "documents";
+export const SYNC_QUEUE_STORE = "syncQueue";
+export const SYNC_META_STORE = "syncMeta";
 
 export function openAnchoredDb() {
   if (typeof indexedDB === "undefined") {
@@ -35,6 +37,17 @@ export function openAnchoredDb() {
       }
       if (!store.indexNames.contains("slug")) {
         store.createIndex("slug", "slug", { unique: false });
+      }
+
+      if (!db.objectStoreNames.contains(SYNC_QUEUE_STORE)) {
+        const queueStore = db.createObjectStore(SYNC_QUEUE_STORE, { keyPath: "id" });
+        queueStore.createIndex("createdAt", "createdAt", { unique: false });
+        queueStore.createIndex("nextAttemptAt", "nextAttemptAt", { unique: false });
+        queueStore.createIndex("documentId", "documentId", { unique: false });
+      }
+
+      if (!db.objectStoreNames.contains(SYNC_META_STORE)) {
+        db.createObjectStore(SYNC_META_STORE, { keyPath: "key" });
       }
     };
 
