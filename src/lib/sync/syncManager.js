@@ -22,6 +22,7 @@ import { useSyncStore, SYNC_STATUS } from "../../store/syncStore";
 import { createConflictCopy } from "./conflictCopy";
 import { getDocumentsRepo } from "../repo/getDocumentsRepo";
 import { buildSearchIndex } from "../search/searchDocuments";
+import { deriveDocumentTitle } from "../documents/deriveTitle";
 
 const MAX_ATTEMPTS = 5;
 const BASE_DELAY_MS = 1500;
@@ -104,12 +105,6 @@ function resolveStatus(document) {
   return "active";
 }
 
-function resolveTags(document) {
-  if (Array.isArray(document?.tags)) return document.tags;
-  if (Array.isArray(document?.meta?.tags)) return document.meta.tags;
-  return [];
-}
-
 function resolveSubtype(document) {
   return document?.subtype ?? document?.meta?.subtype ?? null;
 }
@@ -117,7 +112,11 @@ function resolveSubtype(document) {
 function resolveFrontmatter(document) {
   if (document?.frontmatter) return document.frontmatter;
   if (document?.meta?.frontmatter) return document.meta.frontmatter;
-  return document?.meta ?? {};
+  const tags = Array.isArray(document?.meta?.tags) ? document.meta.tags : [];
+  return {
+    ...(document?.meta ?? {}),
+    ...(tags.length ? { tags } : {}),
+  };
 }
 
 function toServerDocument(document) {
@@ -126,9 +125,8 @@ function toServerDocument(document) {
     id: document.id,
     type: document.type,
     subtype: resolveSubtype(document),
-    title: document.title ?? null,
+    title: deriveDocumentTitle(document),
     status: resolveStatus(document),
-    tags: resolveTags(document),
     frontmatter: resolveFrontmatter(document),
     created_at: toIso(document.createdAt),
     updated_at: toIso(document.updatedAt),
@@ -142,6 +140,7 @@ function fromServerDocument(document, body) {
   const isTrashed = status === "trash";
   const isArchived = status === "archived";
   const frontmatter = document.frontmatter ?? {};
+  const frontmatterTags = Array.isArray(frontmatter.tags) ? frontmatter.tags : [];
 
   return {
     id: document.id,
@@ -152,11 +151,10 @@ function fromServerDocument(document, body) {
     meta: {
       ...frontmatter,
       status,
-      tags: Array.isArray(document.tags) ? document.tags : [],
+      tags: frontmatterTags,
       subtype: document.subtype ?? null,
       frontmatter,
     },
-    tags: Array.isArray(document.tags) ? document.tags : [],
     status,
     frontmatter,
     createdAt,
