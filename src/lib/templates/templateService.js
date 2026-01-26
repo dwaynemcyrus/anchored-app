@@ -6,6 +6,7 @@
 
 import { getDocumentsRepo } from "../repo/getDocumentsRepo.js";
 import { DOCUMENT_TYPE_TEMPLATE } from "../../types/document.js";
+import { enqueueSyncOperation } from "../sync/syncManager.js";
 import {
   BUILT_IN_TEMPLATES,
   getBuiltInTemplateDefinition,
@@ -90,6 +91,11 @@ export async function createFromTemplate(templateId, overrides = {}) {
   delete input.meta.title;
 
   const doc = await repo.create(input);
+  await enqueueSyncOperation({
+    type: "create",
+    documentId: doc.id,
+    payload: { document: doc },
+  });
   return doc;
 }
 

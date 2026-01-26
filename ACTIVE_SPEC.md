@@ -1,4 +1,4 @@
-Active build spec: docs/builds/hybrid-sync-conflict-spec-v1.md
+Active build spec: docs/builds/supabase-setup-migrations-spec-v1.md
 
 Instruction:
 - Follow AGENTS.md and SCOPE.md.
