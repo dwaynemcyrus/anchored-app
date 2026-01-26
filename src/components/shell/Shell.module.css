@@ -44,6 +44,10 @@
   white-space: nowrap;
 }
 
+.headerStatusError {
+  color: #b3261e;
+}
+
 .headerActionsTop {
   display: flex;
   align-items: center;

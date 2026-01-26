@@ -256,6 +256,7 @@ async function resolveConflict({ localDocument, serverDocument }) {
     document: localDocument,
     reason: "server-newer",
   });
+  notify({ type: "conflict", conflictCopy });
   await enqueueOperation({
     type: "create",
     documentId: conflictCopy.id,

@@ -5,6 +5,8 @@ import { usePathname, useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import QuickCaptureModal from "./QuickCaptureModal";
 import { useShellHeaderStore } from "../../store/shellHeaderStore";
+import { SYNC_STATUS, useSyncStore } from "../../store/syncStore";
+import SyncToast from "./SyncToast";
 import { useEditorSettingsStore } from "../../store/editorSettingsStore";
 import { useDocumentsStore } from "../../store/documentsStore";
 import { getCaptureTemplate, createFromTemplate } from "../../lib/templates";
@@ -105,7 +107,19 @@ export default function Shell({ children }) {
   const title = routes[pathname] ?? "";
   const overrideTitle = useShellHeaderStore((state) => state.title);
   const headerStatus = useShellHeaderStore((state) => state.status);
+  const syncStatus = useSyncStore((state) => state.status);
+  const syncPending = useSyncStore((state) => state.pendingCount);
   const headerTitle = overrideTitle ?? title;
+  const statusBadge = useMemo(() => {
+    if (headerStatus) return headerStatus;
+    if (syncStatus === SYNC_STATUS.ERROR) return "Sync error";
+    if (syncStatus === SYNC_STATUS.OFFLINE) return "Offline";
+    if (syncStatus === SYNC_STATUS.SYNCING) {
+      return syncPending > 0 ? `Syncing · ${syncPending}` : "Syncing";
+    }
+    if (syncPending > 0) return `Queued · ${syncPending}`;
+    return "Synced";
+  }, [headerStatus, syncPending, syncStatus]);
   const hydrateEditorSettings = useEditorSettingsStore((state) => state.hydrate);
   const focusMode = useEditorSettingsStore((state) => state.focusMode);
   const fontSize = useEditorSettingsStore((state) => state.fontSize);
@@ -468,6 +482,7 @@ export default function Shell({ children }) {
 
   return (
     <div className={layout.shell} data-shell-root ref={shellRootRef}>
+      <SyncToast />
       <div className={layout.contentViewport} data-content-viewport>
         <main
           className={layout.contentScroller}
@@ -503,8 +518,14 @@ export default function Shell({ children }) {
           </div>
           <div className={styles.headerActions}>
             <div className={styles.headerActionsTop}>
-              {headerStatus ? (
-                <div className={styles.headerStatus}>{headerStatus}</div>
+              {statusBadge ? (
+                <div
+                  className={`${styles.headerStatus} ${
+                    syncStatus === SYNC_STATUS.ERROR ? styles.headerStatusError : ""
+                  }`}
+                >
+                  {statusBadge}
+                </div>
               ) : null}
               {isNoteEditorRoute ? (
                 <button
