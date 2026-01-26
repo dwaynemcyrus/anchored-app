@@ -5,7 +5,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { getAuthUser } from "../../lib/supabase/auth";
 import styles from "./AuthGate.module.css";
 
-const PUBLIC_ROUTES = new Set(["/login"]);
+const PUBLIC_ROUTES = new Set(["/login", "/debug/env"]);
 
 export default function AuthGate({ children }) {
   const router = useRouter();
