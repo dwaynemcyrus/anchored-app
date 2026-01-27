@@ -22,6 +22,12 @@
 - Hide shell header/FAB and shortcuts on public routes like `/login`.
 - Set login inputs to 16px font size to prevent iOS zoom.
 
+## 0.15.4 - 2026-01-26
+- Remove `documents.tags` from schema (tags live in frontmatter only).
+- Persist derived, markdown-stripped titles to Supabase.
+- Ensure template-created docs enqueue sync operations.
+- Trigger sync on focus/visibility and refresh inbox on remote changes.
+
 ## 0.14.2 - 2026-01-23
 - Expand frontmatter parsing/serialization to support multiline values and nested structures.
 - Align template insertion with shared frontmatter parsing logic.

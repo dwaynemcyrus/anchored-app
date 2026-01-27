@@ -38,6 +38,7 @@ Anything you *read, write, link, search, tag, or archive*.
 * `status` (active | done | archived | trash)
 * `created_at`
 * `updated_at`
+* `version` (int, optimistic concurrency)
 * tags live in `frontmatter.tags`
 * optional promoted fields (due_at, priority, published_at, etc.)
 
