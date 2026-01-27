@@ -1,4 +1,8 @@
-import { DOCUMENTS_STORE, openAnchoredDb } from "./indexedDb";
+import {
+  DOCUMENTS_STORE,
+  DOCUMENT_BODIES_STORE,
+  openAnchoredDb,
+} from "./indexedDb";
 import { DOCUMENT_TYPE_NOTE } from "../../types/document";
 
 const NOTES_STORAGE_KEY = "anchored.notes.v0";
@@ -49,12 +53,27 @@ function normalizeLegacyNote(note) {
 }
 
 async function insertDocuments(db, documents) {
+  const hasBodiesStore = db.objectStoreNames.contains(DOCUMENT_BODIES_STORE);
+  const stores = hasBodiesStore
+    ? [DOCUMENTS_STORE, DOCUMENT_BODIES_STORE]
+    : [DOCUMENTS_STORE];
   return new Promise((resolve, reject) => {
-    const transaction = db.transaction(DOCUMENTS_STORE, "readwrite");
+    const transaction = db.transaction(stores, "readwrite");
     const store = transaction.objectStore(DOCUMENTS_STORE);
+    const bodiesStore = hasBodiesStore
+      ? transaction.objectStore(DOCUMENT_BODIES_STORE)
+      : null;
 
     for (const document of documents) {
       store.add(document);
+      if (bodiesStore && typeof document.body === "string") {
+        bodiesStore.add({
+          documentId: document.id,
+          content: document.body,
+          updatedAt: document.updatedAt ?? Date.now(),
+          syncedAt: null,
+        });
+      }
     }
 
     transaction.oncomplete = () => resolve();
