@@ -32,6 +32,8 @@ const debouncedSaves = new Map();
 let syncInFlight = null;
 let listenersInitialized = false;
 const listeners = new Set();
+let pollIntervalId = null;
+const POLL_INTERVAL_MS = 60000;
 
 function isBrowser() {
   return typeof window !== "undefined";
@@ -73,6 +75,11 @@ export function initSyncListeners() {
   window.addEventListener("offline", () => {
     getStoreActions().setStatus(SYNC_STATUS.OFFLINE);
   });
+  if (!pollIntervalId) {
+    pollIntervalId = window.setInterval(() => {
+      scheduleSync({ reason: "poll" });
+    }, POLL_INTERVAL_MS);
+  }
 }
 
 function parseIsoToMs(value) {
@@ -290,6 +297,15 @@ async function syncDocumentToSupabase(documentId) {
     }
   } catch (error) {
     console.error(`Sync failed for document:${documentId}`, error);
+    if (error && typeof error === "object") {
+      console.error("Supabase error details", {
+        message: error.message,
+        details: error.details,
+        hint: error.hint,
+        code: error.code,
+      });
+    }
+    getStoreActions().setLastError(error?.message || "Document sync failed");
 
     await enqueueOperation({
       table: "documents",
@@ -327,6 +343,15 @@ async function syncBodyToSupabase(documentId) {
     }
   } catch (error) {
     console.error(`Sync failed for body:${documentId}`, error);
+    if (error && typeof error === "object") {
+      console.error("Supabase error details", {
+        message: error.message,
+        details: error.details,
+        hint: error.hint,
+        code: error.code,
+      });
+    }
+    getStoreActions().setLastError(error?.message || "Body sync failed");
 
     await enqueueOperation({
       table: "document_bodies",
