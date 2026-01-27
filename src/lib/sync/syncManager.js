@@ -138,6 +138,9 @@ function fromServerDocument(document, body) {
   const isArchived = status === "archived";
   const frontmatter = document.frontmatter ?? {};
   const frontmatterTags = Array.isArray(frontmatter.tags) ? frontmatter.tags : [];
+  const deletedAt = document.deleted_at
+    ? parseIsoToMs(document.deleted_at) ?? Date.now()
+    : null;
 
   return {
     id: document.id,
@@ -157,7 +160,7 @@ function fromServerDocument(document, body) {
     version,
     createdAt,
     updatedAt,
-    deletedAt: isTrashed ? updatedAt : null,
+    deletedAt: deletedAt ?? (isTrashed ? updatedAt : null),
     archivedAt: isArchived ? updatedAt : null,
     inboxAt: null,
   };

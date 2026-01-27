@@ -53,7 +53,12 @@ export const useDocumentsStore = create((set, get) => ({
   fetchFromServer: async () => {
     const { setLastSyncedAt } = useSyncStore.getState();
     const repo = getDocumentsRepo();
-    const lastSyncedAt = await getSyncMeta("lastSyncedAt");
+    let lastSyncedAt = await getSyncMeta("lastSyncedAt");
+    const now = Date.now();
+    if (lastSyncedAt && Date.parse(lastSyncedAt) > now + 5 * 60 * 1000) {
+      lastSyncedAt = null;
+      await setSyncMeta("lastSyncedAt", null);
+    }
     const remoteDocs = await fetchDocumentsUpdatedSince({ since: lastSyncedAt });
     if (!remoteDocs || remoteDocs.length === 0) return;
     const ids = remoteDocs.map((doc) => doc.id);
@@ -78,7 +83,7 @@ export const useDocumentsStore = create((set, get) => ({
       version: typeof doc.version === "number" ? doc.version : 1,
       createdAt: Date.parse(doc.created_at) || Date.now(),
       updatedAt: Date.parse(doc.updated_at) || Date.now(),
-      deletedAt: doc.status === "trash" ? Date.parse(doc.updated_at) || Date.now() : null,
+      deletedAt: doc.deleted_at ? Date.parse(doc.deleted_at) || Date.now() : null,
       archivedAt: doc.status === "archived" ? Date.parse(doc.updated_at) || Date.now() : null,
       inboxAt: null,
     }));

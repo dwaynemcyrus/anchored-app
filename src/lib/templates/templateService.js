@@ -89,13 +89,20 @@ export async function createFromTemplate(templateId, overrides = {}) {
   // Clean up meta - remove fields that are top-level
   delete input.meta.type;
   delete input.meta.title;
+  if (input.type === "inbox") {
+    input.meta.status = "backlog";
+  }
 
   const doc = await repo.create(input);
-  await enqueueSyncOperation({
-    type: "create",
-    documentId: doc.id,
-    payload: { document: doc },
-  });
+  try {
+    await enqueueSyncOperation({
+      type: "create",
+      documentId: doc.id,
+      payload: { document: doc },
+    });
+  } catch (error) {
+    console.error("Failed to sync template document", error);
+  }
   return doc;
 }
 

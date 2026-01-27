@@ -31,7 +31,7 @@ Anything you *read, write, link, search, tag, or archive*.
 ### `documents` (metadata)
 
 * `id`
-* `user_id`
+* `owner_id`
 * `type` (note | task | project | capture)
 * `subtype` (journal | essay | meeting | …)
 * `title`
@@ -45,6 +45,7 @@ Anything you *read, write, link, search, tag, or archive*.
 ### `document_bodies` (content)
 
 * `document_id`
+* `owner_id`
 * `content` (markdown)
 * `updated_at`
 
