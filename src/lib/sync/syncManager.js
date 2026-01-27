@@ -279,6 +279,7 @@ async function syncDocumentToSupabase(documentId) {
     const payload = {
       ...toServerDocument(doc),
       owner_id: userId,
+      user_id: userId,
     };
 
     const data = await upsertDocument(payload);

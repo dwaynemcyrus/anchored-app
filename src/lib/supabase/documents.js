@@ -95,7 +95,12 @@ export async function insertDocument(document) {
   const ownerId = document.owner_id ?? (await getAuthedUserId());
   const response = await client
     .from(DOCUMENTS_TABLE)
-    .insert({ version: 1, ...document, owner_id: ownerId })
+    .insert({
+      version: 1,
+      ...document,
+      owner_id: ownerId,
+      user_id: document.user_id ?? ownerId,
+    })
     .select("*")
     .single();
 
@@ -193,7 +198,10 @@ export async function upsertDocument(document) {
   const ownerId = document.owner_id ?? (await getAuthedUserId());
   const response = await client
     .from(DOCUMENTS_TABLE)
-    .upsert({ ...document, owner_id: ownerId }, { onConflict: "id" })
+    .upsert(
+      { ...document, owner_id: ownerId, user_id: document.user_id ?? ownerId },
+      { onConflict: "id" }
+    )
     .select("*")
     .single();
 

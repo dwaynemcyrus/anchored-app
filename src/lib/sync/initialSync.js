@@ -167,6 +167,7 @@ async function pushUnsyncedDocuments(repo, userId) {
       deleted_at: doc.deletedAt ? ensureIsoTimestamp(doc.deletedAt) : null,
       version: typeof doc.version === "number" ? doc.version : 1,
       owner_id: userId,
+      user_id: userId,
       client_id: doc.clientId ?? null,
       synced_at: new Date().toISOString(),
     });
