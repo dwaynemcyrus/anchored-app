@@ -35,6 +35,13 @@ const listeners = new Set();
 let pollIntervalId = null;
 const POLL_INTERVAL_MS = 60000;
 
+const UUID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+function isUuid(value) {
+  return typeof value === "string" && UUID_PATTERN.test(value);
+}
+
 function isBrowser() {
   return typeof window !== "undefined";
 }
@@ -270,6 +277,9 @@ export async function saveDocumentBody(documentId, content, options = {}) {
 }
 
 async function syncDocumentToSupabase(documentId) {
+  if (!isUuid(documentId)) {
+    return;
+  }
   const repo = getDocumentsRepo();
   const doc = await repo.get(documentId);
   if (!doc) return;
@@ -322,6 +332,9 @@ async function syncDocumentToSupabase(documentId) {
 }
 
 async function syncBodyToSupabase(documentId) {
+  if (!isUuid(documentId)) {
+    return;
+  }
   const body = await getDocumentBody(documentId);
   if (!body) return;
 

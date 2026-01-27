@@ -16,6 +16,12 @@ import { ensureIsoTimestamp, parseIsoTimestamp } from "../utils/timestamps";
 import { createConflictCopy } from "./conflictCopy";
 
 const LAST_SYNC_KEY = "last_sync_time";
+const UUID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+function isUuid(value) {
+  return typeof value === "string" && UUID_PATTERN.test(value);
+}
 
 function buildLocalDoc(doc, bodyContent) {
   const createdAt = parseIsoTimestamp(doc.created_at, Date.now());
@@ -155,6 +161,7 @@ async function pushUnsyncedDocuments(repo, userId) {
   const fullDocs = await Promise.all(documents.map((doc) => repo.get(doc.id)));
   for (const doc of fullDocs) {
     if (!doc || doc.syncedAt != null) continue;
+    if (!isUuid(doc.id)) continue;
     await upsertDocument({
       id: doc.id,
       type: doc.type,
@@ -180,6 +187,7 @@ async function pushUnsyncedBodies(userId) {
 
   for (const body of localBodies) {
     if (body.syncedAt != null) continue;
+    if (!isUuid(body.documentId)) continue;
     await upsertDocumentBody({
       document_id: body.documentId,
       content: body.content,
