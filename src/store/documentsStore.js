@@ -95,6 +95,8 @@ export const useDocumentsStore = create((set, get) => ({
       status: doc.status ?? "active",
       frontmatter: doc.frontmatter ?? {},
       version: typeof doc.version === "number" ? doc.version : 1,
+      created_at: doc.created_at ?? null,
+      updated_at: doc.updated_at ?? null,
       createdAt: Date.parse(doc.created_at) || Date.now(),
       updatedAt: Date.parse(doc.updated_at) || Date.now(),
       deletedAt: doc.deleted_at ? Date.parse(doc.deleted_at) || Date.now() : null,

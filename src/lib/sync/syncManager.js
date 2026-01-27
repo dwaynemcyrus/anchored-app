@@ -7,7 +7,6 @@ import {
 import { getDocumentBody } from "../db/documentBodies";
 import { getSupabaseClient, getUserId } from "../supabase/client";
 import {
-  fetchDocumentById,
   fetchDocumentBody,
   upsertDocument,
   upsertDocumentBody,
@@ -24,6 +23,7 @@ import {
 } from "./syncQueue";
 import { useSyncStore, SYNC_STATUS } from "../../store/syncStore";
 import { getClientId } from "../clientId";
+import { ensureIsoTimestamp, parseIsoTimestamp } from "../utils/timestamps";
 
 const META_LAST_SYNCED_AT = "lastSyncedAt";
 const CLIENT_ID = getClientId();
@@ -75,18 +75,8 @@ export function initSyncListeners() {
   });
 }
 
-function toIso(value) {
-  if (!value) return null;
-  if (typeof value === "string") return value;
-  if (value instanceof Date) return value.toISOString();
-  if (typeof value === "number") return new Date(value).toISOString();
-  return null;
-}
-
 function parseIsoToMs(value) {
-  if (!value) return null;
-  const timestamp = Date.parse(value);
-  return Number.isNaN(timestamp) ? null : timestamp;
+  return parseIsoTimestamp(value, null);
 }
 
 function resolveStatus(document) {
@@ -120,9 +110,9 @@ function toServerDocument(document) {
     title: document.title ?? null,
     status: resolveStatus(document),
     frontmatter: resolveFrontmatter(document),
-    created_at: toIso(document.createdAt ?? document.created_at),
-    updated_at: toIso(document.updatedAt ?? document.updated_at),
-    deleted_at: toIso(document.deletedAt ?? document.deleted_at),
+    created_at: ensureIsoTimestamp(document.createdAt ?? document.created_at),
+    updated_at: ensureIsoTimestamp(document.updatedAt ?? document.updated_at),
+    deleted_at: ensureIsoTimestamp(document.deletedAt ?? document.deleted_at, null),
     version: typeof document.version === "number" ? document.version : 1,
     client_id: document.clientId ?? document.client_id ?? CLIENT_ID,
     synced_at: document.syncedAt ?? document.synced_at ?? null,
@@ -318,7 +308,7 @@ async function syncBodyToSupabase(documentId) {
     const data = await upsertDocumentBody({
       document_id: body.documentId,
       content: body.content,
-      updated_at: toIso(body.updatedAt),
+      updated_at: ensureIsoTimestamp(body.updatedAt ?? body.updated_at),
       client_id: body.clientId ?? CLIENT_ID,
       synced_at: body.syncedAt ?? null,
     });
@@ -400,6 +390,8 @@ async function applyRemoteDocument(remoteDoc, bodyContent) {
     status: remoteDoc.status ?? "active",
     frontmatter: remoteDoc.frontmatter ?? {},
     version: typeof remoteDoc.version === "number" ? remoteDoc.version : 1,
+    created_at: remoteDoc.created_at ?? null,
+    updated_at: remoteDoc.updated_at ?? null,
     createdAt: parseIsoToMs(remoteDoc.created_at) ?? Date.now(),
     updatedAt: parseIsoToMs(remoteDoc.updated_at) ?? Date.now(),
     deletedAt: remoteDoc.deleted_at ? parseIsoToMs(remoteDoc.deleted_at) ?? Date.now() : null,

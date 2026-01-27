@@ -6,6 +6,7 @@ import {
   removeDocumentBody,
   upsertDocumentBody,
 } from "../db/documentBodies";
+import { ensureIsoTimestamp, parseIsoTimestamp } from "../utils/timestamps";
 import { deriveDocumentTitle } from "../documents/deriveTitle";
 import { clearSearchIndex, removeFromSearchIndex } from "../search/searchDocuments";
 import {
@@ -52,8 +53,33 @@ function toListItem(document) {
     id: document.id,
     type: document.type,
     title: deriveDocumentTitle(document),
-    updatedAt: document.updatedAt,
+    updatedAt: Number.isFinite(document.updatedAt)
+      ? document.updatedAt
+      : parseIsoTimestamp(document.updated_at, Date.now()),
     archivedAt: document.archivedAt ?? null,
+  };
+}
+
+function normalizeStoredDocument(document) {
+  if (!document || typeof document !== "object") return document;
+  const createdAtMs = Number.isFinite(document.createdAt)
+    ? document.createdAt
+    : parseIsoTimestamp(document.created_at, null);
+  const updatedAtMs = Number.isFinite(document.updatedAt)
+    ? document.updatedAt
+    : parseIsoTimestamp(document.updated_at, createdAtMs ?? Date.now());
+  return {
+    ...document,
+    createdAt: createdAtMs ?? Date.now(),
+    updatedAt: updatedAtMs ?? Date.now(),
+    created_at: ensureIsoTimestamp(
+      document.created_at,
+      createdAtMs ? new Date(createdAtMs).toISOString() : new Date().toISOString()
+    ),
+    updated_at: ensureIsoTimestamp(
+      document.updated_at,
+      updatedAtMs ? new Date(updatedAtMs).toISOString() : new Date().toISOString()
+    ),
   };
 }
 
@@ -94,7 +120,8 @@ export class IndexedDbDocumentsRepo {
 
       request.onsuccess = () => {
         const items = Array.isArray(request.result) ? request.result : [];
-        const filtered = items
+        const normalizedItems = items.map(normalizeStoredDocument);
+        const filtered = normalizedItems
           .filter((document) => {
             if (types && !types.includes(document.type)) {
               return false;
@@ -123,7 +150,7 @@ export class IndexedDbDocumentsRepo {
       const request = store.get(id);
 
       request.onsuccess = () => {
-        const document = request.result || null;
+        const document = normalizeStoredDocument(request.result || null);
         if (!document) {
           resolve(null);
           return;
@@ -157,6 +184,7 @@ export class IndexedDbDocumentsRepo {
   async create(input) {
     ensureInput(input);
     const now = Date.now();
+    const nowIso = new Date(now).toISOString();
     const document = {
       id: generateId(),
       type: input.type || DOCUMENT_TYPE_NOTE,
@@ -166,6 +194,8 @@ export class IndexedDbDocumentsRepo {
       version: typeof input.version === "number" ? input.version : 1,
       createdAt: now,
       updatedAt: now,
+      created_at: nowIso,
+      updated_at: nowIso,
       deletedAt: null,
       archivedAt: input.archivedAt ?? null,
       inboxAt: input.inboxAt ?? null,
@@ -202,16 +232,18 @@ export class IndexedDbDocumentsRepo {
       const getRequest = store.get(id);
 
       getRequest.onsuccess = () => {
-        const existing = getRequest.result;
+        const existing = normalizeStoredDocument(getRequest.result);
         if (!existing || existing.deletedAt != null) {
           reject(new Error("Document not found"));
           return;
         }
         const now = Date.now();
+        const nowIso = new Date(now).toISOString();
         const updated = {
           ...existing,
           ...stripBody(patch),
           updatedAt: now,
+          updated_at: nowIso,
           version: typeof patch.version === "number"
             ? patch.version
             : (existing.version ?? 1) + 1,
@@ -396,7 +428,8 @@ export class IndexedDbDocumentsRepo {
 
       request.onsuccess = async () => {
         const items = Array.isArray(request.result) ? request.result : [];
-        const filtered = items.filter((doc) => {
+        const normalizedItems = items.map(normalizeStoredDocument);
+        const filtered = normalizedItems.filter((doc) => {
           if (types && !types.includes(doc.type)) {
             return false;
           }
@@ -421,8 +454,12 @@ export class IndexedDbDocumentsRepo {
             title: deriveDocumentTitle(doc),
             slug: doc.slug || null,
             body: bodiesById.get(doc.id) ?? "",
-            updatedAt: doc.updatedAt,
-            createdAt: doc.createdAt,
+            updatedAt: Number.isFinite(doc.updatedAt)
+              ? doc.updatedAt
+              : parseIsoTimestamp(doc.updated_at, Date.now()),
+            createdAt: Number.isFinite(doc.createdAt)
+              ? doc.createdAt
+              : parseIsoTimestamp(doc.created_at, Date.now()),
             deletedAt: doc.deletedAt ?? null,
             archivedAt: doc.archivedAt ?? null,
             inboxAt: doc.inboxAt ?? null,
@@ -435,8 +472,12 @@ export class IndexedDbDocumentsRepo {
             title: deriveDocumentTitle(doc),
             slug: doc.slug || null,
             body: "",
-            updatedAt: doc.updatedAt,
-            createdAt: doc.createdAt,
+            updatedAt: Number.isFinite(doc.updatedAt)
+              ? doc.updatedAt
+              : parseIsoTimestamp(doc.updated_at, Date.now()),
+            createdAt: Number.isFinite(doc.createdAt)
+              ? doc.createdAt
+              : parseIsoTimestamp(doc.created_at, Date.now()),
             deletedAt: doc.deletedAt ?? null,
             archivedAt: doc.archivedAt ?? null,
             inboxAt: doc.inboxAt ?? null,
@@ -463,21 +504,22 @@ export class IndexedDbDocumentsRepo {
 
       request.onsuccess = async () => {
         const items = Array.isArray(request.result) ? request.result : [];
+        const normalizedItems = items.map(normalizeStoredDocument);
         try {
           const bodyRecords = await getDocumentBodiesByIds(
-            items.map((doc) => doc.id)
+            normalizedItems.map((doc) => doc.id)
           );
           const bodiesById = new Map(
             bodyRecords.map((record) => [record.documentId, record.content])
           );
           resolve(
-            items.map((doc) => ({
+            normalizedItems.map((doc) => ({
               ...doc,
               body: bodiesById.get(doc.id) ?? "",
             }))
           );
         } catch (error) {
-          resolve(items.map((doc) => ({ ...doc, body: "" })));
+          resolve(normalizedItems.map((doc) => ({ ...doc, body: "" })));
         }
       };
       request.onerror = () => reject(request.error);
@@ -546,22 +588,24 @@ export class IndexedDbDocumentsRepo {
       const bodyRecords = [];
 
       for (const note of notes) {
-        const getRequest = store.get(note.id);
+        const normalizedNote = normalizeStoredDocument(note);
+        const getRequest = store.get(normalizedNote.id);
         getRequest.onsuccess = () => {
           const existing = getRequest.result;
-          const putRequest = store.put(stripBody(note));
+          const putRequest = store.put(stripBody(normalizedNote));
           putRequest.onsuccess = () => {
             if (existing) {
               updated++;
             } else {
               created++;
             }
-            if (typeof note.body === "string") {
+            if (typeof normalizedNote.body === "string") {
               bodyRecords.push({
-                documentId: note.id,
-                content: note.body,
-                updatedAt: note.updatedAt ?? Date.now(),
-                syncedAt: note.syncedAt ?? null,
+                documentId: normalizedNote.id,
+                content: normalizedNote.body,
+                updatedAt: normalizedNote.updatedAt ?? Date.now(),
+                updated_at: normalizedNote.updated_at ?? new Date().toISOString(),
+                syncedAt: normalizedNote.syncedAt ?? null,
               });
             }
             processed++;
@@ -594,7 +638,8 @@ export class IndexedDbDocumentsRepo {
 
       request.onsuccess = async () => {
         const items = Array.isArray(request.result) ? request.result : [];
-        const inboxNotes = items.filter(
+        const normalizedItems = items.map(normalizeStoredDocument);
+        const inboxNotes = normalizedItems.filter(
           (doc) => doc.deletedAt == null
         );
 
@@ -671,7 +716,8 @@ export class IndexedDbDocumentsRepo {
 
       request.onsuccess = async () => {
         const items = Array.isArray(request.result) ? request.result : [];
-        const trashed = items.filter((doc) => doc.deletedAt != null);
+        const normalizedItems = items.map(normalizeStoredDocument);
+        const trashed = normalizedItems.filter((doc) => doc.deletedAt != null);
 
         // Sort by deletedAt descending (most recent first)
         trashed.sort((a, b) => {
@@ -720,7 +766,8 @@ export class IndexedDbDocumentsRepo {
 
       request.onsuccess = async () => {
         const items = Array.isArray(request.result) ? request.result : [];
-        const match = items.find((doc) => {
+        const normalizedItems = items.map(normalizeStoredDocument);
+        const match = normalizedItems.find((doc) => {
           if (doc.deletedAt != null) return false;
           const docTitle = deriveDocumentTitle(doc);
           return docTitle.trim().toLowerCase() === normalizedTitle;
@@ -758,7 +805,8 @@ export class IndexedDbDocumentsRepo {
 
       request.onsuccess = () => {
         const items = Array.isArray(request.result) ? request.result : [];
-        const docs = items
+        const normalizedItems = items.map(normalizeStoredDocument);
+        const docs = normalizedItems
           .filter((doc) => {
             // Always exclude trashed
             if (doc.deletedAt != null) return false;
@@ -773,7 +821,9 @@ export class IndexedDbDocumentsRepo {
             title: deriveDocumentTitle(doc),
             slug: doc.slug || null,
             type: doc.type,
-            updatedAt: doc.updatedAt,
+            updatedAt: Number.isFinite(doc.updatedAt)
+              ? doc.updatedAt
+              : parseIsoTimestamp(doc.updated_at, Date.now()),
             archivedAt: doc.archivedAt ?? null,
           }));
         resolve(docs);

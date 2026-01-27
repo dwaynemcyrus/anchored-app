@@ -1,5 +1,5 @@
 export const DB_NAME = "anchored_db";
-export const DB_VERSION = 7;
+export const DB_VERSION = 8;
 export const DOCUMENTS_STORE = "documents";
 export const DOCUMENT_BODIES_STORE = "document_bodies";
 export const SYNC_QUEUE_STORE = "syncQueue";
@@ -27,6 +27,12 @@ export function openAnchoredDb() {
       if (!store.indexNames.contains("updatedAt")) {
         store.createIndex("updatedAt", "updatedAt", { unique: false });
       }
+      if (!store.indexNames.contains("updated_at")) {
+        store.createIndex("updated_at", "updated_at", { unique: false });
+      }
+      if (!store.indexNames.contains("created_at")) {
+        store.createIndex("created_at", "created_at", { unique: false });
+      }
       if (!store.indexNames.contains("deletedAt")) {
         store.createIndex("deletedAt", "deletedAt", { unique: false });
       }
@@ -45,6 +51,7 @@ export function openAnchoredDb() {
           keyPath: "documentId",
         });
         bodiesStore.createIndex("updatedAt", "updatedAt", { unique: false });
+        bodiesStore.createIndex("updated_at", "updated_at", { unique: false });
         bodiesStore.createIndex("syncedAt", "syncedAt", { unique: false });
       }
 
@@ -66,6 +73,56 @@ export function openAnchoredDb() {
           }
           cursor.continue();
         };
+      }
+
+      if (event.oldVersion < 8) {
+        const documentsStore = request.transaction.objectStore(DOCUMENTS_STORE);
+        const cursorRequest = documentsStore.openCursor();
+        cursorRequest.onsuccess = () => {
+          const cursor = cursorRequest.result;
+          if (!cursor) return;
+          const document = cursor.value;
+          let next = document;
+          let changed = false;
+          if (!document?.created_at) {
+            const createdAtMs = Number.isFinite(document?.createdAt)
+              ? document.createdAt
+              : Date.now();
+            next = { ...next, created_at: new Date(createdAtMs).toISOString() };
+            changed = true;
+          }
+          if (!document?.updated_at) {
+            const updatedAtMs = Number.isFinite(document?.updatedAt)
+              ? document.updatedAt
+              : Date.now();
+            next = { ...next, updated_at: new Date(updatedAtMs).toISOString() };
+            changed = true;
+          }
+          if (changed) {
+            cursor.update(next);
+          }
+          cursor.continue();
+        };
+
+        if (db.objectStoreNames.contains(DOCUMENT_BODIES_STORE)) {
+          const bodiesStore = request.transaction.objectStore(DOCUMENT_BODIES_STORE);
+          const bodyCursor = bodiesStore.openCursor();
+          bodyCursor.onsuccess = () => {
+            const cursor = bodyCursor.result;
+            if (!cursor) return;
+            const body = cursor.value;
+            if (!body?.updated_at) {
+              const updatedAtMs = Number.isFinite(body?.updatedAt)
+                ? body.updatedAt
+                : Date.now();
+              cursor.update({
+                ...body,
+                updated_at: new Date(updatedAtMs).toISOString(),
+              });
+            }
+            cursor.continue();
+          };
+        }
       }
 
       if (!db.objectStoreNames.contains(SYNC_QUEUE_STORE)) {

@@ -1,4 +1,5 @@
 import { DOCUMENT_BODIES_STORE, openAnchoredDb } from "./indexedDb";
+import { ensureIsoTimestamp } from "../utils/timestamps";
 
 function ensureId(documentId) {
   if (typeof documentId !== "string" || !documentId.trim()) {
@@ -18,7 +19,21 @@ export async function getDocumentBody(documentId) {
     const store = transaction.objectStore(DOCUMENT_BODIES_STORE);
     const request = store.get(documentId);
 
-    request.onsuccess = () => resolve(request.result || null);
+    request.onsuccess = () => {
+      const body = request.result || null;
+      if (!body) {
+        resolve(null);
+        return;
+      }
+      const updatedAt = Number.isFinite(body.updatedAt)
+        ? body.updatedAt
+        : Date.parse(body.updated_at || "") || Date.now();
+      resolve({
+        ...body,
+        updatedAt,
+        updated_at: body.updated_at ?? new Date(updatedAt).toISOString(),
+      });
+    };
     request.onerror = () => reject(request.error);
   });
 }
@@ -31,6 +46,7 @@ export async function upsertDocumentBody(documentId, content, updates = {}) {
     documentId,
     content: typeof content === "string" ? content : "",
     updatedAt: typeof updates.updatedAt === "number" ? updates.updatedAt : now,
+    updated_at: ensureIsoTimestamp(updates.updated_at, new Date(now).toISOString()),
     syncedAt: updates.syncedAt ?? null,
   };
 
@@ -92,7 +108,17 @@ export async function bulkUpsertDocumentBodies(records = []) {
 
     for (const record of records) {
       if (!record || typeof record.documentId !== "string") continue;
-      store.put(record);
+      const updatedAt = Number.isFinite(record.updatedAt)
+        ? record.updatedAt
+        : Date.parse(record.updated_at || "") || Date.now();
+      store.put({
+        ...record,
+        updatedAt,
+        updated_at: ensureIsoTimestamp(
+          record.updated_at,
+          new Date(updatedAt).toISOString()
+        ),
+      });
     }
 
     transaction.oncomplete = () => resolve();
