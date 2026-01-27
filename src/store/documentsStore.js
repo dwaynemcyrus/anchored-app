@@ -80,6 +80,7 @@ export const useDocumentsStore = create((set, get) => ({
       // Ensure built-in templates exist before any operations
       await ensureBuiltInTemplates();
 
+      await scheduleSync({ reason: "hydrate" });
       const repo = getDocumentsRepo();
       const list = await repo.list({
         type: [DOCUMENT_TYPE_NOTE, DOCUMENT_TYPE_STAGED],
