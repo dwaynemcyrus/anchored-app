@@ -1,4 +1,4 @@
-import { getSupabaseClient } from "./client";
+import { getSupabaseClient, getUserId } from "./client";
 
 const DOCUMENTS_TABLE = "documents";
 const BODIES_TABLE = "document_bodies";
@@ -19,16 +19,7 @@ function unwrapResponse({ data, error }) {
 }
 
 async function getAuthedUserId() {
-  const client = getSupabaseClient();
-  const { data, error } = await client.auth.getUser();
-  if (error) {
-    throw error;
-  }
-  const userId = data?.user?.id;
-  if (!userId) {
-    throw new Error("No authenticated user available for Supabase");
-  }
-  return userId;
+  return getUserId();
 }
 
 export async function fetchDocumentsUpdatedSince({ since, limit = 500 } = {}) {
@@ -191,6 +182,33 @@ export async function updateDocumentBody(documentId, content) {
     .update({ content, updated_at: new Date().toISOString() })
     .eq("owner_id", ownerId)
     .eq("document_id", documentId)
+    .select("*")
+    .single();
+
+  return unwrapResponse(response);
+}
+
+export async function upsertDocument(document) {
+  const client = getSupabaseClient();
+  const ownerId = document.owner_id ?? (await getAuthedUserId());
+  const response = await client
+    .from(DOCUMENTS_TABLE)
+    .upsert({ ...document, owner_id: ownerId }, { onConflict: "id" })
+    .select("*")
+    .single();
+
+  return unwrapResponse(response);
+}
+
+export async function upsertDocumentBody(body) {
+  if (!body || typeof body.document_id !== "string") {
+    throw new Error("Document body with document_id is required");
+  }
+  const client = getSupabaseClient();
+  const ownerId = body.owner_id ?? (await getAuthedUserId());
+  const response = await client
+    .from(BODIES_TABLE)
+    .upsert({ ...body, owner_id: ownerId }, { onConflict: "document_id" })
     .select("*")
     .single();
 

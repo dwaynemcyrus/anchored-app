@@ -15,11 +15,14 @@ function ensureOperation(operation) {
   if (!operation || typeof operation !== "object") {
     throw new Error("Sync operation is required");
   }
-  if (typeof operation.type !== "string" || !operation.type.trim()) {
-    throw new Error("Sync operation type is required");
+  if (typeof operation.table !== "string" || !operation.table.trim()) {
+    throw new Error("Sync operation table is required");
   }
-  if (operation.documentId != null && typeof operation.documentId !== "string") {
-    throw new Error("Sync operation documentId must be a string");
+  if (typeof operation.record_id !== "string" || !operation.record_id.trim()) {
+    throw new Error("Sync operation record_id is required");
+  }
+  if (typeof operation.operation !== "string" || !operation.operation.trim()) {
+    throw new Error("Sync operation type is required");
   }
 }
 
@@ -29,19 +32,15 @@ async function getDb() {
 
 export async function enqueueOperation(operation) {
   ensureOperation(operation);
-  const now = Date.now();
+  const nowIso = new Date().toISOString();
   const record = {
     id: operation.id || generateId(),
-    type: operation.type,
-    documentId: operation.documentId ?? null,
-    payload: operation.payload ?? {},
-    createdAt: typeof operation.createdAt === "number" ? operation.createdAt : now,
-    updatedAt: now,
-    attempts: typeof operation.attempts === "number" ? operation.attempts : 0,
-    nextAttemptAt:
-      typeof operation.nextAttemptAt === "number" ? operation.nextAttemptAt : now,
-    lastError: operation.lastError ?? null,
-    meta: operation.meta ?? {},
+    table: operation.table,
+    record_id: operation.record_id,
+    operation: operation.operation,
+    payload: operation.payload ?? null,
+    timestamp: operation.timestamp ?? nowIso,
+    retry_count: typeof operation.retry_count === "number" ? operation.retry_count : 0,
   };
 
   const db = await getDb();
@@ -60,16 +59,16 @@ export async function listQueue({ limit = null, includeDeferred = true } = {}) {
   return new Promise((resolve, reject) => {
     const transaction = db.transaction(SYNC_QUEUE_STORE, "readonly");
     const store = transaction.objectStore(SYNC_QUEUE_STORE);
-    const index = store.index("createdAt");
-    const request = index.getAll();
+    const request = store.getAll();
 
     request.onsuccess = () => {
       const items = Array.isArray(request.result) ? request.result : [];
-      const now = Date.now();
-      const filtered = includeDeferred
-        ? items
-        : items.filter((item) => (item.nextAttemptAt ?? 0) <= now);
-      const limited = limit ? filtered.slice(0, limit) : filtered;
+      const sorted = items.sort((a, b) => {
+        const aTime = Date.parse(a.timestamp || "") || 0;
+        const bTime = Date.parse(b.timestamp || "") || 0;
+        return aTime - bTime;
+      });
+      const limited = limit ? sorted.slice(0, limit) : sorted;
       resolve(limited);
     };
     request.onerror = () => reject(request.error);
@@ -81,9 +80,8 @@ export async function getNextReadyOperation() {
   return new Promise((resolve, reject) => {
     const transaction = db.transaction(SYNC_QUEUE_STORE, "readonly");
     const store = transaction.objectStore(SYNC_QUEUE_STORE);
-    const index = store.index("createdAt");
+    const index = store.index("timestamp");
     const request = index.openCursor();
-    const now = Date.now();
 
     request.onsuccess = () => {
       const cursor = request.result;
@@ -92,11 +90,7 @@ export async function getNextReadyOperation() {
         return;
       }
       const item = cursor.value;
-      if ((item.nextAttemptAt ?? 0) <= now) {
-        resolve(item);
-        return;
-      }
-      cursor.continue();
+      resolve(item);
     };
 
     request.onerror = () => reject(request.error);
@@ -122,7 +116,7 @@ export async function updateOperation(id, updates = {}) {
       const next = {
         ...existing,
         ...updates,
-        updatedAt: Date.now(),
+        timestamp: updates.timestamp ?? existing.timestamp,
       };
       const putRequest = store.put(next);
       putRequest.onsuccess = () => resolve(next);

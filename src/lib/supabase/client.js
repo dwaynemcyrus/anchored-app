@@ -38,3 +38,16 @@ export function getSupabaseClient() {
 
   return supabaseClient;
 }
+
+export async function getUserId() {
+  const client = getSupabaseClient();
+  const { data, error } = await client.auth.getUser();
+  if (error) {
+    throw error;
+  }
+  const userId = data?.user?.id;
+  if (!userId) {
+    throw new Error("No authenticated user available for Supabase");
+  }
+  return userId;
+}

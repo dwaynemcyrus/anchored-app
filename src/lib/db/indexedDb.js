@@ -1,5 +1,5 @@
 export const DB_NAME = "anchored_db";
-export const DB_VERSION = 6;
+export const DB_VERSION = 7;
 export const DOCUMENTS_STORE = "documents";
 export const DOCUMENT_BODIES_STORE = "document_bodies";
 export const SYNC_QUEUE_STORE = "syncQueue";
@@ -73,10 +73,26 @@ export function openAnchoredDb() {
         queueStore.createIndex("createdAt", "createdAt", { unique: false });
         queueStore.createIndex("nextAttemptAt", "nextAttemptAt", { unique: false });
         queueStore.createIndex("documentId", "documentId", { unique: false });
+        queueStore.createIndex("table", "table", { unique: false });
+        queueStore.createIndex("record_id", "record_id", { unique: false });
+        queueStore.createIndex("timestamp", "timestamp", { unique: false });
       }
 
       if (!db.objectStoreNames.contains(SYNC_META_STORE)) {
         db.createObjectStore(SYNC_META_STORE, { keyPath: "key" });
+      }
+
+      if (db.objectStoreNames.contains(SYNC_QUEUE_STORE)) {
+        const queueStore = request.transaction.objectStore(SYNC_QUEUE_STORE);
+        if (!queueStore.indexNames.contains("table")) {
+          queueStore.createIndex("table", "table", { unique: false });
+        }
+        if (!queueStore.indexNames.contains("record_id")) {
+          queueStore.createIndex("record_id", "record_id", { unique: false });
+        }
+        if (!queueStore.indexNames.contains("timestamp")) {
+          queueStore.createIndex("timestamp", "timestamp", { unique: false });
+        }
       }
     };
 
