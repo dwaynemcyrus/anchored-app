@@ -284,6 +284,10 @@ async function syncDocumentToSupabase(documentId) {
         syncedAt: new Date().toISOString(),
       });
     }
+
+    if (hasBody(doc.type)) {
+      await syncBodyToSupabase(documentId);
+    }
   } catch (error) {
     console.error(`Sync failed for document:${documentId}`, error);
 

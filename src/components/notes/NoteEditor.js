@@ -14,7 +14,6 @@ import { wikiLinkAutocomplete } from "../../lib/editor/wikiLinkAutocomplete";
 import { wikiLinkDecorations } from "../../lib/editor/wikiLinkDecorations";
 import { wikiLinkClickHandler } from "../../lib/editor/wikiLinkClickHandler";
 import { getDocumentsRepo } from "../../lib/repo/getDocumentsRepo";
-import { saveDocumentBody } from "../../lib/sync/syncManager";
 import {
   prepareTemplateForInsertion,
   mergeFrontmatter,
@@ -82,6 +81,7 @@ export default function NoteEditor({ documentId }) {
   const hydrate = useDocumentsStore((state) => state.hydrate);
   const loadDocument = useDocumentsStore((state) => state.loadDocument);
   const hasHydrated = useDocumentsStore((state) => state.hasHydrated);
+  const updateDocumentBody = useDocumentsStore((state) => state.updateDocumentBody);
   const restoreDocument = useDocumentsStore((state) => state.restoreDocument);
   const document = useDocumentsStore((state) => state.documentsById[documentId]);
   const setHeaderTitle = useShellHeaderStore((state) => state.setTitle);
@@ -151,18 +151,16 @@ export default function NoteEditor({ documentId }) {
 
   const runSave = useCallback(
     async (body, requestId) => {
-      try {
-        const nextVersion = (document?.version ?? 1) + 1;
-        await saveDocumentBody(documentId, body, { version: nextVersion });
-        if (requestId !== saveRequestIdRef.current) return;
+      const result = await updateDocumentBody(documentId, body);
+      if (requestId !== saveRequestIdRef.current) return;
+      if (result?.success) {
         setSaveStatus(SAVED_LABEL);
-      } catch (error) {
-        if (requestId !== saveRequestIdRef.current) return;
-        console.error("Failed to save document", error);
+      } else {
+        console.error("Failed to save document", result?.error);
         setSaveStatus(SAVE_FAILED_LABEL);
       }
     },
-    [document, documentId]
+    [documentId, updateDocumentBody]
   );
 
   const queueSave = useCallback(
