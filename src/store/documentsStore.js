@@ -141,6 +141,7 @@ export const useDocumentsStore = create((set, get) => ({
         body,
         title,
         meta,
+        version: 1,
         archivedAt: input.archivedAt ?? null,
         inboxAt,
       });
@@ -173,10 +174,11 @@ export const useDocumentsStore = create((set, get) => ({
       document: get().documentsById[id],
       documents: get().documents,
     };
+    const nextVersion = (get().documentsById[id]?.version ?? 1) + 1;
     set((state) => {
       const existing = state.documentsById[id];
       const updated = existing
-        ? { ...existing, body, updatedAt: now }
+        ? { ...existing, body, updatedAt: now, version: nextVersion }
         : {
             id,
             type: DOCUMENT_TYPE_NOTE,
@@ -185,6 +187,7 @@ export const useDocumentsStore = create((set, get) => ({
             meta: {},
             createdAt: now,
             updatedAt: now,
+            version: 1,
             deletedAt: null,
             archivedAt: null,
           };
@@ -197,14 +200,14 @@ export const useDocumentsStore = create((set, get) => ({
     });
     try {
       const repo = getDocumentsRepo();
-      await repo.update(id, { body });
+      await repo.update(id, { body, version: nextVersion });
       const updated = get().documentsById[id];
       if (updated) {
         updateSearchIndex(updated);
         await enqueueSyncOperation({
           type: "update",
           documentId: updated.id,
-          payload: { document: updated },
+          payload: { document: updated, baseVersion: (updated.version ?? 1) - 1 },
         });
       }
       return { success: true };
@@ -230,7 +233,8 @@ export const useDocumentsStore = create((set, get) => ({
     set((state) => {
       const existing = state.documentsById[id];
       if (!existing) return state;
-      const updated = { ...existing, ...updates, updatedAt: now };
+      const nextVersion = (existing.version ?? 1) + 1;
+      const updated = { ...existing, ...updates, updatedAt: now, version: nextVersion };
       return {
         documentsById: { ...state.documentsById, [id]: updated },
         documents: shouldIncludeInList(updated, state.listIncludeArchived)
@@ -239,15 +243,16 @@ export const useDocumentsStore = create((set, get) => ({
       };
     });
     try {
+      const nextVersion = (get().documentsById[id]?.version ?? 1);
       const repo = getDocumentsRepo();
-      await repo.update(id, updates);
+      await repo.update(id, { ...updates, version: nextVersion });
       const updated = get().documentsById[id];
       if (updated) {
         updateSearchIndex(updated);
         await enqueueSyncOperation({
           type: "update",
           documentId: updated.id,
-          payload: { document: updated },
+          payload: { document: updated, baseVersion: (updated.version ?? 1) - 1 },
         });
       }
       return { success: true };
@@ -269,11 +274,21 @@ export const useDocumentsStore = create((set, get) => ({
     const now = Date.now();
     set((state) => {
       const existing = state.documentsById[id];
+      const nextVersion = existing ? (existing.version ?? 1) + 1 : null;
       // Check if document was in inbox (from cache or caller)
       const docWasInInbox = wasInInbox || (existing?.inboxAt != null);
       // Update documentsById if the document is cached there
       const nextDocumentsById = existing
-        ? { ...state.documentsById, [id]: { ...existing, archivedAt: now, updatedAt: now, inboxAt: null } }
+        ? {
+            ...state.documentsById,
+            [id]: {
+              ...existing,
+              archivedAt: now,
+              updatedAt: now,
+              inboxAt: null,
+              ...(nextVersion ? { version: nextVersion } : {}),
+            },
+          }
         : state.documentsById;
       // Always update the list - remove if not showing archived, otherwise update archivedAt
       const nextDocuments = state.listIncludeArchived
@@ -297,7 +312,7 @@ export const useDocumentsStore = create((set, get) => ({
         await enqueueSyncOperation({
           type: "update",
           documentId: refreshed.id,
-          payload: { document: refreshed },
+          payload: { document: refreshed, baseVersion: (refreshed.version ?? 1) - 1 },
         });
       }
     } catch (error) {
@@ -309,9 +324,18 @@ export const useDocumentsStore = create((set, get) => ({
     const now = Date.now();
     set((state) => {
       const existing = state.documentsById[id];
+      const nextVersion = existing ? (existing.version ?? 1) + 1 : null;
       // Update documentsById if the document is cached there
       const nextDocumentsById = existing
-        ? { ...state.documentsById, [id]: { ...existing, archivedAt: null, updatedAt: now } }
+        ? {
+            ...state.documentsById,
+            [id]: {
+              ...existing,
+              archivedAt: null,
+              updatedAt: now,
+              ...(nextVersion ? { version: nextVersion } : {}),
+            },
+          }
         : state.documentsById;
       // Update the list item to clear archivedAt
       const nextDocuments = state.documents.map((doc) =>
@@ -331,7 +355,7 @@ export const useDocumentsStore = create((set, get) => ({
         await enqueueSyncOperation({
           type: "update",
           documentId: refreshed.id,
-          payload: { document: refreshed },
+          payload: { document: refreshed, baseVersion: (refreshed.version ?? 1) - 1 },
         });
       }
     } catch (error) {
@@ -344,11 +368,21 @@ export const useDocumentsStore = create((set, get) => ({
     const now = Date.now();
     set((state) => {
       const existing = state.documentsById[id];
+      const nextVersion = existing ? (existing.version ?? 1) + 1 : null;
       // Check if document was in inbox (from cache or caller)
       const docWasInInbox = wasInInbox || (existing?.inboxAt != null);
       // Update documentsById if the document is cached there
       const nextDocumentsById = existing
-        ? { ...state.documentsById, [id]: { ...existing, deletedAt: now, updatedAt: now, inboxAt: null } }
+        ? {
+            ...state.documentsById,
+            [id]: {
+              ...existing,
+              deletedAt: now,
+              updatedAt: now,
+              inboxAt: null,
+              ...(nextVersion ? { version: nextVersion } : {}),
+            },
+          }
         : state.documentsById;
       // Always remove from list - trashed documents never show in list
       return {
@@ -367,7 +401,7 @@ export const useDocumentsStore = create((set, get) => ({
         await enqueueSyncOperation({
           type: "update",
           documentId: refreshed.id,
-          payload: { document: refreshed },
+          payload: { document: refreshed, baseVersion: (refreshed.version ?? 1) - 1 },
         });
       }
     } catch (error) {
@@ -388,7 +422,7 @@ export const useDocumentsStore = create((set, get) => ({
       await enqueueSyncOperation({
         type: "update",
         documentId: restored.id,
-        payload: { document: restored },
+        payload: { document: restored, baseVersion: (restored.version ?? 1) - 1 },
       });
       set((state) => {
         const nextDocumentsById = { ...state.documentsById, [id]: restored };

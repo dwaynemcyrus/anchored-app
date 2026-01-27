@@ -8,6 +8,7 @@
  * @property {Record<string, any>} meta
  * @property {number} createdAt
  * @property {number} updatedAt
+ * @property {number | null | undefined} version
  * @property {number | null | undefined} deletedAt
  * @property {number | null | undefined} archivedAt
  */

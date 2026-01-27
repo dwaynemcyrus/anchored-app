@@ -16,6 +16,7 @@ import {
   insertDocument,
   insertDocumentBody,
   updateDocument,
+  updateDocumentWithVersion,
   updateDocumentBody,
 } from "../supabase/documents";
 import { useSyncStore, SYNC_STATUS } from "../../store/syncStore";
@@ -130,12 +131,14 @@ function toServerDocument(document) {
     frontmatter: resolveFrontmatter(document),
     created_at: toIso(document.createdAt),
     updated_at: toIso(document.updatedAt),
+    version: typeof document.version === "number" ? document.version : 1,
   };
 }
 
 function fromServerDocument(document, body) {
   const updatedAt = parseIsoToMs(document.updated_at) ?? Date.now();
   const createdAt = parseIsoToMs(document.created_at) ?? updatedAt;
+  const version = typeof document.version === "number" ? document.version : 1;
   const status = document.status ?? "active";
   const isTrashed = status === "trash";
   const isArchived = status === "archived";
@@ -157,6 +160,7 @@ function fromServerDocument(document, body) {
     },
     status,
     frontmatter,
+    version,
     createdAt,
     updatedAt,
     deletedAt: isTrashed ? updatedAt : null,
@@ -220,32 +224,43 @@ async function pullRemoteChanges() {
 async function pushCreate(document) {
   const serverDocument = toServerDocument(document);
   if (!serverDocument) throw new Error("Missing document snapshot");
-  await insertDocument(serverDocument);
+  const created = await insertDocument(serverDocument);
   if (typeof document.body === "string") {
     await insertDocumentBody(document.id, document.body);
   }
+  const merged = fromServerDocument(created, document.body ?? "");
+  await applyRemoteDocuments([merged]);
 }
 
-async function pushUpdate(document) {
+async function pushUpdate(document, baseVersionOverride) {
   const serverDocument = toServerDocument(document);
   if (!serverDocument) throw new Error("Missing document snapshot");
 
   const existing = await fetchDocumentById(document.id);
   if (!existing) {
-    await insertDocument(serverDocument);
-    if (typeof document.body === "string") {
-      await insertDocumentBody(document.id, document.body);
-    }
+    await pushCreate(document);
     return { conflict: false };
   }
 
-  const serverUpdatedAt = parseIsoToMs(existing.updated_at) ?? 0;
-  const localUpdatedAt = typeof document.updatedAt === "number" ? document.updatedAt : 0;
-  if (serverUpdatedAt > localUpdatedAt) {
+  const serverVersion = typeof existing.version === "number" ? existing.version : 1;
+  const expectedVersion =
+    typeof baseVersionOverride === "number"
+      ? baseVersionOverride
+      : typeof document.version === "number"
+        ? document.version
+        : 1;
+  if (serverVersion !== expectedVersion) {
     return { conflict: true, serverDocument: existing };
   }
 
-  await updateDocument(document.id, serverDocument);
+  const updated = await updateDocumentWithVersion(
+    document.id,
+    serverDocument,
+    expectedVersion
+  );
+  if (!updated) {
+    return { conflict: true, serverDocument: existing };
+  }
   if (typeof document.body === "string") {
     const existingBody = await fetchDocumentBody(document.id);
     if (existingBody) {
@@ -254,6 +269,8 @@ async function pushUpdate(document) {
       await insertDocumentBody(document.id, document.body);
     }
   }
+  const merged = fromServerDocument(updated, document.body ?? "");
+  await applyRemoteDocuments([merged]);
   return { conflict: false };
 }
 
@@ -278,6 +295,8 @@ async function resolveConflict({ localDocument, serverDocument }) {
 async function processOperation(operation) {
   const { type, payload } = operation;
   const document = payload?.document ?? null;
+  const baseVersion =
+    typeof payload?.baseVersion === "number" ? payload.baseVersion : null;
 
   if (!document) {
     throw new Error("Sync operation missing document payload");
@@ -288,7 +307,7 @@ async function processOperation(operation) {
     return { handled: true };
   }
 
-  const result = await pushUpdate(document);
+  const result = await pushUpdate(document, baseVersion);
   if (result?.conflict) {
     await resolveConflict({ localDocument: document, serverDocument: result.serverDocument });
   }

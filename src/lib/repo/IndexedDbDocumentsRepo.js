@@ -136,6 +136,7 @@ export class IndexedDbDocumentsRepo {
       title: input.title ?? null,
       body: input.body,
       meta: input.meta || {},
+      version: typeof input.version === "number" ? input.version : 1,
       createdAt: now,
       updatedAt: now,
       deletedAt: null,
@@ -175,6 +176,9 @@ export class IndexedDbDocumentsRepo {
           ...existing,
           ...patch,
           updatedAt: now,
+          version: typeof patch.version === "number"
+            ? patch.version
+            : (existing.version ?? 1) + 1,
           // Track when an inbox item is processed to staged
           ...(existing.type === "inbox" && patch.type === "staged"
             ? { processedFromInboxAt: now }

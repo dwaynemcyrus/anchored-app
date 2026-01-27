@@ -96,7 +96,7 @@ export async function insertDocument(document) {
   const userId = document.user_id ?? (await getAuthedUserId());
   const response = await client
     .from(DOCUMENTS_TABLE)
-    .insert({ ...document, user_id: userId })
+    .insert({ version: 1, ...document, user_id: userId })
     .select("*")
     .single();
 
@@ -111,6 +111,22 @@ export async function updateDocument(id, updates) {
     .eq("id", id)
     .select("*")
     .single();
+
+  return unwrapResponse(response);
+}
+
+export async function updateDocumentWithVersion(id, updates, expectedVersion) {
+  if (typeof expectedVersion !== "number") {
+    throw new Error("Expected version is required");
+  }
+  const client = getSupabaseClient();
+  const response = await client
+    .from(DOCUMENTS_TABLE)
+    .update({ ...updates, version: expectedVersion + 1 })
+    .eq("id", id)
+    .eq("version", expectedVersion)
+    .select("*")
+    .maybeSingle();
 
   return unwrapResponse(response);
 }
