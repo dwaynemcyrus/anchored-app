@@ -1,13 +1,4 @@
-import {
-  enqueueOperation,
-  getNextReadyOperation,
-  getQueueCount,
-  getSyncMeta,
-  listQueue,
-  removeOperation,
-  setSyncMeta,
-  updateOperation,
-} from "./syncQueue";
+import { getSyncMeta, setSyncMeta } from "./syncQueue";
 import {
   fetchDocumentBodiesByIds,
   fetchDocumentById,
@@ -15,7 +6,6 @@ import {
   fetchDocumentsUpdatedSince,
   insertDocument,
   insertDocumentBody,
-  updateDocument,
   updateDocumentWithVersion,
   updateDocumentBody,
 } from "../supabase/documents";
@@ -25,14 +15,13 @@ import { getDocumentsRepo } from "../repo/getDocumentsRepo";
 import { buildSearchIndex } from "../search/searchDocuments";
 import { deriveDocumentTitle } from "../documents/deriveTitle";
 
-const MAX_ATTEMPTS = 5;
-const BASE_DELAY_MS = 1500;
-const MAX_DELAY_MS = 60000;
 const META_LAST_SYNCED_AT = "lastSyncedAt";
+const POLL_INTERVAL_MS = 60000;
 
 let syncInFlight = null;
 let listenersInitialized = false;
 const listeners = new Set();
+let pollIntervalId = null;
 
 function isBrowser() {
   return typeof window !== "undefined";
@@ -82,6 +71,11 @@ export function initSyncListeners() {
       scheduleSync({ reason: "visibility" });
     }
   });
+  if (!pollIntervalId) {
+    pollIntervalId = window.setInterval(() => {
+      scheduleSync({ reason: "poll" });
+    }, POLL_INTERVAL_MS);
+  }
 }
 
 function toIso(value) {
@@ -169,19 +163,8 @@ function fromServerDocument(document, body) {
   };
 }
 
-async function refreshPendingCount() {
-  try {
-    const count = await getQueueCount();
-    getStoreActions().setPendingCount(count);
-  } catch (error) {
-    console.error("Failed to update sync pending count", error);
-  }
-}
-
-function getBackoffDelay(attempts) {
-  const exp = Math.pow(2, Math.max(0, attempts));
-  const delay = BASE_DELAY_MS * exp;
-  return Math.min(delay, MAX_DELAY_MS);
+function setPendingCount(count) {
+  getStoreActions().setPendingCount(count);
 }
 
 async function applyRemoteDocuments(documents) {
@@ -280,11 +263,7 @@ async function resolveConflict({ localDocument, serverDocument }) {
     reason: "server-newer",
   });
   notify({ type: "conflict", conflictCopy });
-  await enqueueOperation({
-    type: "create",
-    documentId: conflictCopy.id,
-    payload: { document: conflictCopy },
-  });
+  await pushCreate(conflictCopy);
 
   const serverBody = await fetchDocumentBody(serverDocument.id);
   const merged = fromServerDocument(serverDocument, serverBody?.content ?? "");
@@ -314,58 +293,21 @@ async function processOperation(operation) {
   return { handled: true };
 }
 
-async function handleOperation(operation) {
-  try {
-    await processOperation(operation);
-    await removeOperation(operation.id);
-    await refreshPendingCount();
-    return true;
-  } catch (error) {
-    const attempts = (operation.attempts ?? 0) + 1;
-    const nextAttemptAt = Date.now() + getBackoffDelay(attempts);
-    await updateOperation(operation.id, {
-      attempts,
-      nextAttemptAt,
-      lastError: error.message || "Unknown error",
-    });
-    await refreshPendingCount();
-
-    if (attempts >= MAX_ATTEMPTS) {
-      const store = getStoreActions();
-      store.setStatus(SYNC_STATUS.ERROR);
-      store.setLastError(error.message || "Sync failed");
-      return false;
-    }
-    return false;
-  }
-}
-
 async function runSync() {
   const store = getStoreActions();
   initSyncListeners();
 
   if (!isOnline()) {
     store.setStatus(SYNC_STATUS.OFFLINE);
-    await refreshPendingCount();
+    setPendingCount(0);
     return;
   }
 
   store.setStatus(SYNC_STATUS.SYNCING);
   store.setLastError(null);
-  await refreshPendingCount();
-
-  let nextOperation = await getNextReadyOperation();
-  while (nextOperation) {
-    const success = await handleOperation(nextOperation);
-    if (!success) break;
-    nextOperation = await getNextReadyOperation();
-  }
 
   try {
-    const remaining = await listQueue({ includeDeferred: false });
-    if (!remaining.length) {
-      await pullRemoteChanges();
-    }
+    await pullRemoteChanges();
   } catch (error) {
     console.error("Failed to pull remote changes", error);
     store.setLastError(error.message || "Sync pull failed");
@@ -373,7 +315,7 @@ async function runSync() {
     return;
   }
 
-  await refreshPendingCount();
+  setPendingCount(0);
   store.setStatus(SYNC_STATUS.SYNCED);
 }
 
@@ -396,8 +338,17 @@ export function scheduleSync({ reason } = {}) {
 
 export async function enqueueSyncOperation(operation) {
   if (!isBrowser()) return null;
-  const queued = await enqueueOperation(operation);
-  await refreshPendingCount();
-  scheduleSync({ reason: "enqueue" });
-  return queued;
+  const store = getStoreActions();
+  if (!isOnline()) {
+    store.setStatus(SYNC_STATUS.ERROR);
+    store.setLastError("Offline");
+    throw new Error("Offline");
+  }
+  store.setStatus(SYNC_STATUS.SYNCING);
+  store.setLastError(null);
+  setPendingCount(0);
+  await processOperation(operation);
+  await pullRemoteChanges();
+  store.setStatus(SYNC_STATUS.SYNCED);
+  return operation;
 }
