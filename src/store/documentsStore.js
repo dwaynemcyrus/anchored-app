@@ -2,6 +2,7 @@ import { create } from "zustand";
 import { getDocumentsRepo } from "../lib/repo/getDocumentsRepo";
 import {
   buildSearchIndex,
+  clearSearchIndex,
   updateSearchIndex,
 } from "../lib/search/searchDocuments";
 import { deriveDocumentTitle } from "../lib/documents/deriveTitle";
@@ -54,10 +55,16 @@ export const useDocumentsStore = create((set, get) => ({
     const { setLastSyncedAt } = useSyncStore.getState();
     const repo = getDocumentsRepo();
     let lastSyncedAt = await getSyncMeta("lastSyncedAt");
+    const forceFull = get().forceFullFetch;
     const now = Date.now();
     if (lastSyncedAt && Date.parse(lastSyncedAt) > now + 5 * 60 * 1000) {
       lastSyncedAt = null;
       await setSyncMeta("lastSyncedAt", null);
+    }
+    if (forceFull) {
+      lastSyncedAt = null;
+      await setSyncMeta("lastSyncedAt", null);
+      set({ forceFullFetch: false });
     }
     const remoteDocs = await fetchDocumentsUpdatedSince({ since: lastSyncedAt });
     if (!remoteDocs || remoteDocs.length === 0) return;
@@ -98,6 +105,28 @@ export const useDocumentsStore = create((set, get) => ({
     await setSyncMeta("lastSyncedAt", nextSync);
     setLastSyncedAt(nextSync);
   },
+  forceFullFetch: false,
+  resetLocalCacheOnce: async () => {
+    if (typeof window === "undefined") return;
+    const resetKey = "anchored_sync_reset_done";
+    if (window.localStorage.getItem(resetKey)) return;
+    try {
+      const repo = getDocumentsRepo();
+      await repo.deleteAllNotes();
+      clearSearchIndex();
+      await setSyncMeta("lastSyncedAt", null);
+      set({
+        documents: [],
+        documentsById: {},
+        hasHydrated: false,
+        hydrateError: null,
+        forceFullFetch: true,
+      });
+      window.localStorage.setItem(resetKey, "true");
+    } catch (error) {
+      console.error("Failed to reset local cache", error);
+    }
+  },
   loadInboxCount: async () => {
     try {
       const repo = getDocumentsRepo();
@@ -131,6 +160,7 @@ export const useDocumentsStore = create((set, get) => ({
       // Ensure built-in templates exist before any operations
       await ensureBuiltInTemplates();
 
+      await get().resetLocalCacheOnce();
       await get().fetchFromServer();
       await scheduleSync({ reason: "hydrate" });
       const repo = getDocumentsRepo();
