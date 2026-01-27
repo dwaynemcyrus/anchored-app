@@ -22,3 +22,7 @@ export const DOCUMENT_TYPE_SOURCE = "source";
 export const DOCUMENT_TYPE_JOURNAL = "journal";
 export const DOCUMENT_TYPE_ESSAY = "essay";
 export const DOCUMENT_TYPE_STAGED = "staged";
+export const DOCUMENT_TYPE_TASK = "task";
+export const DOCUMENT_TYPE_PROJECT = "project";
+export const DOCUMENT_TYPE_HABIT = "habit";
+export const DOCUMENT_TYPE_TIME_ENTRY = "time_entry";
