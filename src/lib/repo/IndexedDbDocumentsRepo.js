@@ -1,4 +1,11 @@
 import { DOCUMENTS_STORE, openAnchoredDb } from "../db/indexedDb";
+import {
+  bulkUpsertDocumentBodies,
+  getDocumentBodiesByIds,
+  getDocumentBody,
+  removeDocumentBody,
+  upsertDocumentBody,
+} from "../db/documentBodies";
 import { deriveDocumentTitle } from "../documents/deriveTitle";
 import { clearSearchIndex, removeFromSearchIndex } from "../search/searchDocuments";
 import {
@@ -47,6 +54,20 @@ function toListItem(document) {
     title: deriveDocumentTitle(document),
     updatedAt: document.updatedAt,
     archivedAt: document.archivedAt ?? null,
+  };
+}
+
+function stripBody(document) {
+  if (!document || typeof document !== "object") return document;
+  const { body, ...rest } = document;
+  return rest;
+}
+
+function attachBody(document, bodyRecord) {
+  if (!document || typeof document !== "object") return document;
+  return {
+    ...document,
+    body: typeof bodyRecord?.content === "string" ? bodyRecord.content : "",
   };
 }
 
@@ -102,7 +123,14 @@ export class IndexedDbDocumentsRepo {
       const request = store.get(id);
 
       request.onsuccess = () => {
-        resolve(request.result || null);
+        const document = request.result || null;
+        if (!document) {
+          resolve(null);
+          return;
+        }
+        getDocumentBody(id)
+          .then((bodyRecord) => resolve(attachBody(document, bodyRecord)))
+          .catch(() => resolve(attachBody(document, null)));
       };
       request.onerror = () => reject(request.error);
     });
@@ -134,7 +162,6 @@ export class IndexedDbDocumentsRepo {
       type: input.type || DOCUMENT_TYPE_NOTE,
       slug: input.slug ?? null,
       title: input.title ?? null,
-      body: input.body,
       meta: input.meta || {},
       version: typeof input.version === "number" ? input.version : 1,
       createdAt: now,
@@ -150,7 +177,16 @@ export class IndexedDbDocumentsRepo {
       const store = transaction.objectStore(DOCUMENTS_STORE);
       const request = store.add(document);
 
-      request.onsuccess = () => resolve(document);
+      request.onsuccess = async () => {
+        try {
+          await upsertDocumentBody(document.id, input.body, {
+            updatedAt: document.updatedAt,
+          });
+        } catch (error) {
+          console.error("Failed to write document body", error);
+        }
+        resolve({ ...document, body: input.body });
+      };
       request.onerror = () => reject(request.error);
     });
   }
@@ -174,7 +210,7 @@ export class IndexedDbDocumentsRepo {
         const now = Date.now();
         const updated = {
           ...existing,
-          ...patch,
+          ...stripBody(patch),
           updatedAt: now,
           version: typeof patch.version === "number"
             ? patch.version
@@ -185,7 +221,20 @@ export class IndexedDbDocumentsRepo {
             : {}),
         };
         const putRequest = store.put(updated);
-        putRequest.onsuccess = () => resolve(updated);
+        putRequest.onsuccess = async () => {
+          if (typeof patch.body === "string") {
+            try {
+              await upsertDocumentBody(id, patch.body, { updatedAt: now });
+            } catch (error) {
+              console.error("Failed to update document body", error);
+            }
+          }
+          resolve(
+            typeof patch.body === "string"
+              ? { ...updated, body: patch.body }
+              : updated
+          );
+        };
         putRequest.onerror = () => reject(putRequest.error);
       };
       getRequest.onerror = () => reject(getRequest.error);
@@ -322,8 +371,13 @@ export class IndexedDbDocumentsRepo {
       const store = transaction.objectStore(DOCUMENTS_STORE);
       const request = store.delete(id);
 
-      request.onsuccess = () => {
+      request.onsuccess = async () => {
         removeFromSearchIndex(id);
+        try {
+          await removeDocumentBody(id);
+        } catch (error) {
+          console.error("Failed to remove document body", error);
+        }
         resolve();
       };
       request.onerror = () => reject(request.error);
@@ -340,34 +394,55 @@ export class IndexedDbDocumentsRepo {
       const store = transaction.objectStore(DOCUMENTS_STORE);
       const request = store.getAll();
 
-      request.onsuccess = () => {
+      request.onsuccess = async () => {
         const items = Array.isArray(request.result) ? request.result : [];
-        const docs = items
-          .filter((doc) => {
-            if (types && !types.includes(doc.type)) {
-              return false;
-            }
-            if (doc.deletedAt != null) {
-              return includeTrashed;
-            }
-            if (!includeArchived && doc.archivedAt != null) {
-              return false;
-            }
-            return true;
-          })
-          .map((doc) => ({
+        const filtered = items.filter((doc) => {
+          if (types && !types.includes(doc.type)) {
+            return false;
+          }
+          if (doc.deletedAt != null) {
+            return includeTrashed;
+          }
+          if (!includeArchived && doc.archivedAt != null) {
+            return false;
+          }
+          return true;
+        });
+        try {
+          const bodyRecords = await getDocumentBodiesByIds(
+            filtered.map((doc) => doc.id)
+          );
+          const bodiesById = new Map(
+            bodyRecords.map((record) => [record.documentId, record.content])
+          );
+          const docs = filtered.map((doc) => ({
             id: doc.id,
             type: doc.type,
             title: deriveDocumentTitle(doc),
             slug: doc.slug || null,
-            body: doc.body || "",
+            body: bodiesById.get(doc.id) ?? "",
             updatedAt: doc.updatedAt,
             createdAt: doc.createdAt,
             deletedAt: doc.deletedAt ?? null,
             archivedAt: doc.archivedAt ?? null,
             inboxAt: doc.inboxAt ?? null,
           }));
-        resolve(docs);
+          resolve(docs);
+        } catch (error) {
+          const docs = filtered.map((doc) => ({
+            id: doc.id,
+            type: doc.type,
+            title: deriveDocumentTitle(doc),
+            slug: doc.slug || null,
+            body: "",
+            updatedAt: doc.updatedAt,
+            createdAt: doc.createdAt,
+            deletedAt: doc.deletedAt ?? null,
+            archivedAt: doc.archivedAt ?? null,
+            inboxAt: doc.inboxAt ?? null,
+          }));
+          resolve(docs);
+        }
       };
       request.onerror = () => reject(request.error);
     });
@@ -386,9 +461,24 @@ export class IndexedDbDocumentsRepo {
       const index = store.index("type");
       const request = index.getAll(DOCUMENT_TYPE_NOTE);
 
-      request.onsuccess = () => {
+      request.onsuccess = async () => {
         const items = Array.isArray(request.result) ? request.result : [];
-        resolve(items);
+        try {
+          const bodyRecords = await getDocumentBodiesByIds(
+            items.map((doc) => doc.id)
+          );
+          const bodiesById = new Map(
+            bodyRecords.map((record) => [record.documentId, record.content])
+          );
+          resolve(
+            items.map((doc) => ({
+              ...doc,
+              body: bodiesById.get(doc.id) ?? "",
+            }))
+          );
+        } catch (error) {
+          resolve(items.map((doc) => ({ ...doc, body: "" })));
+        }
       };
       request.onerror = () => reject(request.error);
     });
@@ -416,8 +506,13 @@ export class IndexedDbDocumentsRepo {
         }
         for (const key of keys) {
           const deleteRequest = store.delete(key);
-          deleteRequest.onsuccess = () => {
+          deleteRequest.onsuccess = async () => {
             removeFromSearchIndex(key);
+            try {
+              await removeDocumentBody(key);
+            } catch (error) {
+              console.error("Failed to remove document body", error);
+            }
             deleted++;
             if (deleted === keys.length) {
               clearSearchIndex();
@@ -448,21 +543,32 @@ export class IndexedDbDocumentsRepo {
       let created = 0;
       let updated = 0;
       let processed = 0;
+      const bodyRecords = [];
 
       for (const note of notes) {
         const getRequest = store.get(note.id);
         getRequest.onsuccess = () => {
           const existing = getRequest.result;
-          const putRequest = store.put(note);
+          const putRequest = store.put(stripBody(note));
           putRequest.onsuccess = () => {
             if (existing) {
               updated++;
             } else {
               created++;
             }
+            if (typeof note.body === "string") {
+              bodyRecords.push({
+                documentId: note.id,
+                content: note.body,
+                updatedAt: note.updatedAt ?? Date.now(),
+                syncedAt: note.syncedAt ?? null,
+              });
+            }
             processed++;
             if (processed === notes.length) {
-              resolve({ created, updated });
+              bulkUpsertDocumentBodies(bodyRecords)
+                .then(() => resolve({ created, updated }))
+                .catch(() => resolve({ created, updated }));
             }
           };
           putRequest.onerror = () => reject(putRequest.error);
@@ -486,7 +592,7 @@ export class IndexedDbDocumentsRepo {
       const index = store.index("type");
       const request = index.getAll(DOCUMENT_TYPE_INBOX);
 
-      request.onsuccess = () => {
+      request.onsuccess = async () => {
         const items = Array.isArray(request.result) ? request.result : [];
         const inboxNotes = items.filter(
           (doc) => doc.deletedAt == null
@@ -520,7 +626,22 @@ export class IndexedDbDocumentsRepo {
           return (a.id || "").localeCompare(b.id || "");
         });
 
-        resolve(inboxNotes);
+        try {
+          const bodyRecords = await getDocumentBodiesByIds(
+            inboxNotes.map((doc) => doc.id)
+          );
+          const bodiesById = new Map(
+            bodyRecords.map((record) => [record.documentId, record.content])
+          );
+          resolve(
+            inboxNotes.map((doc) => ({
+              ...doc,
+              body: bodiesById.get(doc.id) ?? "",
+            }))
+          );
+        } catch (error) {
+          resolve(inboxNotes.map((doc) => ({ ...doc, body: "" })));
+        }
       };
       request.onerror = () => reject(request.error);
     });
@@ -548,7 +669,7 @@ export class IndexedDbDocumentsRepo {
       const store = transaction.objectStore(DOCUMENTS_STORE);
       const request = store.getAll();
 
-      request.onsuccess = () => {
+      request.onsuccess = async () => {
         const items = Array.isArray(request.result) ? request.result : [];
         const trashed = items.filter((doc) => doc.deletedAt != null);
 
@@ -559,7 +680,22 @@ export class IndexedDbDocumentsRepo {
           return bDeleted - aDeleted;
         });
 
-        resolve(trashed);
+        try {
+          const bodyRecords = await getDocumentBodiesByIds(
+            trashed.map((doc) => doc.id)
+          );
+          const bodiesById = new Map(
+            bodyRecords.map((record) => [record.documentId, record.content])
+          );
+          resolve(
+            trashed.map((doc) => ({
+              ...doc,
+              body: bodiesById.get(doc.id) ?? "",
+            }))
+          );
+        } catch (error) {
+          resolve(trashed.map((doc) => ({ ...doc, body: "" })));
+        }
       };
       request.onerror = () => reject(request.error);
     });
@@ -582,14 +718,23 @@ export class IndexedDbDocumentsRepo {
       const store = transaction.objectStore(DOCUMENTS_STORE);
       const request = store.getAll();
 
-      request.onsuccess = () => {
+      request.onsuccess = async () => {
         const items = Array.isArray(request.result) ? request.result : [];
         const match = items.find((doc) => {
           if (doc.deletedAt != null) return false;
           const docTitle = deriveDocumentTitle(doc);
           return docTitle.trim().toLowerCase() === normalizedTitle;
         });
-        resolve(match || null);
+        if (!match) {
+          resolve(null);
+          return;
+        }
+        try {
+          const bodyRecord = await getDocumentBody(match.id);
+          resolve(attachBody(match, bodyRecord));
+        } catch (error) {
+          resolve(attachBody(match, null));
+        }
       };
       request.onerror = () => reject(request.error);
     });
@@ -668,9 +813,20 @@ export class IndexedDbDocumentsRepo {
     return new Promise((resolve, reject) => {
       const transaction = db.transaction(DOCUMENTS_STORE, "readwrite");
       const store = transaction.objectStore(DOCUMENTS_STORE);
-      const request = store.put(template);
+      const request = store.put(stripBody(template));
 
-      request.onsuccess = () => resolve(template);
+      request.onsuccess = async () => {
+        if (typeof template.body === "string") {
+          try {
+            await upsertDocumentBody(template.id, template.body, {
+              updatedAt: template.updatedAt ?? Date.now(),
+            });
+          } catch (error) {
+            console.error("Failed to write template body", error);
+          }
+        }
+        resolve(template);
+      };
       request.onerror = () => reject(request.error);
     });
   }
