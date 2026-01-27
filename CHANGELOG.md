@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.16.0 - 2026-01-27
+- Split local document bodies into a dedicated IndexedDB store with ISO timestamp normalization.
+- Add client_id + synced_at fields to Supabase schema and align sync payloads.
+- Introduce initial sync + realtime subscriptions for documents and bodies.
+- Add document helper APIs for tasks, projects, habits, and time entries.
+- Fix sync upserts to include user_id alongside owner_id.
+
 ## 0.15.0 - 2026-01-26
 - Add Supabase schema migration and docs for `documents` + `document_bodies`.
 - Introduce Supabase client + document API helpers for sync operations.

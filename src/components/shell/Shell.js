@@ -173,6 +173,7 @@ export default function Shell({ children }) {
       { href: "/", label: "Home" },
       { href: "/command", label: "Command" },
       { href: "/inbox", label: "Inbox" },
+      { href: "/logbook", label: "Logbook" },
       { href: "/knowledge", label: "Knowledge" },
       { href: "/knowledge/notes", label: "Notes (v0)" },
       { href: "/strategy", label: "Strategy" },
