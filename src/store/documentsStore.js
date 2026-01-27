@@ -8,7 +8,14 @@ import {
 import { deriveDocumentTitle } from "../lib/documents/deriveTitle";
 import { DOCUMENT_TYPE_NOTE, DOCUMENT_TYPE_DAILY, DOCUMENT_TYPE_STAGED } from "../types/document";
 import { ensureBuiltInTemplates } from "../lib/templates/seedTemplates";
-import { addSyncListener, enqueueSyncOperation, initSyncListeners, scheduleSync } from "../lib/sync/syncManager";
+import {
+  addSyncListener,
+  enqueueSyncOperation,
+  initSyncListeners,
+  saveDocument,
+  saveDocumentBody,
+  scheduleSync,
+} from "../lib/sync/syncManager";
 import { useSyncStore } from "./syncStore";
 import { getSyncMeta, setSyncMeta } from "../lib/sync/syncQueue";
 import { fetchDocumentBodiesByIds, fetchDocumentsUpdatedSince } from "../lib/supabase/documents";
@@ -282,16 +289,10 @@ export const useDocumentsStore = create((set, get) => ({
       };
     });
     try {
-      const repo = getDocumentsRepo();
-      await repo.update(id, { body, version: nextVersion });
+      await saveDocumentBody(id, body, { version: nextVersion });
       const updated = get().documentsById[id];
       if (updated) {
         updateSearchIndex(updated);
-        await enqueueSyncOperation({
-          type: "update",
-          documentId: updated.id,
-          payload: { document: updated, baseVersion: (updated.version ?? 1) - 1 },
-        });
       }
       return { success: true };
     } catch (error) {
@@ -327,16 +328,10 @@ export const useDocumentsStore = create((set, get) => ({
     });
     try {
       const nextVersion = (get().documentsById[id]?.version ?? 1);
-      const repo = getDocumentsRepo();
-      await repo.update(id, { ...updates, version: nextVersion });
       const updated = get().documentsById[id];
       if (updated) {
+        await saveDocument(updated, undefined, { version: nextVersion });
         updateSearchIndex(updated);
-        await enqueueSyncOperation({
-          type: "update",
-          documentId: updated.id,
-          payload: { document: updated, baseVersion: (updated.version ?? 1) - 1 },
-        });
       }
       return { success: true };
     } catch (error) {

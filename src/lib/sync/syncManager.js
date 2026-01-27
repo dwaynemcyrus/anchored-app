@@ -1,27 +1,37 @@
-import { getSyncMeta, setSyncMeta } from "./syncQueue";
+import { getDocumentsRepo } from "../repo/getDocumentsRepo";
 import {
-  fetchDocumentBodiesByIds,
+  DOCUMENTS_STORE,
+  DOCUMENT_BODIES_STORE,
+  openAnchoredDb,
+} from "../db/indexedDb";
+import { getDocumentBody } from "../db/documentBodies";
+import { getSupabaseClient, getUserId } from "../supabase/client";
+import {
   fetchDocumentById,
   fetchDocumentBody,
-  fetchDocumentsUpdatedSince,
-  insertDocument,
-  insertDocumentBody,
-  updateDocumentWithVersion,
-  updateDocumentBody,
+  upsertDocument,
+  upsertDocumentBody,
 } from "../supabase/documents";
-import { useSyncStore, SYNC_STATUS } from "../../store/syncStore";
 import { createConflictCopy } from "./conflictCopy";
-import { getDocumentsRepo } from "../repo/getDocumentsRepo";
-import { buildSearchIndex } from "../search/searchDocuments";
-import { deriveDocumentTitle } from "../documents/deriveTitle";
+import {
+  enqueueOperation,
+  getQueueCount,
+  getSyncMeta,
+  listQueue,
+  removeOperation,
+  updateOperation,
+  setSyncMeta,
+} from "./syncQueue";
+import { useSyncStore, SYNC_STATUS } from "../../store/syncStore";
+import { getClientId } from "../clientId";
 
 const META_LAST_SYNCED_AT = "lastSyncedAt";
-const POLL_INTERVAL_MS = 60000;
+const CLIENT_ID = getClientId();
+const debouncedSaves = new Map();
 
 let syncInFlight = null;
 let listenersInitialized = false;
 const listeners = new Set();
-let pollIntervalId = null;
 
 function isBrowser() {
   return typeof window !== "undefined";
@@ -63,19 +73,6 @@ export function initSyncListeners() {
   window.addEventListener("offline", () => {
     getStoreActions().setStatus(SYNC_STATUS.OFFLINE);
   });
-  window.addEventListener("focus", () => {
-    scheduleSync({ reason: "focus" });
-  });
-  document.addEventListener("visibilitychange", () => {
-    if (document.visibilityState === "visible") {
-      scheduleSync({ reason: "visibility" });
-    }
-  });
-  if (!pollIntervalId) {
-    pollIntervalId = window.setInterval(() => {
-      scheduleSync({ reason: "poll" });
-    }, POLL_INTERVAL_MS);
-  }
 }
 
 function toIso(value) {
@@ -120,180 +117,368 @@ function toServerDocument(document) {
     id: document.id,
     type: document.type,
     subtype: resolveSubtype(document),
-    title: deriveDocumentTitle(document),
+    title: document.title ?? null,
     status: resolveStatus(document),
     frontmatter: resolveFrontmatter(document),
-    created_at: toIso(document.createdAt),
-    updated_at: toIso(document.updatedAt),
+    created_at: toIso(document.createdAt ?? document.created_at),
+    updated_at: toIso(document.updatedAt ?? document.updated_at),
+    deleted_at: toIso(document.deletedAt ?? document.deleted_at),
     version: typeof document.version === "number" ? document.version : 1,
+    client_id: document.clientId ?? document.client_id ?? CLIENT_ID,
+    synced_at: document.syncedAt ?? document.synced_at ?? null,
   };
 }
 
-function fromServerDocument(document, body) {
-  const updatedAt = parseIsoToMs(document.updated_at) ?? Date.now();
-  const createdAt = parseIsoToMs(document.created_at) ?? updatedAt;
-  const version = typeof document.version === "number" ? document.version : 1;
-  const status = document.status ?? "active";
-  const isTrashed = status === "trash";
-  const isArchived = status === "archived";
-  const frontmatter = document.frontmatter ?? {};
-  const frontmatterTags = Array.isArray(frontmatter.tags) ? frontmatter.tags : [];
-  const deletedAt = document.deleted_at
-    ? parseIsoToMs(document.deleted_at) ?? Date.now()
-    : null;
+const BODY_TYPES = new Set([
+  "note",
+  "daily",
+  "template",
+  "inbox",
+  "reference",
+  "source",
+  "journal",
+  "essay",
+  "staged",
+  "project",
+]);
 
-  return {
-    id: document.id,
-    type: document.type,
-    subtype: document.subtype ?? null,
-    title: document.title ?? null,
-    body: body ?? "",
-    meta: {
-      ...frontmatter,
-      status,
-      tags: frontmatterTags,
-      subtype: document.subtype ?? null,
-      frontmatter,
-    },
-    status,
-    frontmatter,
-    version,
-    createdAt,
-    updatedAt,
-    deletedAt: deletedAt ?? (isTrashed ? updatedAt : null),
-    archivedAt: isArchived ? updatedAt : null,
-    inboxAt: null,
-  };
+function hasBody(type) {
+  if (!type) return true;
+  return BODY_TYPES.has(type);
 }
 
-function setPendingCount(count) {
-  getStoreActions().setPendingCount(count);
+async function patchLocalRecord(storeName, id, patch) {
+  const db = await openAnchoredDb();
+  return new Promise((resolve, reject) => {
+    const transaction = db.transaction(storeName, "readwrite");
+    const store = transaction.objectStore(storeName);
+    const getRequest = store.get(id);
+
+    getRequest.onsuccess = () => {
+      const existing = getRequest.result;
+      if (!existing) {
+        resolve(false);
+        return;
+      }
+      const next = {
+        ...existing,
+        ...patch,
+      };
+      const putRequest = store.put(next);
+      putRequest.onsuccess = () => resolve(true);
+      putRequest.onerror = () => reject(putRequest.error);
+    };
+
+    getRequest.onerror = () => reject(getRequest.error);
+  });
 }
 
-async function applyRemoteDocuments(documents) {
-  if (!documents.length) return;
-  const repo = getDocumentsRepo();
-  await repo.bulkUpsert(documents);
-  buildSearchIndex(await repo.getSearchableDocs({
-    includeArchived: true,
-    includeTrashed: true,
-  }));
-  notify({ type: "remoteApplied", documents });
-}
-
-async function pullRemoteChanges() {
-  const lastSyncedAt = await getSyncMeta(META_LAST_SYNCED_AT);
-  const remoteDocs = await fetchDocumentsUpdatedSince({ since: lastSyncedAt });
-  if (!remoteDocs || remoteDocs.length === 0) {
-    return;
-  }
-  const ids = remoteDocs.map((doc) => doc.id);
-  const bodies = await fetchDocumentBodiesByIds(ids);
-  const bodiesById = new Map(
-    bodies.map((body) => [body.document_id, body.content])
-  );
-
-  const localDocs = remoteDocs.map((doc) =>
-    fromServerDocument(doc, bodiesById.get(doc.id) ?? "")
-  );
-
-  await applyRemoteDocuments(localDocs);
-  const latest = remoteDocs.reduce((max, doc) => {
-    const timestamp = parseIsoToMs(doc.updated_at) ?? 0;
-    return Math.max(max, timestamp);
-  }, parseIsoToMs(lastSyncedAt) ?? 0);
-  const nextSync = latest ? new Date(latest).toISOString() : new Date().toISOString();
-  await setSyncMeta(META_LAST_SYNCED_AT, nextSync);
-  getStoreActions().setLastSyncedAt(nextSync);
-}
-
-async function pushCreate(document) {
-  const serverDocument = toServerDocument(document);
-  if (!serverDocument) throw new Error("Missing document snapshot");
-  const created = await insertDocument(serverDocument);
-  if (typeof document.body === "string") {
-    await insertDocumentBody(document.id, document.body);
-  }
-  const merged = fromServerDocument(created, document.body ?? "");
-  await applyRemoteDocuments([merged]);
-}
-
-async function pushUpdate(document, baseVersionOverride) {
-  const serverDocument = toServerDocument(document);
-  if (!serverDocument) throw new Error("Missing document snapshot");
-
-  const existing = await fetchDocumentById(document.id);
-  if (!existing) {
-    await pushCreate(document);
-    return { conflict: false };
-  }
-
-  const serverVersion = typeof existing.version === "number" ? existing.version : 1;
-  const expectedVersion =
-    typeof baseVersionOverride === "number"
-      ? baseVersionOverride
-      : typeof document.version === "number"
-        ? document.version
-        : 1;
-  if (serverVersion !== expectedVersion) {
-    return { conflict: true, serverDocument: existing };
-  }
-
-  const updated = await updateDocumentWithVersion(
-    document.id,
-    serverDocument,
-    expectedVersion
-  );
-  if (!updated) {
-    return { conflict: true, serverDocument: existing };
-  }
-  if (typeof document.body === "string") {
-    const existingBody = await fetchDocumentBody(document.id);
-    if (existingBody) {
-      await updateDocumentBody(document.id, document.body);
-    } else {
-      await insertDocumentBody(document.id, document.body);
+async function upsertLocalDocument(document) {
+  const db = await openAnchoredDb();
+  const payload = { ...document };
+  delete payload.body;
+  return new Promise((resolve, reject) => {
+    const transaction = db.transaction(
+      [DOCUMENTS_STORE, DOCUMENT_BODIES_STORE],
+      "readwrite"
+    );
+    const documentStore = transaction.objectStore(DOCUMENTS_STORE);
+    const bodyStore = transaction.objectStore(DOCUMENT_BODIES_STORE);
+    documentStore.put(payload);
+    if (typeof document.body === "string") {
+      bodyStore.put({
+        documentId: document.id,
+        content: document.body,
+        updatedAt: document.updatedAt ?? Date.now(),
+        syncedAt: document.syncedAt ?? null,
+        clientId: document.clientId ?? CLIENT_ID,
+      });
     }
-  }
-  const merged = fromServerDocument(updated, document.body ?? "");
-  await applyRemoteDocuments([merged]);
-  return { conflict: false };
+    transaction.oncomplete = () => resolve();
+    transaction.onerror = () => reject(transaction.error);
+    transaction.onabort = () => reject(transaction.error);
+  });
 }
 
-async function resolveConflict({ localDocument, serverDocument }) {
+export async function saveDocument(doc, content, options = {}) {
+  if (!doc || typeof doc.id !== "string") {
+    throw new Error("Document with id is required");
+  }
+
+  const repo = getDocumentsRepo();
+  const existing = await repo.get(doc.id);
+  const shouldWriteBody = content !== undefined;
+  const nextBody =
+    content !== undefined
+      ? content
+      : typeof doc.body === "string"
+        ? doc.body
+        : existing?.body ?? "";
+
+  if (existing) {
+    const patch = {
+      ...doc,
+      clientId: CLIENT_ID,
+      syncedAt: null,
+      ...(typeof options.version === "number" ? { version: options.version } : {}),
+    };
+    if (shouldWriteBody && hasBody(doc.type)) {
+      patch.body = nextBody;
+    }
+    await repo.update(doc.id, patch);
+  } else {
+    await repo.create({
+      type: doc.type,
+      body: hasBody(doc.type) ? nextBody : "",
+      title: doc.title ?? null,
+      meta: doc.meta ?? {},
+      archivedAt: doc.archivedAt ?? null,
+      inboxAt: doc.inboxAt ?? null,
+    });
+  }
+
+  const key = `document:${doc.id}`;
+  clearTimeout(debouncedSaves.get(key));
+  debouncedSaves.set(
+    key,
+    setTimeout(async () => {
+      await syncDocumentToSupabase(doc.id);
+      debouncedSaves.delete(key);
+    }, 800)
+  );
+}
+
+export async function saveDocumentBody(documentId, content, options = {}) {
+  if (typeof documentId !== "string" || !documentId.trim()) {
+    throw new Error("Document id is required");
+  }
+  const repo = getDocumentsRepo();
+  await repo.update(documentId, {
+    body: content,
+    clientId: CLIENT_ID,
+    syncedAt: null,
+    ...(typeof options.version === "number" ? { version: options.version } : {}),
+  });
+
+  const key = `body:${documentId}`;
+  clearTimeout(debouncedSaves.get(key));
+  debouncedSaves.set(
+    key,
+    setTimeout(async () => {
+      await syncBodyToSupabase(documentId);
+      await syncDocumentToSupabase(documentId);
+      debouncedSaves.delete(key);
+    }, 800)
+  );
+}
+
+async function syncDocumentToSupabase(documentId) {
+  const repo = getDocumentsRepo();
+  const doc = await repo.get(documentId);
+  if (!doc) return;
+
+  try {
+    const userId = await getUserId();
+    const payload = {
+      ...toServerDocument(doc),
+      owner_id: userId,
+    };
+
+    const data = await upsertDocument(payload);
+
+    const localUpdatedAt = new Date(doc.updatedAt ?? Date.now());
+    if (data?.updated_at && new Date(data.updated_at) > localUpdatedAt) {
+      await handleDocumentConflict(doc, data);
+    } else {
+      await patchLocalRecord(DOCUMENTS_STORE, documentId, {
+        syncedAt: new Date().toISOString(),
+      });
+    }
+  } catch (error) {
+    console.error(`Sync failed for document:${documentId}`, error);
+
+    await enqueueOperation({
+      table: "documents",
+      record_id: documentId,
+      operation: "upsert",
+      payload: doc,
+      timestamp: new Date().toISOString(),
+      retry_count: 0,
+    });
+
+    await refreshPendingCount();
+  }
+}
+
+async function syncBodyToSupabase(documentId) {
+  const body = await getDocumentBody(documentId);
+  if (!body) return;
+
+  try {
+    const data = await upsertDocumentBody({
+      document_id: body.documentId,
+      content: body.content,
+      updated_at: toIso(body.updatedAt),
+      client_id: body.clientId ?? CLIENT_ID,
+      synced_at: body.syncedAt ?? null,
+    });
+
+    const localUpdatedAt = new Date(body.updatedAt ?? Date.now());
+    if (data?.updated_at && new Date(data.updated_at) > localUpdatedAt) {
+      await handleBodyConflict(documentId, body, data);
+    } else {
+      await patchLocalRecord(DOCUMENT_BODIES_STORE, documentId, {
+        syncedAt: new Date().toISOString(),
+      });
+    }
+  } catch (error) {
+    console.error(`Sync failed for body:${documentId}`, error);
+
+    await enqueueOperation({
+      table: "document_bodies",
+      record_id: documentId,
+      operation: "upsert",
+      payload: body,
+      timestamp: new Date().toISOString(),
+      retry_count: 0,
+    });
+
+    await refreshPendingCount();
+  }
+}
+
+async function handleDocumentConflict(localDoc, remoteDoc) {
   const conflictCopy = await createConflictCopy({
-    document: localDocument,
+    document: {
+      ...localDoc,
+      body: localDoc.body ?? "",
+    },
     reason: "server-newer",
   });
   notify({ type: "conflict", conflictCopy });
-  await pushCreate(conflictCopy);
 
-  const serverBody = await fetchDocumentBody(serverDocument.id);
-  const merged = fromServerDocument(serverDocument, serverBody?.content ?? "");
-  await applyRemoteDocuments([merged]);
-  return conflictCopy;
+  if (remoteDoc?.id) {
+    const serverBody = await fetchDocumentBody(remoteDoc.id);
+    await applyRemoteDocument(remoteDoc, serverBody?.content ?? "");
+  }
 }
 
-async function processOperation(operation) {
-  const { type, payload } = operation;
-  const document = payload?.document ?? null;
-  const baseVersion =
-    typeof payload?.baseVersion === "number" ? payload.baseVersion : null;
+async function handleBodyConflict(documentId, localBody, remoteBody) {
+  const repo = getDocumentsRepo();
+  const doc = await repo.get(documentId);
+  if (!doc) return;
 
-  if (!document) {
-    throw new Error("Sync operation missing document payload");
+  await createConflictCopy({
+    document: {
+      ...doc,
+      body: localBody.content,
+    },
+    reason: "body-conflict",
+  });
+
+  await patchLocalRecord(DOCUMENT_BODIES_STORE, documentId, {
+    content: remoteBody.content,
+    updatedAt: parseIsoToMs(remoteBody.updated_at) ?? Date.now(),
+    syncedAt: new Date().toISOString(),
+  });
+}
+
+async function applyRemoteDocument(remoteDoc, bodyContent) {
+  const localDoc = {
+    id: remoteDoc.id,
+    type: remoteDoc.type,
+    subtype: remoteDoc.subtype ?? null,
+    title: remoteDoc.title ?? null,
+    body: bodyContent ?? "",
+    meta: {
+      ...(remoteDoc.frontmatter ?? {}),
+      status: remoteDoc.status ?? "active",
+      tags: Array.isArray(remoteDoc.frontmatter?.tags) ? remoteDoc.frontmatter.tags : [],
+      subtype: remoteDoc.subtype ?? null,
+      frontmatter: remoteDoc.frontmatter ?? {},
+    },
+    status: remoteDoc.status ?? "active",
+    frontmatter: remoteDoc.frontmatter ?? {},
+    version: typeof remoteDoc.version === "number" ? remoteDoc.version : 1,
+    createdAt: parseIsoToMs(remoteDoc.created_at) ?? Date.now(),
+    updatedAt: parseIsoToMs(remoteDoc.updated_at) ?? Date.now(),
+    deletedAt: remoteDoc.deleted_at ? parseIsoToMs(remoteDoc.deleted_at) ?? Date.now() : null,
+    archivedAt: remoteDoc.status === "archived"
+      ? parseIsoToMs(remoteDoc.updated_at) ?? Date.now()
+      : null,
+    inboxAt: null,
+    clientId: remoteDoc.client_id ?? null,
+    syncedAt: new Date().toISOString(),
+  };
+
+  await upsertLocalDocument(localDoc);
+}
+
+export async function deleteDocument(documentId) {
+  const repo = getDocumentsRepo();
+  await repo.delete(documentId);
+
+  try {
+    const client = getSupabaseClient();
+    const { error: docError } = await client
+      .from("documents")
+      .delete()
+      .eq("id", documentId);
+
+    if (docError) throw docError;
+  } catch (error) {
+    console.error(`Delete failed for document:${documentId}`, error);
+
+    await enqueueOperation({
+      table: "documents",
+      record_id: documentId,
+      operation: "delete",
+      payload: null,
+      timestamp: new Date().toISOString(),
+      retry_count: 0,
+    });
+
+    await refreshPendingCount();
+  }
+}
+
+async function refreshPendingCount() {
+  const count = await getQueueCount();
+  getStoreActions().setPendingCount(count);
+}
+
+export async function processSyncQueue() {
+  const items = await listQueue();
+  if (!items.length) {
+    await refreshPendingCount();
+    return;
   }
 
-  if (type === "create") {
-    await pushCreate(document);
-    return { handled: true };
+  for (const item of items) {
+    try {
+      if (item.operation === "upsert") {
+        if (item.table === "documents") {
+          await syncDocumentToSupabase(item.record_id);
+        } else if (item.table === "document_bodies") {
+          await syncBodyToSupabase(item.record_id);
+        }
+      } else if (item.operation === "delete") {
+        const client = getSupabaseClient();
+        await client
+          .from(item.table)
+          .delete()
+          .eq(item.table === "documents" ? "id" : "document_id", item.record_id);
+      }
+
+      await removeOperation(item.id);
+    } catch (error) {
+      await updateOperation(item.id, {
+        retry_count: (item.retry_count ?? 0) + 1,
+      });
+    }
   }
 
-  const result = await pushUpdate(document, baseVersion);
-  if (result?.conflict) {
-    await resolveConflict({ localDocument: document, serverDocument: result.serverDocument });
-  }
-  return { handled: true };
+  await refreshPendingCount();
 }
 
 async function runSync() {
@@ -302,7 +487,7 @@ async function runSync() {
 
   if (!isOnline()) {
     store.setStatus(SYNC_STATUS.OFFLINE);
-    setPendingCount(0);
+    await refreshPendingCount();
     return;
   }
 
@@ -310,15 +495,14 @@ async function runSync() {
   store.setLastError(null);
 
   try {
-    await pullRemoteChanges();
+    await processSyncQueue();
   } catch (error) {
-    console.error("Failed to pull remote changes", error);
-    store.setLastError(error.message || "Sync pull failed");
+    console.error("Failed to process sync queue", error);
+    store.setLastError(error.message || "Sync failed");
     store.setStatus(SYNC_STATUS.ERROR);
     return;
   }
 
-  setPendingCount(0);
   store.setStatus(SYNC_STATUS.SYNCED);
 }
 
@@ -347,11 +531,23 @@ export async function enqueueSyncOperation(operation) {
     store.setLastError("Offline");
     throw new Error("Offline");
   }
+
+  const documentId = operation?.documentId;
+  if (!documentId) return null;
+
   store.setStatus(SYNC_STATUS.SYNCING);
   store.setLastError(null);
-  setPendingCount(0);
-  await processOperation(operation);
-  await pullRemoteChanges();
+  await syncDocumentToSupabase(documentId);
   store.setStatus(SYNC_STATUS.SYNCED);
   return operation;
+}
+
+export async function markLastSyncedAt(value) {
+  const nextValue = value ?? new Date().toISOString();
+  await setSyncMeta(META_LAST_SYNCED_AT, nextValue);
+  getStoreActions().setLastSyncedAt(nextValue);
+}
+
+export async function getLastSyncedAt() {
+  return getSyncMeta(META_LAST_SYNCED_AT);
 }
