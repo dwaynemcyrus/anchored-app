@@ -8,6 +8,9 @@ import { deriveDocumentTitle } from "../lib/documents/deriveTitle";
 import { DOCUMENT_TYPE_NOTE, DOCUMENT_TYPE_DAILY, DOCUMENT_TYPE_STAGED } from "../types/document";
 import { ensureBuiltInTemplates } from "../lib/templates/seedTemplates";
 import { addSyncListener, enqueueSyncOperation, initSyncListeners, scheduleSync } from "../lib/sync/syncManager";
+import { useSyncStore } from "./syncStore";
+import { getSyncMeta, setSyncMeta } from "../lib/sync/syncQueue";
+import { fetchDocumentBodiesByIds, fetchDocumentsUpdatedSince } from "../lib/supabase/documents";
 
 const sortDocuments = (documents) => documents.slice().sort((a, b) => b.updatedAt - a.updatedAt);
 
@@ -47,6 +50,49 @@ export const useDocumentsStore = create((set, get) => ({
   inboxCount: 0,
   inboxCountLoaded: false,
   inboxVersion: 0,
+  fetchFromServer: async () => {
+    const { setLastSyncedAt } = useSyncStore.getState();
+    const repo = getDocumentsRepo();
+    const lastSyncedAt = await getSyncMeta("lastSyncedAt");
+    const remoteDocs = await fetchDocumentsUpdatedSince({ since: lastSyncedAt });
+    if (!remoteDocs || remoteDocs.length === 0) return;
+    const ids = remoteDocs.map((doc) => doc.id);
+    const bodies = await fetchDocumentBodiesByIds(ids);
+    const bodiesById = new Map(bodies.map((body) => [body.document_id, body.content]));
+
+    const localDocs = remoteDocs.map((doc) => ({
+      id: doc.id,
+      type: doc.type,
+      subtype: doc.subtype ?? null,
+      title: doc.title ?? null,
+      body: bodiesById.get(doc.id) ?? "",
+      meta: {
+        ...(doc.frontmatter ?? {}),
+        status: doc.status ?? "active",
+        tags: Array.isArray(doc.frontmatter?.tags) ? doc.frontmatter.tags : [],
+        subtype: doc.subtype ?? null,
+        frontmatter: doc.frontmatter ?? {},
+      },
+      status: doc.status ?? "active",
+      frontmatter: doc.frontmatter ?? {},
+      version: typeof doc.version === "number" ? doc.version : 1,
+      createdAt: Date.parse(doc.created_at) || Date.now(),
+      updatedAt: Date.parse(doc.updated_at) || Date.now(),
+      deletedAt: doc.status === "trash" ? Date.parse(doc.updated_at) || Date.now() : null,
+      archivedAt: doc.status === "archived" ? Date.parse(doc.updated_at) || Date.now() : null,
+      inboxAt: null,
+    }));
+
+    await repo.bulkUpsert(localDocs);
+    buildSearchIndex(await repo.getSearchableDocs({ includeArchived: true, includeTrashed: true }));
+    const latest = remoteDocs.reduce((max, doc) => {
+      const timestamp = Date.parse(doc.updated_at || "") || 0;
+      return Math.max(max, timestamp);
+    }, Date.parse(lastSyncedAt || "") || 0);
+    const nextSync = latest ? new Date(latest).toISOString() : new Date().toISOString();
+    await setSyncMeta("lastSyncedAt", nextSync);
+    setLastSyncedAt(nextSync);
+  },
   loadInboxCount: async () => {
     try {
       const repo = getDocumentsRepo();
@@ -80,6 +126,7 @@ export const useDocumentsStore = create((set, get) => ({
       // Ensure built-in templates exist before any operations
       await ensureBuiltInTemplates();
 
+      await get().fetchFromServer();
       await scheduleSync({ reason: "hydrate" });
       const repo = getDocumentsRepo();
       const list = await repo.list({
@@ -154,7 +201,6 @@ export const useDocumentsStore = create((set, get) => ({
           : shouldIncludeInList(document, state.listIncludeArchived)
             ? upsertListItem(state.documents, toListItem(document))
             : state.documents,
-        // Increment inbox count if document was added to inbox
         inboxCount: inboxAt != null ? state.inboxCount + 1 : state.inboxCount,
       }));
       await enqueueSyncOperation({

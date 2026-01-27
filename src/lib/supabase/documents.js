@@ -131,6 +131,18 @@ export async function updateDocumentWithVersion(id, updates, expectedVersion) {
   return unwrapResponse(response);
 }
 
+export async function archiveDocument(id, expectedVersion) {
+  return updateDocumentWithVersion(id, { status: "archived" }, expectedVersion);
+}
+
+export async function unarchiveDocument(id, expectedVersion) {
+  return updateDocumentWithVersion(id, { status: "active" }, expectedVersion);
+}
+
+export async function trashDocument(id, expectedVersion) {
+  return updateDocumentWithVersion(id, { status: "trash" }, expectedVersion);
+}
+
 export async function insertDocumentBody(documentId, content) {
   const client = getSupabaseClient();
   const response = await client
