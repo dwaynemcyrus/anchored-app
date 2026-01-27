@@ -4,6 +4,7 @@ import { useState, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import styles from "../../../styles/settings.module.css";
 import { getDocumentsRepo } from "@/lib/repo/getDocumentsRepo";
+import { useDocumentsStore } from "@/store/documentsStore";
 import {
   exportBackupJson,
   exportMarkdownBundle,
@@ -16,6 +17,7 @@ export default function DataPage() {
   const router = useRouter();
   const [exporting, setExporting] = useState(null);
   const [toast, setToast] = useState(null);
+  const resetLocalCache = useDocumentsStore((state) => state.resetLocalCache);
 
   const showToast = useCallback((message, isError = false) => {
     setToast({ message, isError });
@@ -55,6 +57,21 @@ export default function DataPage() {
       showToast(err.message || "Export failed", true);
     } finally {
       setExporting(null);
+    }
+  };
+
+  const handleResetSync = async () => {
+    const shouldReset = window.confirm(
+      "Reset local sync cache on this device? This will reload data from Supabase."
+    );
+    if (!shouldReset) return;
+    try {
+      await resetLocalCache({ force: true });
+      showToast("Local sync cache reset. Reloading…");
+      window.location.reload();
+    } catch (err) {
+      console.error("Reset sync failed:", err);
+      showToast(err.message || "Reset failed", true);
     }
   };
 
@@ -119,6 +136,26 @@ export default function DataPage() {
                 </span>
               </div>
               <ImportButton showToast={showToast} />
+            </div>
+          </div>
+        </section>
+
+        <section className={styles.section}>
+          <h2 className={styles.sectionTitle}>Sync</h2>
+          <div className={styles.card}>
+            <div className={styles.cardItem}>
+              <div className={styles.cardItemContent}>
+                <span className={styles.cardItemTitle}>Reset Sync Cache</span>
+                <span className={styles.cardItemDescription}>
+                  Clears local data and reloads from Supabase
+                </span>
+              </div>
+              <button
+                className={styles.actionButton}
+                onClick={handleResetSync}
+              >
+                Reset
+              </button>
             </div>
           </div>
         </section>

@@ -106,10 +106,10 @@ export const useDocumentsStore = create((set, get) => ({
     setLastSyncedAt(nextSync);
   },
   forceFullFetch: false,
-  resetLocalCacheOnce: async () => {
+  resetLocalCache: async ({ force = false } = {}) => {
     if (typeof window === "undefined") return;
     const resetKey = "anchored_sync_reset_done";
-    if (window.localStorage.getItem(resetKey)) return;
+    if (!force && window.localStorage.getItem(resetKey)) return;
     try {
       const repo = getDocumentsRepo();
       await repo.deleteAllNotes();
@@ -127,6 +127,7 @@ export const useDocumentsStore = create((set, get) => ({
       console.error("Failed to reset local cache", error);
     }
   },
+  resetLocalCacheOnce: async () => get().resetLocalCache(),
   loadInboxCount: async () => {
     try {
       const repo = getDocumentsRepo();
