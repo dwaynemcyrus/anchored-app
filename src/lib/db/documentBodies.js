@@ -98,6 +98,31 @@ export async function getDocumentBodiesByIds(documentIds = []) {
   });
 }
 
+export async function listDocumentBodies() {
+  const db = await getDb();
+  return new Promise((resolve, reject) => {
+    const transaction = db.transaction(DOCUMENT_BODIES_STORE, "readonly");
+    const store = transaction.objectStore(DOCUMENT_BODIES_STORE);
+    const request = store.getAll();
+
+    request.onsuccess = () => {
+      const items = Array.isArray(request.result) ? request.result : [];
+      const normalized = items.map((body) => {
+        const updatedAt = Number.isFinite(body.updatedAt)
+          ? body.updatedAt
+          : Date.parse(body.updated_at || "") || Date.now();
+        return {
+          ...body,
+          updatedAt,
+          updated_at: body.updated_at ?? new Date(updatedAt).toISOString(),
+        };
+      });
+      resolve(normalized);
+    };
+    request.onerror = () => reject(request.error);
+  });
+}
+
 export async function bulkUpsertDocumentBodies(records = []) {
   if (!Array.isArray(records) || records.length === 0) return;
   const db = await getDb();
