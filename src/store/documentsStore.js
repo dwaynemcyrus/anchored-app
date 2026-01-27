@@ -489,8 +489,9 @@ export const useDocumentsStore = create((set, get) => ({
 
 addSyncListener((event) => {
   if (event?.type !== "remoteApplied") return;
-  const { hydrate, loadInboxCount, incrementInboxVersion } = useDocumentsStore.getState();
-  hydrate({ force: true });
+  const { fetchFromServer, loadInboxCount, incrementInboxVersion } =
+    useDocumentsStore.getState();
+  fetchFromServer();
   loadInboxCount();
   incrementInboxVersion();
 });
