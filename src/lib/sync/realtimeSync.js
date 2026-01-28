@@ -40,39 +40,51 @@ function buildLocalDoc(remoteDoc, bodyContent) {
 }
 
 export async function setupRealtimeSync() {
-  const userId = await getUserId();
-  const supabase = getSupabaseClient();
+  try {
+    const userId = await getUserId();
+    const supabase = getSupabaseClient();
 
-  const documentsChannel = supabase
-    .channel("documents-changes")
-    .on(
-      "postgres_changes",
-      {
-        event: "*",
-        schema: "public",
-        table: "documents",
-        filter: `owner_id=eq.${userId}`,
-      },
-      (payload) => handleDocumentChange(payload)
-    )
-    .subscribe();
+    const documentsChannel = supabase
+      .channel("documents-changes")
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "documents",
+          filter: `owner_id=eq.${userId}`,
+        },
+        (payload) => handleDocumentChange(payload)
+      )
+      .subscribe((status) => {
+        if (status !== "SUBSCRIBED") {
+          console.warn("Realtime documents channel status", status);
+        }
+      });
 
-  channels.push(documentsChannel);
+    channels.push(documentsChannel);
 
-  const bodiesChannel = supabase
-    .channel("document-bodies-changes")
-    .on(
-      "postgres_changes",
-      {
-        event: "*",
-        schema: "public",
-        table: "document_bodies",
-      },
-      (payload) => handleBodyChange(payload)
-    )
-    .subscribe();
+    const bodiesChannel = supabase
+      .channel("document-bodies-changes")
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "document_bodies",
+        },
+        (payload) => handleBodyChange(payload)
+      )
+      .subscribe((status) => {
+        if (status !== "SUBSCRIBED") {
+          console.warn("Realtime bodies channel status", status);
+        }
+      });
 
-  channels.push(bodiesChannel);
+    channels.push(bodiesChannel);
+  } catch (error) {
+    console.warn("Realtime setup failed; falling back to polling.", error);
+  }
 }
 
 async function handleDocumentChange(payload) {

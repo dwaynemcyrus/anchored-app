@@ -1,4 +1,4 @@
-Active build spec: docs/builds/cluade-code-sync-spec-v1.md
+Active build spec: docs/builds/sync-stabilization-spec-v1.md
 
 Instruction:
 - Follow AGENTS.md and SCOPE.md.
