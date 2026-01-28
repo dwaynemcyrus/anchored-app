@@ -28,6 +28,10 @@
   pointer-events: none;
 }
 
+.overlayLayer * {
+  pointer-events: auto;
+}
+
 .shellHeader {
   position: absolute;
   top: var(--vv-offset-top, 0);
