@@ -58,11 +58,25 @@ function getStoreActions() {
     setPendingCount: store.setPendingCount,
     setLastError: store.setLastError,
     setLastSyncedAt: store.setLastSyncedAt,
+    setLastSuccessfulSyncAt: store.setLastSuccessfulSyncAt,
   };
 }
 
 function notify(event) {
   listeners.forEach((listener) => listener(event));
+}
+
+function buildErrorDetails(error) {
+  if (!error || typeof error !== "object") {
+    return { message: String(error ?? "Unknown error") };
+  }
+  return {
+    message: error.message ?? "Unknown error",
+    details: error.details ?? null,
+    hint: error.hint ?? null,
+    code: error.code ?? null,
+    stack: error.stack ?? null,
+  };
 }
 
 export function addSyncListener(listener) {
@@ -308,15 +322,12 @@ async function syncDocumentToSupabase(documentId) {
     }
   } catch (error) {
     console.error(`Sync failed for document:${documentId}`, error);
-    if (error && typeof error === "object") {
-      console.error("Supabase error details", {
-        message: error.message,
-        details: error.details,
-        hint: error.hint,
-        code: error.code,
-      });
-    }
-    getStoreActions().setLastError(error?.message || "Document sync failed");
+    const errorDetails = buildErrorDetails(error);
+    console.error("Supabase error details", errorDetails);
+    getStoreActions().setLastError(
+      errorDetails.message || "Document sync failed",
+      errorDetails
+    );
 
     await enqueueOperation({
       table: "documents",
@@ -357,15 +368,9 @@ async function syncBodyToSupabase(documentId) {
     }
   } catch (error) {
     console.error(`Sync failed for body:${documentId}`, error);
-    if (error && typeof error === "object") {
-      console.error("Supabase error details", {
-        message: error.message,
-        details: error.details,
-        hint: error.hint,
-        code: error.code,
-      });
-    }
-    getStoreActions().setLastError(error?.message || "Body sync failed");
+    const errorDetails = buildErrorDetails(error);
+    console.error("Supabase error details", errorDetails);
+    getStoreActions().setLastError(errorDetails.message || "Body sync failed", errorDetails);
 
     await enqueueOperation({
       table: "document_bodies",
@@ -533,12 +538,13 @@ async function runSync() {
     await processSyncQueue();
   } catch (error) {
     console.error("Failed to process sync queue", error);
-    store.setLastError(error.message || "Sync failed");
+    store.setLastError(error?.message || "Sync failed", buildErrorDetails(error));
     store.setStatus(SYNC_STATUS.ERROR);
     return;
   }
 
   store.setStatus(SYNC_STATUS.SYNCED);
+  store.setLastSuccessfulSyncAt(new Date().toISOString());
 }
 
 export function scheduleSync({ reason } = {}) {
@@ -548,7 +554,7 @@ export function scheduleSync({ reason } = {}) {
     .catch((error) => {
       console.error("Sync run failed", error);
       const store = getStoreActions();
-      store.setLastError(error.message || "Sync failed");
+      store.setLastError(error?.message || "Sync failed", buildErrorDetails(error));
       store.setStatus(SYNC_STATUS.ERROR);
     })
     .finally(() => {
@@ -563,7 +569,7 @@ export async function enqueueSyncOperation(operation) {
   const store = getStoreActions();
   if (!isOnline()) {
     store.setStatus(SYNC_STATUS.ERROR);
-    store.setLastError("Offline");
+    store.setLastError("Offline", { message: "Offline", code: "OFFLINE" });
     throw new Error("Offline");
   }
 

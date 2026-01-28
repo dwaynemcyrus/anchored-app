@@ -14,6 +14,7 @@ import {
 import { getUserId } from "../supabase/client";
 import { ensureIsoTimestamp, parseIsoTimestamp } from "../utils/timestamps";
 import { createConflictCopy } from "./conflictCopy";
+import { SYNC_STATUS, useSyncStore } from "../../store/syncStore";
 
 const LAST_SYNC_KEY = "last_sync_time";
 const UUID_PATTERN =
@@ -55,29 +56,50 @@ function buildLocalDoc(doc, bodyContent) {
 }
 
 export async function performInitialSync() {
-  const lastSyncTime =
-    (typeof window !== "undefined" && window.localStorage.getItem(LAST_SYNC_KEY)) ||
-    "1970-01-01";
+  const store = useSyncStore.getState();
+  store.setStatus(SYNC_STATUS.SYNCING);
+  store.clearError();
+  try {
+    const lastSyncTime =
+      (typeof window !== "undefined" && window.localStorage.getItem(LAST_SYNC_KEY)) ||
+      "1970-01-01";
 
-  const userId = await getUserId();
-  const repo = getDocumentsRepo();
+    const userId = await getUserId();
+    const repo = getDocumentsRepo();
 
-  await syncDocuments(lastSyncTime, repo);
-  await syncDocumentBodies(lastSyncTime, repo);
-  await pushUnsyncedDocuments(repo, userId);
-  await pushUnsyncedBodies(userId);
+    await syncDocuments(lastSyncTime, repo);
+    await syncDocumentBodies(lastSyncTime, repo);
+    await pushUnsyncedDocuments(repo, userId);
+    await pushUnsyncedBodies(userId);
 
-  const nowIso = new Date().toISOString();
-  if (typeof window !== "undefined") {
-    window.localStorage.setItem(LAST_SYNC_KEY, nowIso);
+    const nowIso = new Date().toISOString();
+    if (typeof window !== "undefined") {
+      window.localStorage.setItem(LAST_SYNC_KEY, nowIso);
+    }
+    await setSyncMeta("lastSyncedAt", nowIso);
+    store.setLastSyncedAt(nowIso);
+    store.setLastSuccessfulSyncAt(nowIso);
+    store.setStatus(SYNC_STATUS.SYNCED);
+  } catch (error) {
+    store.setStatus(SYNC_STATUS.ERROR);
+    store.setLastError(error?.message || "Initial sync failed", {
+      message: error?.message || "Initial sync failed",
+      details: error?.details ?? null,
+      hint: error?.hint ?? null,
+      code: error?.code ?? null,
+      stack: error?.stack ?? null,
+    });
+    throw error;
   }
-  await setSyncMeta("lastSyncedAt", nowIso);
 }
 
 export function resetLastSyncTime() {
   if (typeof window !== "undefined") {
     window.localStorage.removeItem(LAST_SYNC_KEY);
   }
+  const store = useSyncStore.getState();
+  store.setLastSyncedAt(null);
+  store.setLastSuccessfulSyncAt(null);
   return setSyncMeta("lastSyncedAt", null);
 }
 

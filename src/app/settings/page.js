@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { resetAllBuiltInTemplates } from "../../lib/templates";
-import { getQueueCount } from "../../lib/sync/syncQueue";
+import { getQueueStats } from "../../lib/sync/syncQueue";
 import { performInitialSync, resetLastSyncTime } from "../../lib/sync/initialSync";
 import { processSyncQueue } from "../../lib/sync/syncManager";
 import { useSyncStore } from "../../store/syncStore";
@@ -19,8 +19,12 @@ export default function SettingsPage() {
   const syncStatus = useSyncStore((state) => state.status);
   const pendingCount = useSyncStore((state) => state.pendingCount);
   const lastError = useSyncStore((state) => state.lastError);
+  const lastErrorDetails = useSyncStore((state) => state.lastErrorDetails);
+  const lastErrorAt = useSyncStore((state) => state.lastErrorAt);
   const lastSyncedAt = useSyncStore((state) => state.lastSyncedAt);
-  const [queueCount, setQueueCount] = useState(0);
+  const lastSuccessfulSyncAt = useSyncStore((state) => state.lastSuccessfulSyncAt);
+  const lastSuccessDisplay = lastSuccessfulSyncAt ?? lastSyncedAt;
+  const [queueStats, setQueueStats] = useState({ count: 0, retryCount: 0, maxRetry: 0 });
   const [userId, setUserId] = useState(null);
   const [clientId, setClientId] = useState(null);
   const [syncActionMessage, setSyncActionMessage] = useState(null);
@@ -28,15 +32,15 @@ export default function SettingsPage() {
 
   useEffect(() => {
     let active = true;
-    const loadQueueCount = async () => {
+    const loadQueueStats = async () => {
       try {
-        const count = await getQueueCount();
-        if (active) setQueueCount(count);
+        const stats = await getQueueStats();
+        if (active) setQueueStats(stats);
       } catch (error) {
-        console.error("Failed to load sync queue count", error);
+        console.error("Failed to load sync queue stats", error);
       }
     };
-    loadQueueCount();
+    loadQueueStats();
     return () => {
       active = false;
     };
@@ -67,6 +71,15 @@ export default function SettingsPage() {
     const date = new Date(value);
     if (Number.isNaN(date.getTime())) return "Unknown";
     return date.toLocaleString();
+  };
+
+  const formatErrorDetails = (details) => {
+    if (!details) return "None";
+    try {
+      return JSON.stringify(details, null, 2);
+    } catch {
+      return String(details);
+    }
   };
 
   const handleSyncNow = async () => {
@@ -210,11 +223,19 @@ export default function SettingsPage() {
                   Local sync queue size
                 </span>
               </div>
-              <span className={styles.cardItemArrow}>{queueCount}</span>
+              <span className={styles.cardItemArrow}>{queueStats.count}</span>
             </div>
             <div className={styles.cardItem}>
               <div className={styles.cardItemContent}>
-                <span className={styles.cardItemTitle}>Last Synced</span>
+                <span className={styles.cardItemTitle}>Last Successful Sync</span>
+                <span className={styles.cardItemDescription}>
+                  {formatTimestamp(lastSuccessDisplay)}
+                </span>
+              </div>
+            </div>
+            <div className={styles.cardItem}>
+              <div className={styles.cardItemContent}>
+                <span className={styles.cardItemTitle}>Last Pull (Synced At)</span>
                 <span className={styles.cardItemDescription}>
                   {formatTimestamp(lastSyncedAt)}
                 </span>
@@ -228,6 +249,40 @@ export default function SettingsPage() {
                 </span>
               </div>
             </div>
+            <div className={styles.cardItem}>
+              <div className={styles.cardItemContent}>
+                <span className={styles.cardItemTitle}>Last Error At</span>
+                <span className={styles.cardItemDescription}>
+                  {formatTimestamp(lastErrorAt)}
+                </span>
+              </div>
+            </div>
+            <div className={styles.cardItem}>
+              <div className={styles.cardItemContent}>
+                <span className={styles.cardItemTitle}>Retry Attempts</span>
+                <span className={styles.cardItemDescription}>
+                  Items with retries: {queueStats.retryCount}
+                </span>
+              </div>
+              <span className={styles.cardItemArrow}>
+                {queueStats.maxRetry ? `Max ${queueStats.maxRetry}` : "0"}
+              </span>
+            </div>
+            <div className={styles.cardItem}>
+              <div className={styles.cardItemContent}>
+                <span className={styles.cardItemTitle}>Last Error Details</span>
+                <span className={styles.cardItemDescription}>
+                  {lastErrorDetails ? "Expanded below" : "None"}
+                </span>
+              </div>
+            </div>
+            {lastErrorDetails ? (
+              <div className={styles.cardItemFull}>
+                <pre className={styles.preformatted}>
+                  {formatErrorDetails(lastErrorDetails)}
+                </pre>
+              </div>
+            ) : null}
             <div className={styles.cardItem}>
               <div className={styles.cardItemContent}>
                 <span className={styles.cardItemTitle}>User ID</span>

@@ -166,6 +166,20 @@ export async function getQueueCount() {
   });
 }
 
+export async function getQueueStats() {
+  const items = await listQueue();
+  const retryItems = items.filter((item) => (item.retry_count ?? 0) > 0);
+  const maxRetry = retryItems.reduce(
+    (max, item) => Math.max(max, item.retry_count ?? 0),
+    0
+  );
+  return {
+    count: items.length,
+    retryCount: retryItems.length,
+    maxRetry,
+  };
+}
+
 export async function setSyncMeta(key, value) {
   if (typeof key !== "string" || !key.trim()) {
     throw new Error("Sync meta key is required");
