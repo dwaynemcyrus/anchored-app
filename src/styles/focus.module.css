@@ -82,6 +82,14 @@
   margin-top: 8px;
 }
 
+.pauseSummary {
+  font-size: 12px;
+  color: rgba(246, 242, 234, 0.7);
+  margin-top: 6px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
 .timerActions {
   display: flex;
   gap: 12px;

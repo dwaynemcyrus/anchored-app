@@ -208,6 +208,7 @@ export default function FocusPage() {
 
   const selectionLabel = selection ? `${selection.label} · ${selection.type}` : "No selection";
   const pauseSegments = eventHistory.filter((event) => event.event_type === "pause");
+  const pauseCount = pauseSegments.length;
 
   return (
     <div className={styles.page}>
@@ -234,6 +235,11 @@ export default function FocusPage() {
           </div>
           {timerStatus === "paused" ? (
             <div className={styles.pauseBadge}>Paused</div>
+          ) : null}
+          {pauseCount > 0 ? (
+            <div className={styles.pauseSummary}>
+              Paused {pauseCount} {pauseCount === 1 ? "time" : "times"}
+            </div>
           ) : null}
           <div className={styles.timerActions}>
             {timerStatus === "running" ? (

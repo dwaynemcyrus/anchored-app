@@ -15,6 +15,7 @@ export default function LogbookPage() {
   const [documents, setDocuments] = useState([]);
   const [timeEntries, setTimeEntries] = useState([]);
   const [activitiesById, setActivitiesById] = useState({});
+  const [entityTitlesById, setEntityTitlesById] = useState({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [processing, setProcessing] = useState(null);
@@ -49,11 +50,24 @@ export default function LogbookPage() {
         listTimeEntries({ start, end, limit: 200 }),
         listActivities({ status: "active", limit: 200 }),
       ]);
+      const repo = getDocumentsRepo();
+      const docIds = (entries || [])
+        .filter((entry) => entry.entity_type !== "activity" && entry.entity_id)
+        .map((entry) => entry.entity_id);
+      const uniqueDocIds = Array.from(new Set(docIds));
+      const docs = await Promise.all(uniqueDocIds.map((id) => repo.get(id)));
+      const docTitleMap = docs.reduce((acc, doc) => {
+        if (doc) {
+          acc[doc.id] = deriveDocumentTitle(doc);
+        }
+        return acc;
+      }, {});
       const activityMap = activities.reduce((acc, activity) => {
         acc[activity.id] = activity;
         return acc;
       }, {});
       setActivitiesById(activityMap);
+      setEntityTitlesById(docTitleMap);
       setTimeEntries(entries || []);
     } catch (err) {
       console.error("Failed to load time entries:", err);
@@ -153,12 +167,15 @@ export default function LogbookPage() {
     if (entry.entity_type === "activity") {
       return activitiesById[entry.entity_id]?.name || "Activity";
     }
-    return entry.entity_type || "Item";
+    return entityTitlesById[entry.entity_id] || entry.entity_type || "Item";
   };
 
   const getEntrySubtitle = (entry) => {
     if (!entry) return "";
-    return entry.entity_id ? `ID · ${entry.entity_id.slice(0, 6)}` : "";
+    if (entry.entity_type === "activity") {
+      return "Saved activity";
+    }
+    return entry.entity_type ? entry.entity_type : "";
   };
 
   if (loading) {
