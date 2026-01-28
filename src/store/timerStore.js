@@ -12,6 +12,15 @@ import {
 import { scheduleSync } from "../lib/sync/syncManager";
 
 const CLIENT_ID = getClientId();
+const ACTIVE_POLL_MS = 12000;
+const IDLE_POLL_MS = 60000;
+let pollIntervalId = null;
+let pollIntervalMs = null;
+
+function isOnline() {
+  if (typeof window === "undefined") return false;
+  return navigator.onLine;
+}
 
 function buildActiveTimer({
   entryId,
@@ -21,6 +30,7 @@ function buildActiveTimer({
   startedAt,
   status = "running",
   note = null,
+  pausedAt = null,
 }) {
   return {
     entryId,
@@ -30,6 +40,7 @@ function buildActiveTimer({
     startedAt,
     status,
     note,
+    pausedAt,
     clientId: CLIENT_ID,
   };
 }
@@ -40,6 +51,56 @@ export const useTimerStore = create((set, get) => ({
   lastError: null,
   notice: null,
   hasHydrated: false,
+  pollingEnabled: false,
+  startPolling: () => {
+    if (typeof window === "undefined") return;
+    set({ pollingEnabled: true });
+    const ensurePolling = () => {
+      if (!get().pollingEnabled) return;
+      const desiredMs = get().status === "running" ? ACTIVE_POLL_MS : IDLE_POLL_MS;
+      if (pollIntervalId && pollIntervalMs === desiredMs) return;
+      if (pollIntervalId) {
+        window.clearInterval(pollIntervalId);
+      }
+      pollIntervalMs = desiredMs;
+      pollIntervalId = window.setInterval(async () => {
+        if (!isOnline()) return;
+        try {
+          await reconcileRunningTimer();
+        } catch (error) {
+          set({ lastError: error?.message || "Failed to reconcile timer" });
+        }
+      }, desiredMs);
+    };
+    ensurePolling();
+  },
+  stopPolling: () => {
+    set({ pollingEnabled: false });
+    if (typeof window === "undefined") return;
+    if (pollIntervalId) {
+      window.clearInterval(pollIntervalId);
+      pollIntervalId = null;
+      pollIntervalMs = null;
+    }
+  },
+  refreshPolling: () => {
+    if (typeof window === "undefined") return;
+    if (!get().pollingEnabled) return;
+    const desiredMs = get().status === "running" ? ACTIVE_POLL_MS : IDLE_POLL_MS;
+    if (pollIntervalId && pollIntervalMs === desiredMs) return;
+    if (pollIntervalId) {
+      window.clearInterval(pollIntervalId);
+    }
+    pollIntervalMs = desiredMs;
+    pollIntervalId = window.setInterval(async () => {
+      if (!isOnline()) return;
+      try {
+        await reconcileRunningTimer();
+      } catch (error) {
+        set({ lastError: error?.message || "Failed to reconcile timer" });
+      }
+    }, desiredMs);
+  },
   hydrate: async () => {
     if (get().hasHydrated) return;
     const activeTimer = await getActiveTimerMeta();
@@ -55,9 +116,11 @@ export const useTimerStore = create((set, get) => ({
     } catch (error) {
       set({ lastError: error?.message || "Failed to reconcile timer" });
     }
+    get().refreshPolling();
   },
   clearNotice: () => set({ notice: null }),
   startTimer: async ({ entityId, entityType, label, note }) => {
+    if (get().status === "running") return;
     const entryId = crypto.randomUUID();
     const startedAt = new Date().toISOString();
     const activeTimer = buildActiveTimer({
@@ -71,6 +134,7 @@ export const useTimerStore = create((set, get) => ({
     });
     set({ status: "running", activeTimer, lastError: null });
     await setActiveTimerMeta(activeTimer);
+    get().refreshPolling();
     try {
       await enqueueTimerStart({
         entryId,
@@ -90,10 +154,11 @@ export const useTimerStore = create((set, get) => ({
     const endedAt = new Date().toISOString();
     set({
       status: "paused",
-      activeTimer: { ...active, status: "paused", note: note ?? active.note },
+      activeTimer: { ...active, status: "paused", note: note ?? active.note, pausedAt: endedAt },
       lastError: null,
     });
-    await setActiveTimerMeta({ ...active, status: "paused", note: note ?? active.note });
+    await setActiveTimerMeta({ ...active, status: "paused", note: note ?? active.note, pausedAt: endedAt });
+    get().refreshPolling();
     try {
       await enqueueTimerStop({
         entryId: active.entryId,
@@ -119,9 +184,11 @@ export const useTimerStore = create((set, get) => ({
       startedAt,
       status: "running",
       note: note ?? active.note,
+      pausedAt: null,
     });
     set({ status: "running", activeTimer: nextTimer, lastError: null });
     await setActiveTimerMeta(nextTimer);
+    get().refreshPolling();
     try {
       await enqueueTimerStart({
         entryId,
@@ -141,6 +208,7 @@ export const useTimerStore = create((set, get) => ({
     const endedAt = new Date().toISOString();
     set({ status: "idle", activeTimer: null, lastError: null });
     await setActiveTimerMeta(null);
+    get().refreshPolling();
     try {
       await enqueueTimerStop({
         entryId: active.entryId,

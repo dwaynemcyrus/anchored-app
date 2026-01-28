@@ -16,6 +16,8 @@ export default function DocumentPickerModal({
   onCancel,
   excludeIds = [],
   title = "Select a document",
+  allowedTypes = [DOCUMENT_TYPE_NOTE],
+  excludeTypes = [DOCUMENT_TYPE_DAILY],
 }) {
   const inputRef = useRef(null);
   const [query, setQuery] = useState("");
@@ -39,15 +41,15 @@ export default function DocumentPickerModal({
       try {
         const repo = getDocumentsRepo();
         const docs = await repo.list({
-          type: DOCUMENT_TYPE_NOTE,
+          type: allowedTypes,
           limit: RECENTS_LIMIT + excludeIds.length,
           includeArchived: false,
         });
-        // Filter out excluded IDs, daily notes, and inbox items
+        // Filter out excluded IDs, excluded types, and inbox items
         const filtered = docs.filter(
           (doc) =>
             !excludeIds.includes(doc.id) &&
-            doc.type !== DOCUMENT_TYPE_DAILY &&
+            !excludeTypes.includes(doc.type) &&
             doc.inboxAt == null
         );
         setRecentDocs(filtered.slice(0, RECENTS_LIMIT));
@@ -63,7 +65,7 @@ export default function DocumentPickerModal({
     setTimeout(() => {
       inputRef.current?.focus();
     }, 100);
-  }, [isOpen, excludeIds]);
+  }, [allowedTypes, excludeIds, excludeTypes, isOpen]);
 
   // Search with debounce
   useEffect(() => {
@@ -85,18 +87,18 @@ export default function DocumentPickerModal({
       try {
         const repo = getDocumentsRepo();
         const docs = await repo.getSearchableDocs({
-          type: DOCUMENT_TYPE_NOTE,
+          type: allowedTypes,
           includeArchived: false,
         });
         ensureSearchIndex(docs);
         const results = searchDocuments(trimmedQuery, RESULTS_LIMIT);
-        // Filter out excluded IDs, daily notes, and inbox items
+        // Filter out excluded IDs, excluded types, and inbox items
         const docsById = new Map(docs.map((d) => [d.id, d]));
         const filtered = results.filter((doc) => {
           const fullDoc = docsById.get(doc.id);
           return (
             !excludeIds.includes(doc.id) &&
-            doc.type !== DOCUMENT_TYPE_DAILY &&
+            !excludeTypes.includes(doc.type) &&
             fullDoc?.inboxAt == null
           );
         });
@@ -114,7 +116,7 @@ export default function DocumentPickerModal({
         clearTimeout(searchDebounceRef.current);
       }
     };
-  }, [isOpen, query, excludeIds]);
+  }, [allowedTypes, excludeIds, excludeTypes, isOpen, query]);
 
   const isSearchMode = query.trim().length >= 2;
   const displayList = isSearchMode ? searchResults : recentDocs;
@@ -193,7 +195,7 @@ export default function DocumentPickerModal({
             ref={inputRef}
             type="text"
             className={styles.searchInput}
-            placeholder="Search notes..."
+            placeholder="Search documents..."
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             onKeyDown={handleKeyDown}

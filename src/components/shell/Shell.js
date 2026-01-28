@@ -10,6 +10,7 @@ import SyncToast from "./SyncToast";
 import AuthGate from "../auth/AuthGate";
 import { useEditorSettingsStore } from "../../store/editorSettingsStore";
 import { useDocumentsStore } from "../../store/documentsStore";
+import { useTimerStore } from "../../store/timerStore";
 import { getCaptureTemplate, createFromTemplate } from "../../lib/templates";
 import { performInitialSync } from "../../lib/sync/initialSync";
 import styles from "./Shell.module.css";
@@ -76,6 +77,21 @@ function FocusModeIcon() {
   );
 }
 
+function PlayIcon() {
+  return (
+    <svg
+      aria-hidden="true"
+      viewBox="0 0 24 24"
+      className={styles.icon}
+    >
+      <path
+        d="M7 5.5v13l11-6.5-11-6.5z"
+        fill="currentColor"
+      />
+    </svg>
+  );
+}
+
 function TextSizeIcon() {
   return (
     <svg
@@ -130,11 +146,22 @@ export default function Shell({ children }) {
   const createDocument = useDocumentsStore((state) => state.createDocument);
   const loadInboxCount = useDocumentsStore((state) => state.loadInboxCount);
   const incrementInboxVersion = useDocumentsStore((state) => state.incrementInboxVersion);
+  const hydrateTimer = useTimerStore((state) => state.hydrate);
+  const startTimerPolling = useTimerStore((state) => state.startPolling);
+  const stopTimerPolling = useTimerStore((state) => state.stopPolling);
   const isHome = pathname === "/";
   const isNoteEditorRoute =
     typeof pathname === "string" &&
     pathname.startsWith("/knowledge/notes/") &&
     pathname !== "/knowledge/notes";
+  const noteId = useMemo(() => {
+    if (!isNoteEditorRoute || typeof pathname !== "string") return null;
+    const parts = pathname.split("/").filter(Boolean);
+    return parts[parts.length - 1] || null;
+  }, [isNoteEditorRoute, pathname]);
+  const focusHref = noteId
+    ? `/focus?entityId=${noteId}&entityType=note`
+    : "/focus";
   const isPublicRoute = pathname === "/login" || pathname === "/debug/env";
 
   // Determine back link based on current route
@@ -173,6 +200,7 @@ export default function Shell({ children }) {
       { href: "/command", label: "Command" },
       { href: "/inbox", label: "Inbox" },
       { href: "/logbook", label: "Logbook" },
+      { href: "/focus", label: "Focus Timer" },
       { href: "/knowledge", label: "Knowledge" },
       { href: "/knowledge/notes", label: "Notes (v0)" },
       { href: "/strategy", label: "Strategy" },
@@ -192,10 +220,13 @@ export default function Shell({ children }) {
       if (!active) return;
       console.error("Initial sync failed", error);
     });
+    hydrateTimer();
+    startTimerPolling();
     return () => {
       active = false;
+      stopTimerPolling();
     };
-  }, [isPublicRoute]);
+  }, [hydrateTimer, isPublicRoute, startTimerPolling, stopTimerPolling]);
 
   useVisualViewportInsets(shellRootRef, contentScrollerRef);
 
@@ -565,6 +596,13 @@ export default function Shell({ children }) {
             </div>
             {isNoteEditorRoute ? (
               <div className={styles.headerActionsBottom}>
+                <Link
+                  href={focusHref}
+                  className={styles.headerButton}
+                  aria-label="Start timer in focus mode"
+                >
+                  <PlayIcon />
+                </Link>
                 <button
                   type="button"
                   className={`${styles.headerButton} ${
