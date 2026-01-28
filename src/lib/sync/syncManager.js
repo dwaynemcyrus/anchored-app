@@ -218,6 +218,42 @@ async function upsertLocalDocument(document) {
   });
 }
 
+async function enqueueDocumentUpsert(documentId, payload = null) {
+  if (!documentId) return;
+  await enqueueOperation({
+    table: "documents",
+    record_id: documentId,
+    operation: "upsert",
+    payload,
+    timestamp: new Date().toISOString(),
+    retry_count: 0,
+  });
+  await refreshPendingCount();
+  if (isOnline()) {
+    scheduleSync({ reason: "enqueue" });
+  } else {
+    getStoreActions().setStatus(SYNC_STATUS.OFFLINE);
+  }
+}
+
+async function enqueueBodyUpsert(documentId, payload = null) {
+  if (!documentId) return;
+  await enqueueOperation({
+    table: "document_bodies",
+    record_id: documentId,
+    operation: "upsert",
+    payload,
+    timestamp: new Date().toISOString(),
+    retry_count: 0,
+  });
+  await refreshPendingCount();
+  if (isOnline()) {
+    scheduleSync({ reason: "enqueue" });
+  } else {
+    getStoreActions().setStatus(SYNC_STATUS.OFFLINE);
+  }
+}
+
 export async function saveDocument(doc, content, options = {}) {
   if (!doc || typeof doc.id !== "string") {
     throw new Error("Document with id is required");
@@ -260,7 +296,10 @@ export async function saveDocument(doc, content, options = {}) {
   debouncedSaves.set(
     key,
     setTimeout(async () => {
-      await syncDocumentToSupabase(doc.id);
+      await enqueueDocumentUpsert(doc.id, doc);
+      if (shouldWriteBody && hasBody(doc.type)) {
+        await enqueueBodyUpsert(doc.id);
+      }
       debouncedSaves.delete(key);
     }, 800)
   );
@@ -283,8 +322,8 @@ export async function saveDocumentBody(documentId, content, options = {}) {
   debouncedSaves.set(
     key,
     setTimeout(async () => {
-      await syncBodyToSupabase(documentId);
-      await syncDocumentToSupabase(documentId);
+      await enqueueBodyUpsert(documentId);
+      await enqueueDocumentUpsert(documentId);
       debouncedSaves.delete(key);
     }, 800)
   );
@@ -459,16 +498,39 @@ export async function deleteDocument(documentId) {
   await repo.delete(documentId);
 
   try {
-    const client = getSupabaseClient();
-    const { error: docError } = await client
-      .from("documents")
-      .delete()
-      .eq("id", documentId);
-
-    if (docError) throw docError;
+    await enqueueOperation({
+      table: "document_bodies",
+      record_id: documentId,
+      operation: "delete",
+      payload: null,
+      timestamp: new Date().toISOString(),
+      retry_count: 0,
+    });
+    await enqueueOperation({
+      table: "documents",
+      record_id: documentId,
+      operation: "delete",
+      payload: null,
+      timestamp: new Date().toISOString(),
+      retry_count: 0,
+    });
+    await refreshPendingCount();
+    if (isOnline()) {
+      scheduleSync({ reason: "delete" });
+    } else {
+      getStoreActions().setStatus(SYNC_STATUS.OFFLINE);
+    }
   } catch (error) {
     console.error(`Delete failed for document:${documentId}`, error);
 
+    await enqueueOperation({
+      table: "document_bodies",
+      record_id: documentId,
+      operation: "delete",
+      payload: null,
+      timestamp: new Date().toISOString(),
+      retry_count: 0,
+    });
     await enqueueOperation({
       table: "documents",
       record_id: documentId,
@@ -567,19 +629,24 @@ export function scheduleSync({ reason } = {}) {
 export async function enqueueSyncOperation(operation) {
   if (!isBrowser()) return null;
   const store = getStoreActions();
-  if (!isOnline()) {
-    store.setStatus(SYNC_STATUS.ERROR);
-    store.setLastError("Offline", { message: "Offline", code: "OFFLINE" });
-    throw new Error("Offline");
-  }
-
   const documentId = operation?.documentId;
   if (!documentId) return null;
 
-  store.setStatus(SYNC_STATUS.SYNCING);
-  store.setLastError(null);
-  await syncDocumentToSupabase(documentId);
-  store.setStatus(SYNC_STATUS.SYNCED);
+  const operationType = operation?.type === "delete" ? "delete" : "upsert";
+  await enqueueOperation({
+    table: "documents",
+    record_id: documentId,
+    operation: operationType,
+    payload: operation?.payload ?? null,
+    timestamp: new Date().toISOString(),
+    retry_count: 0,
+  });
+  await refreshPendingCount();
+  if (isOnline()) {
+    scheduleSync({ reason: "enqueue" });
+  } else {
+    store.setStatus(SYNC_STATUS.OFFLINE);
+  }
   return operation;
 }
 
