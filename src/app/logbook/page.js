@@ -21,6 +21,7 @@ export default function LogbookPage() {
   const [confirmingId, setConfirmingId] = useState(null);
   const [confirmingTitle, setConfirmingTitle] = useState("");
   const [view, setView] = useState("trash");
+  const [tick, setTick] = useState(Date.now());
 
   const loadTrashed = useCallback(async () => {
     setLoading(true);
@@ -69,6 +70,12 @@ export default function LogbookPage() {
       loadTimeEntries();
     }
   }, [loadTimeEntries, loadTrashed, view]);
+
+  useEffect(() => {
+    if (view !== "time") return undefined;
+    const interval = window.setInterval(() => setTick(Date.now()), 1000);
+    return () => window.clearInterval(interval);
+  }, [view]);
 
   const handleRestore = async (id) => {
     if (processing) return;
@@ -124,13 +131,15 @@ export default function LogbookPage() {
     });
   };
 
-  const formatDuration = (durationMs, startedAt, endedAt) => {
-    const value =
-      typeof durationMs === "number" && durationMs >= 0
-        ? durationMs
-        : startedAt && endedAt
-          ? Math.max(0, new Date(endedAt).getTime() - new Date(startedAt).getTime())
-          : 0;
+  const formatDuration = (durationMs, startedAt, endedAt, isLive = false) => {
+    const fallback =
+      startedAt && endedAt
+        ? Math.max(0, new Date(endedAt).getTime() - new Date(startedAt).getTime())
+        : 0;
+    const base = typeof durationMs === "number" && durationMs >= 0 ? durationMs : fallback;
+    const value = isLive && startedAt
+      ? base + Math.max(0, tick - new Date(startedAt).getTime())
+      : base;
     const totalSeconds = Math.floor(value / 1000);
     const hours = Math.floor(totalSeconds / 3600);
     const minutes = Math.floor((totalSeconds % 3600) / 60);
@@ -406,7 +415,7 @@ export default function LogbookPage() {
                     </span>
                   </div>
                   <div className={styles.itemPreview}>
-                    Duration: {formatDuration(entry.duration_ms, entry.started_at, entry.ended_at)}
+                    Duration: {formatDuration(entry.duration_ms, entry.started_at, entry.ended_at, !entry.ended_at)}
                   </div>
                   {entry.note ? (
                     <div className={styles.itemPreview}>

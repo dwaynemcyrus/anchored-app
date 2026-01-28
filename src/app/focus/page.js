@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useTimerStore } from "../../store/timerStore";
 import { listActivities, createActivity } from "../../lib/supabase/activities";
+import { listTimeEntryEvents } from "../../lib/supabase/timeEntries";
 import DocumentPickerModal from "../../components/workbench/DocumentPickerModal";
 import { getDocumentsRepo } from "../../lib/repo/getDocumentsRepo";
 import { deriveDocumentTitle } from "../../lib/documents/deriveTitle";
@@ -56,6 +57,8 @@ export default function FocusPage() {
   const [selection, setSelection] = useState(null);
   const [note, setNote] = useState("");
   const [tick, setTick] = useState(Date.now());
+  const [eventHistory, setEventHistory] = useState([]);
+  const [showHistory, setShowHistory] = useState(false);
 
   const elapsedMs = useMemo(() => {
     if (!activeTimer) return 0;
@@ -111,6 +114,23 @@ export default function FocusPage() {
       });
     }
   }, [activeTimer]);
+
+  useEffect(() => {
+    if (!activeTimer?.entryId) return;
+    let active = true;
+    const loadEvents = async () => {
+      try {
+        const events = await listTimeEntryEvents({ entryId: activeTimer.entryId, limit: 200 });
+        if (active) setEventHistory(events || []);
+      } catch (error) {
+        console.error("Failed to load time entry events", error);
+      }
+    };
+    loadEvents();
+    return () => {
+      active = false;
+    };
+  }, [activeTimer?.entryId, timerStatus]);
 
   useEffect(() => {
     const entityId = searchParams.get("entityId");
@@ -187,6 +207,7 @@ export default function FocusPage() {
   };
 
   const selectionLabel = selection ? `${selection.label} · ${selection.type}` : "No selection";
+  const pauseSegments = eventHistory.filter((event) => event.event_type === "pause");
 
   return (
     <div className={styles.page}>
@@ -211,6 +232,9 @@ export default function FocusPage() {
           <div className={styles.timerStatus}>
             {timerStatus === "running" ? "Running" : timerStatus === "paused" ? "Paused" : "Idle"}
           </div>
+          {timerStatus === "paused" ? (
+            <div className={styles.pauseBadge}>Paused</div>
+          ) : null}
           <div className={styles.timerActions}>
             {timerStatus === "running" ? (
               <>
@@ -331,6 +355,29 @@ export default function FocusPage() {
               placeholder="Add context for this time block..."
             />
           </div>
+          {pauseSegments.length > 0 ? (
+            <div className={styles.historyBlock}>
+              <button
+                type="button"
+                className={styles.historyToggle}
+                onClick={() => setShowHistory((prev) => !prev)}
+              >
+                {showHistory ? "Hide pause/resume history" : "Show pause/resume history"}
+              </button>
+              {showHistory ? (
+                <div className={styles.historyList}>
+                  {eventHistory.map((event) => (
+                    <div key={event.id} className={styles.historyRow}>
+                      <span className={styles.historyType}>{event.event_type}</span>
+                      <span className={styles.historyTime}>
+                        {new Date(event.event_time).toLocaleString()}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              ) : null}
+            </div>
+          ) : null}
         </section>
 
         {lastError ? <div className={styles.errorBanner}>{lastError}</div> : null}

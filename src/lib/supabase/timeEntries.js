@@ -1,6 +1,7 @@
 import { getSupabaseClient, getUserId } from "./client";
 
 const TIME_ENTRIES_TABLE = "time_entries";
+const TIME_ENTRY_EVENTS_TABLE = "time_entry_events";
 const UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -53,6 +54,54 @@ export async function listTimeEntries({
   }
 
   const response = await query;
+  return unwrapResponse(response);
+}
+
+export async function listTimeEntryEvents({ entryId, limit = 200 } = {}) {
+  if (typeof entryId !== "string" || !UUID_PATTERN.test(entryId)) {
+    throw new Error("Time entry id must be a UUID");
+  }
+  const client = getSupabaseClient();
+  const userId = await getUserId();
+  let query = client
+    .from(TIME_ENTRY_EVENTS_TABLE)
+    .select("*")
+    .eq("user_id", userId)
+    .eq("time_entry_id", entryId)
+    .order("event_time", { ascending: true });
+
+  if (limit) {
+    query = query.limit(limit);
+  }
+
+  const response = await query;
+  return unwrapResponse(response);
+}
+
+export async function createTimeEntryEvent({
+  entryId,
+  eventType,
+  eventTime = new Date().toISOString(),
+} = {}) {
+  if (typeof entryId !== "string" || !UUID_PATTERN.test(entryId)) {
+    throw new Error("Time entry id must be a UUID");
+  }
+  if (typeof eventType !== "string" || !eventType.trim()) {
+    throw new Error("Event type is required");
+  }
+  const client = getSupabaseClient();
+  const userId = await getUserId();
+  const response = await client
+    .from(TIME_ENTRY_EVENTS_TABLE)
+    .insert({
+      user_id: userId,
+      time_entry_id: entryId,
+      event_type: eventType.trim(),
+      event_time: toIsoTimestamp(eventTime),
+    })
+    .select("*")
+    .single();
+
   return unwrapResponse(response);
 }
 

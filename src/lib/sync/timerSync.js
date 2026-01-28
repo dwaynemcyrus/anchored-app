@@ -74,6 +74,19 @@ export async function enqueueTimerStart({
     timestamp: startedAt,
     retry_count: 0,
   });
+  await enqueueOperation({
+    table: "time_entry_events",
+    record_id: eventId,
+    operation: "insert",
+    payload: {
+      id: eventId,
+      time_entry_id: entryId,
+      event_type: "start",
+      event_time: startedAt,
+    },
+    timestamp: startedAt,
+    retry_count: 0,
+  });
   return event;
 }
 
@@ -109,6 +122,19 @@ export async function enqueueTimerStop({
     timestamp: endedAt,
     retry_count: 0,
   });
+  await enqueueOperation({
+    table: "time_entry_events",
+    record_id: eventId,
+    operation: "insert",
+    payload: {
+      id: eventId,
+      time_entry_id: entryId,
+      event_type: eventType,
+      event_time: endedAt,
+    },
+    timestamp: endedAt,
+    retry_count: 0,
+  });
   return event;
 }
 
@@ -134,6 +160,19 @@ export async function enqueueTimerResume({
     payload: {
       event_id: eventId,
       id: entryId,
+    },
+    timestamp: resumedAt,
+    retry_count: 0,
+  });
+  await enqueueOperation({
+    table: "time_entry_events",
+    record_id: eventId,
+    operation: "insert",
+    payload: {
+      id: eventId,
+      time_entry_id: entryId,
+      event_type: "resume",
+      event_time: resumedAt,
     },
     timestamp: resumedAt,
     retry_count: 0,

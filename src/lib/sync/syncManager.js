@@ -13,7 +13,12 @@ import {
   upsertDocument,
   upsertDocumentBody,
 } from "../supabase/documents";
-import { startTimeEntry, stopTimeEntry, resumeTimeEntry } from "../supabase/timeEntries";
+import {
+  startTimeEntry,
+  stopTimeEntry,
+  resumeTimeEntry,
+  createTimeEntryEvent,
+} from "../supabase/timeEntries";
 import { markTimerEventFailed, markTimerEventSynced } from "./timerSync";
 import {
   enqueueOperation,
@@ -669,6 +674,20 @@ export async function processSyncQueue() {
             await markTimerEventSynced(payload.event_id, data?.updated_at);
           }
         }
+        await removeOperation(item.id);
+        continue;
+      }
+      if (item.table === "time_entry_events") {
+        const payload = item.payload || {};
+        if (!payload.time_entry_id || !isUuid(payload.time_entry_id)) {
+          await removeOperation(item.id);
+          continue;
+        }
+        await createTimeEntryEvent({
+          entryId: payload.time_entry_id,
+          eventType: payload.event_type,
+          eventTime: payload.event_time,
+        });
         await removeOperation(item.id);
         continue;
       }

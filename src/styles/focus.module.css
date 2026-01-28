@@ -70,6 +70,18 @@
   color: rgba(246, 242, 234, 0.7);
 }
 
+.pauseBadge {
+  background: rgba(246, 242, 234, 0.12);
+  border: 1px solid rgba(246, 242, 234, 0.2);
+  color: #f6f2ea;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.2em;
+  padding: 6px 14px;
+  border-radius: 999px;
+  margin-top: 8px;
+}
+
 .timerActions {
   display: flex;
   gap: 12px;
@@ -229,6 +241,54 @@
   min-height: 96px;
   font-size: 14px;
   background: #fff;
+}
+
+.historyBlock {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.historyToggle {
+  border: none;
+  background: transparent;
+  color: #6a5d52;
+  font-size: 13px;
+  font-weight: 600;
+  text-align: left;
+  padding: 0;
+  cursor: pointer;
+}
+
+.historyList {
+  border: 1px solid rgba(20, 17, 15, 0.1);
+  border-radius: 12px;
+  padding: 12px;
+  background: #fff;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.historyRow {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 13px;
+  color: #3b342c;
+}
+
+.historyType {
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  font-size: 11px;
+  color: #6a5d52;
+}
+
+.historyTime {
+  color: #3b342c;
 }
 
 .errorBanner,
