@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
+import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { getDocumentsRepo } from "@/lib/repo/getDocumentsRepo";
 import { useTodayNote } from "@/hooks/useTodayNote";
@@ -21,6 +22,7 @@ function formatDisplayDate(dateString) {
 }
 
 export default function NowView() {
+  const router = useRouter();
   const { openToday, todayDateString, loading: todayLoading, error: todayError } = useTodayNote();
   const {
     pinnedIds,
@@ -49,6 +51,31 @@ export default function NowView() {
     setToast({ message, isError });
     setTimeout(() => setToast(null), 3000);
   }, []);
+
+  const handleLinkClick = useCallback(
+    (event, href) => {
+      if (!href) return;
+      if (event.defaultPrevented) return;
+      if (event.button !== 0) return;
+      if (event.metaKey || event.altKey || event.ctrlKey || event.shiftKey) return;
+
+      const targetUrl = new URL(href, window.location.origin);
+      const targetPath = `${targetUrl.pathname}${targetUrl.search}${targetUrl.hash}`;
+      const currentPath = `${window.location.pathname}${window.location.search}${window.location.hash}`;
+      if (targetPath === currentPath) return;
+
+      event.preventDefault();
+      router.push(targetPath);
+
+      window.setTimeout(() => {
+        const nextPath = `${window.location.pathname}${window.location.search}${window.location.hash}`;
+        if (nextPath === currentPath) {
+          window.location.assign(targetPath);
+        }
+      }, 300);
+    },
+    [router]
+  );
 
   // Hydrate workbench on mount
   useEffect(() => {
@@ -203,7 +230,12 @@ export default function NowView() {
         {/* Section B: Inbox */}
         <section className={styles.section}>
           <h2 className={styles.sectionTitle}>Inbox</h2>
-          <Link href="/inbox" prefetch={false} className={styles.actionCard}>
+          <Link
+            href="/inbox"
+            prefetch={false}
+            className={styles.actionCard}
+            onClick={(event) => handleLinkClick(event, "/inbox")}
+          >
             <div className={styles.actionCardContent}>
               <span className={styles.actionCardTitle}>Process Inbox</span>
               <span className={styles.actionCardDescription}>
@@ -242,6 +274,7 @@ export default function NowView() {
                     href={`/knowledge/notes/${doc.id}`}
                     prefetch={false}
                     className={styles.workbenchItemLink}
+                    onClick={(event) => handleLinkClick(event, `/knowledge/notes/${doc.id}`)}
                   >
                     <span className={styles.workbenchItemTitle}>
                       {deriveDocumentTitle(doc)}

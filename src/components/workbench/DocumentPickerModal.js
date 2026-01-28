@@ -9,15 +9,18 @@ import styles from "./DocumentPickerModal.module.css";
 const SEARCH_DEBOUNCE_MS = 200;
 const RESULTS_LIMIT = 12;
 const RECENTS_LIMIT = 8;
+const DEFAULT_ALLOWED_TYPES = [DOCUMENT_TYPE_NOTE];
+const DEFAULT_EXCLUDE_TYPES = [DOCUMENT_TYPE_DAILY];
+const DEFAULT_EXCLUDE_IDS = [];
 
 export default function DocumentPickerModal({
   isOpen,
   onSelect,
   onCancel,
-  excludeIds = [],
+  excludeIds = DEFAULT_EXCLUDE_IDS,
   title = "Select a document",
-  allowedTypes = [DOCUMENT_TYPE_NOTE],
-  excludeTypes = [DOCUMENT_TYPE_DAILY],
+  allowedTypes = DEFAULT_ALLOWED_TYPES,
+  excludeTypes = DEFAULT_EXCLUDE_TYPES,
 }) {
   const inputRef = useRef(null);
   const [query, setQuery] = useState("");

@@ -473,6 +473,35 @@ export default function Shell({ children }) {
     setMenuOpen(false);
   };
 
+  const handleMenuLinkClick = useCallback(
+    (event, href) => {
+      if (!href) return;
+      if (event.defaultPrevented) return;
+      if (event.button !== 0) return;
+      if (event.metaKey || event.altKey || event.ctrlKey || event.shiftKey) return;
+
+      const targetUrl = new URL(href, window.location.origin);
+      const targetPath = `${targetUrl.pathname}${targetUrl.search}${targetUrl.hash}`;
+      const currentPath = `${window.location.pathname}${window.location.search}${window.location.hash}`;
+      if (targetPath === currentPath) {
+        setMenuOpen(false);
+        return;
+      }
+
+      event.preventDefault();
+      setMenuOpen(false);
+      router.push(targetPath);
+
+      window.setTimeout(() => {
+        const nextPath = `${window.location.pathname}${window.location.search}${window.location.hash}`;
+        if (nextPath === currentPath) {
+          window.location.assign(targetPath);
+        }
+      }, 300);
+    },
+    [router]
+  );
+
   const handleTouchStart = (event) => {
     if (captureOpen) return;
     const touch = event.touches[0];
@@ -695,7 +724,7 @@ export default function Shell({ children }) {
                   key={link.href}
                   href={link.href}
                   className={styles.menuLink}
-                  onClick={() => setMenuOpen(false)}
+                  onClick={(event) => handleMenuLinkClick(event, link.href)}
                 >
                   {link.label}
                 </Link>
