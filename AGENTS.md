@@ -13,13 +13,13 @@ Build deliberately. Prefer clarity over speed. Ship small, reviewable changes.
 - Work in small, safe chunks.
 - Prefer 1–4 files per chunk.
 - Never invent APIs or frameworks.
-- Never silently change scope.
+- Never silently change scope, ask first
 
 ## Stack Expectations (must verify)
 - Frontend-first PWA
 - Next.js-based architecture
 - Deployed via Vercel
-- Supabase may be introduced later but is not assumed
+- Supabase
 
 ## Allowed Tools / Skills
 - git
@@ -32,7 +32,7 @@ Build deliberately. Prefer clarity over speed. Ship small, reviewable changes.
 ## Forbidden Actions
 - No Tailwind
 - No shadcn/ui
-- No new services or frameworks unless explicitly requested
+- No silent new services or frameworks, ask first
 - No production configuration or billing changes
 - No silent database schema changes
 - No speculative abstractions “for later”
@@ -41,10 +41,7 @@ Build deliberately. Prefer clarity over speed. Ship small, reviewable changes.
 Verification is not optional.
 
 Rules:
-- Do NOT add new test frameworks.
-- Do NOT invent tests if none exist.
 - Detect scripts from package.json.
-- Do NOT invent scripts.
 
 After any chunk that touches:
 - logic
@@ -55,7 +52,7 @@ After any chunk that touches:
 You must run (if available):
 1) typecheck (or build if typecheck does not exist)
 2) lint
-3) existing tests (only if already present)
+3) existing tests or create new tests
 
 After UI-only chunks:
 - At minimum: typecheck or build
@@ -92,6 +89,7 @@ Each chunk must include:
   - ≤ 48 characters
   - lowercase
   - conventional-commit style
+  - commit type
 
 Stop after planning.
 
@@ -99,7 +97,7 @@ Stop after planning.
 - Execute chunks sequentially.
 - After each chunk:
   - report verification result
-  - restate commit message
+  - restate commit message with type
   - declare chunk complete
 
 Wait for explicit user instruction before proceeding to the next chunk if instructed.

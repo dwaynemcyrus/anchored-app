@@ -10,11 +10,13 @@ Stabilize sync across devices by enforcing a single write path, reliable queue p
 - Prevent invalid local-only records (non-UUID IDs) from hitting Supabase.
 - Local cache (IndexedDB) and Supabase schemas aligned and enforced.
 - Use polling (every 60s) instead of realtime subscriptions.
+- Timers stay in near-real-time sync (seconds), even across devices, without blocking offline actions.
 
 ## Non-goals
 - Advanced background sync / service worker queueing.
 - Full multi-user or sharing features.
 - Schema evolution beyond required sync fields.
+- Exact sub-second timer precision.
 
 ## Current System Map (Reviewed)
 **Local cache**
@@ -39,6 +41,7 @@ Stabilize sync across devices by enforcing a single write path, reliable queue p
 - Queue retries with limited observability.
 - Non-UUID local documents (templates) causing Supabase errors.
 - Divergent merge logic between initial sync, realtime sync, and manual edits.
+- Timer drift or conflicts when multiple devices update a timer concurrently.
 
 ## Stabilization Plan
 
@@ -126,14 +129,54 @@ Acceptance:
 - No 400 errors from invalid IDs.
 - All inserts/updates include required fields.
 
+### Phase 6 — Timer Authority & Sync Policy
+**Goal**: Keep timers consistent within seconds across devices while preserving offline use.
+
+Policy:
+- Server-authoritative timeline for timers.
+- Client UI is optimistic and local-first, but reconciles to server order when available.
+- All timer changes are event-sourced and sent through the queue.
+
+Event model (minimum fields):
+- `event_id` (UUID)
+- `timer_id` (UUID)
+- `client_id`
+- `client_time` (ISO)
+- `server_time` (set on sync)
+- `event_type` (start/pause/resume/stop/set_duration)
+- `sequence` (optional per-timer ordering)
+
+Concurrency rules:
+- Lease the active timer session to one device while it is running.
+- If another device edits during a lease, treat as conflict unless it explicitly takes over.
+- Order by `server_time` when available; if two events are within 2-3s, prefer a conflict copy or explicit takeover.
+
+Offline rules:
+- Never block timer actions offline.
+- Log events locally and apply immediately to UI.
+- On reconnect, sync events and rebase local timeline to server order.
+- If the timeline changes after reconciliation, surface a "synced update" notice.
+
+Polling cadence:
+- Active timer: poll every 10-15s.
+- Idle/no active timers: poll every 60s.
+
+Affected files (likely):
+- `src/lib/sync/syncManager.js`
+- `src/lib/sync/syncQueue.js`
+- `src/app/settings/page.js`
+
 ## Validation Checklist
 - Create note offline → go online → note appears in Supabase.
 - Edit title/body on device A → device B receives update.
 - Delete note → removed in Supabase and on all devices.
 - Create conflict scenario → conflict copy created locally.
 - Initial sync on a fresh device pulls all data without errors.
+- Start a timer on device A → device B reflects within seconds.
+- Pause/resume timer on device B → device A reflects within seconds.
+- Create conflicting timer edits within 2-3s → conflict or takeover rule applies.
 
 ## Notes
-- Realtime subscriptions are out of scope for stabilization; polling (60s) plus manual “Sync Now” is the source of truth.
+- Realtime subscriptions are out of scope for stabilization; polling plus manual “Sync Now” is the source of truth.
 - Local cache hygiene depends on IndexedDB migrations (`DB_VERSION`) and body store consistency.
 - Build/verify steps: `npm run build`, `npm run lint`.
