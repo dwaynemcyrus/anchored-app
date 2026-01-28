@@ -25,6 +25,30 @@
   gap: 16px;
 }
 
+.segmentedControl {
+  display: flex;
+  gap: 8px;
+  background: rgba(20, 17, 15, 0.06);
+  padding: 4px;
+  border-radius: 999px;
+}
+
+.segmentButton {
+  border: none;
+  background: transparent;
+  color: #5a4f45;
+  padding: 6px 14px;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.segmentButtonActive {
+  background: #14110f;
+  color: #f6f2ea;
+}
+
 .headerLeft {
   display: flex;
   align-items: center;

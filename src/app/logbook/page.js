@@ -6,16 +6,21 @@ import Link from "next/link";
 import { getDocumentsRepo } from "@/lib/repo/getDocumentsRepo";
 import { deriveDocumentTitle } from "@/lib/documents/deriveTitle";
 import { deleteDocument } from "@/lib/sync/syncManager";
+import { listTimeEntries } from "@/lib/supabase/timeEntries";
+import { listActivities } from "@/lib/supabase/activities";
 import styles from "../../styles/logbook.module.css";
 
 export default function LogbookPage() {
   const router = useRouter();
   const [documents, setDocuments] = useState([]);
+  const [timeEntries, setTimeEntries] = useState([]);
+  const [activitiesById, setActivitiesById] = useState({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [processing, setProcessing] = useState(null);
   const [confirmingId, setConfirmingId] = useState(null);
   const [confirmingTitle, setConfirmingTitle] = useState("");
+  const [view, setView] = useState("trash");
 
   const loadTrashed = useCallback(async () => {
     setLoading(true);
@@ -32,9 +37,38 @@ export default function LogbookPage() {
     }
   }, []);
 
+  const loadTimeEntries = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const end = new Date();
+      const start = new Date();
+      start.setDate(end.getDate() - 7);
+      const [entries, activities] = await Promise.all([
+        listTimeEntries({ start, end, limit: 200 }),
+        listActivities({ status: "active", limit: 200 }),
+      ]);
+      const activityMap = activities.reduce((acc, activity) => {
+        acc[activity.id] = activity;
+        return acc;
+      }, {});
+      setActivitiesById(activityMap);
+      setTimeEntries(entries || []);
+    } catch (err) {
+      console.error("Failed to load time entries:", err);
+      setError(err.message || "Failed to load time entries");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
-    loadTrashed();
-  }, [loadTrashed]);
+    if (view === "trash") {
+      loadTrashed();
+    } else {
+      loadTimeEntries();
+    }
+  }, [loadTimeEntries, loadTrashed, view]);
 
   const handleRestore = async (id) => {
     if (processing) return;
@@ -90,6 +124,34 @@ export default function LogbookPage() {
     });
   };
 
+  const formatDuration = (durationMs, startedAt, endedAt) => {
+    const value =
+      typeof durationMs === "number" && durationMs >= 0
+        ? durationMs
+        : startedAt && endedAt
+          ? Math.max(0, new Date(endedAt).getTime() - new Date(startedAt).getTime())
+          : 0;
+    const totalSeconds = Math.floor(value / 1000);
+    const hours = Math.floor(totalSeconds / 3600);
+    const minutes = Math.floor((totalSeconds % 3600) / 60);
+    const seconds = totalSeconds % 60;
+    const pad = (num) => String(num).padStart(2, "0");
+    return hours > 0 ? `${pad(hours)}:${pad(minutes)}:${pad(seconds)}` : `${pad(minutes)}:${pad(seconds)}`;
+  };
+
+  const getEntryLabel = (entry) => {
+    if (!entry) return "Untitled";
+    if (entry.entity_type === "activity") {
+      return activitiesById[entry.entity_id]?.name || "Activity";
+    }
+    return entry.entity_type || "Item";
+  };
+
+  const getEntrySubtitle = (entry) => {
+    if (!entry) return "";
+    return entry.entity_id ? `ID · ${entry.entity_id.slice(0, 6)}` : "";
+  };
+
   if (loading) {
     return (
       <div className={styles.page}>
@@ -142,7 +204,7 @@ export default function LogbookPage() {
     );
   }
 
-  if (documents.length === 0) {
+  if (view === "trash" && documents.length === 0) {
     return (
       <div className={styles.page}>
         <main className={styles.main}>
@@ -157,6 +219,26 @@ export default function LogbookPage() {
               </button>
               <h1 className={styles.title}>Logbook</h1>
             </div>
+            <div className={styles.segmentedControl}>
+              <button
+                type="button"
+                className={`${styles.segmentButton} ${
+                  view === "trash" ? styles.segmentButtonActive : ""
+                }`}
+                onClick={() => setView("trash")}
+              >
+                Trash
+              </button>
+              <button
+                type="button"
+                className={`${styles.segmentButton} ${
+                  view === "time" ? styles.segmentButtonActive : ""
+                }`}
+                onClick={() => setView("time")}
+              >
+                Time Logs
+              </button>
+            </div>
           </header>
           <div className={styles.emptyState}>
             <div className={styles.emptyIcon}>&#128465;</div>
@@ -166,6 +248,57 @@ export default function LogbookPage() {
             </div>
             <Link href="/" className={styles.emptyAction}>
               Back to Home
+            </Link>
+          </div>
+        </main>
+      </div>
+    );
+  }
+
+  if (view === "time" && timeEntries.length === 0) {
+    return (
+      <div className={styles.page}>
+        <main className={styles.main}>
+          <header className={styles.header}>
+            <div className={styles.headerLeft}>
+              <button
+                className={styles.backButton}
+                onClick={() => router.back()}
+                aria-label="Go back"
+              >
+                &larr;
+              </button>
+              <h1 className={styles.title}>Logbook</h1>
+            </div>
+            <div className={styles.segmentedControl}>
+              <button
+                type="button"
+                className={`${styles.segmentButton} ${
+                  view === "trash" ? styles.segmentButtonActive : ""
+                }`}
+                onClick={() => setView("trash")}
+              >
+                Trash
+              </button>
+              <button
+                type="button"
+                className={`${styles.segmentButton} ${
+                  view === "time" ? styles.segmentButtonActive : ""
+                }`}
+                onClick={() => setView("time")}
+              >
+                Time Logs
+              </button>
+            </div>
+          </header>
+          <div className={styles.emptyState}>
+            <div className={styles.emptyIcon}>&#9201;</div>
+            <div className={styles.emptyTitle}>No time logs</div>
+            <div className={styles.emptyDescription}>
+              Start a timer to create your first entry.
+            </div>
+            <Link href="/focus" className={styles.emptyAction}>
+              Start a timer
             </Link>
           </div>
         </main>
@@ -187,52 +320,104 @@ export default function LogbookPage() {
             </button>
             <h1 className={styles.title}>Logbook</h1>
           </div>
-          <div className={styles.count}>{documents.length} trashed</div>
+          <div className={styles.segmentedControl}>
+            <button
+              type="button"
+              className={`${styles.segmentButton} ${
+                view === "trash" ? styles.segmentButtonActive : ""
+              }`}
+              onClick={() => setView("trash")}
+            >
+              Trash
+            </button>
+            <button
+              type="button"
+              className={`${styles.segmentButton} ${
+                view === "time" ? styles.segmentButtonActive : ""
+              }`}
+              onClick={() => setView("time")}
+            >
+              Time Logs
+            </button>
+          </div>
+          <div className={styles.count}>
+            {view === "trash" ? `${documents.length} trashed` : `${timeEntries.length} entries`}
+          </div>
         </header>
 
-        <ul className={styles.list}>
-          {documents.map((doc) => {
-            const title = deriveDocumentTitle(doc);
-            const isProcessing = processing === doc.id;
-            return (
-              <li key={doc.id} className={styles.listItem}>
+        {view === "trash" ? (
+          <ul className={styles.list}>
+            {documents.map((doc) => {
+              const title = deriveDocumentTitle(doc);
+              const isProcessing = processing === doc.id;
+              return (
+                <li key={doc.id} className={styles.listItem}>
+                  <div className={styles.itemContent}>
+                    <div className={styles.itemHeader}>
+                      <span className={styles.itemTitle}>{title}</span>
+                      <span className={styles.itemMeta}>
+                        <span className={styles.itemType}>{doc.type}</span>
+                        <span className={styles.itemDate}>
+                          {formatDate(doc.deletedAt)}
+                        </span>
+                      </span>
+                    </div>
+                    {doc.body && (
+                      <div className={styles.itemPreview}>
+                        {doc.body.slice(0, 100)}
+                        {doc.body.length > 100 ? "..." : ""}
+                      </div>
+                    )}
+                  </div>
+                  <div className={styles.itemActions}>
+                    <button
+                      className={styles.restoreButton}
+                      onClick={() => handleRestore(doc.id)}
+                      disabled={isProcessing}
+                    >
+                      Restore
+                    </button>
+                    <button
+                      className={styles.deleteButton}
+                      onClick={() => openDeleteConfirm(doc)}
+                      disabled={isProcessing}
+                    >
+                      Delete
+                    </button>
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
+        ) : (
+          <ul className={styles.list}>
+            {timeEntries.map((entry) => (
+              <li key={entry.id} className={styles.listItem}>
                 <div className={styles.itemContent}>
                   <div className={styles.itemHeader}>
-                    <span className={styles.itemTitle}>{title}</span>
+                    <span className={styles.itemTitle}>{getEntryLabel(entry)}</span>
                     <span className={styles.itemMeta}>
-                      <span className={styles.itemType}>{doc.type}</span>
+                      <span className={styles.itemType}>
+                        {getEntrySubtitle(entry) || entry.entity_type}
+                      </span>
                       <span className={styles.itemDate}>
-                        {formatDate(doc.deletedAt)}
+                        {formatDate(entry.started_at)}
                       </span>
                     </span>
                   </div>
-                  {doc.body && (
+                  <div className={styles.itemPreview}>
+                    Duration: {formatDuration(entry.duration_ms, entry.started_at, entry.ended_at)}
+                  </div>
+                  {entry.note ? (
                     <div className={styles.itemPreview}>
-                      {doc.body.slice(0, 100)}
-                      {doc.body.length > 100 ? "..." : ""}
+                      {entry.note}
                     </div>
-                  )}
-                </div>
-                <div className={styles.itemActions}>
-                  <button
-                    className={styles.restoreButton}
-                    onClick={() => handleRestore(doc.id)}
-                    disabled={isProcessing}
-                  >
-                    Restore
-                  </button>
-                  <button
-                    className={styles.deleteButton}
-                    onClick={() => openDeleteConfirm(doc)}
-                    disabled={isProcessing}
-                  >
-                    Delete
-                  </button>
+                  ) : null}
                 </div>
               </li>
-            );
-          })}
-        </ul>
+            ))}
+          </ul>
+        )}
       </main>
       {confirmingId ? (
         <div className={styles.modalBackdrop} role="presentation">
