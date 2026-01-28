@@ -8,10 +8,11 @@ import { getDocumentBody } from "../db/documentBodies";
 import { getSupabaseClient, getUserId } from "../supabase/client";
 import {
   fetchDocumentBody,
+  fetchDocumentsUpdatedSince,
+  fetchDocumentBodiesByIds,
   upsertDocument,
   upsertDocumentBody,
 } from "../supabase/documents";
-import { createConflictCopy } from "./conflictCopy";
 import {
   enqueueOperation,
   computeBackoffMs,
@@ -26,6 +27,7 @@ import {
 import { useSyncStore, SYNC_STATUS } from "../../store/syncStore";
 import { getClientId } from "../clientId";
 import { ensureIsoTimestamp, parseIsoTimestamp } from "../utils/timestamps";
+import { createConflictCopy } from "./conflictCopy";
 
 const META_LAST_SYNCED_AT = "lastSyncedAt";
 const CLIENT_ID = getClientId();
@@ -165,6 +167,11 @@ const BODY_TYPES = new Set([
 function hasBody(type) {
   if (!type) return true;
   return BODY_TYPES.has(type);
+}
+
+function getLocalUpdatedAtMs(localDoc) {
+  if (!localDoc) return 0;
+  return parseIsoTimestamp(localDoc.updated_at, localDoc.updatedAt) ?? 0;
 }
 
 async function patchLocalRecord(storeName, id, patch) {
@@ -462,6 +469,53 @@ async function handleBodyConflict(documentId, localBody, remoteBody) {
   });
 }
 
+async function syncRemoteUpdates() {
+  const lastSyncedAt = await getSyncMeta(META_LAST_SYNCED_AT);
+  const remoteDocs = await fetchDocumentsUpdatedSince({ since: lastSyncedAt });
+  if (!remoteDocs || remoteDocs.length === 0) return;
+
+  const repo = getDocumentsRepo();
+  const ids = remoteDocs.map((doc) => doc.id).filter((id) => isUuid(id));
+  const bodies = await fetchDocumentBodiesByIds(ids);
+  const bodiesById = new Map(
+    bodies.map((body) => [body.document_id, body])
+  );
+
+  let maxUpdatedAt = Date.parse(lastSyncedAt || "") || 0;
+
+  for (const remoteDoc of remoteDocs) {
+    if (!isUuid(remoteDoc.id)) continue;
+    const bodyRecord = bodiesById.get(remoteDoc.id) || null;
+    const bodyContent = bodyRecord?.content ?? "";
+    const remoteUpdatedMs = parseIsoToMs(remoteDoc.updated_at) ?? 0;
+    maxUpdatedAt = Math.max(maxUpdatedAt, remoteUpdatedMs);
+    const localDoc = await repo.get(remoteDoc.id);
+
+    if (!localDoc) {
+      await applyRemoteDocument(remoteDoc, bodyContent);
+      continue;
+    }
+
+    const localDirty = localDoc.syncedAt == null;
+    const localUpdatedAt = getLocalUpdatedAtMs(localDoc);
+
+    if (localDirty && remoteUpdatedMs > localUpdatedAt) {
+      await handleDocumentConflict(localDoc, remoteDoc);
+      continue;
+    }
+
+    if (!localDirty && remoteUpdatedMs > localUpdatedAt) {
+      await applyRemoteDocument(remoteDoc, bodyContent);
+    }
+  }
+
+  if (maxUpdatedAt) {
+    const nextSync = new Date(maxUpdatedAt).toISOString();
+    await setSyncMeta(META_LAST_SYNCED_AT, nextSync);
+    getStoreActions().setLastSyncedAt(nextSync);
+  }
+}
+
 async function applyRemoteDocument(remoteDoc, bodyContent) {
   const localDoc = {
     id: remoteDoc.id,
@@ -609,6 +663,7 @@ async function runSync() {
 
   try {
     await processSyncQueue();
+    await syncRemoteUpdates();
   } catch (error) {
     console.error("Failed to process sync queue", error);
     store.setLastError(error?.message || "Sync failed", buildErrorDetails(error));

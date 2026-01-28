@@ -12,7 +12,6 @@ import { useEditorSettingsStore } from "../../store/editorSettingsStore";
 import { useDocumentsStore } from "../../store/documentsStore";
 import { getCaptureTemplate, createFromTemplate } from "../../lib/templates";
 import { performInitialSync } from "../../lib/sync/initialSync";
-import { setupRealtimeSync, cleanupRealtimeSync } from "../../lib/sync/realtimeSync";
 import styles from "./Shell.module.css";
 import layout from "./AppShell.module.css";
 import useVisualViewportInsets from "../../hooks/useVisualViewportInsets";
@@ -193,15 +192,8 @@ export default function Shell({ children }) {
       if (!active) return;
       console.error("Initial sync failed", error);
     });
-    setupRealtimeSync().catch((error) => {
-      if (!active) return;
-      console.error("Realtime sync setup failed", error);
-    });
     return () => {
       active = false;
-      cleanupRealtimeSync().catch((error) => {
-        console.error("Realtime sync cleanup failed", error);
-      });
     };
   }, [isPublicRoute]);
 
