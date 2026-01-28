@@ -3,6 +3,7 @@ import { getClientId } from "../lib/clientId";
 import {
   enqueueTimerStart,
   enqueueTimerStop,
+  enqueueTimerResume,
   getActiveTimerMeta,
   setActiveTimerMeta,
   setTimerNotice,
@@ -31,6 +32,8 @@ function buildActiveTimer({
   status = "running",
   note = null,
   pausedAt = null,
+  accumulatedMs = 0,
+  segmentStartedAt = null,
 }) {
   return {
     entryId,
@@ -41,6 +44,8 @@ function buildActiveTimer({
     status,
     note,
     pausedAt,
+    accumulatedMs,
+    segmentStartedAt,
     clientId: CLIENT_ID,
   };
 }
@@ -105,9 +110,13 @@ export const useTimerStore = create((set, get) => ({
     if (get().hasHydrated) return;
     const activeTimer = await getActiveTimerMeta();
     const notice = await getTimerNotice();
+    let nextActiveTimer = activeTimer || null;
+    if (nextActiveTimer?.status === "running" && !nextActiveTimer.segmentStartedAt) {
+      nextActiveTimer = { ...nextActiveTimer, segmentStartedAt: new Date().toISOString() };
+    }
     set({
-      activeTimer: activeTimer || null,
-      status: activeTimer?.status || "idle",
+      activeTimer: nextActiveTimer,
+      status: nextActiveTimer?.status || "idle",
       notice: notice || null,
       hasHydrated: true,
     });
@@ -131,6 +140,8 @@ export const useTimerStore = create((set, get) => ({
       startedAt,
       status: "running",
       note,
+      accumulatedMs: 0,
+      segmentStartedAt: startedAt,
     });
     set({ status: "running", activeTimer, lastError: null });
     await setActiveTimerMeta(activeTimer);
@@ -152,12 +163,31 @@ export const useTimerStore = create((set, get) => ({
     const active = get().activeTimer;
     if (!active) return;
     const endedAt = new Date().toISOString();
+    const segmentStart = Date.parse(active.segmentStartedAt || active.startedAt || "");
+    const segmentDuration = Number.isFinite(segmentStart)
+      ? Math.max(0, Date.parse(endedAt) - segmentStart)
+      : 0;
+    const nextAccumulatedMs = (active.accumulatedMs || 0) + segmentDuration;
     set({
       status: "paused",
-      activeTimer: { ...active, status: "paused", note: note ?? active.note, pausedAt: endedAt },
+      activeTimer: {
+        ...active,
+        status: "paused",
+        note: note ?? active.note,
+        pausedAt: endedAt,
+        accumulatedMs: nextAccumulatedMs,
+        segmentStartedAt: null,
+      },
       lastError: null,
     });
-    await setActiveTimerMeta({ ...active, status: "paused", note: note ?? active.note, pausedAt: endedAt });
+    await setActiveTimerMeta({
+      ...active,
+      status: "paused",
+      note: note ?? active.note,
+      pausedAt: endedAt,
+      accumulatedMs: nextAccumulatedMs,
+      segmentStartedAt: null,
+    });
     get().refreshPolling();
     try {
       await enqueueTimerStop({
@@ -165,6 +195,7 @@ export const useTimerStore = create((set, get) => ({
         note: note ?? active.note,
         endedAt,
         eventType: "pause",
+        durationMs: nextAccumulatedMs,
       });
       scheduleSync({ reason: "timer-pause" });
     } catch (error) {
@@ -174,28 +205,26 @@ export const useTimerStore = create((set, get) => ({
   resumeTimer: async ({ note } = {}) => {
     const active = get().activeTimer;
     if (!active) return;
-    const entryId = crypto.randomUUID();
-    const startedAt = new Date().toISOString();
+    const segmentStart = new Date().toISOString();
     const nextTimer = buildActiveTimer({
-      entryId,
+      entryId: active.entryId,
       entityId: active.entityId,
       entityType: active.entityType,
       label: active.label,
-      startedAt,
+      startedAt: active.startedAt,
       status: "running",
       note: note ?? active.note,
       pausedAt: null,
+      accumulatedMs: active.accumulatedMs || 0,
+      segmentStartedAt: segmentStart,
     });
     set({ status: "running", activeTimer: nextTimer, lastError: null });
     await setActiveTimerMeta(nextTimer);
     get().refreshPolling();
     try {
-      await enqueueTimerStart({
-        entryId,
-        entityId: active.entityId,
-        entityType: active.entityType,
-        note: note ?? active.note,
-        startedAt,
+      await enqueueTimerResume({
+        entryId: active.entryId,
+        resumedAt: segmentStart,
       });
       scheduleSync({ reason: "timer-resume" });
     } catch (error) {
@@ -206,6 +235,11 @@ export const useTimerStore = create((set, get) => ({
     const active = get().activeTimer;
     if (!active) return;
     const endedAt = new Date().toISOString();
+    const segmentStart = Date.parse(active.segmentStartedAt || active.startedAt || "");
+    const segmentDuration = Number.isFinite(segmentStart)
+      ? Math.max(0, Date.parse(endedAt) - segmentStart)
+      : 0;
+    const totalMs = (active.accumulatedMs || 0) + (active.status === "running" ? segmentDuration : 0);
     set({ status: "idle", activeTimer: null, lastError: null });
     await setActiveTimerMeta(null);
     get().refreshPolling();
@@ -215,6 +249,7 @@ export const useTimerStore = create((set, get) => ({
         note: note ?? active.note,
         endedAt,
         eventType: "stop",
+        durationMs: totalMs,
       });
       scheduleSync({ reason: "timer-stop" });
     } catch (error) {

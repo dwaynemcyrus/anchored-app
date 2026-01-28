@@ -108,6 +108,7 @@ export async function stopTimeEntry({
   id,
   endedAt = new Date().toISOString(),
   note,
+  durationMs,
 } = {}) {
   if (typeof id !== "string" || !UUID_PATTERN.test(id)) {
     throw new Error("Time entry id must be a UUID");
@@ -116,28 +117,49 @@ export async function stopTimeEntry({
   const userId = await getUserId();
   const endIso = toIsoTimestamp(endedAt);
 
-  const { data: existing, error: fetchError } = await client
-    .from(TIME_ENTRIES_TABLE)
-    .select("started_at")
-    .eq("id", id)
-    .eq("user_id", userId)
-    .maybeSingle();
+  let nextDurationMs = durationMs;
+  if (typeof nextDurationMs !== "number") {
+    const { data: existing, error: fetchError } = await client
+      .from(TIME_ENTRIES_TABLE)
+      .select("started_at")
+      .eq("id", id)
+      .eq("user_id", userId)
+      .maybeSingle();
 
-  if (fetchError) throw fetchError;
-  if (!existing?.started_at) {
-    throw new Error("Time entry not found");
+    if (fetchError) throw fetchError;
+    if (!existing?.started_at) {
+      throw new Error("Time entry not found");
+    }
+
+    const startedAt = new Date(existing.started_at);
+    nextDurationMs = Math.max(0, new Date(endIso).getTime() - startedAt.getTime());
   }
-
-  const startedAt = new Date(existing.started_at);
-  const durationMs = Math.max(0, new Date(endIso).getTime() - startedAt.getTime());
 
   const response = await client
     .from(TIME_ENTRIES_TABLE)
     .update({
       ended_at: endIso,
-      duration_ms: durationMs,
+      duration_ms: nextDurationMs,
+      updated_at: new Date().toISOString(),
       ...(note !== undefined ? { note } : {}),
     })
+    .eq("id", id)
+    .eq("user_id", userId)
+    .select("*")
+    .single();
+
+  return unwrapResponse(response);
+}
+
+export async function resumeTimeEntry({ id } = {}) {
+  if (typeof id !== "string" || !UUID_PATTERN.test(id)) {
+    throw new Error("Time entry id must be a UUID");
+  }
+  const client = getSupabaseClient();
+  const userId = await getUserId();
+  const response = await client
+    .from(TIME_ENTRIES_TABLE)
+    .update({ ended_at: null, updated_at: new Date().toISOString() })
     .eq("id", id)
     .eq("user_id", userId)
     .select("*")

@@ -80,6 +80,7 @@ export async function enqueueTimerStart({
 export async function enqueueTimerStop({
   entryId,
   note,
+  durationMs,
   endedAt = new Date().toISOString(),
   eventType = "stop",
 }) {
@@ -97,14 +98,44 @@ export async function enqueueTimerStop({
   await enqueueOperation({
     table: "time_entries",
     record_id: entryId,
-    operation: "stop",
+    operation: eventType,
     payload: {
       event_id: eventId,
       id: entryId,
       ended_at: endedAt,
+      duration_ms: durationMs ?? null,
       note,
     },
     timestamp: endedAt,
+    retry_count: 0,
+  });
+  return event;
+}
+
+export async function enqueueTimerResume({
+  entryId,
+  resumedAt = new Date().toISOString(),
+}) {
+  const eventId = crypto.randomUUID();
+  const event = buildTimerEvent({
+    id: eventId,
+    timerEntryId: entryId,
+    eventType: "resume",
+    entityId: null,
+    entityType: null,
+    note: null,
+    clientTime: resumedAt,
+  });
+  await addTimerEvent(event);
+  await enqueueOperation({
+    table: "time_entries",
+    record_id: entryId,
+    operation: "resume",
+    payload: {
+      event_id: eventId,
+      id: entryId,
+    },
+    timestamp: resumedAt,
     retry_count: 0,
   });
   return event;

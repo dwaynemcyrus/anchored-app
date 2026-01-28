@@ -59,17 +59,13 @@ export default function FocusPage() {
 
   const elapsedMs = useMemo(() => {
     if (!activeTimer) return 0;
-    const startedAt = Date.parse(activeTimer.startedAt || "");
-    if (!startedAt) return 0;
+    const baseMs = activeTimer.accumulatedMs || 0;
     if (timerStatus === "running") {
-      return Math.max(0, tick - startedAt);
+      const segmentStartedAt = Date.parse(activeTimer.segmentStartedAt || "");
+      if (!segmentStartedAt) return baseMs;
+      return baseMs + Math.max(0, tick - segmentStartedAt);
     }
-    if (timerStatus === "paused") {
-      const pausedAt = Date.parse(activeTimer.pausedAt || activeTimer.startedAt || "");
-      if (!pausedAt) return 0;
-      return Math.max(0, pausedAt - startedAt);
-    }
-    return 0;
+    return baseMs;
   }, [activeTimer, timerStatus, tick]);
 
   useEffect(() => {

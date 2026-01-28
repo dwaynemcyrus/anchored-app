@@ -13,7 +13,7 @@ import {
   upsertDocument,
   upsertDocumentBody,
 } from "../supabase/documents";
-import { startTimeEntry, stopTimeEntry } from "../supabase/timeEntries";
+import { startTimeEntry, stopTimeEntry, resumeTimeEntry } from "../supabase/timeEntries";
 import { markTimerEventFailed, markTimerEventSynced } from "./timerSync";
 import {
   enqueueOperation,
@@ -651,14 +651,22 @@ export async function processSyncQueue() {
           if (payload.event_id) {
             await markTimerEventSynced(payload.event_id, data?.started_at);
           }
-        } else if (item.operation === "stop") {
+        } else if (item.operation === "pause" || item.operation === "stop") {
           const data = await stopTimeEntry({
             id: payload.id || item.record_id,
             endedAt: payload.ended_at,
             note: payload.note,
+            durationMs: payload.duration_ms,
           });
           if (payload.event_id) {
             await markTimerEventSynced(payload.event_id, data?.ended_at);
+          }
+        } else if (item.operation === "resume") {
+          const data = await resumeTimeEntry({
+            id: payload.id || item.record_id,
+          });
+          if (payload.event_id) {
+            await markTimerEventSynced(payload.event_id, data?.updated_at);
           }
         }
         await removeOperation(item.id);
