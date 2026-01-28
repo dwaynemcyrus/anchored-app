@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.16.1 - 2026-01-28
+- Add logbook to the shell navigation menu.
+- Retry sync on a timer and surface Supabase error details for debugging.
+- Skip syncing non-UUID local documents to avoid Supabase errors.
+- Filter non-UUID IDs from Supabase body fetches.
+
 ## 0.16.0 - 2026-01-27
 - Split local document bodies into a dedicated IndexedDB store with ISO timestamp normalization.
 - Add client_id + synced_at fields to Supabase schema and align sync payloads.
