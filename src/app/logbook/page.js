@@ -6,7 +6,11 @@ import Link from "next/link";
 import { getDocumentsRepo } from "@/lib/repo/getDocumentsRepo";
 import { deriveDocumentTitle } from "@/lib/documents/deriveTitle";
 import { deleteDocument } from "@/lib/sync/syncManager";
-import { listTimeEntries, listTimeEntryPauseCounts } from "@/lib/supabase/timeEntries";
+import {
+  listTimeEntries,
+  listTimeEntryPauseCounts,
+  listTimeEntryEvents,
+} from "@/lib/supabase/timeEntries";
 import { listActivities } from "@/lib/supabase/activities";
 import styles from "../../styles/logbook.module.css";
 
@@ -17,6 +21,8 @@ export default function LogbookPage() {
   const [activitiesById, setActivitiesById] = useState({});
   const [entityTitlesById, setEntityTitlesById] = useState({});
   const [pauseCountsById, setPauseCountsById] = useState({});
+  const [eventHistoryById, setEventHistoryById] = useState({});
+  const [expandedEntries, setExpandedEntries] = useState({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [processing, setProcessing] = useState(null);
@@ -181,6 +187,23 @@ export default function LogbookPage() {
       return "Saved activity";
     }
     return entry.entity_type ? entry.entity_type : "";
+  };
+
+  const toggleEntryHistory = async (entryId) => {
+    setExpandedEntries((prev) => ({
+      ...prev,
+      [entryId]: !prev[entryId],
+    }));
+    if (eventHistoryById[entryId]) return;
+    try {
+      const events = await listTimeEntryEvents({ entryId, limit: 200 });
+      setEventHistoryById((prev) => ({
+        ...prev,
+        [entryId]: events || [],
+      }));
+    } catch (err) {
+      console.error("Failed to load pause history", err);
+    }
   };
 
   if (loading) {
@@ -435,7 +458,10 @@ export default function LogbookPage() {
                         {formatDate(entry.started_at)}
                       </span>
                       {pauseCountsById[entry.id] ? (
-                        <span className={styles.itemPauseCount}>
+                        <span
+                          className={styles.itemPauseCount}
+                          title={`Paused ${pauseCountsById[entry.id]} time(s). Tap to view history.`}
+                        >
                           Paused {pauseCountsById[entry.id]}x
                         </span>
                       ) : null}
@@ -447,6 +473,29 @@ export default function LogbookPage() {
                   {entry.note ? (
                     <div className={styles.itemPreview}>
                       {entry.note}
+                    </div>
+                  ) : null}
+                  {pauseCountsById[entry.id] ? (
+                    <div className={styles.historyBlock}>
+                      <button
+                        type="button"
+                        className={styles.historyToggle}
+                        onClick={() => toggleEntryHistory(entry.id)}
+                      >
+                        {expandedEntries[entry.id] ? "Hide pause history" : "Show pause history"}
+                      </button>
+                      {expandedEntries[entry.id] ? (
+                        <div className={styles.historyList}>
+                          {(eventHistoryById[entry.id] || []).map((event) => (
+                            <div key={event.id} className={styles.historyRow}>
+                              <span className={styles.historyType}>{event.event_type}</span>
+                              <span className={styles.historyTime}>
+                                {new Date(event.event_time).toLocaleString()}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      ) : null}
                     </div>
                   ) : null}
                 </div>
