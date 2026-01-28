@@ -348,10 +348,14 @@ async function syncDocumentToSupabase(documentId) {
 
   try {
     const userId = await getUserId();
+    const syncedAt = new Date().toISOString();
     const payload = {
       ...toServerDocument(doc),
       owner_id: userId,
       user_id: userId,
+      client_id: doc.clientId ?? doc.client_id ?? CLIENT_ID,
+      synced_at: syncedAt,
+      deleted_at: ensureIsoTimestamp(doc.deletedAt ?? doc.deleted_at, null),
     };
 
     const data = await upsertDocument(payload);
@@ -361,7 +365,7 @@ async function syncDocumentToSupabase(documentId) {
       await handleDocumentConflict(doc, data);
     } else {
       await patchLocalRecord(DOCUMENTS_STORE, documentId, {
-        syncedAt: new Date().toISOString(),
+        syncedAt,
       });
     }
 
@@ -398,12 +402,16 @@ async function syncBodyToSupabase(documentId) {
   if (!body) return;
 
   try {
+    const userId = await getUserId();
+    const syncedAt = new Date().toISOString();
     const data = await upsertDocumentBody({
       document_id: body.documentId,
       content: body.content,
       updated_at: ensureIsoTimestamp(body.updatedAt ?? body.updated_at),
+      owner_id: userId,
+      user_id: userId,
       client_id: body.clientId ?? CLIENT_ID,
-      synced_at: body.syncedAt ?? null,
+      synced_at: syncedAt,
     });
 
     const localUpdatedAt = new Date(body.updatedAt ?? Date.now());
@@ -411,7 +419,7 @@ async function syncBodyToSupabase(documentId) {
       await handleBodyConflict(documentId, body, data);
     } else {
       await patchLocalRecord(DOCUMENT_BODIES_STORE, documentId, {
-        syncedAt: new Date().toISOString(),
+        syncedAt,
       });
     }
   } catch (error) {
@@ -617,6 +625,12 @@ export async function processSyncQueue() {
       continue;
     }
     try {
+      const isDocTable = item.table === "documents";
+      const isBodyTable = item.table === "document_bodies";
+      if ((isDocTable || isBodyTable) && !isUuid(item.record_id)) {
+        await removeOperation(item.id);
+        continue;
+      }
       if (item.operation === "upsert") {
         if (item.table === "documents") {
           await syncDocumentToSupabase(item.record_id);

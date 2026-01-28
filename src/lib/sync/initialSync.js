@@ -107,13 +107,14 @@ async function syncDocuments(lastSyncTime, repo) {
   const remoteDocs = await fetchDocumentsUpdatedSince({ since: lastSyncTime });
   if (!remoteDocs || remoteDocs.length === 0) return;
 
-  const ids = remoteDocs.map((doc) => doc.id);
+  const ids = remoteDocs.map((doc) => doc.id).filter((id) => isUuid(id));
   const bodies = await fetchDocumentBodiesByIds(ids);
   const bodiesById = new Map(
     bodies.map((body) => [body.document_id, body.content])
   );
 
   for (const remoteDoc of remoteDocs) {
+    if (!isUuid(remoteDoc.id)) continue;
     const bodyContent = bodiesById.get(remoteDoc.id) ?? "";
     const localDoc = await repo.get(remoteDoc.id);
     const remoteUpdated = ensureIsoTimestamp(remoteDoc.updated_at, null);
@@ -143,7 +144,7 @@ async function syncDocuments(lastSyncTime, repo) {
 async function syncDocumentBodies(lastSyncTime, repo) {
   const remoteDocs = await fetchDocumentsUpdatedSince({ since: lastSyncTime });
   if (!remoteDocs || remoteDocs.length === 0) return;
-  const docIds = remoteDocs.map((doc) => doc.id);
+  const docIds = remoteDocs.map((doc) => doc.id).filter((id) => isUuid(id));
 
   const remoteBodies = await fetchDocumentBodiesByIds(docIds);
   if (!remoteBodies || remoteBodies.length === 0) return;
@@ -222,6 +223,7 @@ async function pushUnsyncedBodies(userId) {
       content: body.content,
       updated_at: ensureIsoTimestamp(body.updatedAt ?? body.updated_at),
       owner_id: userId,
+      user_id: userId,
       client_id: body.clientId ?? null,
       synced_at: new Date().toISOString(),
     });

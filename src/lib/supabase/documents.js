@@ -47,7 +47,8 @@ export async function fetchDocumentsUpdatedSince({ since, limit = 500 } = {}) {
   }
 
   const response = await query;
-  return unwrapResponse(response);
+  const data = unwrapResponse(response);
+  return Array.isArray(data) ? data.filter((doc) => UUID_PATTERN.test(doc.id)) : data;
 }
 
 export async function fetchDocumentById(id) {
@@ -88,6 +89,9 @@ export async function fetchDocumentBodiesByIds(documentIds = []) {
 export async function fetchDocumentBody(documentId) {
   if (typeof documentId !== "string" || !documentId.trim()) {
     throw new Error("Document id is required");
+  }
+  if (!UUID_PATTERN.test(documentId)) {
+    return null;
   }
   const client = getSupabaseClient();
   const ownerId = await getAuthedUserId();
@@ -205,6 +209,9 @@ export async function updateDocumentBody(documentId, content) {
 }
 
 export async function upsertDocument(document) {
+  if (!document?.id || !UUID_PATTERN.test(document.id)) {
+    throw new Error("Document id must be a UUID");
+  }
   const client = getSupabaseClient();
   const ownerId = document.owner_id ?? (await getAuthedUserId());
   const response = await client
@@ -222,6 +229,9 @@ export async function upsertDocument(document) {
 export async function upsertDocumentBody(body) {
   if (!body || typeof body.document_id !== "string") {
     throw new Error("Document body with document_id is required");
+  }
+  if (!UUID_PATTERN.test(body.document_id)) {
+    throw new Error("Document body document_id must be a UUID");
   }
   const client = getSupabaseClient();
   const ownerId = body.owner_id ?? (await getAuthedUserId());
