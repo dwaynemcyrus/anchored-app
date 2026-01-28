@@ -33,6 +33,22 @@
   border-radius: 999px;
 }
 
+.expandButton {
+  border: none;
+  background: rgba(20, 17, 15, 0.08);
+  color: #14110f;
+  padding: 6px 12px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.expandButton:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 .segmentButton {
   border: none;
   background: transparent;

@@ -23,6 +23,7 @@ export default function LogbookPage() {
   const [pauseCountsById, setPauseCountsById] = useState({});
   const [eventHistoryById, setEventHistoryById] = useState({});
   const [expandedEntries, setExpandedEntries] = useState({});
+  const [expandAll, setExpandAll] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [processing, setProcessing] = useState(null);
@@ -95,6 +96,12 @@ export default function LogbookPage() {
       loadTimeEntries();
     }
   }, [loadTimeEntries, loadTrashed, view]);
+
+  useEffect(() => {
+    if (view !== "time") return;
+    setExpandAll(false);
+    setExpandedEntries({});
+  }, [view]);
 
   useEffect(() => {
     if (view !== "time") return undefined;
@@ -204,6 +211,43 @@ export default function LogbookPage() {
     } catch (err) {
       console.error("Failed to load pause history", err);
     }
+  };
+
+  const toggleExpandAll = async () => {
+    const nextValue = !expandAll;
+    setExpandAll(nextValue);
+    if (!nextValue) {
+      setExpandedEntries({});
+      return;
+    }
+    const entriesWithPauses = timeEntries.filter((entry) => pauseCountsById[entry.id]);
+    const nextExpanded = entriesWithPauses.reduce((acc, entry) => {
+      acc[entry.id] = true;
+      return acc;
+    }, {});
+    const missingIds = entriesWithPauses
+      .map((entry) => entry.id)
+      .filter((id) => !eventHistoryById[id]);
+    if (missingIds.length > 0) {
+      const results = await Promise.all(
+        missingIds.map((id) =>
+          listTimeEntryEvents({ entryId: id, limit: 200 })
+            .then((events) => ({ id, events }))
+            .catch((err) => {
+              console.error("Failed to load pause history", err);
+              return { id, events: [] };
+            })
+        )
+      );
+      setEventHistoryById((prev) => {
+        const next = { ...prev };
+        for (const result of results) {
+          next[result.id] = result.events || [];
+        }
+        return next;
+      });
+    }
+    setExpandedEntries(nextExpanded);
   };
 
   if (loading) {
@@ -394,6 +438,16 @@ export default function LogbookPage() {
               Time Logs
             </button>
           </div>
+          {view === "time" ? (
+            <button
+              type="button"
+              className={styles.expandButton}
+              onClick={toggleExpandAll}
+              disabled={timeEntries.length === 0}
+            >
+              {expandAll ? "Collapse all" : "Expand all"}
+            </button>
+          ) : null}
           <div className={styles.count}>
             {view === "trash" ? `${documents.length} trashed` : `${timeEntries.length} entries`}
           </div>
