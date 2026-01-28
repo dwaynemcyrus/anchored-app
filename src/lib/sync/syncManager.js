@@ -418,7 +418,6 @@ async function syncBodyToSupabase(documentId) {
       content: body.content,
       updated_at: ensureIsoTimestamp(body.updatedAt ?? body.updated_at),
       owner_id: userId,
-      user_id: userId,
       client_id: body.clientId ?? CLIENT_ID,
       synced_at: syncedAt,
     });

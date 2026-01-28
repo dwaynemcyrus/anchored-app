@@ -203,7 +203,7 @@ export default function NowView() {
         {/* Section B: Inbox */}
         <section className={styles.section}>
           <h2 className={styles.sectionTitle}>Inbox</h2>
-          <Link href="/inbox" className={styles.actionCard}>
+          <Link href="/inbox" prefetch={false} className={styles.actionCard}>
             <div className={styles.actionCardContent}>
               <span className={styles.actionCardTitle}>Process Inbox</span>
               <span className={styles.actionCardDescription}>
@@ -240,6 +240,7 @@ export default function NowView() {
                 <div key={doc.id} className={styles.workbenchItem}>
                   <Link
                     href={`/knowledge/notes/${doc.id}`}
+                    prefetch={false}
                     className={styles.workbenchItemLink}
                   >
                     <span className={styles.workbenchItemTitle}>
