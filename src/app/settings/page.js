@@ -263,11 +263,16 @@ export default function SettingsPage() {
               </button>
             </div>
           </div>
-          {syncActionMessage ? (
-            <p className={styles.message}>{syncActionMessage}</p>
-          ) : null}
         </section>
       </main>
+      {syncActionMessage ? (
+        <div
+          className={`${styles.toast} ${syncActionMessage.toLowerCase().includes("failed") ? styles.toastError : ""}`}
+          role="status"
+        >
+          {syncActionMessage}
+        </div>
+      ) : null}
     </div>
   );
 }
