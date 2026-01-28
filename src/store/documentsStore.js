@@ -75,7 +75,9 @@ export const useDocumentsStore = create((set, get) => ({
     }
     const remoteDocs = await fetchDocumentsUpdatedSince({ since: lastSyncedAt });
     if (!remoteDocs || remoteDocs.length === 0) return;
-    const ids = remoteDocs.map((doc) => doc.id);
+    const ids = remoteDocs
+      .map((doc) => doc.id)
+      .filter((id) => typeof id === "string" && /^[0-9a-f-]{36}$/i.test(id));
     const bodies = await fetchDocumentBodiesByIds(ids);
     const bodiesById = new Map(bodies.map((body) => [body.document_id, body.content]));
 

@@ -2,6 +2,13 @@ import { getSupabaseClient, getUserId } from "./client";
 
 const DOCUMENTS_TABLE = "documents";
 const BODIES_TABLE = "document_bodies";
+const UUID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+function filterUuidList(values = []) {
+  if (!Array.isArray(values)) return [];
+  return values.filter((value) => typeof value === "string" && UUID_PATTERN.test(value));
+}
 
 function toIsoTimestamp(value) {
   if (!value) return null;
@@ -47,6 +54,9 @@ export async function fetchDocumentById(id) {
   if (typeof id !== "string" || !id.trim()) {
     throw new Error("Document id is required");
   }
+  if (!UUID_PATTERN.test(id)) {
+    return null;
+  }
   const client = getSupabaseClient();
   const ownerId = await getAuthedUserId();
   const response = await client
@@ -60,7 +70,8 @@ export async function fetchDocumentById(id) {
 }
 
 export async function fetchDocumentBodiesByIds(documentIds = []) {
-  if (!Array.isArray(documentIds) || documentIds.length === 0) {
+  const filteredIds = filterUuidList(documentIds);
+  if (filteredIds.length === 0) {
     return [];
   }
   const client = getSupabaseClient();
@@ -69,7 +80,7 @@ export async function fetchDocumentBodiesByIds(documentIds = []) {
     .from(BODIES_TABLE)
     .select("*")
     .eq("owner_id", ownerId)
-    .in("document_id", documentIds);
+    .in("document_id", filteredIds);
 
   return unwrapResponse(response);
 }
