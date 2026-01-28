@@ -74,6 +74,13 @@ export async function performInitialSync() {
   await setSyncMeta("lastSyncedAt", nowIso);
 }
 
+export function resetLastSyncTime() {
+  if (typeof window !== "undefined") {
+    window.localStorage.removeItem(LAST_SYNC_KEY);
+  }
+  return setSyncMeta("lastSyncedAt", null);
+}
+
 async function syncDocuments(lastSyncTime, repo) {
   const remoteDocs = await fetchDocumentsUpdatedSince({ since: lastSyncTime });
   if (!remoteDocs || remoteDocs.length === 0) return;

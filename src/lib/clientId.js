@@ -9,3 +9,8 @@ export function getClientId() {
   }
   return clientId;
 }
+
+export function peekClientId() {
+  if (typeof window === "undefined") return null;
+  return window.localStorage.getItem(CLIENT_ID_KEY);
+}

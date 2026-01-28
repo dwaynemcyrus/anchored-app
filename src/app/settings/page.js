@@ -5,7 +5,11 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { resetAllBuiltInTemplates } from "../../lib/templates";
 import { getQueueCount } from "../../lib/sync/syncQueue";
+import { performInitialSync, resetLastSyncTime } from "../../lib/sync/initialSync";
+import { processSyncQueue } from "../../lib/sync/syncManager";
 import { useSyncStore } from "../../store/syncStore";
+import { peekClientId } from "../../lib/clientId";
+import { getUserId } from "../../lib/supabase/client";
 import styles from "../../styles/settings.module.css";
 
 export default function SettingsPage() {
@@ -17,6 +21,10 @@ export default function SettingsPage() {
   const lastError = useSyncStore((state) => state.lastError);
   const lastSyncedAt = useSyncStore((state) => state.lastSyncedAt);
   const [queueCount, setQueueCount] = useState(0);
+  const [userId, setUserId] = useState(null);
+  const [clientId, setClientId] = useState(null);
+  const [syncActionMessage, setSyncActionMessage] = useState(null);
+  const [syncActionBusy, setSyncActionBusy] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -34,11 +42,68 @@ export default function SettingsPage() {
     };
   }, [pendingCount]);
 
+  useEffect(() => {
+    let active = true;
+    const loadIdentifiers = async () => {
+      try {
+        const clientValue = peekClientId();
+        const userValue = await getUserId();
+        if (!active) return;
+        setClientId(clientValue);
+        setUserId(userValue);
+      } catch (error) {
+        if (!active) return;
+        console.error("Failed to load sync identifiers", error);
+      }
+    };
+    loadIdentifiers();
+    return () => {
+      active = false;
+    };
+  }, []);
+
   const formatTimestamp = (value) => {
     if (!value) return "Never";
     const date = new Date(value);
     if (Number.isNaN(date.getTime())) return "Unknown";
     return date.toLocaleString();
+  };
+
+  const handleSyncNow = async () => {
+    if (syncActionBusy) return;
+    setSyncActionBusy(true);
+    setSyncActionMessage(null);
+    try {
+      await processSyncQueue();
+      await performInitialSync();
+      setSyncActionMessage("Sync completed.");
+      setTimeout(() => setSyncActionMessage(null), 3000);
+    } catch (error) {
+      console.error("Sync now failed", error);
+      setSyncActionMessage("Sync failed. Check console for details.");
+    } finally {
+      setSyncActionBusy(false);
+    }
+  };
+
+  const handleResetSync = async () => {
+    if (syncActionBusy) return;
+    const confirmed = window.confirm(
+      "Reset last sync time and re-sync everything on next run?"
+    );
+    if (!confirmed) return;
+    setSyncActionBusy(true);
+    setSyncActionMessage(null);
+    try {
+      await resetLastSyncTime();
+      setSyncActionMessage("Last sync reset. Trigger a sync now.");
+      setTimeout(() => setSyncActionMessage(null), 3000);
+    } catch (error) {
+      console.error("Failed to reset sync time", error);
+      setSyncActionMessage("Failed to reset sync time.");
+    } finally {
+      setSyncActionBusy(false);
+    }
   };
 
   const handleResetTemplates = async () => {
@@ -163,7 +228,44 @@ export default function SettingsPage() {
                 </span>
               </div>
             </div>
+            <div className={styles.cardItem}>
+              <div className={styles.cardItemContent}>
+                <span className={styles.cardItemTitle}>User ID</span>
+                <span className={styles.cardItemDescription}>
+                  {userId || "Unknown"}
+                </span>
+              </div>
+            </div>
+            <div className={styles.cardItem}>
+              <div className={styles.cardItemContent}>
+                <span className={styles.cardItemTitle}>Client ID</span>
+                <span className={styles.cardItemDescription}>
+                  {clientId || "Unknown"}
+                </span>
+              </div>
+            </div>
+            <div className={styles.cardItemActions}>
+              <button
+                type="button"
+                className={styles.actionButton}
+                onClick={handleSyncNow}
+                disabled={syncActionBusy}
+              >
+                {syncActionBusy ? "Syncing..." : "Sync Now"}
+              </button>
+              <button
+                type="button"
+                className={styles.actionButtonSmallDanger}
+                onClick={handleResetSync}
+                disabled={syncActionBusy}
+              >
+                Reset Last Sync
+              </button>
+            </div>
           </div>
+          {syncActionMessage ? (
+            <p className={styles.message}>{syncActionMessage}</p>
+          ) : null}
         </section>
       </main>
     </div>
