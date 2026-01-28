@@ -78,6 +78,28 @@ export async function listTimeEntryEvents({ entryId, limit = 200 } = {}) {
   return unwrapResponse(response);
 }
 
+export async function listTimeEntryPauseCounts({ entryIds = [] } = {}) {
+  const ids = Array.isArray(entryIds)
+    ? entryIds.filter((id) => typeof id === "string" && UUID_PATTERN.test(id))
+    : [];
+  if (ids.length === 0) return {};
+  const client = getSupabaseClient();
+  const userId = await getUserId();
+  const response = await client
+    .from(TIME_ENTRY_EVENTS_TABLE)
+    .select("time_entry_id,event_type")
+    .eq("user_id", userId)
+    .in("time_entry_id", ids);
+
+  const data = unwrapResponse(response);
+  const counts = {};
+  for (const event of data || []) {
+    if (event.event_type !== "pause") continue;
+    counts[event.time_entry_id] = (counts[event.time_entry_id] || 0) + 1;
+  }
+  return counts;
+}
+
 export async function createTimeEntryEvent({
   entryId,
   eventType,

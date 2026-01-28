@@ -6,7 +6,7 @@ import Link from "next/link";
 import { getDocumentsRepo } from "@/lib/repo/getDocumentsRepo";
 import { deriveDocumentTitle } from "@/lib/documents/deriveTitle";
 import { deleteDocument } from "@/lib/sync/syncManager";
-import { listTimeEntries } from "@/lib/supabase/timeEntries";
+import { listTimeEntries, listTimeEntryPauseCounts } from "@/lib/supabase/timeEntries";
 import { listActivities } from "@/lib/supabase/activities";
 import styles from "../../styles/logbook.module.css";
 
@@ -16,6 +16,7 @@ export default function LogbookPage() {
   const [timeEntries, setTimeEntries] = useState([]);
   const [activitiesById, setActivitiesById] = useState({});
   const [entityTitlesById, setEntityTitlesById] = useState({});
+  const [pauseCountsById, setPauseCountsById] = useState({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [processing, setProcessing] = useState(null);
@@ -62,12 +63,16 @@ export default function LogbookPage() {
         }
         return acc;
       }, {});
+      const pauseCounts = await listTimeEntryPauseCounts({
+        entryIds: (entries || []).map((entry) => entry.id),
+      });
       const activityMap = activities.reduce((acc, activity) => {
         acc[activity.id] = activity;
         return acc;
       }, {});
       setActivitiesById(activityMap);
       setEntityTitlesById(docTitleMap);
+      setPauseCountsById(pauseCounts);
       setTimeEntries(entries || []);
     } catch (err) {
       console.error("Failed to load time entries:", err);
@@ -429,6 +434,11 @@ export default function LogbookPage() {
                       <span className={styles.itemDate}>
                         {formatDate(entry.started_at)}
                       </span>
+                      {pauseCountsById[entry.id] ? (
+                        <span className={styles.itemPauseCount}>
+                          Paused {pauseCountsById[entry.id]}x
+                        </span>
+                      ) : null}
                     </span>
                   </div>
                   <div className={styles.itemPreview}>

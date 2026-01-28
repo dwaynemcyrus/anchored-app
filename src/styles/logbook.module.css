@@ -214,6 +214,16 @@
   flex-shrink: 0;
 }
 
+.itemPauseCount {
+  background: rgba(20, 17, 15, 0.08);
+  color: #3b342c;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
 .itemType {
   font-size: 11px;
   font-weight: 600;
