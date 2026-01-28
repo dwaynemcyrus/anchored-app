@@ -1,15 +1,45 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { resetAllBuiltInTemplates } from "../../lib/templates";
+import { getQueueCount } from "../../lib/sync/syncQueue";
+import { useSyncStore } from "../../store/syncStore";
 import styles from "../../styles/settings.module.css";
 
 export default function SettingsPage() {
   const router = useRouter();
   const [isResetting, setIsResetting] = useState(false);
   const [resetMessage, setResetMessage] = useState(null);
+  const syncStatus = useSyncStore((state) => state.status);
+  const pendingCount = useSyncStore((state) => state.pendingCount);
+  const lastError = useSyncStore((state) => state.lastError);
+  const lastSyncedAt = useSyncStore((state) => state.lastSyncedAt);
+  const [queueCount, setQueueCount] = useState(0);
+
+  useEffect(() => {
+    let active = true;
+    const loadQueueCount = async () => {
+      try {
+        const count = await getQueueCount();
+        if (active) setQueueCount(count);
+      } catch (error) {
+        console.error("Failed to load sync queue count", error);
+      }
+    };
+    loadQueueCount();
+    return () => {
+      active = false;
+    };
+  }, [pendingCount]);
+
+  const formatTimestamp = (value) => {
+    if (!value) return "Never";
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return "Unknown";
+    return date.toLocaleString();
+  };
 
   const handleResetTemplates = async () => {
     if (isResetting) return;
@@ -94,6 +124,46 @@ export default function SettingsPage() {
           {resetMessage && (
             <p className={styles.message}>{resetMessage}</p>
           )}
+        </section>
+
+        <section className={styles.section}>
+          <h2 className={styles.sectionTitle}>Sync Integrity</h2>
+          <div className={styles.card}>
+            <div className={styles.cardItem}>
+              <div className={styles.cardItemContent}>
+                <span className={styles.cardItemTitle}>Status</span>
+                <span className={styles.cardItemDescription}>{syncStatus}</span>
+              </div>
+              <span className={styles.cardItemArrow}>
+                {pendingCount > 0 ? `${pendingCount} pending` : "0 pending"}
+              </span>
+            </div>
+            <div className={styles.cardItem}>
+              <div className={styles.cardItemContent}>
+                <span className={styles.cardItemTitle}>Queue Count</span>
+                <span className={styles.cardItemDescription}>
+                  Local sync queue size
+                </span>
+              </div>
+              <span className={styles.cardItemArrow}>{queueCount}</span>
+            </div>
+            <div className={styles.cardItem}>
+              <div className={styles.cardItemContent}>
+                <span className={styles.cardItemTitle}>Last Synced</span>
+                <span className={styles.cardItemDescription}>
+                  {formatTimestamp(lastSyncedAt)}
+                </span>
+              </div>
+            </div>
+            <div className={styles.cardItem}>
+              <div className={styles.cardItemContent}>
+                <span className={styles.cardItemTitle}>Last Error</span>
+                <span className={styles.cardItemDescription}>
+                  {lastError || "None"}
+                </span>
+              </div>
+            </div>
+          </div>
         </section>
       </main>
     </div>

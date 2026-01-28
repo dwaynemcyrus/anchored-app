@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { getDocumentsRepo } from "@/lib/repo/getDocumentsRepo";
 import { deriveDocumentTitle } from "@/lib/documents/deriveTitle";
+import { deleteDocument } from "@/lib/sync/syncManager";
 import styles from "../../styles/logbook.module.css";
 
 export default function LogbookPage() {
@@ -13,6 +14,8 @@ export default function LogbookPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [processing, setProcessing] = useState(null);
+  const [confirmingId, setConfirmingId] = useState(null);
+  const [confirmingTitle, setConfirmingTitle] = useState("");
 
   const loadTrashed = useCallback(async () => {
     setLoading(true);
@@ -50,15 +53,31 @@ export default function LogbookPage() {
   const handleDelete = async (id) => {
     if (processing) return;
     setProcessing(id);
+    setDocuments((prev) => prev.filter((doc) => doc.id !== id));
     try {
-      const repo = getDocumentsRepo();
-      await repo.delete(id);
-      setDocuments((prev) => prev.filter((doc) => doc.id !== id));
+      await deleteDocument(id);
     } catch (err) {
       console.error("Failed to delete document:", err);
     } finally {
       setProcessing(null);
     }
+  };
+
+  const openDeleteConfirm = (doc) => {
+    setConfirmingId(doc.id);
+    setConfirmingTitle(deriveDocumentTitle(doc));
+  };
+
+  const closeDeleteConfirm = () => {
+    setConfirmingId(null);
+    setConfirmingTitle("");
+  };
+
+  const confirmDelete = () => {
+    if (!confirmingId) return;
+    const id = confirmingId;
+    closeDeleteConfirm();
+    handleDelete(id);
   };
 
   const formatDate = (timestamp) => {
@@ -204,7 +223,7 @@ export default function LogbookPage() {
                   </button>
                   <button
                     className={styles.deleteButton}
-                    onClick={() => handleDelete(doc.id)}
+                    onClick={() => openDeleteConfirm(doc)}
                     disabled={isProcessing}
                   >
                     Delete
@@ -215,6 +234,39 @@ export default function LogbookPage() {
           })}
         </ul>
       </main>
+      {confirmingId ? (
+        <div className={styles.modalBackdrop} role="presentation">
+          <div
+            className={styles.modal}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="logbook-delete-title"
+          >
+            <h2 className={styles.modalTitle} id="logbook-delete-title">
+              Delete permanently?
+            </h2>
+            <p className={styles.modalBody}>
+              This will remove “{confirmingTitle || "Untitled"}” from all devices.
+            </p>
+            <div className={styles.modalActions}>
+              <button
+                type="button"
+                className={styles.modalCancel}
+                onClick={closeDeleteConfirm}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className={styles.modalConfirm}
+                onClick={confirmDelete}
+              >
+                Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
