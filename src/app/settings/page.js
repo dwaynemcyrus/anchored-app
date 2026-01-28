@@ -268,6 +268,16 @@ export default function SettingsPage() {
                 {queueStats.maxRetry ? `Max ${queueStats.maxRetry}` : "0"}
               </span>
             </div>
+            {queueStats.overLimitCount > 0 ? (
+              <div className={styles.cardItemWarning}>
+                <div className={styles.cardItemContent}>
+                  <span className={styles.cardItemTitle}>Retry Limit Exceeded</span>
+                  <span className={styles.cardItemDescription}>
+                    {queueStats.overLimitCount} item(s) exceeded the max retry limit ({queueStats.maxRetryLimit}).
+                  </span>
+                </div>
+              </div>
+            ) : null}
             <div className={styles.cardItem}>
               <div className={styles.cardItemContent}>
                 <span className={styles.cardItemTitle}>Last Error Details</span>

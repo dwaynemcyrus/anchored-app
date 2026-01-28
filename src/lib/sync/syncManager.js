@@ -14,9 +14,11 @@ import {
 import { createConflictCopy } from "./conflictCopy";
 import {
   enqueueOperation,
+  computeBackoffMs,
   getQueueCount,
   getSyncMeta,
   listQueue,
+  MAX_RETRY_COUNT,
   removeOperation,
   updateOperation,
   setSyncMeta,
@@ -550,13 +552,16 @@ async function refreshPendingCount() {
 }
 
 export async function processSyncQueue() {
-  const items = await listQueue();
+  const items = await listQueue({ includeDeferred: false });
   if (!items.length) {
     await refreshPendingCount();
     return;
   }
 
   for (const item of items) {
+    if ((item.retry_count ?? 0) >= MAX_RETRY_COUNT) {
+      continue;
+    }
     try {
       if (item.operation === "upsert") {
         if (item.table === "documents") {
@@ -574,8 +579,14 @@ export async function processSyncQueue() {
 
       await removeOperation(item.id);
     } catch (error) {
+      const nextRetry = (item.retry_count ?? 0) + 1;
+      const backoffMs = computeBackoffMs(nextRetry);
       await updateOperation(item.id, {
-        retry_count: (item.retry_count ?? 0) + 1,
+        retry_count: nextRetry,
+        lastError: buildErrorDetails(error),
+        lastAttemptAt: new Date().toISOString(),
+        nextAttemptAt: backoffMs ? new Date(Date.now() + backoffMs).toISOString() : null,
+        status: nextRetry >= MAX_RETRY_COUNT ? "failed" : "retrying",
       });
     }
   }

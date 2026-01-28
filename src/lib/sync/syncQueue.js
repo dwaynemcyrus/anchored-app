@@ -4,6 +4,10 @@ import {
   SYNC_QUEUE_STORE,
 } from "../db/indexedDb";
 
+export const MAX_RETRY_COUNT = 5;
+const BASE_BACKOFF_MS = 2000;
+const MAX_BACKOFF_MS = 5 * 60 * 1000;
+
 function generateId() {
   if (typeof crypto !== "undefined" && crypto.randomUUID) {
     return crypto.randomUUID();
@@ -40,6 +44,9 @@ export async function enqueueOperation(operation) {
     operation: operation.operation,
     payload: operation.payload ?? null,
     timestamp: operation.timestamp ?? nowIso,
+    createdAt: nowIso,
+    nextAttemptAt: operation.nextAttemptAt ?? null,
+    lastError: operation.lastError ?? null,
     retry_count: typeof operation.retry_count === "number" ? operation.retry_count : 0,
   };
 
@@ -63,7 +70,15 @@ export async function listQueue({ limit = null, includeDeferred = true } = {}) {
 
     request.onsuccess = () => {
       const items = Array.isArray(request.result) ? request.result : [];
-      const sorted = items.sort((a, b) => {
+      const now = Date.now();
+      const filtered = includeDeferred
+        ? items
+        : items.filter((item) => {
+            if (!item.nextAttemptAt) return true;
+            const nextAttempt = Date.parse(item.nextAttemptAt);
+            return Number.isNaN(nextAttempt) || nextAttempt <= now;
+          });
+      const sorted = filtered.sort((a, b) => {
         const aTime = Date.parse(a.timestamp || "") || 0;
         const bTime = Date.parse(b.timestamp || "") || 0;
         return aTime - bTime;
@@ -127,6 +142,12 @@ export async function updateOperation(id, updates = {}) {
   });
 }
 
+export function computeBackoffMs(retryCount) {
+  if (typeof retryCount !== "number" || retryCount <= 0) return 0;
+  const backoff = BASE_BACKOFF_MS * Math.pow(2, retryCount - 1);
+  return Math.min(backoff, MAX_BACKOFF_MS);
+}
+
 export async function removeOperation(id) {
   if (typeof id !== "string" || !id.trim()) {
     throw new Error("Sync operation id is required");
@@ -173,10 +194,15 @@ export async function getQueueStats() {
     (max, item) => Math.max(max, item.retry_count ?? 0),
     0
   );
+  const overLimitCount = items.filter(
+    (item) => (item.retry_count ?? 0) >= MAX_RETRY_COUNT
+  ).length;
   return {
     count: items.length,
     retryCount: retryItems.length,
     maxRetry,
+    overLimitCount,
+    maxRetryLimit: MAX_RETRY_COUNT,
   };
 }
 
