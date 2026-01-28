@@ -1,9 +1,11 @@
 export const DB_NAME = "anchored_db";
-export const DB_VERSION = 8;
+export const DB_VERSION = 9;
 export const DOCUMENTS_STORE = "documents";
 export const DOCUMENT_BODIES_STORE = "document_bodies";
 export const SYNC_QUEUE_STORE = "syncQueue";
 export const SYNC_META_STORE = "syncMeta";
+export const TIMER_EVENTS_STORE = "timerEvents";
+export const TIMER_META_STORE = "timerMeta";
 
 export function openAnchoredDb() {
   if (typeof indexedDB === "undefined") {
@@ -137,6 +139,17 @@ export function openAnchoredDb() {
 
       if (!db.objectStoreNames.contains(SYNC_META_STORE)) {
         db.createObjectStore(SYNC_META_STORE, { keyPath: "key" });
+      }
+
+      if (!db.objectStoreNames.contains(TIMER_EVENTS_STORE)) {
+        const timerEventsStore = db.createObjectStore(TIMER_EVENTS_STORE, { keyPath: "id" });
+        timerEventsStore.createIndex("status", "status", { unique: false });
+        timerEventsStore.createIndex("client_time", "client_time", { unique: false });
+        timerEventsStore.createIndex("timer_entry_id", "timer_entry_id", { unique: false });
+      }
+
+      if (!db.objectStoreNames.contains(TIMER_META_STORE)) {
+        db.createObjectStore(TIMER_META_STORE, { keyPath: "key" });
       }
 
       if (db.objectStoreNames.contains(SYNC_QUEUE_STORE)) {

@@ -70,6 +70,7 @@ export async function getRunningTimeEntry() {
 }
 
 export async function startTimeEntry({
+  id,
   entityId,
   entityType,
   startedAt = new Date().toISOString(),
@@ -87,6 +88,7 @@ export async function startTimeEntry({
   const response = await client
     .from(TIME_ENTRIES_TABLE)
     .insert({
+      ...(id ? { id } : {}),
       user_id: userId,
       entity_id: entityId,
       entity_type: entityType,

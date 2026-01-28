@@ -13,6 +13,8 @@ import {
   upsertDocument,
   upsertDocumentBody,
 } from "../supabase/documents";
+import { startTimeEntry, stopTimeEntry } from "../supabase/timeEntries";
+import { markTimerEventFailed, markTimerEventSynced } from "./timerSync";
 import {
   enqueueOperation,
   computeBackoffMs,
@@ -631,6 +633,37 @@ export async function processSyncQueue() {
         await removeOperation(item.id);
         continue;
       }
+      if (item.table === "time_entries") {
+        if (!isUuid(item.record_id)) {
+          await removeOperation(item.id);
+          continue;
+        }
+        const payload = item.payload || {};
+        if (item.operation === "start") {
+          const data = await startTimeEntry({
+            id: payload.id,
+            entityId: payload.entity_id,
+            entityType: payload.entity_type,
+            startedAt: payload.started_at,
+            note: payload.note ?? null,
+            source: payload.source ?? null,
+          });
+          if (payload.event_id) {
+            await markTimerEventSynced(payload.event_id, data?.started_at);
+          }
+        } else if (item.operation === "stop") {
+          const data = await stopTimeEntry({
+            id: payload.id || item.record_id,
+            endedAt: payload.ended_at,
+            note: payload.note,
+          });
+          if (payload.event_id) {
+            await markTimerEventSynced(payload.event_id, data?.ended_at);
+          }
+        }
+        await removeOperation(item.id);
+        continue;
+      }
       if (item.operation === "upsert") {
         if (item.table === "documents") {
           await syncDocumentToSupabase(item.record_id);
@@ -649,6 +682,9 @@ export async function processSyncQueue() {
     } catch (error) {
       const nextRetry = (item.retry_count ?? 0) + 1;
       const backoffMs = computeBackoffMs(nextRetry);
+      if (item.table === "time_entries" && item.payload?.event_id) {
+        await markTimerEventFailed(item.payload.event_id, buildErrorDetails(error));
+      }
       await updateOperation(item.id, {
         retry_count: nextRetry,
         lastError: buildErrorDetails(error),
