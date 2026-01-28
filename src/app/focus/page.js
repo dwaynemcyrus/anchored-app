@@ -49,6 +49,8 @@ export default function FocusPage() {
   const pauseTimer = useTimerStore((state) => state.pauseTimer);
   const resumeTimer = useTimerStore((state) => state.resumeTimer);
   const stopTimer = useTimerStore((state) => state.stopTimer);
+  const leaseInfo = useTimerStore((state) => state.leaseInfo);
+  const takeOverTimer = useTimerStore((state) => state.takeOverTimer);
 
   const [showDocPicker, setShowDocPicker] = useState(false);
   const [activities, setActivities] = useState([]);
@@ -386,6 +388,17 @@ export default function FocusPage() {
           ) : null}
         </section>
 
+        {leaseInfo ? (
+          <div className={styles.leaseBanner}>
+            <div>
+              Another device is running this timer until{" "}
+              {new Date(leaseInfo.leaseExpiresAt).toLocaleTimeString()}.
+            </div>
+            <button type="button" className={styles.takeoverButton} onClick={takeOverTimer}>
+              Take over
+            </button>
+          </div>
+        ) : null}
         {lastError ? <div className={styles.errorBanner}>{lastError}</div> : null}
         {notice ? <div className={styles.noticeBanner}>{notice.message}</div> : null}
       </main>

@@ -9,6 +9,7 @@ import {
 import { getRunningTimeEntry } from "../supabase/timeEntries";
 
 const CLIENT_ID = getClientId();
+const LEASE_DURATION_MS = 2 * 60 * 1000;
 const ACTIVE_TIMER_META = "activeTimer";
 const TIMER_NOTICE_META = "timerNotice";
 
@@ -46,6 +47,7 @@ export async function enqueueTimerStart({
   note,
   source = "focus",
   startedAt = new Date().toISOString(),
+  leaseExpiresAt,
 }) {
   const eventId = crypto.randomUUID();
   const event = buildTimerEvent({
@@ -70,6 +72,9 @@ export async function enqueueTimerStart({
       started_at: startedAt,
       note,
       source,
+      client_id: CLIENT_ID,
+      lease_expires_at:
+        leaseExpiresAt ?? new Date(Date.parse(startedAt) + LEASE_DURATION_MS).toISOString(),
     },
     timestamp: startedAt,
     retry_count: 0,
@@ -141,6 +146,7 @@ export async function enqueueTimerStop({
 export async function enqueueTimerResume({
   entryId,
   resumedAt = new Date().toISOString(),
+  leaseExpiresAt,
 }) {
   const eventId = crypto.randomUUID();
   const event = buildTimerEvent({
@@ -160,6 +166,8 @@ export async function enqueueTimerResume({
     payload: {
       event_id: eventId,
       id: entryId,
+      client_id: CLIENT_ID,
+      lease_expires_at: leaseExpiresAt ?? new Date(Date.parse(resumedAt) + LEASE_DURATION_MS).toISOString(),
     },
     timestamp: resumedAt,
     retry_count: 0,
@@ -175,6 +183,53 @@ export async function enqueueTimerResume({
       event_time: resumedAt,
     },
     timestamp: resumedAt,
+    retry_count: 0,
+  });
+  return event;
+}
+
+export async function enqueueTimerTakeover({
+  entryId,
+  leaseExpiresAt,
+  leaseToken = crypto.randomUUID(),
+}) {
+  const eventId = crypto.randomUUID();
+  const eventTime = new Date().toISOString();
+  const event = buildTimerEvent({
+    id: eventId,
+    timerEntryId: entryId,
+    eventType: "takeover",
+    entityId: null,
+    entityType: null,
+    note: null,
+    clientTime: eventTime,
+  });
+  await addTimerEvent(event);
+  await enqueueOperation({
+    table: "time_entries",
+    record_id: entryId,
+    operation: "takeover",
+    payload: {
+      event_id: eventId,
+      id: entryId,
+      client_id: CLIENT_ID,
+      lease_expires_at: leaseExpiresAt,
+      lease_token: leaseToken,
+    },
+    timestamp: eventTime,
+    retry_count: 0,
+  });
+  await enqueueOperation({
+    table: "time_entry_events",
+    record_id: eventId,
+    operation: "insert",
+    payload: {
+      id: eventId,
+      time_entry_id: entryId,
+      event_type: "takeover",
+      event_time: eventTime,
+    },
+    timestamp: eventTime,
     retry_count: 0,
   });
   return event;
@@ -214,6 +269,24 @@ export async function reconcileRunningTimer() {
   const running = await getRunningTimeEntry();
   if (!running) return null;
   const active = await getActiveTimerMeta();
+  if (
+    running.client_id &&
+    running.client_id !== CLIENT_ID &&
+    running.lease_expires_at
+  ) {
+    const leaseExpiry = Date.parse(running.lease_expires_at);
+    if (!Number.isNaN(leaseExpiry) && leaseExpiry > Date.now()) {
+      await setTimerNotice({
+        type: "lease",
+        message: "Another device is running this timer.",
+        serverEntryId: running.id,
+        serverClientId: running.client_id,
+        leaseExpiresAt: running.lease_expires_at,
+        at: new Date().toISOString(),
+      });
+      return running;
+    }
+  }
   if (active && active.entryId && active.entryId !== running.id) {
     await setTimerNotice({
       type: "conflict",
@@ -224,4 +297,8 @@ export async function reconcileRunningTimer() {
     });
   }
   return running;
+}
+
+export function getLeaseDurationMs() {
+  return LEASE_DURATION_MS;
 }

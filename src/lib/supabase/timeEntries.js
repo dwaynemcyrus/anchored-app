@@ -147,6 +147,8 @@ export async function startTimeEntry({
   startedAt = new Date().toISOString(),
   note = null,
   source = null,
+  clientId,
+  leaseExpiresAt,
 } = {}) {
   if (typeof entityType !== "string" || !entityType.trim()) {
     throw new Error("Entity type is required");
@@ -168,6 +170,8 @@ export async function startTimeEntry({
       duration_ms: null,
       note,
       source,
+      client_id: clientId,
+      lease_expires_at: leaseExpiresAt ? toIsoTimestamp(leaseExpiresAt) : null,
     })
     .select("*")
     .single();
@@ -212,6 +216,7 @@ export async function stopTimeEntry({
       ended_at: endIso,
       duration_ms: nextDurationMs,
       updated_at: new Date().toISOString(),
+      lease_expires_at: null,
       ...(note !== undefined ? { note } : {}),
     })
     .eq("id", id)
@@ -222,7 +227,7 @@ export async function stopTimeEntry({
   return unwrapResponse(response);
 }
 
-export async function resumeTimeEntry({ id } = {}) {
+export async function resumeTimeEntry({ id, clientId, leaseExpiresAt } = {}) {
   if (typeof id !== "string" || !UUID_PATTERN.test(id)) {
     throw new Error("Time entry id must be a UUID");
   }
@@ -230,7 +235,70 @@ export async function resumeTimeEntry({ id } = {}) {
   const userId = await getUserId();
   const response = await client
     .from(TIME_ENTRIES_TABLE)
-    .update({ ended_at: null, updated_at: new Date().toISOString() })
+    .update({
+      ended_at: null,
+      updated_at: new Date().toISOString(),
+      ...(clientId ? { client_id: clientId } : {}),
+      ...(leaseExpiresAt ? { lease_expires_at: toIsoTimestamp(leaseExpiresAt) } : {}),
+    })
+    .eq("id", id)
+    .eq("user_id", userId)
+    .select("*")
+    .single();
+
+  return unwrapResponse(response);
+}
+
+export async function renewTimeEntryLease({
+  id,
+  clientId,
+  leaseExpiresAt,
+} = {}) {
+  if (typeof id !== "string" || !UUID_PATTERN.test(id)) {
+    throw new Error("Time entry id must be a UUID");
+  }
+  if (typeof clientId !== "string" || !clientId.trim()) {
+    throw new Error("Client id is required");
+  }
+  const client = getSupabaseClient();
+  const userId = await getUserId();
+  const response = await client
+    .from(TIME_ENTRIES_TABLE)
+    .update({
+      client_id: clientId,
+      lease_expires_at: leaseExpiresAt ? toIsoTimestamp(leaseExpiresAt) : null,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", id)
+    .eq("user_id", userId)
+    .select("*")
+    .single();
+
+  return unwrapResponse(response);
+}
+
+export async function takeoverTimeEntry({
+  id,
+  clientId,
+  leaseExpiresAt,
+  leaseToken,
+} = {}) {
+  if (typeof id !== "string" || !UUID_PATTERN.test(id)) {
+    throw new Error("Time entry id must be a UUID");
+  }
+  if (typeof clientId !== "string" || !clientId.trim()) {
+    throw new Error("Client id is required");
+  }
+  const client = getSupabaseClient();
+  const userId = await getUserId();
+  const response = await client
+    .from(TIME_ENTRIES_TABLE)
+    .update({
+      client_id: clientId,
+      lease_expires_at: leaseExpiresAt ? toIsoTimestamp(leaseExpiresAt) : null,
+      lease_token: leaseToken || null,
+      updated_at: new Date().toISOString(),
+    })
     .eq("id", id)
     .eq("user_id", userId)
     .select("*")

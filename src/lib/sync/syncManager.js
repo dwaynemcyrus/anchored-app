@@ -18,6 +18,7 @@ import {
   stopTimeEntry,
   resumeTimeEntry,
   createTimeEntryEvent,
+  takeoverTimeEntry,
 } from "../supabase/timeEntries";
 import { markTimerEventFailed, markTimerEventSynced } from "./timerSync";
 import {
@@ -652,6 +653,8 @@ export async function processSyncQueue() {
             startedAt: payload.started_at,
             note: payload.note ?? null,
             source: payload.source ?? null,
+            clientId: payload.client_id,
+            leaseExpiresAt: payload.lease_expires_at,
           });
           if (payload.event_id) {
             await markTimerEventSynced(payload.event_id, data?.started_at);
@@ -669,6 +672,18 @@ export async function processSyncQueue() {
         } else if (item.operation === "resume") {
           const data = await resumeTimeEntry({
             id: payload.id || item.record_id,
+            clientId: payload.client_id,
+            leaseExpiresAt: payload.lease_expires_at,
+          });
+          if (payload.event_id) {
+            await markTimerEventSynced(payload.event_id, data?.updated_at);
+          }
+        } else if (item.operation === "takeover") {
+          const data = await takeoverTimeEntry({
+            id: payload.id || item.record_id,
+            clientId: payload.client_id,
+            leaseExpiresAt: payload.lease_expires_at,
+            leaseToken: payload.lease_token,
           });
           if (payload.event_id) {
             await markTimerEventSynced(payload.event_id, data?.updated_at);

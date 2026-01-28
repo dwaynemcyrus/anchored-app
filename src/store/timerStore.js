@@ -4,11 +4,13 @@ import {
   enqueueTimerStart,
   enqueueTimerStop,
   enqueueTimerResume,
+  enqueueTimerTakeover,
   getActiveTimerMeta,
   setActiveTimerMeta,
   setTimerNotice,
   getTimerNotice,
   reconcileRunningTimer,
+  getLeaseDurationMs,
 } from "../lib/sync/timerSync";
 import { scheduleSync } from "../lib/sync/syncManager";
 
@@ -57,6 +59,7 @@ export const useTimerStore = create((set, get) => ({
   notice: null,
   hasHydrated: false,
   pollingEnabled: false,
+  leaseInfo: null,
   startPolling: () => {
     if (typeof window === "undefined") return;
     set({ pollingEnabled: true });
@@ -71,7 +74,18 @@ export const useTimerStore = create((set, get) => ({
       pollIntervalId = window.setInterval(async () => {
         if (!isOnline()) return;
         try {
-          await reconcileRunningTimer();
+          const running = await reconcileRunningTimer();
+          if (running?.lease_expires_at && running?.client_id && running.client_id !== CLIENT_ID) {
+            set({
+              leaseInfo: {
+                entryId: running.id,
+                clientId: running.client_id,
+                leaseExpiresAt: running.lease_expires_at,
+              },
+            });
+          } else {
+            set({ leaseInfo: null });
+          }
         } catch (error) {
           set({ lastError: error?.message || "Failed to reconcile timer" });
         }
@@ -100,7 +114,18 @@ export const useTimerStore = create((set, get) => ({
     pollIntervalId = window.setInterval(async () => {
       if (!isOnline()) return;
       try {
-        await reconcileRunningTimer();
+        const running = await reconcileRunningTimer();
+        if (running?.lease_expires_at && running?.client_id && running.client_id !== CLIENT_ID) {
+          set({
+            leaseInfo: {
+              entryId: running.id,
+              clientId: running.client_id,
+              leaseExpiresAt: running.lease_expires_at,
+            },
+          });
+        } else {
+          set({ leaseInfo: null });
+        }
       } catch (error) {
         set({ lastError: error?.message || "Failed to reconcile timer" });
       }
@@ -121,7 +146,18 @@ export const useTimerStore = create((set, get) => ({
       hasHydrated: true,
     });
     try {
-      await reconcileRunningTimer();
+      const running = await reconcileRunningTimer();
+      if (running?.lease_expires_at && running?.client_id && running.client_id !== CLIENT_ID) {
+        set({
+          leaseInfo: {
+            entryId: running.id,
+            clientId: running.client_id,
+            leaseExpiresAt: running.lease_expires_at,
+          },
+        });
+      } else {
+        set({ leaseInfo: null });
+      }
     } catch (error) {
       set({ lastError: error?.message || "Failed to reconcile timer" });
     }
@@ -132,6 +168,7 @@ export const useTimerStore = create((set, get) => ({
     if (get().status === "running") return;
     const entryId = crypto.randomUUID();
     const startedAt = new Date().toISOString();
+    const leaseExpiresAt = new Date(Date.parse(startedAt) + getLeaseDurationMs()).toISOString();
     const activeTimer = buildActiveTimer({
       entryId,
       entityId,
@@ -153,6 +190,7 @@ export const useTimerStore = create((set, get) => ({
         entityType,
         note,
         startedAt,
+        leaseExpiresAt,
       });
       scheduleSync({ reason: "timer-start" });
     } catch (error) {
@@ -206,6 +244,7 @@ export const useTimerStore = create((set, get) => ({
     const active = get().activeTimer;
     if (!active) return;
     const segmentStart = new Date().toISOString();
+    const leaseExpiresAt = new Date(Date.parse(segmentStart) + getLeaseDurationMs()).toISOString();
     const nextTimer = buildActiveTimer({
       entryId: active.entryId,
       entityId: active.entityId,
@@ -225,10 +264,30 @@ export const useTimerStore = create((set, get) => ({
       await enqueueTimerResume({
         entryId: active.entryId,
         resumedAt: segmentStart,
+        leaseExpiresAt,
       });
       scheduleSync({ reason: "timer-resume" });
     } catch (error) {
       set({ lastError: error?.message || "Failed to resume timer" });
+    }
+  },
+  takeOverTimer: async () => {
+    const notice = get().notice;
+    const leaseInfo = get().leaseInfo;
+    const entryId = notice?.serverEntryId || leaseInfo?.entryId;
+    if (!entryId) return;
+    const now = new Date().toISOString();
+    const leaseExpiresAt = new Date(Date.parse(now) + getLeaseDurationMs()).toISOString();
+    try {
+      await enqueueTimerTakeover({
+        entryId,
+        leaseExpiresAt,
+      });
+      await setTimerNotice(null);
+      set({ leaseInfo: null });
+      scheduleSync({ reason: "timer-takeover" });
+    } catch (error) {
+      set({ lastError: error?.message || "Failed to take over timer" });
     }
   },
   stopTimer: async ({ note } = {}) => {
