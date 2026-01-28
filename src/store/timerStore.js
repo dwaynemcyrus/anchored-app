@@ -5,6 +5,7 @@ import {
   enqueueTimerStop,
   enqueueTimerResume,
   enqueueTimerTakeover,
+  enqueueTimerLeaseRenew,
   getActiveTimerMeta,
   setActiveTimerMeta,
   setTimerNotice,
@@ -17,8 +18,10 @@ import { scheduleSync } from "../lib/sync/syncManager";
 const CLIENT_ID = getClientId();
 const ACTIVE_POLL_MS = 12000;
 const IDLE_POLL_MS = 60000;
+const LEASE_RENEW_MS = 60000;
 let pollIntervalId = null;
 let pollIntervalMs = null;
+let leaseIntervalId = null;
 
 function isOnline() {
   if (typeof window === "undefined") return false;
@@ -60,6 +63,7 @@ export const useTimerStore = create((set, get) => ({
   hasHydrated: false,
   pollingEnabled: false,
   leaseInfo: null,
+  leaseCountdown: null,
   startPolling: () => {
     if (typeof window === "undefined") return;
     set({ pollingEnabled: true });
@@ -92,6 +96,30 @@ export const useTimerStore = create((set, get) => ({
       }, desiredMs);
     };
     ensurePolling();
+  },
+  startLeaseRenewal: () => {
+    if (typeof window === "undefined") return;
+    if (leaseIntervalId) return;
+    leaseIntervalId = window.setInterval(async () => {
+      const active = get().activeTimer;
+      if (!active || get().status !== "running") return;
+      const leaseExpiresAt = new Date(Date.now() + getLeaseDurationMs()).toISOString();
+      try {
+        await enqueueTimerLeaseRenew({
+          entryId: active.entryId,
+          leaseExpiresAt,
+        });
+        scheduleSync({ reason: "timer-lease-renew" });
+      } catch (error) {
+        set({ lastError: error?.message || "Failed to renew lease" });
+      }
+    }, LEASE_RENEW_MS);
+  },
+  stopLeaseRenewal: () => {
+    if (leaseIntervalId) {
+      window.clearInterval(leaseIntervalId);
+      leaseIntervalId = null;
+    }
   },
   stopPolling: () => {
     set({ pollingEnabled: false });
@@ -162,6 +190,9 @@ export const useTimerStore = create((set, get) => ({
       set({ lastError: error?.message || "Failed to reconcile timer" });
     }
     get().refreshPolling();
+    if (nextActiveTimer?.status === "running") {
+      get().startLeaseRenewal();
+    }
   },
   clearNotice: () => set({ notice: null }),
   startTimer: async ({ entityId, entityType, label, note }) => {
@@ -183,6 +214,7 @@ export const useTimerStore = create((set, get) => ({
     set({ status: "running", activeTimer, lastError: null });
     await setActiveTimerMeta(activeTimer);
     get().refreshPolling();
+    get().startLeaseRenewal();
     try {
       await enqueueTimerStart({
         entryId,
@@ -227,6 +259,7 @@ export const useTimerStore = create((set, get) => ({
       segmentStartedAt: null,
     });
     get().refreshPolling();
+    get().stopLeaseRenewal();
     try {
       await enqueueTimerStop({
         entryId: active.entryId,
@@ -260,6 +293,7 @@ export const useTimerStore = create((set, get) => ({
     set({ status: "running", activeTimer: nextTimer, lastError: null });
     await setActiveTimerMeta(nextTimer);
     get().refreshPolling();
+    get().startLeaseRenewal();
     try {
       await enqueueTimerResume({
         entryId: active.entryId,
@@ -286,6 +320,7 @@ export const useTimerStore = create((set, get) => ({
       await setTimerNotice(null);
       set({ leaseInfo: null });
       scheduleSync({ reason: "timer-takeover" });
+      get().startLeaseRenewal();
     } catch (error) {
       set({ lastError: error?.message || "Failed to take over timer" });
     }
@@ -302,6 +337,7 @@ export const useTimerStore = create((set, get) => ({
     set({ status: "idle", activeTimer: null, lastError: null });
     await setActiveTimerMeta(null);
     get().refreshPolling();
+    get().stopLeaseRenewal();
     try {
       await enqueueTimerStop({
         entryId: active.entryId,

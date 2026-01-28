@@ -188,6 +188,25 @@ export async function enqueueTimerResume({
   return event;
 }
 
+export async function enqueueTimerLeaseRenew({
+  entryId,
+  leaseExpiresAt,
+}) {
+  const now = new Date().toISOString();
+  await enqueueOperation({
+    table: "time_entries",
+    record_id: entryId,
+    operation: "renew",
+    payload: {
+      id: entryId,
+      client_id: CLIENT_ID,
+      lease_expires_at: leaseExpiresAt,
+    },
+    timestamp: now,
+    retry_count: 0,
+  });
+}
+
 export async function enqueueTimerTakeover({
   entryId,
   leaseExpiresAt,

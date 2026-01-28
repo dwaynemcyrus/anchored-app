@@ -19,6 +19,7 @@ import {
   resumeTimeEntry,
   createTimeEntryEvent,
   takeoverTimeEntry,
+  renewTimeEntryLease,
 } from "../supabase/timeEntries";
 import { markTimerEventFailed, markTimerEventSynced } from "./timerSync";
 import {
@@ -688,6 +689,12 @@ export async function processSyncQueue() {
           if (payload.event_id) {
             await markTimerEventSynced(payload.event_id, data?.updated_at);
           }
+        } else if (item.operation === "renew") {
+          await renewTimeEntryLease({
+            id: payload.id || item.record_id,
+            clientId: payload.client_id,
+            leaseExpiresAt: payload.lease_expires_at,
+          });
         }
         await removeOperation(item.id);
         continue;

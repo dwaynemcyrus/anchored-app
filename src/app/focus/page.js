@@ -61,6 +61,7 @@ export default function FocusPage() {
   const [tick, setTick] = useState(Date.now());
   const [eventHistory, setEventHistory] = useState([]);
   const [showHistory, setShowHistory] = useState(false);
+  const [leaseTick, setLeaseTick] = useState(Date.now());
 
   const elapsedMs = useMemo(() => {
     if (!activeTimer) return 0;
@@ -86,6 +87,12 @@ export default function FocusPage() {
     const interval = window.setInterval(() => setTick(Date.now()), 1000);
     return () => window.clearInterval(interval);
   }, [timerStatus]);
+
+  useEffect(() => {
+    if (!leaseInfo?.leaseExpiresAt) return undefined;
+    const interval = window.setInterval(() => setLeaseTick(Date.now()), 1000);
+    return () => window.clearInterval(interval);
+  }, [leaseInfo?.leaseExpiresAt]);
 
   useEffect(() => {
     let active = true;
@@ -211,6 +218,12 @@ export default function FocusPage() {
   const selectionLabel = selection ? `${selection.label} · ${selection.type}` : "No selection";
   const pauseSegments = eventHistory.filter((event) => event.event_type === "pause");
   const pauseCount = pauseSegments.length;
+  const leaseRemainingMs = leaseInfo?.leaseExpiresAt
+    ? Math.max(0, Date.parse(leaseInfo.leaseExpiresAt) - leaseTick)
+    : null;
+  const leaseCountdown = leaseRemainingMs != null
+    ? formatDuration(leaseRemainingMs)
+    : null;
 
   return (
     <div className={styles.page}>
@@ -235,6 +248,11 @@ export default function FocusPage() {
           <div className={styles.timerStatus}>
             {timerStatus === "running" ? "Running" : timerStatus === "paused" ? "Paused" : "Idle"}
           </div>
+          {leaseCountdown ? (
+            <div className={styles.leaseCountdown}>
+              Lease expires in {leaseCountdown}
+            </div>
+          ) : null}
           {timerStatus === "paused" ? (
             <div className={styles.pauseBadge}>Paused</div>
           ) : null}
