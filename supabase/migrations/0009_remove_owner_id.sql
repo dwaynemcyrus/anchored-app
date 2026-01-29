@@ -2,6 +2,20 @@
 
 begin;
 
+-- Replace policies to use user_id
+alter table public.documents enable row level security;
+alter table public.document_bodies enable row level security;
+
+drop policy if exists documents_select_own on public.documents;
+drop policy if exists documents_insert_own on public.documents;
+drop policy if exists documents_update_own on public.documents;
+drop policy if exists documents_delete_own on public.documents;
+
+drop policy if exists document_bodies_select_own on public.document_bodies;
+drop policy if exists document_bodies_insert_own on public.document_bodies;
+drop policy if exists document_bodies_update_own on public.document_bodies;
+drop policy if exists document_bodies_delete_own on public.document_bodies;
+
 -- Drop owner_id indexes
 drop index if exists documents_owner_updated_idx;
 drop index if exists documents_owner_deleted_idx;
@@ -25,20 +39,6 @@ create index if not exists documents_user_deleted_idx
 
 create index if not exists documents_user_synced_idx
   on public.documents (user_id, synced_at);
-
--- Replace policies to use user_id
-alter table public.documents enable row level security;
-alter table public.document_bodies enable row level security;
-
-drop policy if exists documents_select_own on public.documents;
-drop policy if exists documents_insert_own on public.documents;
-drop policy if exists documents_update_own on public.documents;
-drop policy if exists documents_delete_own on public.documents;
-
-drop policy if exists document_bodies_select_own on public.document_bodies;
-drop policy if exists document_bodies_insert_own on public.document_bodies;
-drop policy if exists document_bodies_update_own on public.document_bodies;
-drop policy if exists document_bodies_delete_own on public.document_bodies;
 
 create policy documents_select_own
   on public.documents
