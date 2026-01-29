@@ -12,7 +12,7 @@ import { useEditorSettingsStore } from "../../store/editorSettingsStore";
 import { useDocumentsStore } from "../../store/documentsStore";
 import { useTimerStore } from "../../store/timerStore";
 import { getCaptureTemplate, createFromTemplate } from "../../lib/templates";
-import { performInitialSync } from "../../lib/sync/initialSync";
+import { useServerSync } from "../../lib/sync/useServerSync";
 import styles from "./Shell.module.css";
 import layout from "./AppShell.module.css";
 import useVisualViewportInsets from "../../hooks/useVisualViewportInsets";
@@ -163,6 +163,7 @@ export default function Shell({ children }) {
     ? `/focus?entityId=${noteId}&entityType=note`
     : "/focus";
   const isPublicRoute = pathname === "/login" || pathname === "/debug/env";
+  useServerSync({ enabled: !isPublicRoute });
 
   // Determine back link based on current route
   const backHref = isNoteEditorRoute ? "/knowledge/notes" : "/";
@@ -215,15 +216,9 @@ export default function Shell({ children }) {
 
   useEffect(() => {
     if (isPublicRoute) return undefined;
-    let active = true;
-    performInitialSync().catch((error) => {
-      if (!active) return;
-      console.error("Initial sync failed", error);
-    });
     hydrateTimer();
     startTimerPolling();
     return () => {
-      active = false;
       stopTimerPolling();
     };
   }, [hydrateTimer, isPublicRoute, startTimerPolling, stopTimerPolling]);

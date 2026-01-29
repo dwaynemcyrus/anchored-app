@@ -8,6 +8,7 @@ import { getDocumentBody } from "../db/documentBodies";
 import { getSupabaseClient, getUserId } from "../supabase/client";
 import {
   fetchDocumentBody,
+  fetchDocumentById,
   fetchDocumentsUpdatedSince,
   fetchDocumentBodiesByIds,
   upsertDocument,
@@ -45,8 +46,6 @@ const debouncedSaves = new Map();
 let syncInFlight = null;
 let listenersInitialized = false;
 const listeners = new Set();
-let pollIntervalId = null;
-const POLL_INTERVAL_MS = 60000;
 
 const UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -109,11 +108,6 @@ export function initSyncListeners() {
   window.addEventListener("offline", () => {
     getStoreActions().setStatus(SYNC_STATUS.OFFLINE);
   });
-  if (!pollIntervalId) {
-    pollIntervalId = window.setInterval(() => {
-      scheduleSync({ reason: "poll" });
-    }, POLL_INTERVAL_MS);
-  }
 }
 
 function parseIsoToMs(value) {
@@ -209,10 +203,30 @@ async function patchLocalRecord(storeName, id, patch) {
   });
 }
 
-async function upsertLocalDocument(document) {
+async function upsertLocalDocument(document, bodyRecord = null) {
   const db = await openAnchoredDb();
   const payload = { ...document };
   delete payload.body;
+  const hasBodyRecord = bodyRecord && typeof bodyRecord === "object";
+  const hasBodyString = typeof document.body === "string";
+  const shouldUpdateBody = hasBodyRecord || hasBodyString;
+  const bodyContent = hasBodyString
+    ? document.body
+    : hasBodyRecord && typeof bodyRecord.content === "string"
+      ? bodyRecord.content
+      : null;
+  const bodyUpdatedAtMs = shouldUpdateBody
+    ? (typeof bodyRecord?.updatedAt === "number" ? bodyRecord.updatedAt : null) ??
+      parseIsoToMs(bodyRecord?.updated_at) ??
+      (typeof document.updatedAt === "number" ? document.updatedAt : null) ??
+      Date.now()
+    : null;
+  const bodyUpdatedAtIso =
+    shouldUpdateBody && bodyUpdatedAtMs
+      ? bodyRecord?.updated_at ?? new Date(bodyUpdatedAtMs).toISOString()
+      : null;
+  const bodyVersion =
+    shouldUpdateBody && typeof bodyRecord?.version === "number" ? bodyRecord.version : null;
   return new Promise((resolve, reject) => {
     const transaction = db.transaction(
       [DOCUMENTS_STORE, DOCUMENT_BODIES_STORE],
@@ -221,13 +235,15 @@ async function upsertLocalDocument(document) {
     const documentStore = transaction.objectStore(DOCUMENTS_STORE);
     const bodyStore = transaction.objectStore(DOCUMENT_BODIES_STORE);
     documentStore.put(payload);
-    if (typeof document.body === "string") {
+    if (typeof bodyContent === "string") {
       bodyStore.put({
         documentId: document.id,
-        content: document.body,
-        updatedAt: document.updatedAt ?? Date.now(),
+        content: bodyContent,
+        updatedAt: bodyUpdatedAtMs ?? Date.now(),
+        ...(bodyUpdatedAtIso ? { updated_at: bodyUpdatedAtIso } : {}),
         syncedAt: document.syncedAt ?? null,
         clientId: document.clientId ?? CLIENT_ID,
+        ...(bodyVersion != null ? { version: bodyVersion } : {}),
       });
     }
     transaction.oncomplete = () => resolve();
@@ -356,7 +372,15 @@ async function syncDocumentToSupabase(documentId) {
   if (!doc) return;
 
   try {
-    const userId = await getUserId();
+    const remoteDoc = await fetchDocumentById(documentId);
+    if (remoteDoc?.updated_at) {
+      const remoteUpdatedMs = parseIsoToMs(remoteDoc.updated_at) ?? 0;
+      const localUpdatedAtMs = getLocalUpdatedAtMs(doc);
+      if (remoteUpdatedMs > localUpdatedAtMs) {
+        await handleDocumentConflict(doc, remoteDoc);
+        return;
+      }
+    }
     const syncedAt = new Date().toISOString();
     const payload = {
       ...toServerDocument(doc),
@@ -367,10 +391,8 @@ async function syncDocumentToSupabase(documentId) {
     };
 
     const data = await upsertDocument(payload);
-
-    const localUpdatedAt = new Date(doc.updatedAt ?? Date.now());
-    if (data?.updated_at && new Date(data.updated_at) > localUpdatedAt) {
-      await handleDocumentConflict(doc, data);
+    if (data?.id) {
+      await applyRemoteDocument(data, null);
     } else {
       await patchLocalRecord(DOCUMENTS_STORE, documentId, {
         syncedAt,
@@ -410,19 +432,37 @@ async function syncBodyToSupabase(documentId) {
   if (!body) return;
 
   try {
+    const remoteBody = await fetchDocumentBody(documentId);
+    if (remoteBody?.updated_at) {
+      const remoteUpdatedMs = parseIsoToMs(remoteBody.updated_at) ?? 0;
+      const localUpdatedAtMs = parseIsoToMs(body.updated_at) ?? body.updatedAt ?? 0;
+      if (remoteUpdatedMs > localUpdatedAtMs) {
+        await handleBodyConflict(documentId, body, remoteBody);
+        return;
+      }
+    }
     const userId = await getUserId();
     const syncedAt = new Date().toISOString();
     const data = await upsertDocumentBody({
       document_id: body.documentId,
       content: body.content,
       updated_at: ensureIsoTimestamp(body.updatedAt ?? body.updated_at),
+      version: typeof body.version === "number" ? body.version : 1,
       client_id: body.clientId ?? CLIENT_ID,
       synced_at: syncedAt,
     });
 
-    const localUpdatedAt = new Date(body.updatedAt ?? Date.now());
-    if (data?.updated_at && new Date(data.updated_at) > localUpdatedAt) {
-      await handleBodyConflict(documentId, body, data);
+    if (data?.document_id) {
+      const serverUpdatedAtIso =
+        data.updated_at ?? ensureIsoTimestamp(body.updatedAt ?? body.updated_at);
+      const serverUpdatedAtMs = parseIsoToMs(serverUpdatedAtIso) ?? Date.now();
+      await patchLocalRecord(DOCUMENT_BODIES_STORE, documentId, {
+        content: data.content ?? body.content,
+        updatedAt: serverUpdatedAtMs,
+        updated_at: serverUpdatedAtIso,
+        version: typeof data.version === "number" ? data.version : 1,
+        syncedAt,
+      });
     } else {
       await patchLocalRecord(DOCUMENT_BODIES_STORE, documentId, {
         syncedAt,
@@ -459,7 +499,7 @@ async function handleDocumentConflict(localDoc, remoteDoc) {
 
   if (remoteDoc?.id) {
     const serverBody = await fetchDocumentBody(remoteDoc.id);
-    await applyRemoteDocument(remoteDoc, serverBody?.content ?? "");
+    await applyRemoteDocument(remoteDoc, serverBody ?? null);
   }
 }
 
@@ -479,6 +519,8 @@ async function handleBodyConflict(documentId, localBody, remoteBody) {
   await patchLocalRecord(DOCUMENT_BODIES_STORE, documentId, {
     content: remoteBody.content,
     updatedAt: parseIsoToMs(remoteBody.updated_at) ?? Date.now(),
+    updated_at: remoteBody.updated_at ?? new Date().toISOString(),
+    version: typeof remoteBody.version === "number" ? remoteBody.version : 1,
     syncedAt: new Date().toISOString(),
   });
 }
@@ -500,27 +542,23 @@ async function syncRemoteUpdates() {
   for (const remoteDoc of remoteDocs) {
     if (!isUuid(remoteDoc.id)) continue;
     const bodyRecord = bodiesById.get(remoteDoc.id) || null;
-    const bodyContent = bodyRecord?.content ?? "";
     const remoteUpdatedMs = parseIsoToMs(remoteDoc.updated_at) ?? 0;
     maxUpdatedAt = Math.max(maxUpdatedAt, remoteUpdatedMs);
     const localDoc = await repo.get(remoteDoc.id);
 
     if (!localDoc) {
-      await applyRemoteDocument(remoteDoc, bodyContent);
+      await applyRemoteDocument(remoteDoc, bodyRecord);
       continue;
     }
 
     const localDirty = localDoc.syncedAt == null;
-    const localUpdatedAt = getLocalUpdatedAtMs(localDoc);
 
-    if (localDirty && remoteUpdatedMs > localUpdatedAt) {
+    if (localDirty) {
       await handleDocumentConflict(localDoc, remoteDoc);
       continue;
     }
 
-    if (!localDirty && remoteUpdatedMs > localUpdatedAt) {
-      await applyRemoteDocument(remoteDoc, bodyContent);
-    }
+    await applyRemoteDocument(remoteDoc, bodyRecord);
   }
 
   if (maxUpdatedAt) {
@@ -530,13 +568,19 @@ async function syncRemoteUpdates() {
   }
 }
 
-async function applyRemoteDocument(remoteDoc, bodyContent) {
+async function applyRemoteDocument(remoteDoc, bodyRecord) {
+  const normalizedBody =
+    typeof bodyRecord === "string"
+      ? { content: bodyRecord }
+      : bodyRecord || null;
+  const hasBody = Boolean(normalizedBody);
+  const bodyContent = hasBody ? normalizedBody?.content ?? "" : "";
   const localDoc = {
     id: remoteDoc.id,
     type: remoteDoc.type,
     subtype: remoteDoc.subtype ?? null,
     title: remoteDoc.title ?? null,
-    body: bodyContent ?? "",
+    ...(hasBody ? { body: bodyContent } : {}),
     meta: {
       ...(remoteDoc.frontmatter ?? {}),
       status: remoteDoc.status ?? "active",
@@ -560,7 +604,7 @@ async function applyRemoteDocument(remoteDoc, bodyContent) {
     syncedAt: new Date().toISOString(),
   };
 
-  await upsertLocalDocument(localDoc);
+  await upsertLocalDocument(localDoc, normalizedBody);
 }
 
 export async function deleteDocument(documentId) {
