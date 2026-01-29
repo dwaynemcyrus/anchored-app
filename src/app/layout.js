@@ -1,6 +1,7 @@
 import localFont from "next/font/local";
 import "./globals.css";
 import Shell from "../components/shell/Shell";
+import Providers from "./providers";
 
 const atten = localFont({
   variable: "--font-atten",
@@ -28,7 +29,9 @@ export default function RootLayout({ children }) {
   return (
     <html lang="en">
       <body className={atten.variable}>
-        <Shell>{children}</Shell>
+        <Providers>
+          <Shell>{children}</Shell>
+        </Providers>
       </body>
     </html>
   );
