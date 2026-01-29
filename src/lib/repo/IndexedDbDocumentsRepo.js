@@ -9,6 +9,7 @@ import {
 import { ensureIsoTimestamp, parseIsoTimestamp } from "../utils/timestamps";
 import { deriveDocumentTitle } from "../documents/deriveTitle";
 import { clearSearchIndex, removeFromSearchIndex } from "../search/searchDocuments";
+import { extractTitleFromBody } from "../inbox/extractTitle";
 import {
   DOCUMENT_TYPE_NOTE,
   DOCUMENT_TYPE_INBOX,
@@ -185,11 +186,15 @@ export class IndexedDbDocumentsRepo {
     ensureInput(input);
     const now = Date.now();
     const nowIso = new Date(now).toISOString();
+    const derivedTitle =
+      typeof input.title === "string" && input.title.trim()
+        ? input.title.trim()
+        : extractTitleFromBody(input.body);
     const document = {
       id: generateId(),
       type: input.type || DOCUMENT_TYPE_NOTE,
       slug: input.slug ?? null,
-      title: input.title ?? null,
+      title: derivedTitle ?? null,
       meta: input.meta || {},
       version: typeof input.version === "number" ? input.version : 1,
       createdAt: now,
