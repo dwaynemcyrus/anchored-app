@@ -2,7 +2,7 @@ import { getSupabaseClient, getUserId } from "./client";
 
 type IsoTimestamp = string;
 
-type SupabaseDocument = {
+export type SupabaseDocument = {
   id: string;
   user_id?: string;
   type?: string;
@@ -22,7 +22,7 @@ type SupabaseDocument = {
   synced_at?: IsoTimestamp | null;
 };
 
-type SupabaseDocumentBody = {
+export type SupabaseDocumentBody = {
   document_id: string;
   content: string;
   updated_at?: IsoTimestamp | null;
@@ -31,7 +31,7 @@ type SupabaseDocumentBody = {
   version?: number;
 };
 
-type UpdatedSinceOptions = {
+export type UpdatedSinceOptions = {
   since?: string | number | Date | null;
   limit?: number;
 };

@@ -6,7 +6,7 @@
 
 import { getDocumentsRepo } from "../repo/getDocumentsRepo.js";
 import { DOCUMENT_TYPE_TEMPLATE } from "../../types/document.js";
-import { enqueueSyncOperation } from "../sync/syncManager.js";
+import { enqueueSyncOperation } from "../sync/syncManager";
 import {
   BUILT_IN_TEMPLATES,
   getBuiltInTemplateDefinition,

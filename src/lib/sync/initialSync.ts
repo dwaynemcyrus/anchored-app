@@ -8,6 +8,8 @@ import { setSyncMeta } from "./syncQueue";
 import {
   fetchDocumentBodiesByIds,
   fetchDocumentsUpdatedSince,
+  fetchDocumentById,
+  fetchDocumentBody,
   upsertDocument,
   upsertDocumentBody,
 } from "../supabase/documents";
@@ -20,11 +22,16 @@ const LAST_SYNC_KEY = "last_sync_time";
 const UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
-function isUuid(value) {
+type DocumentsRepo = ReturnType<typeof getDocumentsRepo>;
+
+type SupabaseDoc = Awaited<ReturnType<typeof fetchDocumentsUpdatedSince>>[number];
+type SupabaseBody = Awaited<ReturnType<typeof fetchDocumentBodiesByIds>>[number];
+
+function isUuid(value: unknown): value is string {
   return typeof value === "string" && UUID_PATTERN.test(value);
 }
 
-function buildLocalDoc(doc, bodyContent) {
+function buildLocalDoc(doc: SupabaseDoc, bodyContent: string | null) {
   const createdAt = parseIsoTimestamp(doc.created_at, Date.now());
   const updatedAt = parseIsoTimestamp(doc.updated_at, createdAt ?? Date.now());
   return {
@@ -103,7 +110,7 @@ export function resetLastSyncTime() {
   return setSyncMeta("lastSyncedAt", null);
 }
 
-async function syncDocuments(lastSyncTime, repo) {
+async function syncDocuments(lastSyncTime: string, repo: DocumentsRepo) {
   const remoteDocs = await fetchDocumentsUpdatedSince({ since: lastSyncTime });
   if (!remoteDocs || remoteDocs.length === 0) return;
 
@@ -124,9 +131,8 @@ async function syncDocuments(lastSyncTime, repo) {
       continue;
     }
 
-    const localUpdatedAt = parseIsoTimestamp(localDoc.updated_at, localDoc.updatedAt);
     const localDirty = localDoc.syncedAt == null;
-    if (localDirty && remoteUpdatedMs > (localUpdatedAt ?? 0)) {
+    if (localDirty) {
       await createConflictCopy({
         document: localDoc,
         reason: "server-newer",
@@ -135,13 +141,13 @@ async function syncDocuments(lastSyncTime, repo) {
       continue;
     }
 
-    if (!localDirty && remoteUpdatedMs > (localUpdatedAt ?? 0)) {
+    if (remoteUpdatedMs > 0) {
       await repo.bulkUpsert([buildLocalDoc(remoteDoc, bodyContent)]);
     }
   }
 }
 
-async function syncDocumentBodies(lastSyncTime, repo) {
+async function syncDocumentBodies(lastSyncTime: string, repo: DocumentsRepo) {
   const remoteDocs = await fetchDocumentsUpdatedSince({ since: lastSyncTime });
   if (!remoteDocs || remoteDocs.length === 0) return;
   const docIds = remoteDocs.map((doc) => doc.id).filter((id) => isUuid(id));
@@ -149,7 +155,7 @@ async function syncDocumentBodies(lastSyncTime, repo) {
   const remoteBodies = await fetchDocumentBodiesByIds(docIds);
   if (!remoteBodies || remoteBodies.length === 0) return;
 
-  for (const remoteBody of remoteBodies) {
+  for (const remoteBody of remoteBodies as SupabaseBody[]) {
     const localBody = await getDocumentBody(remoteBody.document_id);
     const existingDoc = await repo.get(remoteBody.document_id);
     if (!localBody) {
@@ -158,12 +164,8 @@ async function syncDocumentBodies(lastSyncTime, repo) {
       });
       continue;
     }
-    const localUpdatedAt = parseIsoTimestamp(
-      localBody.updated_at,
-      localBody.updatedAt
-    );
     const remoteUpdatedAt = parseIsoTimestamp(remoteBody.updated_at, 0);
-    if (localBody.syncedAt == null && remoteUpdatedAt > (localUpdatedAt ?? 0)) {
+    if (localBody.syncedAt == null) {
       if (existingDoc) {
         await createConflictCopy({
           document: {
@@ -178,7 +180,7 @@ async function syncDocumentBodies(lastSyncTime, repo) {
       }
       continue;
     }
-    if (remoteUpdatedAt > (localUpdatedAt ?? 0)) {
+    if (remoteUpdatedAt > 0) {
       await upsertLocalDocumentBody(remoteBody.document_id, remoteBody.content, {
         updated_at: remoteBody.updated_at,
       });
@@ -186,12 +188,25 @@ async function syncDocumentBodies(lastSyncTime, repo) {
   }
 }
 
-async function pushUnsyncedDocuments(repo, userId) {
+async function pushUnsyncedDocuments(repo: DocumentsRepo, userId: string) {
   const documents = await repo.list({ includeArchived: true, includeTrashed: true, limit: 1000 });
   const fullDocs = await Promise.all(documents.map((doc) => repo.get(doc.id)));
   for (const doc of fullDocs) {
     if (!doc || doc.syncedAt != null) continue;
     if (!isUuid(doc.id)) continue;
+    const remoteDoc = await fetchDocumentById(doc.id);
+    if (remoteDoc) {
+      const remoteBody = await fetchDocumentBody(doc.id);
+      await createConflictCopy({
+        document: {
+          ...doc,
+          body: doc.body ?? "",
+        },
+        reason: "server-newer",
+      });
+      await repo.bulkUpsert([buildLocalDoc(remoteDoc, remoteBody?.content ?? "")]);
+      continue;
+    }
     await upsertDocument({
       id: doc.id,
       type: doc.type,
@@ -210,13 +225,31 @@ async function pushUnsyncedDocuments(repo, userId) {
   }
 }
 
-async function pushUnsyncedBodies(userId) {
+async function pushUnsyncedBodies(userId: string) {
   const localBodies = await listDocumentBodies();
   if (!localBodies || localBodies.length === 0) return;
 
   for (const body of localBodies) {
     if (body.syncedAt != null) continue;
     if (!isUuid(body.documentId)) continue;
+    const remoteBody = await fetchDocumentBody(body.documentId);
+    if (remoteBody) {
+      const repo = getDocumentsRepo();
+      const doc = await repo.get(body.documentId);
+      if (doc) {
+        await createConflictCopy({
+          document: {
+            ...doc,
+            body: body.content,
+          },
+          reason: "body-conflict",
+        });
+      }
+      await upsertLocalDocumentBody(body.documentId, remoteBody.content, {
+        updated_at: remoteBody.updated_at,
+      });
+      continue;
+    }
     await upsertDocumentBody({
       document_id: body.documentId,
       content: body.content,

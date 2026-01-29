@@ -42,16 +42,21 @@ import { createConflictCopy } from "./conflictCopy";
 
 const META_LAST_SYNCED_AT = "lastSyncedAt";
 const CLIENT_ID = getClientId();
-const debouncedSaves = new Map();
+type SyncEvent = {
+  type: string;
+  [key: string]: unknown;
+};
 
-let syncInFlight = null;
+const debouncedSaves = new Map<string, ReturnType<typeof setTimeout>>();
+
+let syncInFlight: Promise<void> | null = null;
 let listenersInitialized = false;
-const listeners = new Set();
+const listeners = new Set<(event: SyncEvent) => void>();
 
 const UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
-function isUuid(value) {
+function isUuid(value: unknown): value is string {
   return typeof value === "string" && UUID_PATTERN.test(value);
 }
 
@@ -75,7 +80,7 @@ function getStoreActions() {
   };
 }
 
-function notify(event) {
+function notify(event: SyncEvent) {
   listeners.forEach((listener) => listener(event));
 }
 
@@ -92,7 +97,7 @@ function buildErrorDetails(error) {
   };
 }
 
-export function addSyncListener(listener) {
+export function addSyncListener(listener: (event: SyncEvent) => void) {
   if (typeof listener !== "function") {
     throw new Error("Sync listener must be a function");
   }
@@ -228,7 +233,7 @@ async function upsertLocalDocument(document, bodyRecord = null) {
       : null;
   const bodyVersion =
     shouldUpdateBody && typeof bodyRecord?.version === "number" ? bodyRecord.version : null;
-  return new Promise((resolve, reject) => {
+  return new Promise<void>((resolve, reject) => {
     const transaction = db.transaction(
       [DOCUMENTS_STORE, DOCUMENT_BODIES_STORE],
       "readwrite"
@@ -289,7 +294,15 @@ async function enqueueBodyUpsert(documentId, payload = null) {
   }
 }
 
-export async function saveDocument(doc, content, options = {}) {
+type SaveOptions = {
+  version?: number;
+};
+
+export async function saveDocument(
+  doc,
+  content,
+  options: SaveOptions = {}
+) {
   if (!doc || typeof doc.id !== "string") {
     throw new Error("Document with id is required");
   }
@@ -340,7 +353,11 @@ export async function saveDocument(doc, content, options = {}) {
   );
 }
 
-export async function saveDocumentBody(documentId, content, options = {}) {
+export async function saveDocumentBody(
+  documentId,
+  content,
+  options: SaveOptions = {}
+) {
   if (typeof documentId !== "string" || !documentId.trim()) {
     throw new Error("Document id is required");
   }
@@ -396,7 +413,6 @@ async function syncDocumentToSupabase(documentId) {
     const syncedAt = new Date().toISOString();
     const payload = {
       ...toServerDocument(doc),
-      user_id: userId,
       client_id: doc.clientId ?? doc.client_id ?? CLIENT_ID,
       synced_at: syncedAt,
       deleted_at: ensureIsoTimestamp(doc.deletedAt ?? doc.deleted_at, null),
@@ -895,7 +911,7 @@ async function runSync() {
   store.setLastSuccessfulSyncAt(new Date().toISOString());
 }
 
-export function scheduleSync({ reason } = {}) {
+export function scheduleSync({ reason }: { reason?: string } = {}) {
   if (!isBrowser()) return Promise.resolve();
   if (syncInFlight) return syncInFlight;
   syncInFlight = runSync()
