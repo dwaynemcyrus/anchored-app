@@ -210,7 +210,22 @@ function hasBody(type) {
 
 function getLocalUpdatedAtMs(localDoc) {
   if (!localDoc) return 0;
-  return parseIsoTimestamp(localDoc.updated_at, localDoc.updatedAt) ?? 0;
+  const isoMs = parseIsoTimestamp(localDoc.updated_at, null);
+  const numericMs = Number.isFinite(localDoc.updatedAt) ? localDoc.updatedAt : null;
+  if (typeof isoMs === "number" && typeof numericMs === "number") {
+    return Math.max(isoMs, numericMs);
+  }
+  return (isoMs ?? numericMs) ?? 0;
+}
+
+function getLocalBodyUpdatedAtMs(localBody) {
+  if (!localBody) return 0;
+  const isoMs = parseIsoToMs(localBody.updated_at);
+  const numericMs = Number.isFinite(localBody.updatedAt) ? localBody.updatedAt : null;
+  if (typeof isoMs === "number" && typeof numericMs === "number") {
+    return Math.max(isoMs, numericMs);
+  }
+  return (isoMs ?? numericMs) ?? 0;
 }
 
 async function patchLocalRecord(storeName, id, patch) {
@@ -527,7 +542,7 @@ async function syncBodyToSupabase(documentId) {
     }
     if (remoteBody?.updated_at) {
       const remoteUpdatedMs = parseIsoToMs(remoteBody.updated_at) ?? 0;
-      const localUpdatedAtMs = parseIsoToMs(body.updated_at) ?? body.updatedAt ?? 0;
+      const localUpdatedAtMs = getLocalBodyUpdatedAtMs(body);
       if (remoteUpdatedMs > localUpdatedAtMs) {
         await handleBodyConflict(documentId, body, remoteBody);
         return;

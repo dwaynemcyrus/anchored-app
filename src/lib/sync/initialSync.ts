@@ -139,8 +139,13 @@ async function syncDocuments(lastSyncTime: string, repo: DocumentsRepo) {
 
     const localDirty = localDoc.syncedAt == null;
     if (localDirty) {
-      const localUpdatedMs = parseIsoTimestamp(localDoc.updated_at, localDoc.updatedAt ?? 0);
-      if (remoteUpdatedMs > (localUpdatedMs ?? 0)) {
+      const isoMs = parseIsoTimestamp(localDoc.updated_at, null);
+      const numericMs = Number.isFinite(localDoc.updatedAt) ? localDoc.updatedAt : null;
+      const localUpdatedMs =
+        typeof isoMs === "number" && typeof numericMs === "number"
+          ? Math.max(isoMs, numericMs)
+          : (isoMs ?? numericMs) ?? 0;
+      if (remoteUpdatedMs > localUpdatedMs) {
         await createConflictCopy({
           document: localDoc,
           reason: "server-newer",
