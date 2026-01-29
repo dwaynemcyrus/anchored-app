@@ -7,16 +7,48 @@ export const SYNC_META_STORE = "syncMeta";
 export const TIMER_EVENTS_STORE = "timerEvents";
 export const TIMER_META_STORE = "timerMeta";
 
-export function deleteAnchoredDb() {
-  if (typeof indexedDB === "undefined") {
-    return Promise.reject(new Error("IndexedDB is not available"));
+let dbInstance = null;
+let dbOpenPromise = null;
+
+export async function closeAnchoredDb() {
+  if (dbOpenPromise) {
+    try {
+      await dbOpenPromise;
+    } catch {
+      // Ignore open errors when attempting to close.
+    }
   }
-  return new Promise((resolve, reject) => {
-    const request = indexedDB.deleteDatabase(DB_NAME);
-    request.onsuccess = () => resolve();
-    request.onerror = () => reject(request.error);
-    request.onblocked = () => reject(new Error("IndexedDB delete blocked"));
-  });
+  if (dbInstance) {
+    dbInstance.close();
+    dbInstance = null;
+  }
+  dbOpenPromise = null;
+}
+
+export async function deleteAnchoredDb({ retries = 2, retryDelayMs = 500 } = {}) {
+  if (typeof indexedDB === "undefined") {
+    throw new Error("IndexedDB is not available");
+  }
+
+  const attemptDelete = async (remaining) => {
+    await closeAnchoredDb();
+    return new Promise((resolve, reject) => {
+      const request = indexedDB.deleteDatabase(DB_NAME);
+      request.onsuccess = () => resolve();
+      request.onerror = () => reject(request.error);
+      request.onblocked = () => {
+        if (remaining > 0) {
+          setTimeout(() => {
+            attemptDelete(remaining - 1).then(resolve).catch(reject);
+          }, retryDelayMs);
+          return;
+        }
+        reject(new Error("IndexedDB delete blocked"));
+      };
+    });
+  };
+
+  await attemptDelete(retries);
 }
 
 export function openAnchoredDb() {
@@ -24,7 +56,14 @@ export function openAnchoredDb() {
     return Promise.reject(new Error("IndexedDB is not available"));
   }
 
-  return new Promise((resolve, reject) => {
+  if (dbInstance) {
+    return Promise.resolve(dbInstance);
+  }
+  if (dbOpenPromise) {
+    return dbOpenPromise;
+  }
+
+  dbOpenPromise = new Promise((resolve, reject) => {
     const request = indexedDB.open(DB_NAME, DB_VERSION);
 
     request.onupgradeneeded = (event) => {
@@ -192,8 +231,26 @@ export function openAnchoredDb() {
       }
     };
 
-    request.onsuccess = () => resolve(request.result);
-    request.onerror = () => reject(request.error);
-    request.onblocked = () => reject(new Error("IndexedDB open blocked"));
+    request.onsuccess = () => {
+      dbInstance = request.result;
+      dbOpenPromise = null;
+      if (dbInstance) {
+        dbInstance.onversionchange = () => {
+          dbInstance.close();
+          dbInstance = null;
+        };
+      }
+      resolve(dbInstance);
+    };
+    request.onerror = () => {
+      dbOpenPromise = null;
+      reject(request.error);
+    };
+    request.onblocked = () => {
+      dbOpenPromise = null;
+      reject(new Error("IndexedDB open blocked"));
+    };
   });
+
+  return dbOpenPromise;
 }

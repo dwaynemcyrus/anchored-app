@@ -139,11 +139,14 @@ async function syncDocuments(lastSyncTime: string, repo: DocumentsRepo) {
 
     const localDirty = localDoc.syncedAt == null;
     if (localDirty) {
-      await createConflictCopy({
-        document: localDoc,
-        reason: "server-newer",
-      });
-      await repo.bulkUpsert([buildLocalDoc(remoteDoc, bodyContent)]);
+      const localUpdatedMs = parseIsoTimestamp(localDoc.updated_at, localDoc.updatedAt ?? 0);
+      if (remoteUpdatedMs > (localUpdatedMs ?? 0)) {
+        await createConflictCopy({
+          document: localDoc,
+          reason: "server-newer",
+        });
+        await repo.bulkUpsert([buildLocalDoc(remoteDoc, bodyContent)]);
+      }
       continue;
     }
 

@@ -123,23 +123,12 @@ export default function SettingsPage() {
   const handleClearLocalDb = async () => {
     if (syncActionBusy) return;
     const confirmed = window.confirm(
-      "This will sync your data first. Continue?"
+      "This removes all local IndexedDB data on this device. Please sync first. Continue?"
     );
     if (!confirmed) return;
     setSyncActionBusy(true);
-    setSyncActionMessage("Syncing before clearing local data...");
+    setSyncActionMessage("Removing local data...");
     try {
-      await processSyncQueue();
-      await performInitialSync();
-      const clearConfirmed = window.confirm(
-        "Sync complete. Clear local data on this device?"
-      );
-      if (!clearConfirmed) {
-        setSyncActionMessage("Clear canceled.");
-        setTimeout(() => setSyncActionMessage(null), 3000);
-        return;
-      }
-      setSyncActionMessage("Clearing local data...");
       await deleteAnchoredDb();
       setSyncActionMessage("Local data cleared. Reloading...");
       setTimeout(() => {
@@ -147,7 +136,7 @@ export default function SettingsPage() {
       }, 500);
     } catch (error) {
       console.error("Clear local data failed", error);
-      setSyncActionMessage("Clear failed. Check console for details.");
+      setSyncActionMessage(error?.message || "Clear failed. Check console for details.");
     } finally {
       setSyncActionBusy(false);
     }
@@ -376,9 +365,9 @@ export default function SettingsPage() {
             </div>
             <div className={styles.cardItem}>
               <div className={styles.cardItemContent}>
-                <span className={styles.cardItemTitle}>Clear Local Data</span>
+                <span className={styles.cardItemTitle}>Remove Local Data</span>
                 <span className={styles.cardItemDescription}>
-                  Syncs first, then removes all local IndexedDB data.
+                  Removes all local IndexedDB data on this device.
                 </span>
               </div>
               <button
@@ -387,7 +376,7 @@ export default function SettingsPage() {
                 onClick={handleClearLocalDb}
                 disabled={syncActionBusy}
               >
-                Clear
+                Remove
               </button>
             </div>
           </div>

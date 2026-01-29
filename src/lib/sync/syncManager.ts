@@ -667,9 +667,12 @@ async function syncRemoteUpdates() {
     }
 
     const localDirty = localDoc.syncedAt == null;
+    const localUpdatedMs = getLocalUpdatedAtMs(localDoc);
 
     if (localDirty) {
-      await handleDocumentConflict(localDoc, remoteDoc);
+      if (remoteUpdatedMs > localUpdatedMs) {
+        await handleDocumentConflict(localDoc, remoteDoc);
+      }
       continue;
     }
 
