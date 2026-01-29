@@ -203,7 +203,6 @@ async function pushUnsyncedDocuments(repo, userId) {
       updated_at: ensureIsoTimestamp(doc.updatedAt ?? doc.updated_at),
       deleted_at: doc.deletedAt ? ensureIsoTimestamp(doc.deletedAt) : null,
       version: typeof doc.version === "number" ? doc.version : 1,
-      owner_id: userId,
       user_id: userId,
       client_id: doc.clientId ?? null,
       synced_at: new Date().toISOString(),
@@ -222,7 +221,7 @@ async function pushUnsyncedBodies(userId) {
       document_id: body.documentId,
       content: body.content,
       updated_at: ensureIsoTimestamp(body.updatedAt ?? body.updated_at),
-      owner_id: userId,
+      user_id: userId,
       client_id: body.clientId ?? null,
       synced_at: new Date().toISOString(),
     });

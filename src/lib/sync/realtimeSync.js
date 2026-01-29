@@ -52,7 +52,7 @@ export async function setupRealtimeSync() {
           event: "*",
           schema: "public",
           table: "documents",
-          filter: `owner_id=eq.${userId}`,
+          filter: `user_id=eq.${userId}`,
         },
         (payload) => handleDocumentChange(payload)
       )

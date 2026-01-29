@@ -360,7 +360,6 @@ async function syncDocumentToSupabase(documentId) {
     const syncedAt = new Date().toISOString();
     const payload = {
       ...toServerDocument(doc),
-      owner_id: userId,
       user_id: userId,
       client_id: doc.clientId ?? doc.client_id ?? CLIENT_ID,
       synced_at: syncedAt,
@@ -417,7 +416,7 @@ async function syncBodyToSupabase(documentId) {
       document_id: body.documentId,
       content: body.content,
       updated_at: ensureIsoTimestamp(body.updatedAt ?? body.updated_at),
-      owner_id: userId,
+      user_id: userId,
       client_id: body.clientId ?? CLIENT_ID,
       synced_at: syncedAt,
     });
