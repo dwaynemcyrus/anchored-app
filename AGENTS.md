@@ -27,7 +27,7 @@ Build deliberately. Prefer clarity over speed. Ship small, reviewable changes.
 - filesystem
 - node / package manager (detect from lockfile)
 - vercel (if present)
-- supabase (only if explicitly activated)
+- supabase 
 
 ## Forbidden Actions
 - No Tailwind

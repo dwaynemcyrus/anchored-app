@@ -1,6 +1,7 @@
-import { createClient } from "@supabase/supabase-js";
+import { createBrowserClient } from "@supabase/ssr";
+import type { SupabaseClient } from "@supabase/supabase-js";
 
-let supabaseClient = null;
+let supabaseClient: SupabaseClient | null = null;
 
 function requireBrowser() {
   if (typeof window === "undefined") {
@@ -29,12 +30,7 @@ export function getSupabaseClient() {
   const url = getEnvValue("NEXT_PUBLIC_SUPABASE_URL");
   const anonKey = getEnvValue("NEXT_PUBLIC_SUPABASE_ANON_KEY");
 
-  supabaseClient = createClient(url, anonKey, {
-    auth: {
-      persistSession: true,
-      autoRefreshToken: true,
-    },
-  });
+  supabaseClient = createBrowserClient(url, anonKey);
 
   return supabaseClient;
 }
