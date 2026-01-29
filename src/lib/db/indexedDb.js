@@ -7,6 +7,18 @@ export const SYNC_META_STORE = "syncMeta";
 export const TIMER_EVENTS_STORE = "timerEvents";
 export const TIMER_META_STORE = "timerMeta";
 
+export function deleteAnchoredDb() {
+  if (typeof indexedDB === "undefined") {
+    return Promise.reject(new Error("IndexedDB is not available"));
+  }
+  return new Promise((resolve, reject) => {
+    const request = indexedDB.deleteDatabase(DB_NAME);
+    request.onsuccess = () => resolve();
+    request.onerror = () => reject(request.error);
+    request.onblocked = () => reject(new Error("IndexedDB delete blocked"));
+  });
+}
+
 export function openAnchoredDb() {
   if (typeof indexedDB === "undefined") {
     return Promise.reject(new Error("IndexedDB is not available"));

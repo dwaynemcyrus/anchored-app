@@ -10,6 +10,7 @@ import { processSyncQueue } from "../../lib/sync/syncManager";
 import { useSyncStore } from "../../store/syncStore";
 import { peekClientId } from "../../lib/clientId";
 import { getUserId } from "../../lib/supabase/client";
+import { deleteAnchoredDb } from "../../lib/db/indexedDb";
 import styles from "../../styles/settings.module.css";
 
 export default function SettingsPage() {
@@ -114,6 +115,39 @@ export default function SettingsPage() {
     } catch (error) {
       console.error("Failed to reset sync time", error);
       setSyncActionMessage("Failed to reset sync time.");
+    } finally {
+      setSyncActionBusy(false);
+    }
+  };
+
+  const handleClearLocalDb = async () => {
+    if (syncActionBusy) return;
+    const confirmed = window.confirm(
+      "This will sync your data first. Continue?"
+    );
+    if (!confirmed) return;
+    setSyncActionBusy(true);
+    setSyncActionMessage("Syncing before clearing local data...");
+    try {
+      await processSyncQueue();
+      await performInitialSync();
+      const clearConfirmed = window.confirm(
+        "Sync complete. Clear local data on this device?"
+      );
+      if (!clearConfirmed) {
+        setSyncActionMessage("Clear canceled.");
+        setTimeout(() => setSyncActionMessage(null), 3000);
+        return;
+      }
+      setSyncActionMessage("Clearing local data...");
+      await deleteAnchoredDb();
+      setSyncActionMessage("Local data cleared. Reloading...");
+      setTimeout(() => {
+        window.location.reload();
+      }, 500);
+    } catch (error) {
+      console.error("Clear local data failed", error);
+      setSyncActionMessage("Clear failed. Check console for details.");
     } finally {
       setSyncActionBusy(false);
     }
@@ -325,6 +359,14 @@ export default function SettingsPage() {
                 disabled={syncActionBusy}
               >
                 Reset Last Sync
+              </button>
+              <button
+                type="button"
+                className={styles.actionButtonSmallDanger}
+                onClick={handleClearLocalDb}
+                disabled={syncActionBusy}
+              >
+                Clear Local Data
               </button>
             </div>
           </div>
