@@ -1,6 +1,6 @@
 const CLIENT_ID_KEY = "client_id";
 
-export function getClientId() {
+export function getClientId(): string {
   if (typeof window === "undefined") return "server";
   let clientId = window.localStorage.getItem(CLIENT_ID_KEY);
   if (!clientId) {
@@ -10,7 +10,7 @@ export function getClientId() {
   return clientId;
 }
 
-export function peekClientId() {
+export function peekClientId(): string | null {
   if (typeof window === "undefined") return null;
   return window.localStorage.getItem(CLIENT_ID_KEY);
 }
