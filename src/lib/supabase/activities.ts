@@ -1,17 +1,42 @@
 import { getSupabaseClient, getUserId } from "./client";
 
+type IsoTimestamp = string;
+
+type ActivityRow = {
+  id: string;
+  user_id: string;
+  name: string;
+  status: string;
+  created_at?: IsoTimestamp | null;
+  updated_at?: IsoTimestamp | null;
+};
+
+type ActivityQueryOptions = {
+  status?: string | null;
+  limit?: number;
+};
+
 const ACTIVITIES_TABLE = "activities";
 const UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
-function unwrapResponse({ data, error }) {
+function unwrapResponse<T>({
+  data,
+  error,
+}: {
+  data: T;
+  error: { message?: string } | null;
+}): T {
   if (error) {
     throw error;
   }
   return data;
 }
 
-export async function listActivities({ status = "active", limit = 100 } = {}) {
+export async function listActivities({
+  status = "active",
+  limit = 100,
+}: ActivityQueryOptions = {}): Promise<ActivityRow[]> {
   const client = getSupabaseClient();
   const userId = await getUserId();
   let query = client
@@ -31,7 +56,11 @@ export async function listActivities({ status = "active", limit = 100 } = {}) {
   return unwrapResponse(response);
 }
 
-export async function createActivity({ name }) {
+export async function createActivity({
+  name,
+}: {
+  name: string;
+}): Promise<ActivityRow> {
   if (typeof name !== "string" || !name.trim()) {
     throw new Error("Activity name is required");
   }
@@ -50,7 +79,10 @@ export async function createActivity({ name }) {
   return unwrapResponse(response);
 }
 
-export async function updateActivityStatus(id, status) {
+export async function updateActivityStatus(
+  id: string,
+  status: string
+): Promise<ActivityRow> {
   if (typeof id !== "string" || !UUID_PATTERN.test(id)) {
     throw new Error("Activity id must be a UUID");
   }

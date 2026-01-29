@@ -1,16 +1,54 @@
 import { getSupabaseClient, getUserId } from "./client";
 
+type IsoTimestamp = string;
+
+type SupabaseDocument = {
+  id: string;
+  user_id?: string;
+  type?: string;
+  subtype?: string | null;
+  title?: string | null;
+  status?: string;
+  tags?: string[];
+  frontmatter?: Record<string, unknown>;
+  due_at?: IsoTimestamp | null;
+  priority?: number | null;
+  published_at?: IsoTimestamp | null;
+  created_at?: IsoTimestamp | null;
+  updated_at?: IsoTimestamp | null;
+  deleted_at?: IsoTimestamp | null;
+  version?: number;
+  client_id?: string | null;
+  synced_at?: IsoTimestamp | null;
+};
+
+type SupabaseDocumentBody = {
+  document_id: string;
+  content: string;
+  updated_at?: IsoTimestamp | null;
+  client_id?: string | null;
+  synced_at?: IsoTimestamp | null;
+  version?: number;
+};
+
+type UpdatedSinceOptions = {
+  since?: string | number | Date | null;
+  limit?: number;
+};
+
 const DOCUMENTS_TABLE = "documents";
 const BODIES_TABLE = "document_bodies";
 const UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
-function filterUuidList(values = []) {
+function filterUuidList(values: unknown[] = []): string[] {
   if (!Array.isArray(values)) return [];
-  return values.filter((value) => typeof value === "string" && UUID_PATTERN.test(value));
+  return values.filter(
+    (value): value is string => typeof value === "string" && UUID_PATTERN.test(value)
+  );
 }
 
-function toIsoTimestamp(value) {
+function toIsoTimestamp(value: unknown): string | null {
   if (!value) return null;
   if (value instanceof Date) return value.toISOString();
   if (typeof value === "number") return new Date(value).toISOString();
@@ -18,7 +56,13 @@ function toIsoTimestamp(value) {
   throw new Error("Invalid timestamp value");
 }
 
-function unwrapResponse({ data, error }) {
+function unwrapResponse<T>({
+  data,
+  error,
+}: {
+  data: T;
+  error: { message?: string } | null;
+}): T {
   if (error) {
     throw error;
   }
@@ -29,7 +73,10 @@ async function getAuthedUserId() {
   return getUserId();
 }
 
-export async function fetchDocumentsUpdatedSince({ since, limit = 500 } = {}) {
+export async function fetchDocumentsUpdatedSince({
+  since,
+  limit = 500,
+}: UpdatedSinceOptions = {}): Promise<SupabaseDocument[]> {
   const client = getSupabaseClient();
   const userId = await getAuthedUserId();
   let query = client
@@ -51,7 +98,7 @@ export async function fetchDocumentsUpdatedSince({ since, limit = 500 } = {}) {
   return Array.isArray(data) ? data.filter((doc) => UUID_PATTERN.test(doc.id)) : data;
 }
 
-export async function fetchDocumentById(id) {
+export async function fetchDocumentById(id: string): Promise<SupabaseDocument | null> {
   if (typeof id !== "string" || !id.trim()) {
     throw new Error("Document id is required");
   }
@@ -70,7 +117,9 @@ export async function fetchDocumentById(id) {
   return unwrapResponse(response);
 }
 
-export async function fetchDocumentBodiesByIds(documentIds = []) {
+export async function fetchDocumentBodiesByIds(
+  documentIds: string[] = []
+): Promise<SupabaseDocumentBody[]> {
   const filteredIds = filterUuidList(documentIds);
   if (filteredIds.length === 0) {
     return [];
@@ -84,7 +133,10 @@ export async function fetchDocumentBodiesByIds(documentIds = []) {
   return unwrapResponse(response);
 }
 
-export async function fetchDocumentBodiesUpdatedSince({ since, limit = 500 } = {}) {
+export async function fetchDocumentBodiesUpdatedSince({
+  since,
+  limit = 500,
+}: UpdatedSinceOptions = {}): Promise<SupabaseDocumentBody[]> {
   const client = getSupabaseClient();
   let query = client.from(BODIES_TABLE).select("*").order("updated_at", {
     ascending: true,
@@ -102,7 +154,9 @@ export async function fetchDocumentBodiesUpdatedSince({ since, limit = 500 } = {
   return unwrapResponse(response);
 }
 
-export async function fetchDocumentBody(documentId) {
+export async function fetchDocumentBody(
+  documentId: string
+): Promise<SupabaseDocumentBody | null> {
   if (typeof documentId !== "string" || !documentId.trim()) {
     throw new Error("Document id is required");
   }
@@ -119,7 +173,9 @@ export async function fetchDocumentBody(documentId) {
   return unwrapResponse(response);
 }
 
-export async function insertDocument(document) {
+export async function insertDocument(
+  document: SupabaseDocument
+): Promise<SupabaseDocument> {
   const client = getSupabaseClient();
   const userId = document.user_id ?? (await getAuthedUserId());
   const response = await client
@@ -135,7 +191,10 @@ export async function insertDocument(document) {
   return unwrapResponse(response);
 }
 
-export async function updateDocument(id, updates) {
+export async function updateDocument(
+  id: string,
+  updates: Partial<SupabaseDocument>
+): Promise<SupabaseDocument> {
   const client = getSupabaseClient();
   const userId = await getAuthedUserId();
   const response = await client
@@ -149,7 +208,11 @@ export async function updateDocument(id, updates) {
   return unwrapResponse(response);
 }
 
-export async function updateDocumentWithVersion(id, updates, expectedVersion) {
+export async function updateDocumentWithVersion(
+  id: string,
+  updates: Partial<SupabaseDocument>,
+  expectedVersion: number
+): Promise<SupabaseDocument | null> {
   if (typeof expectedVersion !== "number") {
     throw new Error("Expected version is required");
   }
@@ -171,7 +234,10 @@ export async function updateDocumentWithVersion(id, updates, expectedVersion) {
   return unwrapResponse(response);
 }
 
-export async function archiveDocument(id, expectedVersion) {
+export async function archiveDocument(
+  id: string,
+  expectedVersion: number
+): Promise<SupabaseDocument | null> {
   return updateDocumentWithVersion(
     id,
     { status: "archived", deleted_at: null },
@@ -179,7 +245,10 @@ export async function archiveDocument(id, expectedVersion) {
   );
 }
 
-export async function unarchiveDocument(id, expectedVersion) {
+export async function unarchiveDocument(
+  id: string,
+  expectedVersion: number
+): Promise<SupabaseDocument | null> {
   return updateDocumentWithVersion(
     id,
     { status: "active", deleted_at: null },
@@ -187,7 +256,10 @@ export async function unarchiveDocument(id, expectedVersion) {
   );
 }
 
-export async function trashDocument(id, expectedVersion) {
+export async function trashDocument(
+  id: string,
+  expectedVersion: number
+): Promise<SupabaseDocument | null> {
   return updateDocumentWithVersion(
     id,
     { status: "trash", deleted_at: new Date().toISOString() },
@@ -195,7 +267,10 @@ export async function trashDocument(id, expectedVersion) {
   );
 }
 
-export async function insertDocumentBody(documentId, content) {
+export async function insertDocumentBody(
+  documentId: string,
+  content: string
+): Promise<SupabaseDocumentBody> {
   const client = getSupabaseClient();
   const response = await client
     .from(BODIES_TABLE)
@@ -206,7 +281,10 @@ export async function insertDocumentBody(documentId, content) {
   return unwrapResponse(response);
 }
 
-export async function updateDocumentBody(documentId, content) {
+export async function updateDocumentBody(
+  documentId: string,
+  content: string
+): Promise<SupabaseDocumentBody> {
   const client = getSupabaseClient();
   const response = await client
     .from(BODIES_TABLE)
@@ -218,7 +296,9 @@ export async function updateDocumentBody(documentId, content) {
   return unwrapResponse(response);
 }
 
-export async function upsertDocument(document) {
+export async function upsertDocument(
+  document: SupabaseDocument
+): Promise<SupabaseDocument> {
   if (!document?.id || !UUID_PATTERN.test(document.id)) {
     throw new Error("Document id must be a UUID");
   }
@@ -233,7 +313,9 @@ export async function upsertDocument(document) {
   return unwrapResponse(response);
 }
 
-export async function upsertDocumentBody(body) {
+export async function upsertDocumentBody(
+  body: SupabaseDocumentBody
+): Promise<SupabaseDocumentBody> {
   if (!body || typeof body.document_id !== "string") {
     throw new Error("Document body with document_id is required");
   }

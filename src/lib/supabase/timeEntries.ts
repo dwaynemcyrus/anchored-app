@@ -1,18 +1,110 @@
 import { getSupabaseClient, getUserId } from "./client";
 
+type IsoTimestamp = string;
+
+type TimeEntryRow = {
+  id: string;
+  user_id: string;
+  entity_id: string;
+  entity_type: string;
+  started_at: IsoTimestamp;
+  ended_at: IsoTimestamp | null;
+  duration_ms: number | null;
+  note?: string | null;
+  source?: string | null;
+  client_id?: string | null;
+  lease_expires_at?: IsoTimestamp | null;
+  lease_token?: string | null;
+  updated_at?: IsoTimestamp | null;
+};
+
+type TimeEntryEventRow = {
+  id: string;
+  user_id: string;
+  time_entry_id: string;
+  event_type: string;
+  event_time: IsoTimestamp;
+};
+
+type TimeEntryQueryOptions = {
+  start?: string | number | Date | null;
+  end?: string | number | Date | null;
+  limit?: number;
+  entityType?: string | null;
+  entityId?: string | null;
+};
+
+type EntryEventQueryOptions = {
+  entryId?: string | null;
+  limit?: number;
+};
+
+type PauseCountOptions = {
+  entryIds?: string[];
+};
+
+type CreateEventPayload = {
+  entryId: string;
+  eventType: string;
+  eventTime?: string | number | Date | null;
+};
+
+type StartEntryPayload = {
+  id?: string;
+  entityId: string;
+  entityType: string;
+  startedAt?: string | number | Date | null;
+  note?: string | null;
+  source?: string | null;
+  clientId?: string | null;
+  leaseExpiresAt?: string | number | Date | null;
+};
+
+type StopEntryPayload = {
+  id: string;
+  endedAt?: string | number | Date | null;
+  note?: string | null;
+  durationMs?: number | null;
+};
+
+type ResumeEntryPayload = {
+  id: string;
+  clientId?: string | null;
+  leaseExpiresAt?: string | number | Date | null;
+};
+
+type RenewLeasePayload = {
+  id: string;
+  clientId: string;
+  leaseExpiresAt?: string | number | Date | null;
+};
+
+type TakeoverPayload = {
+  id: string;
+  clientId: string;
+  leaseExpiresAt?: string | number | Date | null;
+  leaseToken?: string | null;
+};
+
 const TIME_ENTRIES_TABLE = "time_entries";
 const TIME_ENTRY_EVENTS_TABLE = "time_entry_events";
 const UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
-function unwrapResponse({ data, error }) {
+function unwrapResponse<T>({
+  data,
+  error,
+}: {
+  data: T;
+  error: { message?: string } | null;
+}): T {
   if (error) {
     throw error;
   }
   return data;
 }
 
-function toIsoTimestamp(value) {
+function toIsoTimestamp(value: unknown): string | null {
   if (!value) return null;
   if (value instanceof Date) return value.toISOString();
   if (typeof value === "number") return new Date(value).toISOString();
@@ -26,7 +118,7 @@ export async function listTimeEntries({
   limit = 200,
   entityType,
   entityId,
-} = {}) {
+}: TimeEntryQueryOptions = {}): Promise<TimeEntryRow[]> {
   const client = getSupabaseClient();
   const userId = await getUserId();
   let query = client
@@ -57,7 +149,10 @@ export async function listTimeEntries({
   return unwrapResponse(response);
 }
 
-export async function listTimeEntryEvents({ entryId, limit = 200 } = {}) {
+export async function listTimeEntryEvents({
+  entryId,
+  limit = 200,
+}: EntryEventQueryOptions = {}): Promise<TimeEntryEventRow[]> {
   if (typeof entryId !== "string" || !UUID_PATTERN.test(entryId)) {
     throw new Error("Time entry id must be a UUID");
   }
@@ -78,7 +173,9 @@ export async function listTimeEntryEvents({ entryId, limit = 200 } = {}) {
   return unwrapResponse(response);
 }
 
-export async function listTimeEntryPauseCounts({ entryIds = [] } = {}) {
+export async function listTimeEntryPauseCounts({
+  entryIds = [],
+}: PauseCountOptions = {}): Promise<Record<string, number>> {
   const ids = Array.isArray(entryIds)
     ? entryIds.filter((id) => typeof id === "string" && UUID_PATTERN.test(id))
     : [];
@@ -92,7 +189,7 @@ export async function listTimeEntryPauseCounts({ entryIds = [] } = {}) {
     .in("time_entry_id", ids);
 
   const data = unwrapResponse(response);
-  const counts = {};
+  const counts: Record<string, number> = {};
   for (const event of data || []) {
     if (event.event_type !== "pause") continue;
     counts[event.time_entry_id] = (counts[event.time_entry_id] || 0) + 1;
@@ -104,7 +201,7 @@ export async function createTimeEntryEvent({
   entryId,
   eventType,
   eventTime = new Date().toISOString(),
-} = {}) {
+}: CreateEventPayload): Promise<TimeEntryEventRow> {
   if (typeof entryId !== "string" || !UUID_PATTERN.test(entryId)) {
     throw new Error("Time entry id must be a UUID");
   }
@@ -127,7 +224,7 @@ export async function createTimeEntryEvent({
   return unwrapResponse(response);
 }
 
-export async function getRunningTimeEntry() {
+export async function getRunningTimeEntry(): Promise<TimeEntryRow | null> {
   const client = getSupabaseClient();
   const userId = await getUserId();
   const response = await client
@@ -149,7 +246,7 @@ export async function startTimeEntry({
   source = null,
   clientId,
   leaseExpiresAt,
-} = {}) {
+}: StartEntryPayload): Promise<TimeEntryRow> {
   if (typeof entityType !== "string" || !entityType.trim()) {
     throw new Error("Entity type is required");
   }
@@ -184,7 +281,7 @@ export async function stopTimeEntry({
   endedAt = new Date().toISOString(),
   note,
   durationMs,
-} = {}) {
+}: StopEntryPayload): Promise<TimeEntryRow> {
   if (typeof id !== "string" || !UUID_PATTERN.test(id)) {
     throw new Error("Time entry id must be a UUID");
   }
@@ -227,7 +324,11 @@ export async function stopTimeEntry({
   return unwrapResponse(response);
 }
 
-export async function resumeTimeEntry({ id, clientId, leaseExpiresAt } = {}) {
+export async function resumeTimeEntry({
+  id,
+  clientId,
+  leaseExpiresAt,
+}: ResumeEntryPayload): Promise<TimeEntryRow> {
   if (typeof id !== "string" || !UUID_PATTERN.test(id)) {
     throw new Error("Time entry id must be a UUID");
   }
@@ -253,7 +354,7 @@ export async function renewTimeEntryLease({
   id,
   clientId,
   leaseExpiresAt,
-} = {}) {
+}: RenewLeasePayload): Promise<TimeEntryRow> {
   if (typeof id !== "string" || !UUID_PATTERN.test(id)) {
     throw new Error("Time entry id must be a UUID");
   }
@@ -282,7 +383,7 @@ export async function takeoverTimeEntry({
   clientId,
   leaseExpiresAt,
   leaseToken,
-} = {}) {
+}: TakeoverPayload): Promise<TimeEntryRow> {
   if (typeof id !== "string" || !UUID_PATTERN.test(id)) {
     throw new Error("Time entry id must be a UUID");
   }
