@@ -352,21 +352,42 @@ export default function SettingsPage() {
               >
                 {syncActionBusy ? "Syncing..." : "Sync Now"}
               </button>
+            </div>
+          </div>
+        </section>
+        <section className={styles.section}>
+          <h2 className={styles.sectionTitle}>Danger Zone</h2>
+          <div className={styles.card}>
+            <div className={styles.cardItem}>
+              <div className={styles.cardItemContent}>
+                <span className={styles.cardItemTitle}>Reset Last Sync</span>
+                <span className={styles.cardItemDescription}>
+                  Forces a full re-sync on the next run.
+                </span>
+              </div>
               <button
                 type="button"
                 className={styles.actionButtonSmallDanger}
                 onClick={handleResetSync}
                 disabled={syncActionBusy}
               >
-                Reset Last Sync
+                Reset
               </button>
+            </div>
+            <div className={styles.cardItem}>
+              <div className={styles.cardItemContent}>
+                <span className={styles.cardItemTitle}>Clear Local Data</span>
+                <span className={styles.cardItemDescription}>
+                  Syncs first, then removes all local IndexedDB data.
+                </span>
+              </div>
               <button
                 type="button"
                 className={styles.actionButtonSmallDanger}
                 onClick={handleClearLocalDb}
                 disabled={syncActionBusy}
               >
-                Clear Local Data
+                Clear
               </button>
             </div>
           </div>
