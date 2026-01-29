@@ -6,7 +6,7 @@
  */
 
 import { getDocumentsRepo } from "../repo/getDocumentsRepo.js";
-import { DOCUMENT_TYPE_TEMPLATE } from "../../types/document.js";
+import { DOCUMENT_TYPE_TEMPLATE } from "../../types/document";
 import { BUILT_IN_TEMPLATES } from "./definitions.js";
 
 /**

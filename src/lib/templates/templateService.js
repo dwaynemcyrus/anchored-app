@@ -5,7 +5,7 @@
  */
 
 import { getDocumentsRepo } from "../repo/getDocumentsRepo.js";
-import { DOCUMENT_TYPE_TEMPLATE } from "../../types/document.js";
+import { DOCUMENT_TYPE_TEMPLATE } from "../../types/document";
 import { enqueueSyncOperation } from "../sync/syncManager";
 import {
   BUILT_IN_TEMPLATES,
@@ -62,7 +62,7 @@ export async function getCaptureTemplate() {
  * @param {Object} [overrides] - Optional field overrides
  * @param {string} [overrides.body] - Override body content (appended after frontmatter)
  * @param {number} [overrides.inboxAt] - Set inbox timestamp
- * @returns {Promise<import('../../types/document.js').Document | null>}
+ * @returns {Promise<import('../../types/document').Document | null>}
  */
 export async function createFromTemplate(templateId, overrides = {}) {
   const template = await getTemplate(templateId);
