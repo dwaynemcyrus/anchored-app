@@ -486,12 +486,28 @@ async function syncBodyToSupabase(documentId) {
   if (!body) return;
 
   try {
+    const remoteDoc = await fetchDocumentById(documentId);
+    if (!remoteDoc) {
+      const repo = getDocumentsRepo();
+      const localDoc = await repo.get(documentId);
+      if (localDoc && localDoc.syncedAt == null) {
+        await enqueueOperation({
+          table: "documents",
+          record_id: documentId,
+          operation: "upsert",
+          payload: localDoc,
+          timestamp: new Date().toISOString(),
+          retry_count: 0,
+        });
+        await refreshPendingCount();
+      }
+      return;
+    }
     const remoteBody = await fetchDocumentBody(documentId);
     if (!remoteBody && body.syncedAt != null) {
       const repo = getDocumentsRepo();
       const localDoc = await repo.get(documentId);
       if (localDoc?.syncedAt != null) {
-        const remoteDoc = await fetchDocumentById(documentId);
         if (!remoteDoc) {
           await createConflictCopy({
             document: {
@@ -513,7 +529,6 @@ async function syncBodyToSupabase(documentId) {
         return;
       }
     }
-    const userId = await getUserId();
     const syncedAt = new Date().toISOString();
     const data = await upsertDocumentBody({
       document_id: body.documentId,
@@ -805,7 +820,11 @@ export async function processSyncQueue() {
     return;
   }
 
-  for (const item of items) {
+  const hasDocFirst = items
+    .filter((item) => item.table === "documents")
+    .concat(items.filter((item) => item.table !== "documents"));
+
+  for (const item of hasDocFirst) {
     if ((item.retry_count ?? 0) >= MAX_RETRY_COUNT) {
       continue;
     }

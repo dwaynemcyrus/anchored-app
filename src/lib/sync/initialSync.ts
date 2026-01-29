@@ -250,6 +250,29 @@ async function pushUnsyncedBodies(userId: string) {
       });
       continue;
     }
+    const remoteDoc = await fetchDocumentById(body.documentId);
+    if (!remoteDoc) {
+      const repo = getDocumentsRepo();
+      const doc = await repo.get(body.documentId);
+      if (doc) {
+        await upsertDocument({
+          id: doc.id,
+          type: doc.type,
+          subtype: doc.subtype ?? null,
+          title: doc.title ?? null,
+          status: doc.status ?? "active",
+          frontmatter: doc.frontmatter ?? doc.meta ?? {},
+          created_at: ensureIsoTimestamp(doc.createdAt ?? doc.created_at),
+          updated_at: ensureIsoTimestamp(doc.updatedAt ?? doc.updated_at),
+          deleted_at: doc.deletedAt ? ensureIsoTimestamp(doc.deletedAt) : null,
+          version: typeof doc.version === "number" ? doc.version : 1,
+          user_id: userId,
+          client_id: doc.clientId ?? null,
+          synced_at: new Date().toISOString(),
+        });
+      }
+      continue;
+    }
     await upsertDocumentBody({
       document_id: body.documentId,
       content: body.content,
