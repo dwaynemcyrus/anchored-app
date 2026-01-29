@@ -180,14 +180,17 @@ async function syncDocumentBodies(lastSyncTime: string, repo: DocumentsRepo) {
     }
     const remoteUpdatedAt = parseIsoTimestamp(remoteBody.updated_at, 0);
     if (localBody.syncedAt == null) {
-      if (existingDoc) {
-        await createConflictCopy({
-          document: {
-            ...existingDoc,
-            body: localBody.content,
-          },
-          reason: "body-conflict",
-        });
+      const localUpdatedMs = parseIsoTimestamp(localBody.updated_at, localBody.updatedAt ?? 0);
+      if (remoteUpdatedAt > (localUpdatedMs ?? 0)) {
+        if (existingDoc) {
+          await createConflictCopy({
+            document: {
+              ...existingDoc,
+              body: localBody.content,
+            },
+            reason: "body-conflict",
+          });
+        }
         await upsertLocalDocumentBody(remoteBody.document_id, remoteBody.content, {
           updated_at: remoteBody.updated_at,
         });

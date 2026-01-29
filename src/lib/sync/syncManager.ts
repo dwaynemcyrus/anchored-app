@@ -720,7 +720,10 @@ async function syncRemoteUpdates() {
         continue;
       }
       if (localBody.syncedAt == null) {
-        await handleBodyConflict(remoteBody.document_id, localBody, remoteBody);
+        const localUpdatedAtMs = getLocalBodyUpdatedAtMs(localBody);
+        if (remoteUpdatedMs > localUpdatedAtMs) {
+          await handleBodyConflict(remoteBody.document_id, localBody, remoteBody);
+        }
         continue;
       }
       await patchLocalRecord(DOCUMENT_BODIES_STORE, remoteBody.document_id, {
