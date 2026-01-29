@@ -374,6 +374,17 @@ async function syncDocumentToSupabase(documentId) {
 
   try {
     const remoteDoc = await fetchDocumentById(documentId);
+    if (!remoteDoc && doc.syncedAt != null) {
+      await createConflictCopy({
+        document: {
+          ...doc,
+          body: doc.body ?? "",
+        },
+        reason: "server-deleted",
+      });
+      await repo.delete(documentId);
+      return;
+    }
     if (remoteDoc?.updated_at) {
       const remoteUpdatedMs = parseIsoToMs(remoteDoc.updated_at) ?? 0;
       const localUpdatedAtMs = getLocalUpdatedAtMs(doc);
@@ -434,6 +445,24 @@ async function syncBodyToSupabase(documentId) {
 
   try {
     const remoteBody = await fetchDocumentBody(documentId);
+    if (!remoteBody && body.syncedAt != null) {
+      const repo = getDocumentsRepo();
+      const localDoc = await repo.get(documentId);
+      if (localDoc?.syncedAt != null) {
+        const remoteDoc = await fetchDocumentById(documentId);
+        if (!remoteDoc) {
+          await createConflictCopy({
+            document: {
+              ...localDoc,
+              body: body.content,
+            },
+            reason: "server-deleted",
+          });
+          await repo.delete(documentId);
+          return;
+        }
+      }
+    }
     if (remoteBody?.updated_at) {
       const remoteUpdatedMs = parseIsoToMs(remoteBody.updated_at) ?? 0;
       const localUpdatedAtMs = parseIsoToMs(body.updated_at) ?? body.updatedAt ?? 0;
@@ -581,6 +610,13 @@ async function syncRemoteUpdates() {
       const remoteUpdatedMs = parseIsoToMs(remoteBody.updated_at) ?? 0;
       maxUpdatedAt = Math.max(maxUpdatedAt, remoteUpdatedMs);
       const localBody = await getDocumentBody(remoteBody.document_id);
+      if (!localBody) {
+        const remoteDoc = await fetchDocumentById(remoteBody.document_id);
+        if (remoteDoc) {
+          await applyRemoteDocument(remoteDoc, remoteBody);
+          continue;
+        }
+      }
       if (!localBody) {
         await patchLocalRecord(DOCUMENT_BODIES_STORE, remoteBody.document_id, {
           content: remoteBody.content ?? "",
