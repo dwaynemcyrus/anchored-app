@@ -1,4 +1,17 @@
+import type { AuthResponse } from "@supabase/supabase-js";
 import { getSupabaseClient } from "./client";
+
+type EmailPasswordCredentials = {
+  email: string;
+  password: string;
+};
+
+type AuthData = AuthResponse["data"];
+
+type MagicLinkPayload = {
+  email: string;
+  redirectTo?: string | null;
+};
 
 export async function getAuthUser() {
   const client = getSupabaseClient();
@@ -7,7 +20,10 @@ export async function getAuthUser() {
   return data?.user ?? null;
 }
 
-export async function signInWithPassword({ email, password }) {
+export async function signInWithPassword({
+  email,
+  password,
+}: EmailPasswordCredentials): Promise<AuthData> {
   const client = getSupabaseClient();
   const { data, error } = await client.auth.signInWithPassword({
     email,
@@ -17,7 +33,10 @@ export async function signInWithPassword({ email, password }) {
   return data;
 }
 
-export async function signUpWithPassword({ email, password }) {
+export async function signUpWithPassword({
+  email,
+  password,
+}: EmailPasswordCredentials): Promise<AuthData> {
   const client = getSupabaseClient();
   const { data, error } = await client.auth.signUp({
     email,
@@ -27,7 +46,10 @@ export async function signUpWithPassword({ email, password }) {
   return data;
 }
 
-export async function signInWithMagicLink({ email, redirectTo }) {
+export async function signInWithMagicLink({
+  email,
+  redirectTo,
+}: MagicLinkPayload): Promise<AuthData> {
   const client = getSupabaseClient();
   const { data, error } = await client.auth.signInWithOtp({
     email,
