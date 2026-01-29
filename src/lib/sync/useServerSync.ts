@@ -15,6 +15,9 @@ export function useServerSync(options: UseServerSyncOptions = {}) {
   const hasStartedRef = useRef(false);
   const initialSync = useMutation({
     mutationFn: performInitialSync,
+    onError: (error) => {
+      console.error("Initial sync failed", error);
+    },
   });
 
   useEffect(() => {
@@ -28,7 +31,9 @@ export function useServerSync(options: UseServerSyncOptions = {}) {
     queryKey: ["sync", "poll"],
     queryFn: () => scheduleSync({ reason: "react-query" }),
     enabled,
-    refetchInterval: pollIntervalMs,
+    retry: false,
+    refetchInterval: enabled ? pollIntervalMs : false,
+    refetchIntervalInBackground: true,
     refetchOnWindowFocus: true,
     refetchOnReconnect: true,
   });

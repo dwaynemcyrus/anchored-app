@@ -11,6 +11,7 @@ import {
   fetchDocumentById,
   fetchDocumentsUpdatedSince,
   fetchDocumentBodiesByIds,
+  fetchDocumentBodiesUpdatedSince,
   upsertDocument,
   upsertDocumentBody,
 } from "../supabase/documents";
@@ -528,18 +529,29 @@ async function handleBodyConflict(documentId, localBody, remoteBody) {
 async function syncRemoteUpdates() {
   const lastSyncedAt = await getSyncMeta(META_LAST_SYNCED_AT);
   const remoteDocs = await fetchDocumentsUpdatedSince({ since: lastSyncedAt });
-  if (!remoteDocs || remoteDocs.length === 0) return;
+  const remoteBodies = await fetchDocumentBodiesUpdatedSince({ since: lastSyncedAt });
+  const hasRemoteDocs = Array.isArray(remoteDocs) && remoteDocs.length > 0;
+  const hasRemoteBodies = Array.isArray(remoteBodies) && remoteBodies.length > 0;
+  if (!hasRemoteDocs && !hasRemoteBodies) return;
 
   const repo = getDocumentsRepo();
-  const ids = remoteDocs.map((doc) => doc.id).filter((id) => isUuid(id));
-  const bodies = await fetchDocumentBodiesByIds(ids);
-  const bodiesById = new Map(
-    bodies.map((body) => [body.document_id, body])
-  );
+  const docIds = hasRemoteDocs
+    ? remoteDocs.map((doc) => doc.id).filter((id) => isUuid(id))
+    : [];
+  const bodies = docIds.length ? await fetchDocumentBodiesByIds(docIds) : [];
+  const bodiesById = new Map(bodies.map((body) => [body.document_id, body]));
+  if (Array.isArray(remoteBodies)) {
+    remoteBodies.forEach((body) => {
+      if (body?.document_id) {
+        bodiesById.set(body.document_id, body);
+      }
+    });
+  }
 
   let maxUpdatedAt = Date.parse(lastSyncedAt || "") || 0;
 
-  for (const remoteDoc of remoteDocs) {
+  const docIdSet = new Set(docIds);
+  for (const remoteDoc of remoteDocs ?? []) {
     if (!isUuid(remoteDoc.id)) continue;
     const bodyRecord = bodiesById.get(remoteDoc.id) || null;
     const remoteUpdatedMs = parseIsoToMs(remoteDoc.updated_at) ?? 0;
@@ -559,6 +571,38 @@ async function syncRemoteUpdates() {
     }
 
     await applyRemoteDocument(remoteDoc, bodyRecord);
+  }
+
+  if (hasRemoteBodies) {
+    for (const remoteBody of remoteBodies) {
+      if (!remoteBody?.document_id || docIdSet.has(remoteBody.document_id)) {
+        continue;
+      }
+      const remoteUpdatedMs = parseIsoToMs(remoteBody.updated_at) ?? 0;
+      maxUpdatedAt = Math.max(maxUpdatedAt, remoteUpdatedMs);
+      const localBody = await getDocumentBody(remoteBody.document_id);
+      if (!localBody) {
+        await patchLocalRecord(DOCUMENT_BODIES_STORE, remoteBody.document_id, {
+          content: remoteBody.content ?? "",
+          updatedAt: remoteUpdatedMs || Date.now(),
+          updated_at: remoteBody.updated_at ?? new Date().toISOString(),
+          version: typeof remoteBody.version === "number" ? remoteBody.version : 1,
+          syncedAt: new Date().toISOString(),
+        });
+        continue;
+      }
+      if (localBody.syncedAt == null) {
+        await handleBodyConflict(remoteBody.document_id, localBody, remoteBody);
+        continue;
+      }
+      await patchLocalRecord(DOCUMENT_BODIES_STORE, remoteBody.document_id, {
+        content: remoteBody.content ?? localBody.content,
+        updatedAt: remoteUpdatedMs || Date.now(),
+        updated_at: remoteBody.updated_at ?? new Date().toISOString(),
+        version: typeof remoteBody.version === "number" ? remoteBody.version : 1,
+        syncedAt: new Date().toISOString(),
+      });
+    }
   }
 
   if (maxUpdatedAt) {

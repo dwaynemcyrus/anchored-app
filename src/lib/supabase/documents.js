@@ -84,6 +84,24 @@ export async function fetchDocumentBodiesByIds(documentIds = []) {
   return unwrapResponse(response);
 }
 
+export async function fetchDocumentBodiesUpdatedSince({ since, limit = 500 } = {}) {
+  const client = getSupabaseClient();
+  let query = client.from(BODIES_TABLE).select("*").order("updated_at", {
+    ascending: true,
+  });
+
+  const sinceIso = toIsoTimestamp(since);
+  if (sinceIso) {
+    query = query.gt("updated_at", sinceIso);
+  }
+  if (limit) {
+    query = query.limit(limit);
+  }
+
+  const response = await query;
+  return unwrapResponse(response);
+}
+
 export async function fetchDocumentBody(documentId) {
   if (typeof documentId !== "string" || !documentId.trim()) {
     throw new Error("Document id is required");
