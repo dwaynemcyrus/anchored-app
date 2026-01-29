@@ -76,11 +76,9 @@ export async function fetchDocumentBodiesByIds(documentIds = []) {
     return [];
   }
   const client = getSupabaseClient();
-  const userId = await getAuthedUserId();
   const response = await client
     .from(BODIES_TABLE)
     .select("*")
-    .eq("user_id", userId)
     .in("document_id", filteredIds);
 
   return unwrapResponse(response);
@@ -94,11 +92,9 @@ export async function fetchDocumentBody(documentId) {
     return null;
   }
   const client = getSupabaseClient();
-  const userId = await getAuthedUserId();
   const response = await client
     .from(BODIES_TABLE)
     .select("*")
-    .eq("user_id", userId)
     .eq("document_id", documentId)
     .maybeSingle();
 
@@ -183,10 +179,9 @@ export async function trashDocument(id, expectedVersion) {
 
 export async function insertDocumentBody(documentId, content) {
   const client = getSupabaseClient();
-  const userId = await getAuthedUserId();
   const response = await client
     .from(BODIES_TABLE)
-    .insert({ document_id: documentId, content, user_id: userId })
+    .insert({ document_id: documentId, content })
     .select("*")
     .single();
 
@@ -195,11 +190,9 @@ export async function insertDocumentBody(documentId, content) {
 
 export async function updateDocumentBody(documentId, content) {
   const client = getSupabaseClient();
-  const userId = await getAuthedUserId();
   const response = await client
     .from(BODIES_TABLE)
     .update({ content, updated_at: new Date().toISOString() })
-    .eq("user_id", userId)
     .eq("document_id", documentId)
     .select("*")
     .single();
@@ -230,10 +223,9 @@ export async function upsertDocumentBody(body) {
     throw new Error("Document body document_id must be a UUID");
   }
   const client = getSupabaseClient();
-  const userId = body.user_id ?? (await getAuthedUserId());
   const response = await client
     .from(BODIES_TABLE)
-    .upsert({ ...body, user_id: userId }, { onConflict: "document_id" })
+    .upsert({ ...body }, { onConflict: "document_id" })
     .select("*")
     .single();
 

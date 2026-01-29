@@ -221,7 +221,6 @@ async function pushUnsyncedBodies(userId) {
       document_id: body.documentId,
       content: body.content,
       updated_at: ensureIsoTimestamp(body.updatedAt ?? body.updated_at),
-      user_id: userId,
       client_id: body.clientId ?? null,
       synced_at: new Date().toISOString(),
     });
