@@ -13,6 +13,7 @@ import { useDocumentsStore } from "../../store/documentsStore";
 import { useTimerStore } from "../../store/timerStore";
 import { getCaptureTemplate, createFromTemplate } from "../../lib/templates";
 import { useServerSync } from "../../lib/sync/useServerSync";
+import { signOut } from "../../lib/supabase/auth";
 import styles from "./Shell.module.css";
 import layout from "./AppShell.module.css";
 import useVisualViewportInsets from "../../hooks/useVisualViewportInsets";
@@ -236,6 +237,21 @@ export default function Shell({ children }) {
     window.addEventListener("keydown", handleKeydown);
     return () => window.removeEventListener("keydown", handleKeydown);
   }, [isPublicRoute, menuOpen]);
+
+  const handleLogout = useCallback(
+    async (event) => {
+      event.preventDefault();
+      try {
+        await signOut();
+      } catch (error) {
+        console.error("Sign out failed", error);
+      } finally {
+        setMenuOpen(false);
+        router.push("/login");
+      }
+    },
+    [router]
+  );
 
   useEffect(() => {
     if (!captureOpen) return;
@@ -724,6 +740,13 @@ export default function Shell({ children }) {
                   {link.label}
                 </Link>
               ))}
+              <button
+                type="button"
+                className={styles.menuLink}
+                onClick={handleLogout}
+              >
+                Log out
+              </button>
             </div>
           </nav>
         </div>
