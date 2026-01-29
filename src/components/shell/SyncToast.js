@@ -11,8 +11,13 @@ export default function SyncToast() {
 
   useEffect(() => {
     const unsubscribe = addSyncListener((event) => {
-      if (event?.type !== "conflict") return;
-      setMessage("Conflict detected. Created a conflict copy.");
+      if (event?.type === "conflict") {
+        setMessage("Conflict detected. Created a conflict copy.");
+        return;
+      }
+      if (event?.type === "sync-start") {
+        setMessage("Syncing your data...");
+      }
     });
     return () => unsubscribe();
   }, []);

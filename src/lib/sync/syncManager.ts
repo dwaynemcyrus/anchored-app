@@ -131,6 +131,10 @@ export function addSyncListener(listener: (event: SyncEvent) => void) {
   return () => listeners.delete(listener);
 }
 
+export function emitSyncEvent(event: SyncEvent) {
+  notify(event);
+}
+
 export function initSyncListeners() {
   if (!isBrowser() || listenersInitialized) return;
   listenersInitialized = true;

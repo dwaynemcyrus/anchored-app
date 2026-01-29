@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { performInitialSync } from "./initialSync";
-import { initSyncListeners, scheduleSync } from "./syncManager";
+import { emitSyncEvent, initSyncListeners, scheduleSync } from "./syncManager";
 import { getSupabaseClient } from "../supabase/client";
 
 type UseServerSyncOptions = {
@@ -50,9 +50,16 @@ export function useServerSync(options: UseServerSyncOptions = {}) {
   }, [enabled]);
 
   useEffect(() => {
+    if (!enabled) return;
+    if (!isAuthed) {
+      hasStartedRef.current = false;
+      initialSync.reset();
+      return;
+    }
     if (!enabled || !isAuthed || hasStartedRef.current) return;
     hasStartedRef.current = true;
     initSyncListeners();
+    emitSyncEvent({ type: "sync-start", reason: "login" });
     initialSync.mutate();
   }, [enabled, isAuthed, initialSync]);
 

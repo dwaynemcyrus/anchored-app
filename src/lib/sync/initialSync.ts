@@ -13,7 +13,7 @@ import {
   upsertDocument,
   upsertDocumentBody,
 } from "../supabase/documents";
-import { getUserId } from "../supabase/client";
+import { getSupabaseClient, getUserId } from "../supabase/client";
 import { ensureIsoTimestamp, parseIsoTimestamp } from "../utils/timestamps";
 import { createConflictCopy } from "./conflictCopy";
 import { SYNC_STATUS, useSyncStore } from "../../store/syncStore";
@@ -67,6 +67,12 @@ export async function performInitialSync() {
   store.setStatus(SYNC_STATUS.SYNCING);
   store.clearError();
   try {
+    const client = getSupabaseClient();
+    const { data, error } = await client.auth.getUser();
+    if (error || !data?.user) {
+      store.setStatus(SYNC_STATUS.SYNCED);
+      return;
+    }
     const lastSyncTime =
       (typeof window !== "undefined" && window.localStorage.getItem(LAST_SYNC_KEY)) ||
       "1970-01-01";

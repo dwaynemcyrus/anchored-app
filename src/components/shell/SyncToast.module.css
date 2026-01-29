@@ -1,7 +1,8 @@
 .toast {
   position: fixed;
   left: 50%;
-  bottom: calc(20px + env(safe-area-inset-bottom));
+  top: max(48px, calc(env(safe-area-inset-top, 0px) + 16px));
+  bottom: auto;
   transform: translateX(-50%);
   background: #14110f;
   color: #f6f2ea;
