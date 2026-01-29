@@ -32,6 +32,7 @@ export async function getDocumentBody(documentId) {
         ...body,
         updatedAt,
         updated_at: body.updated_at ?? new Date(updatedAt).toISOString(),
+        version: typeof body.version === "number" ? body.version : 1,
       });
     };
     request.onerror = () => reject(request.error);
@@ -42,21 +43,32 @@ export async function upsertDocumentBody(documentId, content, updates = {}) {
   ensureId(documentId);
   const db = await getDb();
   const now = Date.now();
-  const record = {
-    documentId,
-    content: typeof content === "string" ? content : "",
-    updatedAt: typeof updates.updatedAt === "number" ? updates.updatedAt : now,
-    updated_at: ensureIsoTimestamp(updates.updated_at, new Date(now).toISOString()),
-    syncedAt: updates.syncedAt ?? null,
-  };
 
   return new Promise((resolve, reject) => {
     const transaction = db.transaction(DOCUMENT_BODIES_STORE, "readwrite");
     const store = transaction.objectStore(DOCUMENT_BODIES_STORE);
-    const request = store.put(record);
+    const getRequest = store.get(documentId);
 
-    request.onsuccess = () => resolve(record);
-    request.onerror = () => reject(request.error);
+    getRequest.onsuccess = () => {
+      const existing = getRequest.result;
+      const record = {
+        documentId,
+        content: typeof content === "string" ? content : "",
+        updatedAt: typeof updates.updatedAt === "number" ? updates.updatedAt : now,
+        updated_at: ensureIsoTimestamp(updates.updated_at, new Date(now).toISOString()),
+        syncedAt: updates.syncedAt ?? null,
+        version:
+          typeof updates.version === "number"
+            ? updates.version
+            : typeof existing?.version === "number"
+              ? existing.version
+              : 1,
+      };
+      const request = store.put(record);
+      request.onsuccess = () => resolve(record);
+      request.onerror = () => reject(request.error);
+    };
+    getRequest.onerror = () => reject(getRequest.error);
   });
 }
 
@@ -115,6 +127,7 @@ export async function listDocumentBodies() {
           ...body,
           updatedAt,
           updated_at: body.updated_at ?? new Date(updatedAt).toISOString(),
+          version: typeof body.version === "number" ? body.version : 1,
         };
       });
       resolve(normalized);
@@ -143,6 +156,7 @@ export async function bulkUpsertDocumentBodies(records = []) {
           record.updated_at,
           new Date(updatedAt).toISOString()
         ),
+        version: typeof record.version === "number" ? record.version : 1,
       });
     }
 

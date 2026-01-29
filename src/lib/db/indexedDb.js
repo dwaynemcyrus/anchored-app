@@ -1,5 +1,5 @@
 export const DB_NAME = "anchored_db";
-export const DB_VERSION = 9;
+export const DB_VERSION = 10;
 export const DOCUMENTS_STORE = "documents";
 export const DOCUMENT_BODIES_STORE = "document_bodies";
 export const SYNC_QUEUE_STORE = "syncQueue";
@@ -125,6 +125,20 @@ export function openAnchoredDb() {
             cursor.continue();
           };
         }
+      }
+
+      if (event.oldVersion < 10 && db.objectStoreNames.contains(DOCUMENT_BODIES_STORE)) {
+        const bodiesStore = request.transaction.objectStore(DOCUMENT_BODIES_STORE);
+        const bodyCursor = bodiesStore.openCursor();
+        bodyCursor.onsuccess = () => {
+          const cursor = bodyCursor.result;
+          if (!cursor) return;
+          const body = cursor.value;
+          if (typeof body?.version !== "number") {
+            cursor.update({ ...body, version: 1 });
+          }
+          cursor.continue();
+        };
       }
 
       if (!db.objectStoreNames.contains(SYNC_QUEUE_STORE)) {
