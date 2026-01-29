@@ -31,11 +31,11 @@ async function getAuthedUserId() {
 
 export async function fetchDocumentsUpdatedSince({ since, limit = 500 } = {}) {
   const client = getSupabaseClient();
-  const ownerId = await getAuthedUserId();
+  const userId = await getAuthedUserId();
   let query = client
     .from(DOCUMENTS_TABLE)
     .select("*")
-    .eq("owner_id", ownerId)
+    .eq("user_id", userId)
     .order("updated_at", { ascending: true });
 
   const sinceIso = toIsoTimestamp(since);
@@ -59,11 +59,11 @@ export async function fetchDocumentById(id) {
     return null;
   }
   const client = getSupabaseClient();
-  const ownerId = await getAuthedUserId();
+  const userId = await getAuthedUserId();
   const response = await client
     .from(DOCUMENTS_TABLE)
     .select("*")
-    .eq("owner_id", ownerId)
+    .eq("user_id", userId)
     .eq("id", id)
     .maybeSingle();
 
@@ -76,11 +76,11 @@ export async function fetchDocumentBodiesByIds(documentIds = []) {
     return [];
   }
   const client = getSupabaseClient();
-  const ownerId = await getAuthedUserId();
+  const userId = await getAuthedUserId();
   const response = await client
     .from(BODIES_TABLE)
     .select("*")
-    .eq("owner_id", ownerId)
+    .eq("user_id", userId)
     .in("document_id", filteredIds);
 
   return unwrapResponse(response);
@@ -94,11 +94,11 @@ export async function fetchDocumentBody(documentId) {
     return null;
   }
   const client = getSupabaseClient();
-  const ownerId = await getAuthedUserId();
+  const userId = await getAuthedUserId();
   const response = await client
     .from(BODIES_TABLE)
     .select("*")
-    .eq("owner_id", ownerId)
+    .eq("user_id", userId)
     .eq("document_id", documentId)
     .maybeSingle();
 
@@ -107,14 +107,13 @@ export async function fetchDocumentBody(documentId) {
 
 export async function insertDocument(document) {
   const client = getSupabaseClient();
-  const ownerId = document.owner_id ?? (await getAuthedUserId());
+  const userId = document.user_id ?? (await getAuthedUserId());
   const response = await client
     .from(DOCUMENTS_TABLE)
     .insert({
       version: 1,
       ...document,
-      owner_id: ownerId,
-      user_id: document.user_id ?? ownerId,
+      user_id: userId,
     })
     .select("*")
     .single();
@@ -124,12 +123,12 @@ export async function insertDocument(document) {
 
 export async function updateDocument(id, updates) {
   const client = getSupabaseClient();
-  const ownerId = await getAuthedUserId();
+  const userId = await getAuthedUserId();
   const response = await client
     .from(DOCUMENTS_TABLE)
     .update({ ...updates, updated_at: new Date().toISOString() })
     .eq("id", id)
-    .eq("owner_id", ownerId)
+    .eq("user_id", userId)
     .select("*")
     .single();
 
@@ -141,7 +140,7 @@ export async function updateDocumentWithVersion(id, updates, expectedVersion) {
     throw new Error("Expected version is required");
   }
   const client = getSupabaseClient();
-  const ownerId = await getAuthedUserId();
+  const userId = await getAuthedUserId();
   const response = await client
     .from(DOCUMENTS_TABLE)
     .update({
@@ -150,7 +149,7 @@ export async function updateDocumentWithVersion(id, updates, expectedVersion) {
       version: expectedVersion + 1,
     })
     .eq("id", id)
-    .eq("owner_id", ownerId)
+    .eq("user_id", userId)
     .eq("version", expectedVersion)
     .select("*")
     .maybeSingle();
@@ -184,10 +183,10 @@ export async function trashDocument(id, expectedVersion) {
 
 export async function insertDocumentBody(documentId, content) {
   const client = getSupabaseClient();
-  const ownerId = await getAuthedUserId();
+  const userId = await getAuthedUserId();
   const response = await client
     .from(BODIES_TABLE)
-    .insert({ document_id: documentId, content, owner_id: ownerId })
+    .insert({ document_id: documentId, content, user_id: userId })
     .select("*")
     .single();
 
@@ -196,11 +195,11 @@ export async function insertDocumentBody(documentId, content) {
 
 export async function updateDocumentBody(documentId, content) {
   const client = getSupabaseClient();
-  const ownerId = await getAuthedUserId();
+  const userId = await getAuthedUserId();
   const response = await client
     .from(BODIES_TABLE)
     .update({ content, updated_at: new Date().toISOString() })
-    .eq("owner_id", ownerId)
+    .eq("user_id", userId)
     .eq("document_id", documentId)
     .select("*")
     .single();
@@ -213,13 +212,10 @@ export async function upsertDocument(document) {
     throw new Error("Document id must be a UUID");
   }
   const client = getSupabaseClient();
-  const ownerId = document.owner_id ?? (await getAuthedUserId());
+  const userId = document.user_id ?? (await getAuthedUserId());
   const response = await client
     .from(DOCUMENTS_TABLE)
-    .upsert(
-      { ...document, owner_id: ownerId, user_id: document.user_id ?? ownerId },
-      { onConflict: "id" }
-    )
+    .upsert({ ...document, user_id: userId }, { onConflict: "id" })
     .select("*")
     .single();
 
@@ -234,10 +230,10 @@ export async function upsertDocumentBody(body) {
     throw new Error("Document body document_id must be a UUID");
   }
   const client = getSupabaseClient();
-  const ownerId = body.owner_id ?? (await getAuthedUserId());
+  const userId = body.user_id ?? (await getAuthedUserId());
   const response = await client
     .from(BODIES_TABLE)
-    .upsert({ ...body, owner_id: ownerId }, { onConflict: "document_id" })
+    .upsert({ ...body, user_id: userId }, { onConflict: "document_id" })
     .select("*")
     .single();
 
