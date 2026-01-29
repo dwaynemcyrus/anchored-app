@@ -1,13 +1,48 @@
 import { getDocumentsRepo } from "../repo/getDocumentsRepo";
 import { DOCUMENTS_STORE, openAnchoredDb } from "../db/indexedDb";
 
-function resolveTags(document) {
-  const metaTags = Array.isArray(document?.meta?.tags) ? document.meta.tags : [];
+type DocumentMeta = {
+  tags?: unknown;
+  status?: string | null;
+  subtype?: string | null;
+  frontmatter?: Record<string, unknown>;
+  [key: string]: unknown;
+};
+
+type DocumentLike = {
+  id?: string;
+  type?: string;
+  title?: string | null;
+  body?: string | null;
+  tags?: unknown;
+  status?: string | null;
+  subtype?: string | null;
+  meta?: DocumentMeta;
+  frontmatter?: Record<string, unknown>;
+  archivedAt?: string | null;
+  inboxAt?: string | null;
+  deletedAt?: string | null;
+};
+
+type ConflictCopyInput = {
+  document: DocumentLike;
+  reason: string;
+};
+
+type CreatedDocument = {
+  id: string;
+  [key: string]: unknown;
+};
+
+function resolveTags(document: DocumentLike): string[] {
+  const metaTags = Array.isArray(document?.meta?.tags)
+    ? (document.meta?.tags as string[])
+    : [];
   const tags = Array.isArray(document?.tags) ? document.tags : metaTags;
   return Array.isArray(tags) ? tags : [];
 }
 
-function resolveStatus(document) {
+function resolveStatus(document: DocumentLike): string {
   if (document?.status) return document.status;
   if (document?.meta?.status) return document.meta.status;
   if (document?.deletedAt) return "trash";
@@ -15,11 +50,14 @@ function resolveStatus(document) {
   return "active";
 }
 
-function resolveSubtype(document) {
+function resolveSubtype(document: DocumentLike): string | null {
   return document?.subtype ?? document?.meta?.subtype ?? null;
 }
 
-function resolveFrontmatter(document, reason) {
+function resolveFrontmatter(
+  document: DocumentLike,
+  reason: string
+): Record<string, unknown> {
   const base =
     document?.frontmatter ??
     document?.meta?.frontmatter ??
@@ -34,7 +72,10 @@ function resolveFrontmatter(document, reason) {
   };
 }
 
-function buildConflictMeta(document, reason) {
+function buildConflictMeta(
+  document: DocumentLike,
+  reason: string
+): DocumentMeta {
   const tags = resolveTags(document);
   const uniqueTags = Array.from(new Set([...tags, "conflict"]))
     .filter(Boolean);
@@ -48,7 +89,10 @@ function buildConflictMeta(document, reason) {
   };
 }
 
-export async function createConflictCopy({ document, reason }) {
+export async function createConflictCopy({
+  document,
+  reason,
+}: ConflictCopyInput): Promise<CreatedDocument> {
   if (!document || typeof document !== "object") {
     throw new Error("Document is required to create a conflict copy");
   }

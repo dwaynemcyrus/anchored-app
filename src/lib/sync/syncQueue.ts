@@ -5,6 +5,26 @@ import {
 } from "../db/indexedDb";
 
 export const MAX_RETRY_COUNT = 5;
+type SyncOperation = {
+  id?: string;
+  table: string;
+  record_id: string;
+  operation: string;
+  payload?: unknown;
+  timestamp?: string;
+  createdAt?: string;
+  lastAttemptAt?: string | null;
+  nextAttemptAt?: string | null;
+  lastError?: unknown;
+  retry_count?: number;
+  status?: string;
+};
+
+type ListQueueOptions = {
+  limit?: number | null;
+  includeDeferred?: boolean;
+};
+
 const BASE_BACKOFF_MS = 2000;
 const MAX_BACKOFF_MS = 5 * 60 * 1000;
 
@@ -15,7 +35,7 @@ function generateId() {
   return `sync_${Date.now()}_${Math.random().toString(16).slice(2)}`;
 }
 
-function ensureOperation(operation) {
+function ensureOperation(operation: SyncOperation) {
   if (!operation || typeof operation !== "object") {
     throw new Error("Sync operation is required");
   }
@@ -34,7 +54,7 @@ async function getDb() {
   return openAnchoredDb();
 }
 
-export async function enqueueOperation(operation) {
+export async function enqueueOperation(operation: SyncOperation) {
   ensureOperation(operation);
   const nowIso = new Date().toISOString();
   const record = {
@@ -51,7 +71,7 @@ export async function enqueueOperation(operation) {
   };
 
   const db = await getDb();
-  return new Promise((resolve, reject) => {
+  return new Promise<SyncOperation>((resolve, reject) => {
     const transaction = db.transaction(SYNC_QUEUE_STORE, "readwrite");
     const store = transaction.objectStore(SYNC_QUEUE_STORE);
     const request = store.add(record);
@@ -61,9 +81,12 @@ export async function enqueueOperation(operation) {
   });
 }
 
-export async function listQueue({ limit = null, includeDeferred = true } = {}) {
+export async function listQueue({
+  limit = null,
+  includeDeferred = true,
+}: ListQueueOptions = {}): Promise<SyncOperation[]> {
   const db = await getDb();
-  return new Promise((resolve, reject) => {
+  return new Promise<SyncOperation[]>((resolve, reject) => {
     const transaction = db.transaction(SYNC_QUEUE_STORE, "readonly");
     const store = transaction.objectStore(SYNC_QUEUE_STORE);
     const request = store.getAll();
@@ -90,9 +113,9 @@ export async function listQueue({ limit = null, includeDeferred = true } = {}) {
   });
 }
 
-export async function getNextReadyOperation() {
+export async function getNextReadyOperation(): Promise<SyncOperation | null> {
   const db = await getDb();
-  return new Promise((resolve, reject) => {
+  return new Promise<SyncOperation | null>((resolve, reject) => {
     const transaction = db.transaction(SYNC_QUEUE_STORE, "readonly");
     const store = transaction.objectStore(SYNC_QUEUE_STORE);
     const index = store.index("timestamp");
@@ -112,12 +135,15 @@ export async function getNextReadyOperation() {
   });
 }
 
-export async function updateOperation(id, updates = {}) {
+export async function updateOperation(
+  id: string,
+  updates: Partial<SyncOperation> = {}
+): Promise<SyncOperation> {
   if (typeof id !== "string" || !id.trim()) {
     throw new Error("Sync operation id is required");
   }
   const db = await getDb();
-  return new Promise((resolve, reject) => {
+  return new Promise<SyncOperation>((resolve, reject) => {
     const transaction = db.transaction(SYNC_QUEUE_STORE, "readwrite");
     const store = transaction.objectStore(SYNC_QUEUE_STORE);
     const getRequest = store.get(id);
@@ -142,13 +168,13 @@ export async function updateOperation(id, updates = {}) {
   });
 }
 
-export function computeBackoffMs(retryCount) {
+export function computeBackoffMs(retryCount: number) {
   if (typeof retryCount !== "number" || retryCount <= 0) return 0;
   const backoff = BASE_BACKOFF_MS * Math.pow(2, retryCount - 1);
   return Math.min(backoff, MAX_BACKOFF_MS);
 }
 
-export async function removeOperation(id) {
+export async function removeOperation(id: string): Promise<void> {
   if (typeof id !== "string" || !id.trim()) {
     throw new Error("Sync operation id is required");
   }
@@ -163,7 +189,7 @@ export async function removeOperation(id) {
   });
 }
 
-export async function clearQueue() {
+export async function clearQueue(): Promise<void> {
   const db = await getDb();
   return new Promise((resolve, reject) => {
     const transaction = db.transaction(SYNC_QUEUE_STORE, "readwrite");
@@ -175,7 +201,7 @@ export async function clearQueue() {
   });
 }
 
-export async function getQueueCount() {
+export async function getQueueCount(): Promise<number> {
   const db = await getDb();
   return new Promise((resolve, reject) => {
     const transaction = db.transaction(SYNC_QUEUE_STORE, "readonly");
@@ -187,7 +213,13 @@ export async function getQueueCount() {
   });
 }
 
-export async function getQueueStats() {
+export async function getQueueStats(): Promise<{
+  count: number;
+  retryCount: number;
+  maxRetry: number;
+  overLimitCount: number;
+  maxRetryLimit: number;
+}> {
   const items = await listQueue();
   const retryItems = items.filter((item) => (item.retry_count ?? 0) > 0);
   const maxRetry = retryItems.reduce(
@@ -206,7 +238,7 @@ export async function getQueueStats() {
   };
 }
 
-export async function setSyncMeta(key, value) {
+export async function setSyncMeta(key: string, value: unknown): Promise<void> {
   if (typeof key !== "string" || !key.trim()) {
     throw new Error("Sync meta key is required");
   }
@@ -221,7 +253,7 @@ export async function setSyncMeta(key, value) {
   });
 }
 
-export async function getSyncMeta(key) {
+export async function getSyncMeta(key: string): Promise<unknown> {
   if (typeof key !== "string" || !key.trim()) {
     throw new Error("Sync meta key is required");
   }

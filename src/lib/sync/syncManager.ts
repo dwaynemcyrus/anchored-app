@@ -47,6 +47,28 @@ type SyncEvent = {
   [key: string]: unknown;
 };
 
+type TimeEntryPayload = {
+  id?: string;
+  entity_id?: string;
+  entity_type?: string;
+  started_at?: string;
+  ended_at?: string;
+  duration_ms?: number;
+  note?: string | null;
+  source?: string | null;
+  client_id?: string | null;
+  lease_expires_at?: string | null;
+  lease_token?: string | null;
+  event_id?: string | null;
+};
+
+type TimeEntryEventPayload = {
+  time_entry_id?: string;
+  event_type?: string;
+  event_time?: string;
+  event_id?: string | null;
+};
+
 const debouncedSaves = new Map<string, ReturnType<typeof setTimeout>>();
 
 let syncInFlight: Promise<void> | null = null;
@@ -95,6 +117,10 @@ function buildErrorDetails(error) {
     code: error.code ?? null,
     stack: error.stack ?? null,
   };
+}
+
+function coercePayload<T extends Record<string, unknown>>(value: unknown): T {
+  return (value && typeof value === "object" ? value : {}) as T;
 }
 
 export function addSyncListener(listener: (event: SyncEvent) => void) {
@@ -572,9 +598,17 @@ async function handleBodyConflict(documentId, localBody, remoteBody) {
 }
 
 async function syncRemoteUpdates() {
-  const lastSyncedAt = await getSyncMeta(META_LAST_SYNCED_AT);
-  const remoteDocs = await fetchDocumentsUpdatedSince({ since: lastSyncedAt });
-  const remoteBodies = await fetchDocumentBodiesUpdatedSince({ since: lastSyncedAt });
+  const lastSyncedAtRaw = await getSyncMeta(META_LAST_SYNCED_AT);
+  const lastSyncedAt =
+    typeof lastSyncedAtRaw === "string" ||
+    typeof lastSyncedAtRaw === "number" ||
+    lastSyncedAtRaw instanceof Date
+      ? lastSyncedAtRaw
+      : null;
+  const remoteDocs = await fetchDocumentsUpdatedSince({ since: lastSyncedAt ?? undefined });
+  const remoteBodies = await fetchDocumentBodiesUpdatedSince({
+    since: lastSyncedAt ?? undefined,
+  });
   const hasRemoteDocs = Array.isArray(remoteDocs) && remoteDocs.length > 0;
   const hasRemoteBodies = Array.isArray(remoteBodies) && remoteBodies.length > 0;
   if (!hasRemoteDocs && !hasRemoteBodies) return;
@@ -593,7 +627,12 @@ async function syncRemoteUpdates() {
     });
   }
 
-  let maxUpdatedAt = Date.parse(lastSyncedAt || "") || 0;
+  let maxUpdatedAt =
+    typeof lastSyncedAt === "number"
+      ? lastSyncedAt
+      : lastSyncedAt instanceof Date
+        ? lastSyncedAt.getTime()
+        : Date.parse(lastSyncedAt || "") || 0;
 
   const docIdSet = new Set(docIds);
   for (const remoteDoc of remoteDocs ?? []) {
@@ -782,7 +821,7 @@ export async function processSyncQueue() {
           await removeOperation(item.id);
           continue;
         }
-        const payload = item.payload || {};
+        const payload = coercePayload<TimeEntryPayload>(item.payload);
         if (item.operation === "start") {
           const data = await startTimeEntry({
             id: payload.id,
@@ -837,7 +876,7 @@ export async function processSyncQueue() {
         continue;
       }
       if (item.table === "time_entry_events") {
-        const payload = item.payload || {};
+        const payload = coercePayload<TimeEntryEventPayload>(item.payload);
         if (!payload.time_entry_id || !isUuid(payload.time_entry_id)) {
           await removeOperation(item.id);
           continue;
@@ -868,8 +907,11 @@ export async function processSyncQueue() {
     } catch (error) {
       const nextRetry = (item.retry_count ?? 0) + 1;
       const backoffMs = computeBackoffMs(nextRetry);
-      if (item.table === "time_entries" && item.payload?.event_id) {
-        await markTimerEventFailed(item.payload.event_id, buildErrorDetails(error));
+      if (item.table === "time_entries") {
+        const payload = coercePayload<TimeEntryPayload>(item.payload);
+        if (payload.event_id) {
+          await markTimerEventFailed(payload.event_id, buildErrorDetails(error));
+        }
       }
       await updateOperation(item.id, {
         retry_count: nextRetry,

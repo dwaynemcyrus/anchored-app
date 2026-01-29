@@ -8,6 +8,54 @@ import {
 } from "../db/timerEvents";
 import { getRunningTimeEntry } from "../supabase/timeEntries";
 
+type TimerEventStatus = "pending" | "synced" | "failed";
+
+type TimerEventInput = {
+  id: string;
+  timerEntryId: string;
+  eventType: string;
+  entityId: string | null;
+  entityType: string | null;
+  note?: string | null;
+  clientTime: string;
+  status?: TimerEventStatus;
+};
+
+type TimerStartPayload = {
+  entryId: string;
+  entityId: string;
+  entityType: string;
+  note?: string | null;
+  source?: string | null;
+  startedAt?: string;
+  leaseExpiresAt?: string | null;
+};
+
+type TimerStopPayload = {
+  entryId: string;
+  note?: string | null;
+  durationMs?: number | null;
+  endedAt?: string;
+  eventType?: string;
+};
+
+type TimerResumePayload = {
+  entryId: string;
+  resumedAt?: string;
+  leaseExpiresAt?: string | null;
+};
+
+type TimerLeasePayload = {
+  entryId: string;
+  leaseExpiresAt: string;
+};
+
+type TimerTakeoverPayload = {
+  entryId: string;
+  leaseExpiresAt: string;
+  leaseToken?: string;
+};
+
 const CLIENT_ID = getClientId();
 const LEASE_DURATION_MS = 2 * 60 * 1000;
 const ACTIVE_TIMER_META = "activeTimer";
@@ -22,7 +70,7 @@ function buildTimerEvent({
   note,
   clientTime,
   status = "pending",
-}) {
+}: TimerEventInput) {
   return {
     id,
     timer_entry_id: timerEntryId,
@@ -48,7 +96,7 @@ export async function enqueueTimerStart({
   source = "focus",
   startedAt = new Date().toISOString(),
   leaseExpiresAt,
-}) {
+}: TimerStartPayload) {
   const eventId = crypto.randomUUID();
   const event = buildTimerEvent({
     id: eventId,
@@ -101,7 +149,7 @@ export async function enqueueTimerStop({
   durationMs,
   endedAt = new Date().toISOString(),
   eventType = "stop",
-}) {
+}: TimerStopPayload) {
   const eventId = crypto.randomUUID();
   const event = buildTimerEvent({
     id: eventId,
@@ -147,7 +195,7 @@ export async function enqueueTimerResume({
   entryId,
   resumedAt = new Date().toISOString(),
   leaseExpiresAt,
-}) {
+}: TimerResumePayload) {
   const eventId = crypto.randomUUID();
   const event = buildTimerEvent({
     id: eventId,
@@ -191,7 +239,7 @@ export async function enqueueTimerResume({
 export async function enqueueTimerLeaseRenew({
   entryId,
   leaseExpiresAt,
-}) {
+}: TimerLeasePayload) {
   const now = new Date().toISOString();
   await enqueueOperation({
     table: "time_entries",
@@ -211,7 +259,7 @@ export async function enqueueTimerTakeover({
   entryId,
   leaseExpiresAt,
   leaseToken = crypto.randomUUID(),
-}) {
+}: TimerTakeoverPayload) {
   const eventId = crypto.randomUUID();
   const eventTime = new Date().toISOString();
   const event = buildTimerEvent({
@@ -254,21 +302,21 @@ export async function enqueueTimerTakeover({
   return event;
 }
 
-export async function markTimerEventSynced(eventId, serverTime) {
+export async function markTimerEventSynced(eventId: string, serverTime?: string) {
   await updateTimerEvent(eventId, {
     status: "synced",
     server_time: serverTime ?? new Date().toISOString(),
   });
 }
 
-export async function markTimerEventFailed(eventId, errorDetails) {
+export async function markTimerEventFailed(eventId: string, errorDetails?: unknown) {
   await updateTimerEvent(eventId, {
     status: "failed",
     lastError: errorDetails ?? null,
   });
 }
 
-export async function setActiveTimerMeta(value) {
+export async function setActiveTimerMeta(value: unknown) {
   return setTimerMeta(ACTIVE_TIMER_META, value);
 }
 
@@ -276,7 +324,7 @@ export async function getActiveTimerMeta() {
   return getTimerMeta(ACTIVE_TIMER_META);
 }
 
-export async function setTimerNotice(value) {
+export async function setTimerNotice(value: unknown) {
   return setTimerMeta(TIMER_NOTICE_META, value);
 }
 
