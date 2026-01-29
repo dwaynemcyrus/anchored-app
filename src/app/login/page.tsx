@@ -1,5 +1,6 @@
 "use client";
 
+import type { FormEvent } from "react";
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
@@ -18,9 +19,9 @@ export default function LoginPage() {
   const router = useRouter();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [mode, setMode] = useState("password");
-  const [status, setStatus] = useState(null);
-  const [error, setError] = useState(null);
+  const [mode, setMode] = useState<"password" | "magic">("password");
+  const [status, setStatus] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
   const canSubmit = useMemo(() => {
@@ -29,7 +30,7 @@ export default function LoginPage() {
     return password.trim().length >= 6;
   }, [email, mode, password]);
 
-  const handleMagicLink = async (event) => {
+  const handleMagicLink = async (event: FormEvent<HTMLButtonElement>) => {
     event.preventDefault();
     setError(null);
     setStatus(null);
@@ -39,13 +40,14 @@ export default function LoginPage() {
       await signInWithMagicLink({ email, redirectTo });
       setStatus("Magic link sent. Check your email.");
     } catch (err) {
-      setError(err.message || "Failed to send magic link");
+      const message = err instanceof Error ? err.message : "Failed to send magic link";
+      setError(message);
     } finally {
       setBusy(false);
     }
   };
 
-  const handlePassword = async (event) => {
+  const handlePassword = async (event: FormEvent<HTMLButtonElement>) => {
     event.preventDefault();
     setError(null);
     setStatus(null);
@@ -54,13 +56,14 @@ export default function LoginPage() {
       await signInWithPassword({ email, password });
       router.push("/");
     } catch (err) {
-      setError(err.message || "Sign in failed");
+      const message = err instanceof Error ? err.message : "Sign in failed";
+      setError(message);
     } finally {
       setBusy(false);
     }
   };
 
-  const handleSignUp = async (event) => {
+  const handleSignUp = async (event: FormEvent<HTMLButtonElement>) => {
     event.preventDefault();
     setError(null);
     setStatus(null);
@@ -69,7 +72,8 @@ export default function LoginPage() {
       await signUpWithPassword({ email, password });
       setStatus("Check your email to confirm your account.");
     } catch (err) {
-      setError(err.message || "Sign up failed");
+      const message = err instanceof Error ? err.message : "Sign up failed";
+      setError(message);
     } finally {
       setBusy(false);
     }

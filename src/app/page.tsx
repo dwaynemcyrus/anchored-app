@@ -1,5 +1,6 @@
 "use client";
 
+import type { MouseEvent } from "react";
 import { useEffect, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
@@ -12,7 +13,15 @@ import DocumentPickerModal from "@/components/workbench/DocumentPickerModal";
 import ReplaceModal from "@/components/workbench/ReplaceModal";
 import styles from "../styles/now.module.css";
 
-function formatDisplayDate(dateString) {
+type PinnedDocument = {
+  id: string;
+  body?: string | null;
+  deletedAt?: number | null;
+  archivedAt?: number | null;
+  title?: string | null;
+};
+
+function formatDisplayDate(dateString: string) {
   const date = new Date(dateString + "T12:00:00");
   return date.toLocaleDateString("en-US", {
     weekday: "long",
@@ -38,22 +47,24 @@ export default function NowView() {
   const inboxCountLoaded = useDocumentsStore((state) => state.inboxCountLoaded);
   const loadInboxCount = useDocumentsStore((state) => state.loadInboxCount);
 
-  const [pinnedDocs, setPinnedDocs] = useState([]);
+  const [pinnedDocs, setPinnedDocs] = useState<PinnedDocument[]>([]);
   const [pinnedLoading, setPinnedLoading] = useState(true);
 
   const [pickerOpen, setPickerOpen] = useState(false);
   const [replaceModalOpen, setReplaceModalOpen] = useState(false);
-  const [pendingDoc, setPendingDoc] = useState(null);
+  const [pendingDoc, setPendingDoc] = useState<PinnedDocument | null>(null);
 
-  const [toast, setToast] = useState(null);
+  const [toast, setToast] = useState<{ message: string; isError: boolean } | null>(
+    null
+  );
 
-  const showToast = useCallback((message, isError = false) => {
+  const showToast = useCallback((message: string, isError = false) => {
     setToast({ message, isError });
     setTimeout(() => setToast(null), 3000);
   }, []);
 
   const handleLinkClick = useCallback(
-    (event, href) => {
+    (event: MouseEvent<HTMLElement>, href: string) => {
       if (!href) return;
       if (event.defaultPrevented) return;
       if (event.button !== 0) return;
@@ -116,7 +127,10 @@ export default function NowView() {
         // Maintain order from pinnedIds
         const activeDocs = pinnedIds
           .map((id) => docs.find((doc) => doc?.id === id))
-          .filter((doc) => doc && doc.deletedAt == null && doc.archivedAt == null);
+          .filter(
+            (doc): doc is PinnedDocument =>
+              Boolean(doc) && doc.deletedAt == null && doc.archivedAt == null
+          );
         setPinnedDocs(activeDocs);
 
         // Cleanup invalid IDs from settings (missing, deleted, or archived)
@@ -134,7 +148,7 @@ export default function NowView() {
 
   // Handle document selection from picker
   const handleDocumentSelect = useCallback(
-    async (doc) => {
+    async (doc: PinnedDocument) => {
       setPickerOpen(false);
 
       // Get full document if we only have partial data
@@ -170,7 +184,7 @@ export default function NowView() {
 
   // Handle replace selection
   const handleReplace = useCallback(
-    (oldDoc) => {
+    (oldDoc: PinnedDocument) => {
       if (!pendingDoc) return;
 
       const oldTitle = deriveDocumentTitle(oldDoc);
@@ -189,7 +203,7 @@ export default function NowView() {
 
   // Handle unpin
   const handleUnpin = useCallback(
-    (doc) => {
+    (doc: PinnedDocument) => {
       unpin(doc.id);
       showToast("Removed from Workbench");
     },
