@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.17.0 - 2026-01-29
+- Migrate Supabase auth integration to the @supabase/ssr pattern and gate sync on valid sessions (plus logout in the menu).
+- Strengthen sync reliability: server authority for updates, document-before-body ordering, RLS-safe body deferrals, and timestamp-based conflict checks to prevent duplicate copies.
+- Add local data safety tools: robust IndexedDB deletion with retries and a dedicated Danger Zone for destructive actions.
+- Add login sync feedback toast and move all toasts below the iPhone island safe area.
+- Restore first-line title derivation when creating new notes.
+
 ## 0.16.1 - 2026-01-28
 - Add logbook to the shell navigation menu.
 - Retry sync on a timer and surface Supabase error details for debugging.
