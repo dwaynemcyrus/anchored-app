@@ -275,6 +275,9 @@ Every future large plan must identify:
   prefix, stored in YAML front matter while wikilinks remain filename- and
   alias-based. Initial vault scans are read-only baselines; later Finder-added
   notes may receive IDs automatically after stability and safety checks.
+- 2026-07-16: Added the conservative identity parser and insertion core. It
+  validates YAML without reserializing it, preserves comments, Unicode, BOMs,
+  and LF/CRLF endings, and refuses malformed, duplicate, or noncanonical IDs.
 
 ## Completion
 
