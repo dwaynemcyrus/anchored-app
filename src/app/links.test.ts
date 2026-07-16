@@ -56,10 +56,11 @@ describe("wikilinks", () => {
     expect(wikilinkAtOffset(content, 0)).toBeNull();
   });
 
-  it("ignores front matter, code, indentation, and escaped wikilinks", () => {
+  it("includes quoted property links and ignores code or escaped body links", () => {
     const content = [
       "---",
       "related: '[[Front matter]]'",
+      'references: ["[[List property|Shown property]]"]',
       "---",
       "\\[[Escaped]] and `[[Inline code]]`",
       "```md",
@@ -70,8 +71,13 @@ describe("wikilinks", () => {
     ].join("\n");
 
     expect(wikilinksInContent(content)).toMatchObject([
+      { label: "Front matter", target: "Front matter" },
+      { label: "Shown property", target: "List property" },
       { label: "Shown label", target: "Real note" },
     ]);
+    expect(
+      wikilinkAtOffset(content, content.indexOf("Front matter") + 2),
+    ).toMatchObject({ target: "Front matter" });
   });
 
   it("prefers an exact path and supports headings and extensions", () => {

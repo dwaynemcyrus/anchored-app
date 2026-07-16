@@ -32,9 +32,17 @@ export function wikilinkAtOffset(
 }
 
 export function wikilinksInContent(content: string): WikilinkMatch[] {
-  const bodyStart = markdownBodyStart(content);
+  const { bodyStart, frontMatterEnd, frontMatterStart } =
+    markdownBounds(content);
   const body = content.slice(bodyStart);
   const links: WikilinkMatch[] = [];
+  if (frontMatterEnd !== undefined && frontMatterStart !== undefined) {
+    inspectQuotedPropertyWikilinks(
+      content.slice(frontMatterStart, frontMatterEnd),
+      frontMatterStart,
+      links,
+    );
+  }
   let lineOffset = bodyStart;
   let fenceMarker: string | undefined;
   let fenceLength = 0;
@@ -67,7 +75,11 @@ export function wikilinksInContent(content: string): WikilinkMatch[] {
   return links;
 }
 
-function markdownBodyStart(content: string): number {
+function markdownBounds(content: string): {
+  bodyStart: number;
+  frontMatterEnd?: number;
+  frontMatterStart?: number;
+} {
   const bomLength = content.startsWith("\ufeff") ? 1 : 0;
   const body = content.slice(bomLength);
   const opening = body.startsWith("---\r\n")
@@ -75,7 +87,7 @@ function markdownBodyStart(content: string): number {
     : body.startsWith("---\n")
       ? 4
       : 0;
-  if (opening === 0) return bomLength;
+  if (opening === 0) return { bodyStart: bomLength };
 
   let lineStart = bomLength + opening;
   while (lineStart <= content.length) {
@@ -83,12 +95,70 @@ function markdownBodyStart(content: string): number {
     const end = lineEnd === -1 ? content.length : lineEnd;
     const line = content.slice(lineStart, end).replace(/\r$/, "");
     if (line === "---" || line === "...") {
-      return lineEnd === -1 ? content.length : lineEnd + 1;
+      return {
+        bodyStart: lineEnd === -1 ? content.length : lineEnd + 1,
+        frontMatterEnd: lineStart,
+        frontMatterStart: bomLength + opening,
+      };
     }
     if (lineEnd === -1) break;
     lineStart = lineEnd + 1;
   }
-  return content.length;
+  return { bodyStart: content.length };
+}
+
+function inspectQuotedPropertyWikilinks(
+  yaml: string,
+  yamlOffset: number,
+  links: WikilinkMatch[],
+) {
+  let index = 0;
+  let quote: '"' | "'" | undefined;
+  while (index < yaml.length) {
+    const character = yaml[index];
+    if (!quote) {
+      if (character === "#") {
+        const lineEnd = yaml.indexOf("\n", index);
+        index = lineEnd === -1 ? yaml.length : lineEnd + 1;
+        continue;
+      }
+      if (character === '"' || character === "'") quote = character;
+      index += 1;
+      continue;
+    }
+    if (quote === '"' && character === "\\") {
+      index += 2;
+      continue;
+    }
+    if (quote === "'" && character === "'" && yaml[index + 1] === "'") {
+      index += 2;
+      continue;
+    }
+    if (character === quote) {
+      quote = undefined;
+      index += 1;
+      continue;
+    }
+    if (yaml.startsWith("[[", index)) {
+      const closing = yaml.indexOf("]]", index + 2);
+      if (closing === -1) break;
+      const [targetPart, labelPart] = yaml
+        .slice(index + 2, closing)
+        .split("|", 2);
+      const target = targetPart.trim();
+      if (target) {
+        links.push({
+          end: yamlOffset + closing + 2,
+          label: labelPart?.trim() || target,
+          start: yamlOffset + index,
+          target,
+        });
+      }
+      index = closing + 2;
+      continue;
+    }
+    index += 1;
+  }
 }
 
 function inspectInlineWikilinks(

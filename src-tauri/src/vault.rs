@@ -1218,7 +1218,7 @@ mod tests {
         fs::write(vault.path().join("Zulu.md"), "# Zulu").expect("write root note");
         fs::write(
             vault.path().join("Notes/Alpha.MD"),
-            "---\nid: 01JZQ7K8P4A6F2M9V3C5T7X1BY\naliases: [First note]\n---\n# Alpha\n[[Zulu]]",
+            "---\nid: 01JZQ7K8P4A6F2M9V3C5T7X1BY\naliases: [First note]\nrelated: '[[Reading]]'\n---\n# Alpha\n[[Zulu]]",
         )
         .expect("write nested note");
         fs::write(vault.path().join("Notes/ignore.txt"), "ignored").expect("write ignored file");
@@ -1237,7 +1237,7 @@ mod tests {
             Some("01JZQ7K8P4A6F2M9V3C5T7X1BY")
         );
         assert_eq!(snapshot.files[0].aliases, vec!["First note"]);
-        assert_eq!(snapshot.files[0].outgoing_links, vec!["Zulu"]);
+        assert_eq!(snapshot.files[0].outgoing_links, vec!["Reading", "Zulu"]);
         assert_eq!(snapshot.warnings.skipped_symlinks, 0);
     }
 

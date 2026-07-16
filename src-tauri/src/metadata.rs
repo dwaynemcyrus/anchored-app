@@ -124,6 +124,7 @@ pub fn inspect_note_aliases(content: &str) -> Vec<String> {
 }
 
 pub fn inspect_wikilinks(content: &str) -> Vec<String> {
+    let mut links = Vec::new();
     let body = match front_matter_bounds(content) {
         Ok(Some(bounds)) => {
             let yaml = &content[bounds.body_start..bounds.body_end];
@@ -136,6 +137,11 @@ pub fn inspect_wikilinks(content: &str) -> Vec<String> {
             {
                 return Vec::new();
             }
+            if let Some(Yaml::Hash(mapping)) = documents.first() {
+                for value in mapping.values() {
+                    inspect_property_value_wikilinks(value, &mut links);
+                }
+            }
             let closing = &content[bounds.body_end..];
             closing
                 .find('\n')
@@ -144,7 +150,6 @@ pub fn inspect_wikilinks(content: &str) -> Vec<String> {
         Ok(None) => content,
         Err(()) => return Vec::new(),
     };
-    let mut links = Vec::new();
     let mut fence: Option<(u8, usize)> = None;
 
     for line in body.lines() {
@@ -165,6 +170,32 @@ pub fn inspect_wikilinks(content: &str) -> Vec<String> {
         inspect_inline_wikilinks(line, &mut links);
     }
     links
+}
+
+fn inspect_property_value_wikilinks(value: &Yaml, links: &mut Vec<String>) {
+    match value {
+        Yaml::String(value) => inspect_property_string_wikilinks(value, links),
+        Yaml::Array(values) => {
+            for value in values {
+                if let Yaml::String(value) = value {
+                    inspect_property_string_wikilinks(value, links);
+                }
+            }
+        }
+        _ => {}
+    }
+}
+
+fn inspect_property_string_wikilinks(value: &str, links: &mut Vec<String>) {
+    let mut remaining = value;
+    while let Some(opening) = remaining.find("[[") {
+        let after_opening = &remaining[opening + 2..];
+        let Some(closing) = after_opening.find("]]") else {
+            break;
+        };
+        push_unique_wikilink_target(&after_opening[..closing], links);
+        remaining = &after_opening[closing + 2..];
+    }
 }
 
 fn fence_marker(line: &str) -> Option<(u8, usize)> {
@@ -210,19 +241,19 @@ fn inspect_inline_wikilinks(line: &str, links: &mut Vec<String>) {
                 target_end += 1;
             }
             if target_end + 1 < bytes.len() {
-                let target = line[target_start..target_end]
-                    .split('|')
-                    .next()
-                    .unwrap_or_default()
-                    .trim();
-                if !target.is_empty() && !links.iter().any(|link| link == target) {
-                    links.push(target.to_owned());
-                }
+                push_unique_wikilink_target(&line[target_start..target_end], links);
                 index = target_end + 2;
                 continue;
             }
         }
         index += 1;
+    }
+}
+
+fn push_unique_wikilink_target(value: &str, links: &mut Vec<String>) {
+    let target = value.split('|').next().unwrap_or_default().trim();
+    if !target.is_empty() && !links.iter().any(|link| link == target) {
+        links.push(target.to_owned());
     }
 }
 
@@ -443,16 +474,24 @@ mod tests {
     }
 
     #[test]
-    fn indexes_unique_wikilink_targets_from_markdown_body() {
+    fn indexes_unique_wikilinks_from_properties_and_markdown_body() {
         let content = concat!(
-            "---\nrelated: '[[Front matter]]'\n---\n",
+            "---\nrelated: '[[Front matter|Shown]]'\n",
+            "references:\n  - \"[[List note]]\"\n  - plain text\n",
+            "mixed: [2, '[[Inline list]]']\n---\n",
             "See [[Notes/Leadership#Habits|Leading habits]] and ![[Zürich]].\n",
             "Again [[Zürich]].\n",
         );
 
         assert_eq!(
             inspect_wikilinks(content),
-            vec!["Notes/Leadership#Habits", "Zürich"]
+            vec![
+                "Front matter",
+                "List note",
+                "Inline list",
+                "Notes/Leadership#Habits",
+                "Zürich"
+            ]
         );
     }
 
