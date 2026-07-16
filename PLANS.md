@@ -352,10 +352,12 @@ Every future large plan must identify:
   close chunk 10.
 - 2026-07-16: Native rename QA exposed two test-delivery and interface issues.
   Manual testing now uses a self-contained debug app instead of a transient
-  development server. Vault notices were moved away from note-header actions,
-  given an explicit Dismiss control, and configured to expire after six
-  seconds when no identity decision is required. Frontend gates and the
-  dismissal interaction test pass; native rename QA remains open.
+  development server. Following manual feedback, vault and save notices now
+  form a persistent top-center stack below the note header. Newest messages
+  appear first, identical messages are deduplicated, every message has its own
+  Dismiss control, and a bounded scroll area prevents a long stack from taking
+  over the editor. Thirty frontend tests plus rendered desktop and 400×800
+  interaction checks pass; native rename QA remains open.
 - 2026-07-16: A process stack sample identified the rename stall before any
   vault mutation: the synchronous Tauri command parked the macOS main thread
   inside the blocking save dialog. The command now runs asynchronously, like

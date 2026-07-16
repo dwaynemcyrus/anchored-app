@@ -204,7 +204,9 @@ describe("App", () => {
     ).not.toBeInTheDocument();
     expect(screen.getByText("1 Markdown files found.")).toBeInTheDocument();
     await user.click(
-      screen.getByRole("button", { name: "Dismiss notification" }),
+      screen.getByRole("button", {
+        name: "Dismiss notification: 1 Markdown files found.",
+      }),
     );
     expect(
       screen.queryByText("1 Markdown files found."),
@@ -258,7 +260,23 @@ describe("App", () => {
     expect(
       await screen.findByRole("button", { name: "Finder Note.md" }),
     ).toBeInTheDocument();
-    expect(screen.getByText(/1 new note identities added/)).toBeInTheDocument();
+    const notifications = screen.getByLabelText("Notifications");
+    expect(
+      within(notifications).getByText("0 Markdown files found."),
+    ).toBeInTheDocument();
+    expect(
+      within(notifications).getByText(/1 new note identities added/),
+    ).toBeInTheDocument();
+    expect(within(notifications).getAllByText("Dismiss")).toHaveLength(2);
+
+    await user.click(
+      within(notifications).getByRole("button", {
+        name: "Dismiss notification: 1 Markdown files found. 1 new note identities added.",
+      }),
+    );
+    expect(
+      within(notifications).getByText("0 Markdown files found."),
+    ).toBeInTheDocument();
   });
 
   it("previews and explicitly applies existing-note identities", async () => {

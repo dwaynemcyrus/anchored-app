@@ -37,9 +37,9 @@ Git commit. The format follows [Keep a Changelog], and releases follow
   uniquely resolved filename, path, alias, heading, display-label, and quoted
   property links as one recoverable transaction; ambiguous links remain
   unchanged, and unfinished edits block the operation.
-- Vault status notices appear clear of note-header controls, can be dismissed,
-  and expire automatically when they do not require an identity-migration
-  decision.
+- Vault status and save notices form a persistent top-center stack clear of
+  note-header controls. Each message can be dismissed independently, and
+  repeated identical messages are deduplicated.
 
 ### Fixed
 

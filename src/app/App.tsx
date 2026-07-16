@@ -33,6 +33,12 @@ type DocumentLoadState =
   | { status: "loading"; documentId: string }
   | { status: "error"; documentId: string; message: string };
 
+type VaultNotice = {
+  id: number;
+  identityAction: boolean;
+  text: string;
+};
+
 function readErrorMessage(error: unknown): string {
   if (
     typeof error === "object" &&
@@ -84,7 +90,7 @@ export function App() {
   const [folderOrder, setFolderOrder] = useState(initialFolders);
   const [selectingVault, setSelectingVault] = useState(false);
   const [vaultSelected, setVaultSelected] = useState(false);
-  const [vaultMessage, setVaultMessage] = useState<string | null>(null);
+  const [vaultNotices, setVaultNotices] = useState<VaultNotice[]>([]);
   const [notesNeedingIdentity, setNotesNeedingIdentity] = useState(0);
   const [migrationPreview, setMigrationPreview] =
     useState<IdentityMigrationPreview | null>(null);
@@ -101,6 +107,7 @@ export function App() {
   const searchInputRef = useRef<HTMLInputElement>(null);
   const loadRequestRef = useRef(0);
   const rescanInFlightRef = useRef(false);
+  const vaultNoticeIdRef = useRef(0);
   const documentsRef = useRef(documents);
 
   documentsRef.current = documents;
@@ -114,6 +121,21 @@ export function App() {
       activeDocumentId ? backlinksForDocument(documents, activeDocumentId) : [],
     [activeDocumentId, documents],
   );
+
+  const addVaultNotice = useCallback((text: string, identityAction = false) => {
+    vaultNoticeIdRef.current += 1;
+    const notice = {
+      id: vaultNoticeIdRef.current,
+      identityAction,
+      text,
+    };
+    setVaultNotices((currentNotices) => {
+      if (currentNotices.some((currentNotice) => currentNotice.text === text)) {
+        return currentNotices;
+      }
+      return [notice, ...currentNotices];
+    });
+  }, []);
 
   const createNote = useCallback(() => {
     const nextDocument = createUntitledDocument(documentsRef.current);
@@ -304,25 +326,31 @@ export function App() {
     [saveDocumentAs],
   );
 
-  const adoptVaultSnapshot = useCallback((snapshot: VaultSnapshot) => {
-    const nextDocuments = mergeDocumentsFromVault(
-      documentsRef.current,
-      snapshot,
-    );
-    const nextFolders = Array.from(
-      new Set(nextDocuments.map((document) => document.folder)),
-    );
-    documentsRef.current = nextDocuments;
-    setDocuments(nextDocuments);
-    setFolderOrder(nextFolders);
-    setExpandedFolders((currentFolders) => {
-      const nextExpanded = new Set(currentFolders);
-      nextFolders.forEach((folder) => nextExpanded.add(folder));
-      return nextExpanded;
-    });
-    setNotesNeedingIdentity(snapshot.warnings.needsIdentity);
-    setVaultMessage(vaultSummaryMessage(snapshot));
-  }, []);
+  const adoptVaultSnapshot = useCallback(
+    (snapshot: VaultSnapshot) => {
+      const nextDocuments = mergeDocumentsFromVault(
+        documentsRef.current,
+        snapshot,
+      );
+      const nextFolders = Array.from(
+        new Set(nextDocuments.map((document) => document.folder)),
+      );
+      documentsRef.current = nextDocuments;
+      setDocuments(nextDocuments);
+      setFolderOrder(nextFolders);
+      setExpandedFolders((currentFolders) => {
+        const nextExpanded = new Set(currentFolders);
+        nextFolders.forEach((folder) => nextExpanded.add(folder));
+        return nextExpanded;
+      });
+      setNotesNeedingIdentity(snapshot.warnings.needsIdentity);
+      addVaultNotice(
+        vaultSummaryMessage(snapshot),
+        snapshot.warnings.needsIdentity > 0,
+      );
+    },
+    [addVaultNotice],
+  );
 
   const refreshVault = useCallback(async () => {
     if (
@@ -338,11 +366,11 @@ export function App() {
       if (!snapshot) return;
       adoptVaultSnapshot(snapshot);
     } catch (error) {
-      setVaultMessage(readErrorMessage(error));
+      addVaultNotice(readErrorMessage(error));
     } finally {
       rescanInFlightRef.current = false;
     }
-  }, [adoptVaultSnapshot, vaultSelected]);
+  }, [addVaultNotice, adoptVaultSnapshot, vaultSelected]);
 
   async function reviewIdentityMigration() {
     setMigrationStatus("previewing");
@@ -353,7 +381,7 @@ export function App() {
     } catch (error) {
       const message = readErrorMessage(error);
       setMigrationError(message);
-      setVaultMessage(message);
+      addVaultNotice(message);
       setMigrationStatus("idle");
     }
   }
@@ -365,7 +393,7 @@ export function App() {
     try {
       const result = await applyIdentityMigration();
       adoptVaultSnapshot(result.snapshot);
-      setVaultMessage(
+      addVaultNotice(
         `${result.migrated} existing note identities added.${
           result.skipped > 0
             ? ` ${result.skipped} changed notes were skipped.`
@@ -435,14 +463,6 @@ export function App() {
     return () => window.removeEventListener("focus", refreshVault);
   }, [refreshVault]);
 
-  useEffect(() => {
-    if (!vaultMessage || (vaultSelected && notesNeedingIdentity > 0)) {
-      return;
-    }
-    const timeout = window.setTimeout(() => setVaultMessage(null), 6_000);
-    return () => window.clearTimeout(timeout);
-  }, [notesNeedingIdentity, vaultMessage, vaultSelected]);
-
   async function selectDocument(documentId: string) {
     const document = documentsRef.current.find(
       (candidate) => candidate.id === documentId,
@@ -509,13 +529,12 @@ export function App() {
             candidate.sourceText !== candidate.savedSourceText)),
     );
     if (hasUnfinishedFileEdits) {
-      setVaultMessage("Save all open note changes before renaming a note.");
+      addVaultNotice("Save all open note changes before renaming a note.");
       return;
     }
 
     let renameCompleted = false;
     setRenamingDocumentId(documentId);
-    setVaultMessage(null);
     try {
       const outcome = await renameVaultFile(document.relativePath);
       if (!outcome) return;
@@ -561,7 +580,7 @@ export function App() {
       setDocumentLoad({ status: "idle" });
       const filename =
         outcome.relativePath.split("/").pop() ?? outcome.relativePath;
-      setVaultMessage(
+      addVaultNotice(
         `${filename} renamed. ${outcome.updatedLinks} link${
           outcome.updatedLinks === 1 ? "" : "s"
         } updated across ${outcome.updatedFiles} note${
@@ -569,7 +588,7 @@ export function App() {
         }.`,
       );
     } catch (error) {
-      setVaultMessage(
+      addVaultNotice(
         renameCompleted
           ? `The note was renamed, but Anchored could not refresh it: ${readErrorMessage(error)}`
           : readErrorMessage(error),
@@ -597,14 +616,14 @@ export function App() {
               ?.name,
         )
         .filter((name): name is string => Boolean(name));
-      setVaultMessage(
+      addVaultNotice(
         `[[${target}]] is ambiguous${
           names.length > 0 ? `: ${names.join(", ")}.` : "."
         }`,
       );
       return;
     }
-    setVaultMessage(`[[${target}]] does not match a note or alias.`);
+    addVaultNotice(`[[${target}]] does not match a note or alias.`);
   }
 
   function closeDocument() {
@@ -636,7 +655,7 @@ export function App() {
 
   async function openVault() {
     setSelectingVault(true);
-    setVaultMessage(null);
+    setVaultNotices([]);
 
     try {
       const snapshot = await selectVault();
@@ -660,9 +679,12 @@ export function App() {
       setActiveDocumentId("");
       setQuery("");
       setDocumentLoad({ status: "idle" });
-      setVaultMessage(vaultSummaryMessage(snapshot));
+      addVaultNotice(
+        vaultSummaryMessage(snapshot),
+        snapshot.warnings.needsIdentity > 0,
+      );
     } catch {
-      setVaultMessage(
+      addVaultNotice(
         "Vault selection is available in the Anchored desktop app.",
       );
     } finally {
@@ -739,30 +761,65 @@ export function App() {
           renaming={renamingDocumentId === activeDocument?.id}
         />
       </div>
-      {vaultMessage ? (
-        <div className="vault-message" role="status">
-          <div className="vault-message__row">
-            <span>{vaultMessage}</span>
-            <button
-              aria-label="Dismiss notification"
-              className="vault-message__dismiss"
-              type="button"
-              onClick={() => setVaultMessage(null)}
-            >
-              Dismiss
-            </button>
-          </div>
-          {vaultSelected && notesNeedingIdentity > 0 ? (
-            <button
-              className="vault-message__action"
-              disabled={migrationStatus === "previewing"}
-              type="button"
-              onClick={() => void reviewIdentityMigration()}
-            >
-              {migrationStatus === "previewing"
-                ? "Reviewing…"
-                : "Review identity migration"}
-            </button>
+      {vaultNotices.length > 0 || activeDocument?.saveMessage ? (
+        <div aria-label="Notifications" className="vault-notifications">
+          {vaultNotices.map((notice) => (
+            <div className="vault-message" key={notice.id} role="status">
+              <div className="vault-message__row">
+                <span>{notice.text}</span>
+                <button
+                  aria-label={`Dismiss notification: ${notice.text}`}
+                  className="vault-message__dismiss"
+                  type="button"
+                  onClick={() =>
+                    setVaultNotices((currentNotices) =>
+                      currentNotices.filter(
+                        (currentNotice) => currentNotice.id !== notice.id,
+                      ),
+                    )
+                  }
+                >
+                  Dismiss
+                </button>
+              </div>
+              {notice.identityAction &&
+              vaultSelected &&
+              notesNeedingIdentity > 0 ? (
+                <button
+                  className="vault-message__action"
+                  disabled={migrationStatus === "previewing"}
+                  type="button"
+                  onClick={() => void reviewIdentityMigration()}
+                >
+                  {migrationStatus === "previewing"
+                    ? "Reviewing…"
+                    : "Review identity migration"}
+                </button>
+              ) : null}
+            </div>
+          ))}
+          {activeDocument?.saveMessage ? (
+            <div className="vault-message vault-message--error" role="alert">
+              <div className="vault-message__row">
+                <span>{activeDocument.saveMessage}</span>
+                <button
+                  aria-label={`Dismiss notification: ${activeDocument.saveMessage}`}
+                  className="vault-message__dismiss"
+                  type="button"
+                  onClick={() =>
+                    setDocuments((currentDocuments) =>
+                      currentDocuments.map((document) =>
+                        document.id === activeDocument.id
+                          ? { ...document, saveMessage: undefined }
+                          : document,
+                      ),
+                    )
+                  }
+                >
+                  Dismiss
+                </button>
+              </div>
+            </div>
           ) : null}
         </div>
       ) : null}
@@ -778,11 +835,6 @@ export function App() {
             setMigrationError(undefined);
           }}
         />
-      ) : null}
-      {activeDocument?.saveMessage ? (
-        <div className="vault-message vault-message--error" role="alert">
-          {activeDocument.saveMessage}
-        </div>
       ) : null}
       <StatusBar document={activeDocument} vaultName={vaultName} />
     </div>
