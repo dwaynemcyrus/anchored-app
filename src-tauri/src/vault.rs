@@ -121,6 +121,14 @@ impl VaultError {
             message: "This Markdown file changed outside Anchored. Your local edits were kept and were not saved over the external version.".to_owned(),
         }
     }
+
+    fn file_exists() -> Self {
+        Self {
+            code: "vaultFileExists",
+            message: "A Markdown file already exists at that location. Choose a different name."
+                .to_owned(),
+        }
+    }
 }
 
 #[tauri::command]
@@ -194,6 +202,39 @@ pub async fn save_vault_file(
         .ok_or_else(|| VaultError::state("Select a vault before saving a Markdown file."))?;
 
     save_markdown_file(&root, &relative_path, &content, &expected_content)
+}
+
+#[tauri::command]
+pub async fn create_vault_file(
+    app: AppHandle,
+    state: State<'_, VaultState>,
+    suggested_name: String,
+    content: String,
+) -> Result<Option<VaultDocument>, VaultError> {
+    let root = state
+        .root
+        .read()
+        .map_err(|_| VaultError::state("The selected vault state could not be read."))?
+        .clone()
+        .ok_or_else(|| VaultError::state("Select a vault before creating a Markdown file."))?;
+
+    let suggested_name = safe_suggested_markdown_name(&suggested_name);
+    let selected = app
+        .dialog()
+        .file()
+        .set_title("Save Markdown note")
+        .set_directory(&root)
+        .set_file_name(suggested_name)
+        .add_filter("Markdown", &["md"])
+        .blocking_save_file();
+    let Some(selected) = selected else {
+        return Ok(None);
+    };
+    let selected_path = selected
+        .into_path()
+        .map_err(|error| VaultError::invalid_file(format!("Unsupported save path: {error}")))?;
+
+    create_markdown_file(&root, &selected_path, &content).map(Some)
 }
 
 fn canonical_vault_root(path: &Path) -> Result<PathBuf, VaultError> {
@@ -362,6 +403,78 @@ fn save_markdown_file(
     })
 }
 
+fn create_markdown_file(
+    root: &Path,
+    destination: &Path,
+    content: &str,
+) -> Result<VaultDocument, VaultError> {
+    if content.len() as u64 > MAX_MARKDOWN_FILE_BYTES {
+        return Err(VaultError::file_too_large());
+    }
+
+    let (destination, relative_path) = resolve_new_vault_markdown_file(root, destination)?;
+    let temporary_path = temporary_sibling_path(&destination)?;
+    let write_result = write_new_atomically(&temporary_path, &destination, content);
+    if write_result.is_err() {
+        let _ = fs::remove_file(&temporary_path);
+    }
+    write_result?;
+
+    Ok(VaultDocument {
+        content: content.to_owned(),
+        relative_path,
+        size_bytes: content.len() as u64,
+    })
+}
+
+fn safe_suggested_markdown_name(suggested_name: &str) -> &str {
+    let path = Path::new(suggested_name);
+    if path.components().count() == 1 && is_markdown(path) {
+        suggested_name
+    } else {
+        "Untitled.md"
+    }
+}
+
+fn resolve_new_vault_markdown_file(
+    root: &Path,
+    destination: &Path,
+) -> Result<(PathBuf, String), VaultError> {
+    let root = canonical_vault_root(root)?;
+    if !destination.is_absolute() || !is_markdown(destination) {
+        return Err(VaultError::invalid_file(
+            "New notes must use a Markdown file path inside the selected vault.",
+        ));
+    }
+
+    let parent = destination.parent().ok_or_else(|| {
+        VaultError::invalid_file("The Markdown file does not have a writable parent directory.")
+    })?;
+    let canonical_parent = fs::canonicalize(parent)
+        .map_err(|error| VaultError::io("The save folder could not be opened", error))?;
+    if !canonical_parent.starts_with(&root) {
+        return Err(VaultError::invalid_file(
+            "New notes must be saved inside the selected vault.",
+        ));
+    }
+
+    let file_name = destination.file_name().ok_or_else(|| {
+        VaultError::invalid_file(
+            "New notes must use a Markdown file path inside the selected vault.",
+        )
+    })?;
+    let candidate = canonical_parent.join(file_name);
+    let relative = candidate.strip_prefix(&root).map_err(|_| {
+        VaultError::invalid_file("New notes must be saved inside the selected vault.")
+    })?;
+
+    let relative_path = relative
+        .to_str()
+        .ok_or_else(|| VaultError::invalid_file("The Markdown path is not valid UTF-8."))?
+        .to_owned();
+    Ok((candidate, relative_path))
+}
+
 fn resolve_vault_markdown_file(root: &Path, relative_path: &str) -> Result<PathBuf, VaultError> {
     let root = canonical_vault_root(root)?;
     let requested = Path::new(relative_path);
@@ -454,6 +567,38 @@ fn write_atomically(
     sync_parent_directory(destination)
 }
 
+fn write_new_atomically(
+    temporary_path: &Path,
+    destination: &Path,
+    content: &str,
+) -> Result<(), VaultError> {
+    let mut temporary_file = OpenOptions::new()
+        .create_new(true)
+        .write(true)
+        .open(temporary_path)
+        .map_err(|error| VaultError::io("A temporary Markdown file could not be created", error))?;
+    use std::io::Write;
+    temporary_file
+        .write_all(content.as_bytes())
+        .map_err(|error| VaultError::io("The Markdown file could not be written", error))?;
+    temporary_file
+        .sync_all()
+        .map_err(|error| VaultError::io("The Markdown file could not be flushed", error))?;
+    drop(temporary_file);
+
+    fs::hard_link(temporary_path, destination).map_err(|error| {
+        if error.kind() == std::io::ErrorKind::AlreadyExists {
+            VaultError::file_exists()
+        } else {
+            VaultError::io("The Markdown file could not be created", error)
+        }
+    })?;
+    fs::remove_file(temporary_path).map_err(|error| {
+        VaultError::io("The temporary Markdown file could not be removed", error)
+    })?;
+    sync_parent_directory(destination)
+}
+
 #[cfg(unix)]
 fn sync_parent_directory(destination: &Path) -> Result<(), VaultError> {
     let parent = destination.parent().ok_or_else(|| {
@@ -487,8 +632,8 @@ mod tests {
     use tempfile::tempdir;
 
     use super::{
-        canonical_vault_root, read_markdown_file, save_markdown_file, scan_vault,
-        MAX_MARKDOWN_FILE_BYTES,
+        canonical_vault_root, create_markdown_file, read_markdown_file, save_markdown_file,
+        scan_vault, MAX_MARKDOWN_FILE_BYTES,
     };
 
     #[test]
@@ -595,6 +740,60 @@ mod tests {
             fs::read_to_string(&note).expect("read externally changed note"),
             "# External revision\n"
         );
+    }
+
+    #[test]
+    fn creates_a_new_markdown_file_without_leaving_a_temporary_file() {
+        let vault = tempdir().expect("create fixture vault");
+        fs::create_dir(vault.path().join("Notes")).expect("create Notes folder");
+        let destination = vault.path().join("Notes/New note.md");
+
+        let document = create_markdown_file(vault.path(), &destination, "# New note\n")
+            .expect("create Markdown file");
+
+        assert_eq!(document.relative_path, "Notes/New note.md");
+        assert_eq!(document.content, "# New note\n");
+        assert_eq!(document.size_bytes, 11);
+        assert_eq!(
+            fs::read_to_string(&destination).expect("read created note"),
+            "# New note\n"
+        );
+        assert!(fs::read_dir(vault.path().join("Notes"))
+            .expect("read Notes folder")
+            .all(|entry| !entry
+                .expect("read Notes entry")
+                .file_name()
+                .to_string_lossy()
+                .contains(".tmp")));
+    }
+
+    #[test]
+    fn refuses_to_replace_an_existing_file_during_creation() {
+        let vault = tempdir().expect("create fixture vault");
+        let destination = vault.path().join("Existing.md");
+        fs::write(&destination, "# Existing\n").expect("write existing note");
+
+        let error = create_markdown_file(vault.path(), &destination, "# Replacement\n")
+            .expect_err("reject existing destination");
+
+        assert_eq!(error.code, "vaultFileExists");
+        assert_eq!(
+            fs::read_to_string(&destination).expect("read existing note"),
+            "# Existing\n"
+        );
+    }
+
+    #[test]
+    fn rejects_new_notes_outside_the_selected_vault() {
+        let vault = tempdir().expect("create fixture vault");
+        let outside = tempdir().expect("create outside fixture");
+        let destination = outside.path().join("Outside.md");
+
+        let error = create_markdown_file(vault.path(), &destination, "# Outside\n")
+            .expect_err("reject outside destination");
+
+        assert_eq!(error.code, "invalidVaultFile");
+        assert!(!destination.exists());
     }
 
     #[test]

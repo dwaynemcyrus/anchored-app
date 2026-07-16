@@ -2,6 +2,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
+  createVaultFile,
   readVaultFile,
   rescanVault,
   saveVaultFile,
@@ -44,6 +45,11 @@ const saveRequest: SaveVaultFileRequest = {
   relativePath: "Notes/Leadership.md",
 };
 
+const createRequest = {
+  content: "# New note\n",
+  suggestedName: "New note.md",
+};
+
 describe("vault bridge", () => {
   beforeEach(() => mockedInvoke.mockReset());
 
@@ -83,5 +89,21 @@ describe("vault bridge", () => {
       content: saveRequest.content,
     });
     expect(mockedInvoke).toHaveBeenCalledWith("save_vault_file", saveRequest);
+  });
+
+  it("creates a Markdown file through the Rust-owned save dialog", async () => {
+    mockedInvoke.mockResolvedValue({
+      ...document,
+      content: createRequest.content,
+    });
+
+    await expect(createVaultFile(createRequest)).resolves.toEqual({
+      ...document,
+      content: createRequest.content,
+    });
+    expect(mockedInvoke).toHaveBeenCalledWith(
+      "create_vault_file",
+      createRequest,
+    );
   });
 });

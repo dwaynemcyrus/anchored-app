@@ -29,6 +29,11 @@ export type SaveVaultFileRequest = {
   relativePath: string;
 };
 
+export type CreateVaultFileRequest = {
+  content: string;
+  suggestedName: string;
+};
+
 export function selectVault(): Promise<VaultSnapshot | null> {
   return invoke<VaultSnapshot | null>("select_vault");
 }
@@ -45,4 +50,10 @@ export function saveVaultFile(
   request: SaveVaultFileRequest,
 ): Promise<VaultDocument> {
   return invoke<VaultDocument>("save_vault_file", request);
+}
+
+export function createVaultFile(
+  request: CreateVaultFileRequest,
+): Promise<VaultDocument | null> {
+  return invoke<VaultDocument | null>("create_vault_file", request);
 }
