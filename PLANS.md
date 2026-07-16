@@ -117,7 +117,7 @@ and preserves link integrity across filename changes.
      `34f8f78 feat(editor): open markdown files`; manual native dialog smoke
      test passed on the disposable vault.
 
-8. [ ] **Chunk: Add reliable Markdown editing**
+8. [x] **Chunk: Add reliable Markdown editing**
    - Files: editor/files features, Rust write commands, CodeMirror setup, tests
    - Change: Create/open/edit/save/save-as/autosave with visible state, atomic
      writes, external-change detection, and recoverable errors. Autosave runs
@@ -127,7 +127,10 @@ and preserves link integrity across filename changes.
      cases on fixtures; keyboard and visible state checks; all quality gates.
    - Risk/rollback: Data loss is the primary risk; require atomic fixture tests
      and a disposable vault before any manual verification.
-   - Commit: `feat(editor): save markdown safely`
+   - Commits: `4141080 feat(files): save markdown atomically`,
+     `afbb539 feat(editor): add markdown editing`,
+     `23ede3b feat(files): create notes safely`,
+     `2795bb8 feat(editor): add safe save as`
 
 9. [ ] **Chunk: Add portable metadata**
    - Files: front-matter parser, stable-ID service, fixtures, tests, docs
@@ -265,6 +268,9 @@ Every future large plan must identify:
   to `.md` paths inside the selected vault, cannot replace an existing file,
   and are created atomically. Draft content and per-note save/conflict state
   survive note switching. Native Save As verification remains for chunk 8.
+- 2026-07-16: The native disposable-vault Save As test passed. Dwayne created,
+  saved, closed, and reopened a new Markdown note with its content intact.
+  Chunk 8 is complete.
 
 ## Completion
 
@@ -273,9 +279,9 @@ Every future large plan must identify:
   build; Cargo format, Clippy, and tests; optimized and debug Tauri no-bundle
   builds; Browser/IAB DOM, interaction, console, responsive, screenshot, and
   concept-fidelity checks.
-- **Commits:** Overview commits listed in chunk 1; `e766c4d`; `61d1b3d`;
-  `9fe787b`; `107858e`; `1b80cb8`.
+- **Commits:** Verified implementation commits are recorded with each completed
+  chunk above.
 - **Remaining risks:** Vault data safety, cross-file rename transactions,
   packaged-app verification, and the seven-day observation period.
-- **Follow-up:** Commit the verified app shell, then begin the read-only safe
-  vault boundary with synthetic fixtures and narrow Tauri permissions.
+- **Follow-up:** Begin portable front-matter parsing and stable identities in
+  chunk 9 using synthetic fixtures before touching representative vault data.
