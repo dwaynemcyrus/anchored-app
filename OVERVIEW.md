@@ -115,15 +115,16 @@ These ideas remain part of the long-term source brief, not the first release.
   2015 MacBook Pro is the stated performance baseline.
 - **Input model:** Keyboard-first but not Vim-first. Vim mode is optional and
   not required for the initial MVP.
-- **Visual direction:** Calm, fast, minimal, focused, and lightweight. The
-  interface should support writing without visual clutter.
+- **Visual direction:** Calm, fast, minimal, focused, and lightweight, using
+  white text on a black background. The interface should support writing
+  without visual clutter or unnecessary decoration.
 - **Brand/design references:** ZenNotes, Bear, iA Writer, Apple Notes, Apple
   Reminders, Obsidian, Notability, Goodnotes, TickTick, Things 3, and Readwise
   Reader. These are inspiration, not cloning requirements.
-- **Accessibility needs:** `[NEEDS DECISION]` Confirm an accessibility target.
-  Recommended default: keyboard-complete operation, visible focus, semantic
-  controls, sufficient contrast, reduced-motion support, and compatibility
-  with macOS assistive technologies, targeting WCAG 2.2 AA where applicable.
+- **Accessibility needs:** Keyboard-complete operation, visible focus,
+  semantic controls, sufficient contrast, reduced-motion support, and
+  compatibility with macOS assistive technologies, targeting WCAG 2.2 AA
+  where applicable.
 - **Content or assets already available:** Dwayne's existing Obsidian vault.
   MVP compatibility covers folders, Markdown files, YAML front matter,
   wikilinks, wikilink aliases, tags, and linked attachments. Obsidian plugins,
@@ -134,9 +135,9 @@ These ideas remain part of the long-term source brief, not the first release.
 
 - **Deadline or milestones:** No deadline is stated. The first milestone is
   the installable Markdown editor MVP.
-- **Budget or service limits:** No paid or hosted services are required for
-  the initial MVP. `[NEEDS DECISION]` Confirm whether there are any development
-  budget constraints beyond avoiding unnecessary services.
+- **Budget or service limits:** No development-budget constraint is stated.
+  No paid or hosted services are required for the initial MVP, and unnecessary
+  services should be avoided.
 - **Required technologies:** `[ASSUMPTION]` The source brief recommends Tauri
   2, React, TypeScript, Vite, CodeMirror 6, Rust, and local storage. These are
   recommendations to evaluate during technical planning after approval, not
@@ -223,8 +224,7 @@ It is ready for handoff or release when:
 
 ### Needs a decision
 
-- `[NEEDS DECISION]` Confirm the accessibility target.
-- `[NEEDS DECISION]` Confirm whether any development budget constraints apply.
+- None.
 
 ## Overview readiness check
 
@@ -234,8 +234,8 @@ Before changing the status to `approved`, confirm:
 - [x] The main user journey is understandable.
 - [x] First-version requirements and non-goals are separated.
 - [x] Accounts, data, payments, and integrations are addressed.
-- [ ] Platform, design, and important constraints are fully addressed.
-- [ ] Success and acceptance criteria are fully observable.
+- [x] Platform, design, and important constraints are fully addressed.
+- [x] Success and acceptance criteria are fully observable.
 - [x] Assumptions are visible.
-- [ ] No blocking `[NEEDS DECISION]` items remain.
+- [x] No blocking `[NEEDS DECISION]` items remain.
 - [ ] The human explicitly approved this overview.
