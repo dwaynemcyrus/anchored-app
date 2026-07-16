@@ -30,6 +30,9 @@ Git commit. The format follows [Keep a Changelog], and releases follow
 - Command-clicking a wikilink in the Markdown editor opens a unique note by
   exact path, filename, or alias. Missing and ambiguous links are reported
   instead of opening an arbitrary match.
+- Each note now lists its resolved backlinks. Links inside front matter,
+  escaped text, inline code, fenced code, and indented code are excluded from
+  the graph.
 
 [Keep a Changelog]: https://keepachangelog.com/en/1.1.0/
 [Semantic Versioning]: https://semver.org/spec/v2.0.0.html

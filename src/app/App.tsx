@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { EditorSurface } from "./components/EditorSurface";
 import { FileRail } from "./components/FileRail";
@@ -14,7 +14,7 @@ import {
   type AnchoredDocument,
   type DocumentSaveState,
 } from "./documents";
-import { resolveWikilink } from "./links";
+import { backlinksForDocument, resolveWikilink } from "./links";
 import {
   applyIdentityMigration,
   createVaultFile,
@@ -105,6 +105,11 @@ export function App() {
     (document) => document.id === activeDocumentId,
   );
   const saveState: DocumentSaveState = activeDocument?.saveState ?? "saved";
+  const backlinks = useMemo(
+    () =>
+      activeDocumentId ? backlinksForDocument(documents, activeDocumentId) : [],
+    [activeDocumentId, documents],
+  );
 
   const createNote = useCallback(() => {
     const nextDocument = createUntitledDocument(documentsRef.current);
@@ -608,6 +613,7 @@ export function App() {
           onToggleFolder={toggleFolder}
         />
         <EditorSurface
+          backlinks={backlinks}
           document={activeDocument}
           hasDocuments={documents.length > 0}
           loadState={

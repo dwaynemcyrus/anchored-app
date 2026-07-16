@@ -476,6 +476,44 @@ input:focus-visible,
   background: #2c2c2c;
 }
 
+.backlinks {
+  padding-top: 24px;
+  border-top: 1px solid var(--color-rule);
+  color: var(--color-text-muted);
+  font-family: "SFMono-Regular", Consolas, monospace;
+}
+
+.backlinks h2,
+.backlinks p {
+  margin: 0;
+  font: inherit;
+}
+
+.backlinks ul {
+  display: grid;
+  gap: 8px;
+  margin: 12px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.backlinks button {
+  padding: 0;
+  background: transparent;
+  color: var(--color-text);
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+  text-decoration: underline;
+  text-decoration-color: var(--color-text-subtle);
+  text-underline-offset: 3px;
+}
+
+.backlinks button:hover,
+.backlinks button:focus-visible {
+  text-decoration-color: var(--color-text);
+}
+
 .save-status--conflict,
 .save-status--error {
   color: var(--color-danger);

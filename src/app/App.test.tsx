@@ -78,6 +78,25 @@ describe("App", () => {
     ).not.toBeInTheDocument();
   });
 
+  it("shows resolved backlinks and opens their source note", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+
+    await user.click(screen.getByRole("button", { name: "Reading Notes.md" }));
+    const backlinks = screen.getByRole("complementary", {
+      name: "Backlinks (1)",
+    });
+    const backlink = within(backlinks).getByRole("button", {
+      name: "Leadership.md",
+    });
+    backlink.focus();
+    await user.keyboard("{Enter}");
+
+    expect(
+      screen.getByRole("heading", { level: 1, name: "Leadership" }),
+    ).toBeInTheDocument();
+  });
+
   it("creates a local unsaved note", async () => {
     const user = userEvent.setup();
     render(<App />);

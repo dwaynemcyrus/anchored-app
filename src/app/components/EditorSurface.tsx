@@ -1,11 +1,13 @@
 import { lazy, Suspense } from "react";
 
 import type { AnchoredDocument } from "../documents";
+import { Backlinks } from "./Backlinks";
 
 const MarkdownEditor = lazy(() => import("./MarkdownEditor"));
 
 type EditorSurfaceProps = {
   document?: AnchoredDocument;
+  backlinks: AnchoredDocument[];
   hasDocuments: boolean;
   loadState:
     | { status: "idle" }
@@ -23,6 +25,7 @@ type EditorSurfaceProps = {
 
 export function EditorSurface({
   document,
+  backlinks,
   hasDocuments,
   loadState,
   vaultName,
@@ -156,6 +159,7 @@ export function EditorSurface({
             </div>
           </>
         )}
+        <Backlinks documents={backlinks} onOpen={onOpenLinkedDocument} />
       </section>
     </main>
   );
