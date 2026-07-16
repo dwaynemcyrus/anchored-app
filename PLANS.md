@@ -101,7 +101,7 @@ and preserves link integrity across filename changes.
      and remove nonessential UI.
    - Commit: `d665368 feat(app): add editor shell`
 
-7. [ ] **Chunk: Add safe vault boundary**
+7. [x] **Chunk: Add safe vault boundary**
    - Files: `src-tauri/src/`, `src-tauri/capabilities/`, `src/lib/`, fixtures,
      Rust and TypeScript tests
    - Change: Add folder selection, read-only vault traversal, and safe Markdown
@@ -115,7 +115,7 @@ and preserves link integrity across filename changes.
      `04faa24 feat(files): wire vault selection`,
      `41b8a99 feat(files): read markdown safely`,
      `34f8f78 feat(editor): open markdown files`; manual native dialog smoke
-     test remains.
+     test passed on the disposable vault.
 
 8. [ ] **Chunk: Add reliable Markdown editing**
    - Files: editor/files features, Rust write commands, CodeMirror setup, tests
@@ -246,6 +246,9 @@ Every future large plan must identify:
   can activate the app but does not expose its embedded web-view controls, so a
   manual click is required to open the native folder dialog; native window
   creation is not a blocker.
+- 2026-07-16: The native disposable-vault smoke test passed. The app opened
+  `Notes/Smoke Test.md` with exact content, displayed the correct empty-file
+  state for root-level `Empty.md`, and closed both notes without altering them.
 
 ## Completion
 
