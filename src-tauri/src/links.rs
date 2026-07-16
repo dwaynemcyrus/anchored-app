@@ -273,4 +273,25 @@ mod tests {
         assert_eq!(rewrites[0].replacement_count, 1);
         assert_eq!(rewrites[0].content, "[[Old Name]] [[Notes/New Name]]\n");
     }
+
+    #[test]
+    fn preserves_unicode_headings_and_extension_style_across_a_move() {
+        let notes = vec![
+            note("Notes/Über.md", Some(TARGET_ID), &[]),
+            note("Sources.md", None, &[]),
+        ];
+        let source = LinkSource {
+            content: "[[notes/über.md#Résumé|Shown]] [[ÜBER#Résumé]]\r\n".to_owned(),
+            relative_path: "Sources.md".to_owned(),
+        };
+
+        let rewrites =
+            plan_rename_link_rewrites(&notes, &[source], TARGET_ID, "Archive/Überblick.md");
+
+        assert_eq!(rewrites[0].replacement_count, 2);
+        assert_eq!(
+            rewrites[0].content,
+            "[[Archive/Überblick.md#Résumé|Shown]] [[Überblick#Résumé]]\r\n"
+        );
+    }
 }

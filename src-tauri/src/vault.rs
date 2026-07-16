@@ -2246,6 +2246,81 @@ mod tests {
     }
 
     #[test]
+    fn supports_a_case_only_filename_change() {
+        let vault = tempdir().expect("create fixture vault");
+        fs::write(
+            vault.path().join("Case.md"),
+            "---\nid: 01JZQ7K8P4A6F2M9V3C5T7X1BY\n---\n# Note\n",
+        )
+        .expect("write target note");
+        fs::write(
+            vault.path().join("Reference.md"),
+            "---\nid: 01JZQ91T3AA6F2M9V3C5T7X1BZ\n---\n[[Case]]\n",
+        )
+        .expect("write reference note");
+
+        rename_markdown_file(vault.path(), "Case.md", &vault.path().join("case.md"), None)
+            .expect("rename note casing");
+
+        assert!(vault.path().join("case.md").exists());
+        assert_eq!(
+            fs::read_to_string(vault.path().join("Reference.md")).expect("read reference"),
+            "---\nid: 01JZQ91T3AA6F2M9V3C5T7X1BZ\n---\n[[case]]\n"
+        );
+    }
+
+    #[test]
+    fn refuses_to_replace_an_existing_note_during_rename() {
+        let vault = tempdir().expect("create fixture vault");
+        let original = "---\nid: 01JZQ7K8P4A6F2M9V3C5T7X1BY\n---\n# Original\n";
+        let occupied = "---\nid: 01JZQ91T3AA6F2M9V3C5T7X1BZ\n---\n# Occupied\n";
+        fs::write(vault.path().join("Original.md"), original).expect("write original");
+        fs::write(vault.path().join("Occupied.md"), occupied).expect("write occupied");
+
+        let error = rename_markdown_file(
+            vault.path(),
+            "Original.md",
+            &vault.path().join("Occupied.md"),
+            None,
+        )
+        .expect_err("reject occupied destination");
+
+        assert_eq!(error.code, "vaultFileExists");
+        assert_eq!(
+            fs::read_to_string(vault.path().join("Original.md")).expect("read original"),
+            original
+        );
+        assert_eq!(
+            fs::read_to_string(vault.path().join("Occupied.md")).expect("read occupied"),
+            occupied
+        );
+    }
+
+    #[test]
+    fn blocks_rename_when_any_markdown_source_is_unreadable() {
+        let vault = tempdir().expect("create fixture vault");
+        let original = "---\nid: 01JZQ7K8P4A6F2M9V3C5T7X1BY\n---\n# Original\n";
+        fs::write(vault.path().join("Original.md"), original).expect("write original");
+        fs::write(vault.path().join("Binary.md"), [0xff, 0xfe]).expect("write binary note");
+
+        let error = rename_markdown_file(
+            vault.path(),
+            "Original.md",
+            &vault.path().join("Renamed.md"),
+            None,
+        )
+        .expect_err("block incomplete vault scan");
+
+        assert_eq!(error.code, "vaultRenameConflict");
+        assert_eq!(
+            fs::read_to_string(vault.path().join("Original.md")).expect("read original"),
+            original
+        );
+        assert!(!vault.path().join("Renamed.md").exists());
+        assert!(!vault.path().join(RENAME_JOURNAL_NAME).exists());
+    }
+
+    #[test]
     fn restores_every_file_when_a_rename_is_interrupted() {
         let vault = tempdir().expect("create fixture vault");
         let target_content = "---\nid: 01JZQ7K8P4A6F2M9V3C5T7X1BY\n---\n# Note\n";
