@@ -1,6 +1,6 @@
 use std::{
     fs,
-    path::{Path, PathBuf},
+    path::{Component, Path, PathBuf},
     sync::RwLock,
 };
 
@@ -10,6 +10,7 @@ use tauri_plugin_dialog::DialogExt;
 
 const MAX_VAULT_ENTRIES: usize = 50_000;
 const MAX_VAULT_DEPTH: usize = 64;
+const MAX_MARKDOWN_FILE_BYTES: u64 = 10 * 1024 * 1024;
 
 #[derive(Default)]
 pub struct VaultState {
@@ -37,6 +38,14 @@ pub struct VaultSnapshot {
     pub files: Vec<VaultFile>,
     pub name: String,
     pub warnings: VaultWarnings,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct VaultDocument {
+    pub content: String,
+    pub relative_path: String,
+    pub size_bytes: u64,
 }
 
 #[derive(Debug, Serialize)]
@@ -74,6 +83,30 @@ impl VaultError {
             message: format!(
                 "The selected vault exceeds the safe scan limit of {MAX_VAULT_ENTRIES} entries."
             ),
+        }
+    }
+
+    fn invalid_file(message: impl Into<String>) -> Self {
+        Self {
+            code: "invalidVaultFile",
+            message: message.into(),
+        }
+    }
+
+    fn file_too_large() -> Self {
+        Self {
+            code: "vaultFileTooLarge",
+            message: format!(
+                "This Markdown file exceeds the safe read limit of {} MiB.",
+                MAX_MARKDOWN_FILE_BYTES / 1024 / 1024
+            ),
+        }
+    }
+
+    fn invalid_encoding() -> Self {
+        Self {
+            code: "invalidMarkdownEncoding",
+            message: "This Markdown file is not valid UTF-8.".to_owned(),
         }
     }
 }
@@ -117,6 +150,21 @@ pub async fn rescan_vault(
         .clone();
 
     root.map(|root| scan_vault(&root)).transpose()
+}
+
+#[tauri::command]
+pub async fn read_vault_file(
+    state: State<'_, VaultState>,
+    relative_path: String,
+) -> Result<VaultDocument, VaultError> {
+    let root = state
+        .root
+        .read()
+        .map_err(|_| VaultError::state("The selected vault state could not be read."))?
+        .clone()
+        .ok_or_else(|| VaultError::state("Select a vault before opening a Markdown file."))?;
+
+    read_markdown_file(&root, &relative_path)
 }
 
 fn canonical_vault_root(path: &Path) -> Result<PathBuf, VaultError> {
@@ -231,6 +279,64 @@ fn scan_vault(root: &Path) -> Result<VaultSnapshot, VaultError> {
     })
 }
 
+fn read_markdown_file(root: &Path, relative_path: &str) -> Result<VaultDocument, VaultError> {
+    let root = canonical_vault_root(root)?;
+    let requested = Path::new(relative_path);
+
+    if relative_path.is_empty() || !is_markdown(requested) {
+        return Err(VaultError::invalid_file(
+            "Only relative Markdown file paths can be opened.",
+        ));
+    }
+
+    let mut candidate = root.clone();
+    for component in requested.components() {
+        let Component::Normal(segment) = component else {
+            return Err(VaultError::invalid_file(
+                "Only relative Markdown file paths can be opened.",
+            ));
+        };
+
+        candidate.push(segment);
+        let metadata = fs::symlink_metadata(&candidate)
+            .map_err(|error| VaultError::io("The Markdown file could not be inspected", error))?;
+        if metadata.file_type().is_symlink() {
+            return Err(VaultError::invalid_file(
+                "Symlinked Markdown paths cannot be opened.",
+            ));
+        }
+    }
+
+    let canonical_file = fs::canonicalize(&candidate)
+        .map_err(|error| VaultError::io("The Markdown file could not be opened", error))?;
+    if !canonical_file.starts_with(&root) {
+        return Err(VaultError::invalid_file(
+            "The Markdown file resolved outside the selected vault.",
+        ));
+    }
+
+    let metadata = fs::metadata(&canonical_file)
+        .map_err(|error| VaultError::io("The Markdown file could not be inspected", error))?;
+    if !metadata.is_file() {
+        return Err(VaultError::invalid_file(
+            "The selected Markdown path is not a file.",
+        ));
+    }
+    if metadata.len() > MAX_MARKDOWN_FILE_BYTES {
+        return Err(VaultError::file_too_large());
+    }
+
+    let bytes = fs::read(&canonical_file)
+        .map_err(|error| VaultError::io("The Markdown file could not be read", error))?;
+    let content = String::from_utf8(bytes).map_err(|_| VaultError::invalid_encoding())?;
+
+    Ok(VaultDocument {
+        content,
+        relative_path: relative_path.to_owned(),
+        size_bytes: metadata.len(),
+    })
+}
+
 fn is_markdown(path: &Path) -> bool {
     path.extension()
         .and_then(|extension| extension.to_str())
@@ -243,7 +349,7 @@ mod tests {
 
     use tempfile::tempdir;
 
-    use super::{canonical_vault_root, scan_vault};
+    use super::{canonical_vault_root, read_markdown_file, scan_vault, MAX_MARKDOWN_FILE_BYTES};
 
     #[test]
     fn scans_nested_markdown_in_stable_order() {
@@ -275,6 +381,60 @@ mod tests {
         assert_eq!(error.code, "invalidVault");
     }
 
+    #[test]
+    fn reads_a_nested_markdown_file_without_changing_it() {
+        let vault = tempdir().expect("create fixture vault");
+        fs::create_dir(vault.path().join("Notes")).expect("create Notes folder");
+        let content = "---\ntitle: A note\n---\n# Hello\n\nExact text.\n";
+        fs::write(vault.path().join("Notes/Hello.md"), content).expect("write note");
+
+        let document =
+            read_markdown_file(vault.path(), "Notes/Hello.md").expect("read Markdown file");
+
+        assert_eq!(document.content, content);
+        assert_eq!(document.relative_path, "Notes/Hello.md");
+        assert_eq!(document.size_bytes, content.len() as u64);
+        assert_eq!(
+            fs::read_to_string(vault.path().join("Notes/Hello.md")).expect("reread note"),
+            content
+        );
+    }
+
+    #[test]
+    fn rejects_traversal_and_non_markdown_paths() {
+        let vault = tempdir().expect("create fixture vault");
+        let outside = tempdir().expect("create outside fixture");
+        fs::write(outside.path().join("Private.md"), "# Private").expect("write outside note");
+        fs::write(vault.path().join("note.txt"), "not Markdown").expect("write text file");
+
+        let traversal =
+            read_markdown_file(vault.path(), "../Private.md").expect_err("reject traversal path");
+        let non_markdown =
+            read_markdown_file(vault.path(), "note.txt").expect_err("reject text file");
+
+        assert_eq!(traversal.code, "invalidVaultFile");
+        assert_eq!(non_markdown.code, "invalidVaultFile");
+    }
+
+    #[test]
+    fn rejects_oversized_and_non_utf8_markdown() {
+        let vault = tempdir().expect("create fixture vault");
+        fs::write(
+            vault.path().join("Large.md"),
+            vec![b'a'; (MAX_MARKDOWN_FILE_BYTES + 1) as usize],
+        )
+        .expect("write oversized note");
+        fs::write(vault.path().join("Binary.md"), [0xff, 0xfe]).expect("write invalid UTF-8 note");
+
+        let oversized =
+            read_markdown_file(vault.path(), "Large.md").expect_err("reject oversized note");
+        let invalid_utf8 =
+            read_markdown_file(vault.path(), "Binary.md").expect_err("reject invalid UTF-8 note");
+
+        assert_eq!(oversized.code, "vaultFileTooLarge");
+        assert_eq!(invalid_utf8.code, "invalidMarkdownEncoding");
+    }
+
     #[cfg(unix)]
     #[test]
     fn skips_symlinks_instead_of_following_them() {
@@ -289,5 +449,25 @@ mod tests {
 
         assert!(snapshot.files.is_empty());
         assert_eq!(snapshot.warnings.skipped_symlinks, 1);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn rejects_symlinks_when_opening_markdown() {
+        use std::os::unix::fs::symlink;
+
+        let vault = tempdir().expect("create fixture vault");
+        let outside = tempdir().expect("create outside fixture");
+        fs::write(outside.path().join("Private.md"), "# Private").expect("write outside note");
+        symlink(
+            outside.path().join("Private.md"),
+            vault.path().join("Linked.md"),
+        )
+        .expect("create file symlink");
+
+        let error =
+            read_markdown_file(vault.path(), "Linked.md").expect_err("reject symlinked note");
+
+        assert_eq!(error.code, "invalidVaultFile");
     }
 }

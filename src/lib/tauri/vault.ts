@@ -17,10 +17,20 @@ export type VaultSnapshot = {
   warnings: VaultWarnings;
 };
 
+export type VaultDocument = {
+  content: string;
+  relativePath: string;
+  sizeBytes: number;
+};
+
 export function selectVault(): Promise<VaultSnapshot | null> {
   return invoke<VaultSnapshot | null>("select_vault");
 }
 
 export function rescanVault(): Promise<VaultSnapshot | null> {
   return invoke<VaultSnapshot | null>("rescan_vault");
+}
+
+export function readVaultFile(relativePath: string): Promise<VaultDocument> {
+  return invoke<VaultDocument>("read_vault_file", { relativePath });
 }

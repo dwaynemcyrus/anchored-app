@@ -7,7 +7,8 @@ pub fn run() {
         .manage(vault::VaultState::default())
         .invoke_handler(tauri::generate_handler![
             vault::select_vault,
-            vault::rescan_vault
+            vault::rescan_vault,
+            vault::read_vault_file
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

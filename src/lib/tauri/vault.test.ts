@@ -1,7 +1,13 @@
 import { invoke } from "@tauri-apps/api/core";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { rescanVault, selectVault, type VaultSnapshot } from "./vault";
+import {
+  readVaultFile,
+  rescanVault,
+  selectVault,
+  type VaultDocument,
+  type VaultSnapshot,
+} from "./vault";
 
 vi.mock("@tauri-apps/api/core", () => ({
   invoke: vi.fn(),
@@ -24,6 +30,12 @@ const snapshot: VaultSnapshot = {
   },
 };
 
+const document: VaultDocument = {
+  content: "# Leadership\n",
+  relativePath: "Notes/Leadership.md",
+  sizeBytes: 13,
+};
+
 describe("vault bridge", () => {
   beforeEach(() => mockedInvoke.mockReset());
 
@@ -39,5 +51,16 @@ describe("vault bridge", () => {
 
     await expect(rescanVault()).resolves.toEqual(snapshot);
     expect(mockedInvoke).toHaveBeenCalledWith("rescan_vault");
+  });
+
+  it("reads a relative file through the retained Rust vault", async () => {
+    mockedInvoke.mockResolvedValue(document);
+
+    await expect(readVaultFile("Notes/Leadership.md")).resolves.toEqual(
+      document,
+    );
+    expect(mockedInvoke).toHaveBeenCalledWith("read_vault_file", {
+      relativePath: "Notes/Leadership.md",
+    });
   });
 });
