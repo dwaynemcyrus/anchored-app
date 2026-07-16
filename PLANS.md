@@ -311,6 +311,10 @@ Every future large plan must identify:
 - 2026-07-16: Dwayne confirmed the native previewed migration passed on the
   disposable vault. `Legacy.md` received one canonical unprefixed ULID while
   its original heading and body remained intact. Chunk 9 is complete.
+- 2026-07-16: Began chunk 10 with read-only link metadata indexing. Vault
+  snapshots expose safe Obsidian aliases and only unique canonical IDs; the
+  interface keys identified notes by those IDs so local editor state follows a
+  Finder rename or move. Link parsing and navigation remain next.
 
 ## Completion
 
