@@ -4,7 +4,9 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   readVaultFile,
   rescanVault,
+  saveVaultFile,
   selectVault,
+  type SaveVaultFileRequest,
   type VaultDocument,
   type VaultSnapshot,
 } from "./vault";
@@ -36,6 +38,12 @@ const document: VaultDocument = {
   sizeBytes: 13,
 };
 
+const saveRequest: SaveVaultFileRequest = {
+  content: "# Updated leadership\n",
+  expectedContent: "# Leadership\n",
+  relativePath: "Notes/Leadership.md",
+};
+
 describe("vault bridge", () => {
   beforeEach(() => mockedInvoke.mockReset());
 
@@ -62,5 +70,18 @@ describe("vault bridge", () => {
     expect(mockedInvoke).toHaveBeenCalledWith("read_vault_file", {
       relativePath: "Notes/Leadership.md",
     });
+  });
+
+  it("saves through the retained Rust vault with an expected revision", async () => {
+    mockedInvoke.mockResolvedValue({
+      ...document,
+      content: saveRequest.content,
+    });
+
+    await expect(saveVaultFile(saveRequest)).resolves.toEqual({
+      ...document,
+      content: saveRequest.content,
+    });
+    expect(mockedInvoke).toHaveBeenCalledWith("save_vault_file", saveRequest);
   });
 });

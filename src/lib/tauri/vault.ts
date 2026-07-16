@@ -23,6 +23,12 @@ export type VaultDocument = {
   sizeBytes: number;
 };
 
+export type SaveVaultFileRequest = {
+  content: string;
+  expectedContent: string;
+  relativePath: string;
+};
+
 export function selectVault(): Promise<VaultSnapshot | null> {
   return invoke<VaultSnapshot | null>("select_vault");
 }
@@ -33,4 +39,10 @@ export function rescanVault(): Promise<VaultSnapshot | null> {
 
 export function readVaultFile(relativePath: string): Promise<VaultDocument> {
   return invoke<VaultDocument>("read_vault_file", { relativePath });
+}
+
+export function saveVaultFile(
+  request: SaveVaultFileRequest,
+): Promise<VaultDocument> {
+  return invoke<VaultDocument>("save_vault_file", request);
 }

@@ -1,7 +1,11 @@
 use std::{
     fs,
+    fs::OpenOptions,
     path::{Component, Path, PathBuf},
-    sync::RwLock,
+    sync::{
+        atomic::{AtomicU64, Ordering},
+        RwLock,
+    },
 };
 
 use serde::Serialize;
@@ -11,6 +15,7 @@ use tauri_plugin_dialog::DialogExt;
 const MAX_VAULT_ENTRIES: usize = 50_000;
 const MAX_VAULT_DEPTH: usize = 64;
 const MAX_MARKDOWN_FILE_BYTES: u64 = 10 * 1024 * 1024;
+static TEMPORARY_FILE_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 #[derive(Default)]
 pub struct VaultState {
@@ -109,6 +114,13 @@ impl VaultError {
             message: "This Markdown file is not valid UTF-8.".to_owned(),
         }
     }
+
+    fn conflict() -> Self {
+        Self {
+            code: "vaultConflict",
+            message: "This Markdown file changed outside Anchored. Your local edits were kept and were not saved over the external version.".to_owned(),
+        }
+    }
 }
 
 #[tauri::command]
@@ -165,6 +177,23 @@ pub async fn read_vault_file(
         .ok_or_else(|| VaultError::state("Select a vault before opening a Markdown file."))?;
 
     read_markdown_file(&root, &relative_path)
+}
+
+#[tauri::command]
+pub async fn save_vault_file(
+    state: State<'_, VaultState>,
+    relative_path: String,
+    content: String,
+    expected_content: String,
+) -> Result<VaultDocument, VaultError> {
+    let root = state
+        .root
+        .read()
+        .map_err(|_| VaultError::state("The selected vault state could not be read."))?
+        .clone()
+        .ok_or_else(|| VaultError::state("Select a vault before saving a Markdown file."))?;
+
+    save_markdown_file(&root, &relative_path, &content, &expected_content)
 }
 
 fn canonical_vault_root(path: &Path) -> Result<PathBuf, VaultError> {
@@ -280,6 +309,60 @@ fn scan_vault(root: &Path) -> Result<VaultSnapshot, VaultError> {
 }
 
 fn read_markdown_file(root: &Path, relative_path: &str) -> Result<VaultDocument, VaultError> {
+    let canonical_file = resolve_vault_markdown_file(root, relative_path)?;
+    let metadata = fs::metadata(&canonical_file)
+        .map_err(|error| VaultError::io("The Markdown file could not be inspected", error))?;
+    if metadata.len() > MAX_MARKDOWN_FILE_BYTES {
+        return Err(VaultError::file_too_large());
+    }
+
+    let bytes = fs::read(&canonical_file)
+        .map_err(|error| VaultError::io("The Markdown file could not be read", error))?;
+    let content = String::from_utf8(bytes).map_err(|_| VaultError::invalid_encoding())?;
+
+    Ok(VaultDocument {
+        content,
+        relative_path: relative_path.to_owned(),
+        size_bytes: metadata.len(),
+    })
+}
+
+fn save_markdown_file(
+    root: &Path,
+    relative_path: &str,
+    content: &str,
+    expected_content: &str,
+) -> Result<VaultDocument, VaultError> {
+    if content.len() as u64 > MAX_MARKDOWN_FILE_BYTES {
+        return Err(VaultError::file_too_large());
+    }
+
+    let canonical_file = resolve_vault_markdown_file(root, relative_path)?;
+    let current_bytes = fs::read(&canonical_file)
+        .map_err(|error| VaultError::io("The Markdown file could not be read", error))?;
+    let current_content =
+        String::from_utf8(current_bytes).map_err(|_| VaultError::invalid_encoding())?;
+    if current_content != expected_content {
+        return Err(VaultError::conflict());
+    }
+
+    let metadata = fs::metadata(&canonical_file)
+        .map_err(|error| VaultError::io("The Markdown file could not be inspected", error))?;
+    let temporary_path = temporary_sibling_path(&canonical_file)?;
+    let write_result = write_atomically(&temporary_path, &canonical_file, content, &metadata);
+    if write_result.is_err() {
+        let _ = fs::remove_file(&temporary_path);
+    }
+    write_result?;
+
+    Ok(VaultDocument {
+        content: content.to_owned(),
+        relative_path: relative_path.to_owned(),
+        size_bytes: content.len() as u64,
+    })
+}
+
+fn resolve_vault_markdown_file(root: &Path, relative_path: &str) -> Result<PathBuf, VaultError> {
     let root = canonical_vault_root(root)?;
     let requested = Path::new(relative_path);
 
@@ -322,19 +405,73 @@ fn read_markdown_file(root: &Path, relative_path: &str) -> Result<VaultDocument,
             "The selected Markdown path is not a file.",
         ));
     }
-    if metadata.len() > MAX_MARKDOWN_FILE_BYTES {
-        return Err(VaultError::file_too_large());
-    }
+    Ok(canonical_file)
+}
 
-    let bytes = fs::read(&canonical_file)
-        .map_err(|error| VaultError::io("The Markdown file could not be read", error))?;
-    let content = String::from_utf8(bytes).map_err(|_| VaultError::invalid_encoding())?;
+fn temporary_sibling_path(destination: &Path) -> Result<PathBuf, VaultError> {
+    let parent = destination.parent().ok_or_else(|| {
+        VaultError::invalid_file("The Markdown file does not have a writable parent directory.")
+    })?;
+    let name = destination
+        .file_name()
+        .and_then(|name| name.to_str())
+        .ok_or_else(|| VaultError::invalid_file("The Markdown file name is not valid UTF-8."))?;
+    let counter = TEMPORARY_FILE_COUNTER.fetch_add(1, Ordering::Relaxed);
 
-    Ok(VaultDocument {
-        content,
-        relative_path: relative_path.to_owned(),
-        size_bytes: metadata.len(),
-    })
+    Ok(parent.join(format!(
+        ".{name}.anchored-{}-{counter}.tmp",
+        std::process::id()
+    )))
+}
+
+fn write_atomically(
+    temporary_path: &Path,
+    destination: &Path,
+    content: &str,
+    destination_metadata: &fs::Metadata,
+) -> Result<(), VaultError> {
+    let mut temporary_file = OpenOptions::new()
+        .create_new(true)
+        .write(true)
+        .open(temporary_path)
+        .map_err(|error| VaultError::io("A temporary Markdown file could not be created", error))?;
+    temporary_file
+        .set_permissions(destination_metadata.permissions())
+        .map_err(|error| {
+            VaultError::io("The temporary Markdown file could not be prepared", error)
+        })?;
+    use std::io::Write;
+    temporary_file
+        .write_all(content.as_bytes())
+        .map_err(|error| VaultError::io("The Markdown file could not be written", error))?;
+    temporary_file
+        .sync_all()
+        .map_err(|error| VaultError::io("The Markdown file could not be flushed", error))?;
+    drop(temporary_file);
+
+    fs::rename(temporary_path, destination)
+        .map_err(|error| VaultError::io("The Markdown file could not be replaced", error))?;
+    sync_parent_directory(destination)
+}
+
+#[cfg(unix)]
+fn sync_parent_directory(destination: &Path) -> Result<(), VaultError> {
+    let parent = destination.parent().ok_or_else(|| {
+        VaultError::invalid_file("The Markdown file does not have a writable parent directory.")
+    })?;
+    fs::File::open(parent)
+        .and_then(|directory| directory.sync_all())
+        .map_err(|error| {
+            VaultError::io(
+                "The Markdown file replacement could not be finalized",
+                error,
+            )
+        })
+}
+
+#[cfg(not(unix))]
+fn sync_parent_directory(_destination: &Path) -> Result<(), VaultError> {
+    Ok(())
 }
 
 fn is_markdown(path: &Path) -> bool {
@@ -349,7 +486,10 @@ mod tests {
 
     use tempfile::tempdir;
 
-    use super::{canonical_vault_root, read_markdown_file, scan_vault, MAX_MARKDOWN_FILE_BYTES};
+    use super::{
+        canonical_vault_root, read_markdown_file, save_markdown_file, scan_vault,
+        MAX_MARKDOWN_FILE_BYTES,
+    };
 
     #[test]
     fn scans_nested_markdown_in_stable_order() {
@@ -410,6 +550,51 @@ mod tests {
         assert!(document.content.is_empty());
         assert_eq!(document.relative_path, "Empty.md");
         assert_eq!(document.size_bytes, 0);
+    }
+
+    #[test]
+    fn saves_markdown_atomically_when_the_original_content_matches() {
+        let vault = tempdir().expect("create fixture vault");
+        let note = vault.path().join("Note.md");
+        fs::write(&note, "# Before\n").expect("write original note");
+
+        let document = save_markdown_file(vault.path(), "Note.md", "# After\n", "# Before\n")
+            .expect("save changed note");
+
+        assert_eq!(document.content, "# After\n");
+        assert_eq!(document.size_bytes, 8);
+        assert_eq!(
+            fs::read_to_string(&note).expect("read saved note"),
+            "# After\n"
+        );
+        assert!(fs::read_dir(vault.path())
+            .expect("read vault")
+            .all(|entry| !entry
+                .expect("read vault entry")
+                .file_name()
+                .to_string_lossy()
+                .contains(".tmp")));
+    }
+
+    #[test]
+    fn preserves_local_edits_when_the_file_changes_externally() {
+        let vault = tempdir().expect("create fixture vault");
+        let note = vault.path().join("Note.md");
+        fs::write(&note, "# External revision\n").expect("write externally changed note");
+
+        let error = save_markdown_file(
+            vault.path(),
+            "Note.md",
+            "# Local revision\n",
+            "# Original revision\n",
+        )
+        .expect_err("reject stale local revision");
+
+        assert_eq!(error.code, "vaultConflict");
+        assert_eq!(
+            fs::read_to_string(&note).expect("read externally changed note"),
+            "# External revision\n"
+        );
     }
 
     #[test]
