@@ -258,6 +258,9 @@ Every future large plan must identify:
   opened vault notes, Command-S, one-second idle autosave, atomic save calls,
   and visible conflict feedback. Native write verification on a disposable
   vault and create/save-as remain before chunk 8 can close.
+- 2026-07-16: The native disposable-vault autosave test passed. Dwayne added
+  text to `Notes/Write Test.md`; it remained after the note was closed and
+  reopened.
 
 ## Completion
 
