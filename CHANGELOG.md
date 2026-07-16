@@ -27,6 +27,9 @@ Git commit. The format follows [Keep a Changelog], and releases follow
   reported instead of being rewritten.
 - The vault index now reads Obsidian aliases and unique permanent note IDs.
   Identified notes keep their local editor state when their file path changes.
+- Command-clicking a wikilink in the Markdown editor opens a unique note by
+  exact path, filename, or alias. Missing and ambiguous links are reported
+  instead of opening an arbitrary match.
 
 [Keep a Changelog]: https://keepachangelog.com/en/1.1.0/
 [Semantic Versioning]: https://semver.org/spec/v2.0.0.html

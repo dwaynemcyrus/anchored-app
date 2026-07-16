@@ -15,6 +15,7 @@ type EditorSurfaceProps = {
   onCloseDocument: () => void;
   onDocumentChange: (content: string) => void;
   onOpenLinkedDocument: (documentId: string) => void;
+  onOpenWikilink: (target: string) => void;
   onRetryDocument: () => void;
   onSaveDocument: () => void;
   onSaveDocumentAs: () => void;
@@ -28,6 +29,7 @@ export function EditorSurface({
   onCloseDocument,
   onDocumentChange,
   onOpenLinkedDocument,
+  onOpenWikilink,
   onRetryDocument,
   onSaveDocument,
   onSaveDocumentAs,
@@ -121,6 +123,7 @@ export function EditorSurface({
               label={`${document.name} Markdown editor`}
               value={document.sourceText}
               onChange={onDocumentChange}
+              onOpenWikilink={onOpenWikilink}
               onSave={onSaveDocument}
               onSaveAs={onSaveDocumentAs}
             />

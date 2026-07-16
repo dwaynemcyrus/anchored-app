@@ -14,6 +14,7 @@ import {
   type AnchoredDocument,
   type DocumentSaveState,
 } from "./documents";
+import { resolveWikilink } from "./links";
 import {
   applyIdentityMigration,
   createVaultFile,
@@ -426,7 +427,9 @@ export function App() {
   }, [refreshVault]);
 
   async function selectDocument(documentId: string) {
-    const document = documents.find((candidate) => candidate.id === documentId);
+    const document = documentsRef.current.find(
+      (candidate) => candidate.id === documentId,
+    );
     if (!document) return;
 
     setActiveDocumentId(documentId);
@@ -472,6 +475,34 @@ export function App() {
         message: readErrorMessage(error),
       });
     }
+  }
+
+  function openWikilink(target: string) {
+    const resolution = resolveWikilink(
+      target,
+      documentsRef.current,
+      activeDocumentId,
+    );
+    if (resolution.status === "resolved") {
+      void selectDocument(resolution.documentId);
+      return;
+    }
+    if (resolution.status === "ambiguous") {
+      const names = resolution.matches
+        .map(
+          (documentId) =>
+            documentsRef.current.find((document) => document.id === documentId)
+              ?.name,
+        )
+        .filter((name): name is string => Boolean(name));
+      setVaultMessage(
+        `[[${target}]] is ambiguous${
+          names.length > 0 ? `: ${names.join(", ")}.` : "."
+        }`,
+      );
+      return;
+    }
+    setVaultMessage(`[[${target}]] does not match a note or alias.`);
   }
 
   function closeDocument() {
@@ -589,6 +620,7 @@ export function App() {
           onCloseDocument={closeDocument}
           onDocumentChange={updateDocumentContent}
           onOpenLinkedDocument={(documentId) => void selectDocument(documentId)}
+          onOpenWikilink={openWikilink}
           onRetryDocument={() => {
             if (activeDocument) void selectDocument(activeDocument.id);
           }}
