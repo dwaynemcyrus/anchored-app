@@ -40,12 +40,13 @@ does not authorize technical setup or implementation.
 
 1. Launch Anchored on macOS and open the existing Obsidian vault or a Markdown
    file without requiring an internet connection.
-2. Navigate folders and recent files, search, and follow basic wikilinks to
-   find the intended Markdown document.
+2. Navigate folders and recent files, search, and follow wikilinks or aliases
+   to find the intended Markdown document.
 3. Create or edit a Markdown document with keyboard-first controls, then save
    manually or rely on autosave without losing or corrupting content.
 4. Return on later days and continue working with the same portable files,
-   recent-file context, front matter, wikilinks, and stable note identities.
+   recent-file context, front matter, wikilinks, aliases, and stable note
+   identities.
 
 ## 4. First-version requirements
 
@@ -62,8 +63,13 @@ as the initial MVP in the source brief. It must include:
 - Find or search for Markdown content.
 - Keyboard shortcuts for core actions.
 - YAML front matter parsing without making the Markdown body less portable.
-- Basic wikilink parsing and navigation.
-- Stable internal note IDs so renames can eventually preserve relationships.
+- Wikilink parsing, navigation, and aliases.
+- A unique, stable internal ID for every linkable item.
+- Rename-safe links: changing a file name or title must not break wikilinks,
+  aliases, backlinks, or other references to that item.
+- References in linked files and areas must remain correct and update when a
+  linked file name or title changes, matching the intended behavior of
+  Obsidian's automatic internal-link updates.
 - Safe file handling: existing Markdown content must not be lost, corrupted,
   or made dependent on Anchored to remain readable.
 - Speed and editing reliability take priority over advanced formatting.
@@ -105,9 +111,8 @@ These ideas remain part of the long-term source brief, not the first release.
 
 - **Product type:** Native desktop application; a browser companion is a
   later possibility and not part of the initial MVP.
-- **Required devices or operating systems:** macOS on a 2015 MacBook Pro is
-  the stated performance baseline. `[NEEDS DECISION]` Define the oldest macOS
-  version that must be supported.
+- **Required devices or operating systems:** macOS 12 Monterey or later. A
+  2015 MacBook Pro is the stated performance baseline.
 - **Input model:** Keyboard-first but not Vim-first. Vim mode is optional and
   not required for the initial MVP.
 - **Visual direction:** Calm, fast, minimal, focused, and lightweight. The
@@ -120,8 +125,10 @@ These ideas remain part of the long-term source brief, not the first release.
   controls, sufficient contrast, reduced-motion support, and compatibility
   with macOS assistive technologies, targeting WCAG 2.2 AA where applicable.
 - **Content or assets already available:** Dwayne's existing Obsidian vault.
-  `[NEEDS DECISION]` Identify the vault features and Markdown conventions that
-  must remain compatible in the MVP.
+  MVP compatibility covers folders, Markdown files, YAML front matter,
+  wikilinks, wikilink aliases, tags, and linked attachments. Obsidian plugins,
+  Canvas, Dataview, and other Obsidian-specific features are preserved without
+  interpretation and are not active MVP features.
 
 ## 8. Constraints and risks
 
@@ -145,9 +152,11 @@ These ideas remain part of the long-term source brief, not the first release.
   technical planning.
 - **Performance constraint:** Core writing and navigation must remain usable
   on a 2015 MacBook Pro.
-- **Product risk:** “Basic Obsidian compatibility” is not yet defined. Vault
-  plugins, embeds, attachments, aliases, tags, non-Markdown files, and
-  Obsidian-specific syntax could materially expand the first-version scope.
+- **Product risk:** Rename-safe identity and link updates must work across
+  file names, titles, aliases, backlinks, and source references without
+  corrupting the vault. Obsidian plugins, Canvas, Dataview, and other
+  unsupported syntax must be preserved even when Anchored does not interpret
+  them.
 
 ## 9. Success and acceptance
 
@@ -155,24 +164,29 @@ The first version is successful when:
 
 - Dwayne can use it daily to write Markdown and navigate the existing
   Obsidian vault.
-- Core file operations and autosave are reliable, with no observed content
-  loss or corruption during the agreed evaluation period.
+- Core file operations, autosave, identity resolution, aliases, and link
+  updates remain completely stable through seven consecutive days of normal
+  use, with no observed content loss, corruption, or broken supported links.
 - Markdown files remain readable and editable outside Anchored.
 - The application feels fast enough for normal writing and navigation on the
   2015 MacBook Pro baseline.
-- `[NEEDS DECISION]` Define the daily-use evaluation period and any concrete
-  startup, search, open, or save performance thresholds.
 
 It is ready for handoff or release when:
 
 - It can be installed and launched on the supported macOS version.
 - Dwayne can open a representative copy of the existing Obsidian vault,
-  navigate folders and Markdown files, create and edit a note, use search and
-  a basic wikilink, save and autosave, relaunch, and recover the expected
+  navigate folders and Markdown files, create and edit a note, use search,
+  wikilinks, and aliases, save and autosave, relaunch, and recover the expected
   content without corruption.
+- Renaming a linked file or changing its title does not break link resolution,
+  aliases, backlinks, or references in linked files and areas; affected
+  references update as intended.
 - Front matter and existing Markdown remain portable after editing.
-- The agreed supported vault conventions behave as documented; unsupported
-  Obsidian features are identified without silently damaging their source.
+- Folders, Markdown, YAML front matter, wikilinks, aliases, tags, and linked
+  attachments behave as documented. Plugins, Canvas, Dataview, and other
+  unsupported Obsidian features remain intact without being interpreted.
+- All foundational link and update behavior remains completely stable through
+  seven consecutive days of Dwayne's normal use.
 - All acceptance checks are performed on a backup or disposable copy of the
   vault before the application is trusted with the primary vault.
 
@@ -201,23 +215,15 @@ It is ready for handoff or release when:
 - `[ASSUMPTION]` The initial MVP is a local, single-user application with no
   account because it is for Dwayne personally and the source brief places
   accounts in a later browser-companion phase.
-- `[ASSUMPTION]` Opening an Obsidian vault means selecting and navigating its
-  existing folder of Markdown files; it does not yet imply support for every
-  Obsidian feature or community plugin.
 - `[ASSUMPTION]` Stable note IDs may add or maintain front matter, but must not
-  make notes unreadable or unusable in other Markdown tools.
+  make notes unreadable or unusable in other Markdown tools. The exact storage
+  and migration design remains a technical-planning decision.
 - `[ASSUMPTION]` Technical choices in the source brief are recommendations
   until the overview is approved and technical planning begins.
 
 ### Needs a decision
 
-- `[NEEDS DECISION]` Define the supported Obsidian vault conventions and which
-  Obsidian-specific features may be ignored, preserved without interpretation,
-  or actively supported in the MVP.
-- `[NEEDS DECISION]` Define the minimum supported macOS version.
 - `[NEEDS DECISION]` Confirm the accessibility target.
-- `[NEEDS DECISION]` Define the daily-use evaluation period and concrete
-  reliability or performance thresholds.
 - `[NEEDS DECISION]` Confirm whether any development budget constraints apply.
 
 ## Overview readiness check
