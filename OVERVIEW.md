@@ -65,11 +65,12 @@ as the initial MVP in the source brief. It must include:
 - YAML front matter parsing without making the Markdown body less portable.
 - Wikilink parsing, navigation, and aliases.
 - A unique, stable internal ID for every linkable item.
-- Rename-safe links: changing a file name or title must not break wikilinks,
-  aliases, backlinks, or other references to that item.
+- Rename-safe links: changing a file name must not break wikilinks, aliases,
+  backlinks, or other references to that item.
 - References in linked files and areas must remain correct and update when a
-  linked file name or title changes, matching the intended behavior of
-  Obsidian's automatic internal-link updates.
+  linked file name changes, matching the intended behavior of Obsidian's
+  automatic internal-link updates. Changing a `title` value in YAML front
+  matter does not trigger those reference updates.
 - Safe file handling: existing Markdown content must not be lost, corrupted,
   or made dependent on Anchored to remain readable.
 - Speed and editing reliability take priority over advanced formatting.
@@ -138,12 +139,13 @@ These ideas remain part of the long-term source brief, not the first release.
 - **Budget or service limits:** No development-budget constraint is stated.
   No paid or hosted services are required for the initial MVP, and unnecessary
   services should be avoided.
-- **Required technologies:** `[ASSUMPTION]` The source brief recommends Tauri
-  2, React, TypeScript, Vite, CodeMirror 6, Rust, and local storage. These are
-  recommendations to evaluate during technical planning after approval, not
-  approved requirements of this overview.
-- **Forbidden technologies:** None explicitly stated. The source brief prefers
-  Tauri over Electron for memory use, startup speed, and application size.
+- **Required technologies:** Tauri 2 is the required native desktop wrapper.
+  `[ASSUMPTION]` The source brief recommends React, TypeScript, Vite,
+  CodeMirror 6, Rust for native integration, and local storage. Those remaining
+  choices must be evaluated during technical planning.
+- **Forbidden technologies:** Electron must not replace Tauri 2 as the desktop
+  wrapper. The source brief selects Tauri for lower memory use, faster startup,
+  and a smaller application.
 - **Privacy, legal, or compliance needs:** Local-first and offline operation;
   authored files remain user-owned. No cloud upload, account, analytics, or
   third-party data transfer is required for the MVP.
@@ -154,10 +156,10 @@ These ideas remain part of the long-term source brief, not the first release.
 - **Performance constraint:** Core writing and navigation must remain usable
   on a 2015 MacBook Pro.
 - **Product risk:** Rename-safe identity and link updates must work across
-  file names, titles, aliases, backlinks, and source references without
-  corrupting the vault. Obsidian plugins, Canvas, Dataview, and other
-  unsupported syntax must be preserved even when Anchored does not interpret
-  them.
+  file names, aliases, backlinks, and source references without corrupting the
+  vault. A front-matter title change must not cause an unintended reference
+  rewrite. Obsidian plugins, Canvas, Dataview, and other unsupported syntax
+  must be preserved even when Anchored does not interpret them.
 
 ## 9. Success and acceptance
 
@@ -179,9 +181,10 @@ It is ready for handoff or release when:
   navigate folders and Markdown files, create and edit a note, use search,
   wikilinks, and aliases, save and autosave, relaunch, and recover the expected
   content without corruption.
-- Renaming a linked file or changing its title does not break link resolution,
-  aliases, backlinks, or references in linked files and areas; affected
-  references update as intended.
+- Renaming a linked file does not break link resolution, aliases, backlinks,
+  or references in linked files and areas; affected references update as
+  intended. Changing only its YAML front-matter `title` does not rewrite those
+  references.
 - Front matter and existing Markdown remain portable after editing.
 - Folders, Markdown, YAML front matter, wikilinks, aliases, tags, and linked
   attachments behave as documented. Plugins, Canvas, Dataview, and other
@@ -200,7 +203,8 @@ It is ready for handoff or release when:
 - Universal linking: future linkable objects should be navigable through one
   coherent wikilink and backlink system regardless of storage type.
 - Permanent identities: linkable objects should have stable internal IDs so
-  visible titles, filenames, and locations can change safely.
+  visible titles, filenames, and locations can change safely. Filename changes
+  update affected references; front-matter title changes do not.
 - Portable and modular: future modules must not sacrifice ownership, speed,
   offline use, or simplicity.
 - Purposeful scope: a feature belongs only if it improves thinking, writing,
@@ -219,8 +223,8 @@ It is ready for handoff or release when:
 - `[ASSUMPTION]` Stable note IDs may add or maintain front matter, but must not
   make notes unreadable or unusable in other Markdown tools. The exact storage
   and migration design remains a technical-planning decision.
-- `[ASSUMPTION]` Technical choices in the source brief are recommendations
-  until the overview is approved and technical planning begins.
+- `[ASSUMPTION]` The source brief's technical choices other than the required
+  Tauri 2 desktop wrapper remain recommendations until technical planning.
 
 ### Needs a decision
 
