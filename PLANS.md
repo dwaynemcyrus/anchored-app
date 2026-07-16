@@ -242,10 +242,10 @@ Every future large plan must identify:
   dialog still needs a manual disposable-vault smoke test because macOS denied
   automated assistive access to this environment.
 - 2026-07-16: Retried the native smoke test after Accessibility access was
-  granted. The `anchored` process launched and became foreground, but macOS
-  exposed zero application windows and only a menu bar, so the folder dialog
-  could not be exercised. Diagnose native window creation before beginning
-  file-writing work.
+  granted. Dwayne confirmed the `anchored` window is visible. macOS automation
+  can activate the app but does not expose its embedded web-view controls, so a
+  manual click is required to open the native folder dialog; native window
+  creation is not a blocker.
 
 ## Completion
 
