@@ -320,6 +320,12 @@ Every future large plan must identify:
   Command-click resolves only a unique match; missing and ambiguous targets
   remain unopened and are reported. Rendered alias navigation passed with no
   console errors. Backlinks and transactional rename updates remain.
+- 2026-07-16: Added a read-only native outgoing-link index and resolved
+  backlinks, including live unsaved drafts without front matter. Front matter,
+  escaped links, inline code, fenced code, and indented code are excluded. The
+  compact backlink section passed rendered mouse navigation, semantic
+  inspection, and console checks; keyboard activation is covered by the
+  component flow test. Transactional filename rename updates remain.
 
 ## Completion
 
@@ -332,4 +338,5 @@ Every future large plan must identify:
   chunk above.
 - **Remaining risks:** Vault data safety, cross-file rename transactions,
   packaged-app verification, and the seven-day observation period.
-- **Follow-up:** Begin wikilink and alias resolution in chunk 10.
+- **Follow-up:** Design and implement the transactional filename rename and
+  reference-update boundary to complete chunk 10.
