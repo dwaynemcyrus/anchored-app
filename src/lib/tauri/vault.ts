@@ -7,6 +7,9 @@ export type VaultFile = {
 };
 
 export type VaultWarnings = {
+  addedIdentities: number;
+  identityConflicts: number;
+  needsIdentity: number;
   skippedNonUtf8Paths: number;
   skippedSymlinks: number;
 };

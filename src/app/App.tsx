@@ -400,11 +400,28 @@ export function App() {
       setActiveDocumentId("");
       setQuery("");
       setDocumentLoad({ status: "idle" });
-      setVaultMessage(
-        snapshot.warnings.skippedSymlinks > 0
-          ? `${snapshot.warnings.skippedSymlinks} symlink entries were skipped for safety.`
-          : `${snapshot.files.length} Markdown files found.`,
-      );
+      const notices = [`${snapshot.files.length} Markdown files found.`];
+      if (snapshot.warnings.addedIdentities > 0) {
+        notices.push(
+          `${snapshot.warnings.addedIdentities} new note identities added.`,
+        );
+      }
+      if (snapshot.warnings.needsIdentity > 0) {
+        notices.push(
+          `${snapshot.warnings.needsIdentity} existing notes need identities.`,
+        );
+      }
+      if (snapshot.warnings.identityConflicts > 0) {
+        notices.push(
+          `${snapshot.warnings.identityConflicts} identity conflicts need attention.`,
+        );
+      }
+      if (snapshot.warnings.skippedSymlinks > 0) {
+        notices.push(
+          `${snapshot.warnings.skippedSymlinks} symlink entries were skipped for safety.`,
+        );
+      }
+      setVaultMessage(notices.join(" "));
     } catch {
       setVaultMessage(
         "Vault selection is available in the Anchored desktop app.",

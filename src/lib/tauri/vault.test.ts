@@ -28,6 +28,9 @@ const snapshot: VaultSnapshot = {
   ],
   name: "Personal",
   warnings: {
+    addedIdentities: 0,
+    identityConflicts: 0,
+    needsIdentity: 0,
     skippedNonUtf8Paths: 0,
     skippedSymlinks: 0,
   },

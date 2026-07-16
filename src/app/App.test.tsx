@@ -21,6 +21,13 @@ const mockedSelectVault = vi.mocked(selectVault);
 const mockedCreateVaultFile = vi.mocked(createVaultFile);
 const mockedReadVaultFile = vi.mocked(readVaultFile);
 const mockedSaveVaultFile = vi.mocked(saveVaultFile);
+const noWarnings = {
+  addedIdentities: 0,
+  identityConflicts: 0,
+  needsIdentity: 0,
+  skippedNonUtf8Paths: 0,
+  skippedSymlinks: 0,
+};
 
 describe("App", () => {
   beforeEach(() => {
@@ -92,7 +99,7 @@ describe("App", () => {
     mockedSelectVault.mockResolvedValue({
       files: [],
       name: "My Vault",
-      warnings: { skippedNonUtf8Paths: 0, skippedSymlinks: 0 },
+      warnings: noWarnings,
     });
     mockedCreateVaultFile.mockResolvedValue({
       content: identifiedContent,
@@ -141,7 +148,7 @@ describe("App", () => {
         },
       ],
       name: "My Vault",
-      warnings: { skippedNonUtf8Paths: 0, skippedSymlinks: 0 },
+      warnings: noWarnings,
     });
     mockedReadVaultFile.mockResolvedValue({
       content: "---\ntitle: Own note\n---\n# Exact Markdown\n",
@@ -193,7 +200,7 @@ describe("App", () => {
         },
       ],
       name: "My Vault",
-      warnings: { skippedNonUtf8Paths: 0, skippedSymlinks: 0 },
+      warnings: noWarnings,
     });
     mockedReadVaultFile
       .mockRejectedValueOnce({
@@ -236,7 +243,7 @@ describe("App", () => {
         },
       ],
       name: "My Vault",
-      warnings: { skippedNonUtf8Paths: 0, skippedSymlinks: 0 },
+      warnings: noWarnings,
     });
     mockedReadVaultFile.mockResolvedValue({
       content: "",
@@ -267,7 +274,7 @@ describe("App", () => {
         },
       ],
       name: "My Vault",
-      warnings: { skippedNonUtf8Paths: 0, skippedSymlinks: 0 },
+      warnings: noWarnings,
     });
     mockedReadVaultFile.mockResolvedValue({
       content: "# Before\n",
@@ -313,7 +320,7 @@ describe("App", () => {
         },
       ],
       name: "My Vault",
-      warnings: { skippedNonUtf8Paths: 0, skippedSymlinks: 0 },
+      warnings: noWarnings,
     });
     mockedReadVaultFile.mockResolvedValue({
       content: "# Before\n",
