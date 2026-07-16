@@ -209,6 +209,24 @@ These scripts must exist in `package.json` after the scaffold chunk.
   previous packaged build; restore user data only from an explicit vault
   backup, never from an assumed application cache
 
+## Versioning and changelog
+
+- **Current version:** `0.1.0`
+- **Authoritative version source:** `src-tauri/tauri.conf.json`; the root npm
+  manifest and lockfile plus the Rust manifest and lockfile mirror the app
+  version and must remain consistent during a release.
+- **Version policy:** Semantic Versioning
+- **Changelog:** `CHANGELOG.md` at the repository root
+- **Patch and minor authority:** Codex may select an appropriate patch or
+  minor version only while preparing a release explicitly approved by the
+  human.
+- **Major authority:** `1.0.0` and every later major-version increase require
+  explicit human approval. Codex must never increase the major version
+  independently.
+- **Release authorization:** Version preparation does not authorize a Git tag,
+  push, deployment, published package, or hosted release. The human must
+  authorize each action separately.
+
 ## Active guides
 
 - `docs/ai/frontend.md`
@@ -241,3 +259,4 @@ These scripts must exist in `package.json` after the scaffold chunk.
 | 2026-07-16 | Put filesystem mutation behind Rust commands | Limits permissions and centralizes path and write-safety validation |
 | 2026-07-16 | Use stable IDs with filename-triggered link updates | Preserves identity while matching the approved Obsidian-style rename behavior |
 | 2026-07-16 | Use a minimal white-on-black design | Explicit product requirement; reduces visual chrome and prioritizes writing |
+| 2026-07-16 | Use Tauri configuration as the app version source | The desktop bundle configuration defines the application version; npm and Rust manifests mirror it |

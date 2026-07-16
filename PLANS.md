@@ -37,6 +37,8 @@ and preserves link integrity across filename changes.
   supported window sizes and 200% zoom.
 - [ ] Format, lint, type-check, tests, frontend build, Rust checks, and Tauri
   build pass.
+- [ ] `CHANGELOG.md` accurately covers every notable change included in a
+  release, and its version section matches the approved release version.
 - [ ] A representative vault copy completes seven consecutive days of normal
   use without data loss, corruption, or broken supported links.
 
@@ -172,6 +174,26 @@ and preserves link integrity across filename changes.
       observation succeeds.
     - Commit: `docs: record stability result`
 
+14. [x] **Chunk: Add changelog and version management**
+    - Files: `CHANGELOG.md`, `AGENTS.md`, `PROJECT.md`, `README.md`, `PLANS.md`
+    - Change: Establish evidence-based changelog maintenance, Semantic
+      Versioning authority, release preparation rules, and documentation for
+      contributors without changing the current version.
+    - Verify: Cross-document policy review, version-source comparison, full
+      configured quality gates, and final diff inspection.
+    - Risk/rollback: Unsupported history or inconsistent release authority;
+      omit untagged historical releases and revert this focused documentation
+      commit if the policy is rejected.
+    - Commit: current documentation chunk
+
+## Requirements for future large plans
+
+Every future large plan must identify:
+
+- expected notable entries for `[Unreleased]`
+- version impact when the plan prepares a release
+- changelog verification in release acceptance criteria
+
 ## Progress notes
 
 - 2026-07-16: Overview approved; Tauri 2 and filename-triggered reference
@@ -203,6 +225,9 @@ and preserves link integrity across filename changes.
   UI now replaces seeded filenames with the returned relative Markdown paths.
   A native-dialog smoke test against a disposable vault remains, so chunk 7 is
   still active.
+- 2026-07-16: Added changelog and Semantic Versioning governance. No tags or
+  reliable release history exist, so the changelog begins at `[Unreleased]`;
+  the current `0.1.0` version remains unchanged.
 
 ## Completion
 

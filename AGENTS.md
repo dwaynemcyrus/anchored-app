@@ -119,6 +119,36 @@ cherry-pick.
 
 Before committing, inspect the staged diff and rerun the relevant checks.
 
+## Changelog management
+
+- Update `CHANGELOG.md` under `[Unreleased]` after every verified chunk that
+  contains a notable change.
+- Commit each changelog update with the related implementation. Do not defer
+  all changelog work until release preparation.
+- Include user-visible behavior, APIs, schemas or data, security,
+  configuration, dependencies, deprecations, removals, and operational
+  changes when they are notable.
+- Exclude formatting, routine tests, minor documentation cleanup, and internal
+  refactors unless they materially affect users, integrations, or operators.
+- Describe outcomes in plain language instead of copying commit messages.
+
+## Version management
+
+- Follow Semantic Versioning and preserve the authoritative version source
+  recorded in `PROJECT.md`.
+- Change versions only as part of a release explicitly requested by the human.
+- During an approved release, Codex may select an appropriate patch or minor
+  version from the changes being released.
+- Moving to `1.0.0` requires explicit human approval. Every later major-version
+  increase also requires explicit human approval. Codex must never increase
+  the major version independently.
+- During an approved release, move the relevant `[Unreleased]` entries into a
+  dated version section, update every version source consistently, and leave a
+  fresh `[Unreleased]` section.
+- A version change does not authorize creating tags, pushing, deploying,
+  publishing, or creating a hosted release. Each action requires separate
+  human authorization.
+
 ## Planning
 
 Use a short plan in the conversation for ordinary multi-step work. Use
@@ -174,6 +204,7 @@ Work is complete only when:
 - acceptance criteria are met
 - relevant checks pass
 - documentation matches changed behavior
+- the changelog accurately records every notable unreleased change
 - no debug code, secrets, or accidental files remain
 - the final diff contains only intended changes
 - verified chunks have focused commits
