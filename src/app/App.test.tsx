@@ -87,15 +87,17 @@ describe("App", () => {
 
   it("creates a real vault note through Save As", async () => {
     const user = userEvent.setup();
+    const identifiedContent =
+      "---\nid: 01JZQ7K8P4A6F2M9V3C5T7X1BY\n---\n\n# Created";
     mockedSelectVault.mockResolvedValue({
       files: [],
       name: "My Vault",
       warnings: { skippedNonUtf8Paths: 0, skippedSymlinks: 0 },
     });
     mockedCreateVaultFile.mockResolvedValue({
-      content: "# Created",
+      content: identifiedContent,
       relativePath: "Writing/Created.md",
-      sizeBytes: 9,
+      sizeBytes: identifiedContent.length,
     });
     render(<App />);
 
@@ -120,7 +122,7 @@ describe("App", () => {
       await screen.findByRole("textbox", {
         name: "Created.md Markdown editor",
       }),
-    ).toHaveTextContent("# Created");
+    ).toHaveTextContent("---id: 01JZQ7K8P4A6F2M9V3C5T7X1BY---# Created");
     expect(screen.getByRole("button", { name: "Created.md" })).toHaveAttribute(
       "aria-current",
       "page",

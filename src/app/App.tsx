@@ -138,10 +138,15 @@ export function App() {
                   folder,
                   name,
                   relativePath: savedDocument.relativePath,
-                  saveMessage: undefined,
-                  saveState: hasNewerEdit ? "unsaved" : "saved",
+                  saveMessage: hasNewerEdit
+                    ? "The file was created with a permanent identity. Newer local edits were kept and need to be reconciled before saving."
+                    : undefined,
+                  saveState: hasNewerEdit ? "conflict" : "saved",
                   savedSourceText: savedDocument.content,
                   sizeBytes: savedDocument.sizeBytes,
+                  sourceText: hasNewerEdit
+                    ? current.sourceText
+                    : savedDocument.content,
                 }
               : current,
           ),
