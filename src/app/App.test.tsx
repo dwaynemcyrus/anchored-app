@@ -150,4 +150,35 @@ describe("App", () => {
     expect(await screen.findByText("# Recovered")).toBeInTheDocument();
     expect(mockedReadVaultFile).toHaveBeenCalledTimes(2);
   });
+
+  it("opens an empty Markdown file at the vault root", async () => {
+    const user = userEvent.setup();
+    mockedSelectVault.mockResolvedValue({
+      files: [
+        {
+          name: "Empty.md",
+          parent: "",
+          relativePath: "Empty.md",
+        },
+      ],
+      name: "My Vault",
+      warnings: { skippedNonUtf8Paths: 0, skippedSymlinks: 0 },
+    });
+    mockedReadVaultFile.mockResolvedValue({
+      content: "",
+      relativePath: "Empty.md",
+      sizeBytes: 0,
+    });
+    render(<App />);
+
+    await user.click(
+      screen.getByRole("button", { name: "Open vault: Personal" }),
+    );
+    await user.click(screen.getByRole("button", { name: "Empty.md" }));
+
+    expect(mockedReadVaultFile).toHaveBeenCalledWith("Empty.md");
+    expect(
+      await screen.findByText("This Markdown file is empty."),
+    ).toBeInTheDocument();
+  });
 });

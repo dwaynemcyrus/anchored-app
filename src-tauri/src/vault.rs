@@ -401,6 +401,18 @@ mod tests {
     }
 
     #[test]
+    fn reads_an_empty_markdown_file_at_the_vault_root() {
+        let vault = tempdir().expect("create fixture vault");
+        fs::write(vault.path().join("Empty.md"), "").expect("write empty note");
+
+        let document = read_markdown_file(vault.path(), "Empty.md").expect("read empty note");
+
+        assert!(document.content.is_empty());
+        assert_eq!(document.relative_path, "Empty.md");
+        assert_eq!(document.size_bytes, 0);
+    }
+
+    #[test]
     fn rejects_traversal_and_non_markdown_paths() {
         let vault = tempdir().expect("create fixture vault");
         let outside = tempdir().expect("create outside fixture");
