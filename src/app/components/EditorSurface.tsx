@@ -1,4 +1,5 @@
 import type { AnchoredDocument } from "../documents";
+import { MarkdownEditor } from "./MarkdownEditor";
 
 type EditorSurfaceProps = {
   document?: AnchoredDocument;
@@ -9,8 +10,10 @@ type EditorSurfaceProps = {
     | { status: "error"; documentId: string; message: string };
   vaultName: string;
   onCloseDocument: () => void;
+  onDocumentChange: (content: string) => void;
   onOpenLinkedDocument: (documentId: string) => void;
   onRetryDocument: () => void;
+  onSaveDocument: () => void;
 };
 
 export function EditorSurface({
@@ -19,8 +22,10 @@ export function EditorSurface({
   loadState,
   vaultName,
   onCloseDocument,
+  onDocumentChange,
   onOpenLinkedDocument,
   onRetryDocument,
+  onSaveDocument,
 }: EditorSurfaceProps) {
   if (!document) {
     return (
@@ -65,13 +70,7 @@ export function EditorSurface({
           Close
         </button>
       </header>
-      <article
-        aria-label={`${document.name} Markdown document`}
-        aria-readonly="true"
-        className="document"
-        role="textbox"
-        tabIndex={0}
-      >
+      <section className="document">
         {document.relativePath ? (
           loadState.status === "loading" ? (
             <p className="document__empty" role="status">
@@ -89,10 +88,14 @@ export function EditorSurface({
                 Try again
               </button>
             </div>
-          ) : document.sourceText === "" ? (
-            <p className="document__empty">This Markdown file is empty.</p>
           ) : document.sourceText !== undefined ? (
-            <pre className="document__source">{document.sourceText}</pre>
+            <MarkdownEditor
+              documentId={document.id}
+              label={`${document.name} Markdown editor`}
+              value={document.sourceText}
+              onChange={onDocumentChange}
+              onSave={onSaveDocument}
+            />
           ) : null
         ) : (
           <>
@@ -122,7 +125,7 @@ export function EditorSurface({
             </div>
           </>
         )}
-      </article>
+      </section>
     </main>
   );
 }

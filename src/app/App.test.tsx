@@ -2,21 +2,24 @@ import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { readVaultFile, selectVault } from "../lib/tauri/vault";
+import { readVaultFile, saveVaultFile, selectVault } from "../lib/tauri/vault";
 import { App } from "./App";
 
 vi.mock("../lib/tauri/vault", () => ({
   readVaultFile: vi.fn(),
+  saveVaultFile: vi.fn(),
   selectVault: vi.fn(),
 }));
 
 const mockedSelectVault = vi.mocked(selectVault);
 const mockedReadVaultFile = vi.mocked(readVaultFile);
+const mockedSaveVaultFile = vi.mocked(saveVaultFile);
 
 describe("App", () => {
   beforeEach(() => {
     mockedSelectVault.mockReset();
     mockedReadVaultFile.mockReset();
+    mockedSaveVaultFile.mockReset();
   });
 
   it("renders the seeded editor surface", () => {
@@ -97,9 +100,9 @@ describe("App", () => {
     expect(mockedReadVaultFile).toHaveBeenCalledWith("Knowledge/Own Note.md");
     expect(
       await screen.findByRole("textbox", {
-        name: "Own Note.md Markdown document",
+        name: "Own Note.md Markdown editor",
       }),
-    ).toHaveTextContent("--- title: Own note --- # Exact Markdown");
+    ).toHaveTextContent("---title: Own note---# Exact Markdown");
 
     screen.getByRole("button", { name: "Close Own Note.md" }).focus();
     await user.keyboard("{Enter}");
@@ -147,7 +150,11 @@ describe("App", () => {
 
     await user.click(screen.getByRole("button", { name: "Try again" }));
 
-    expect(await screen.findByText("# Recovered")).toBeInTheDocument();
+    expect(
+      await screen.findByRole("textbox", {
+        name: "Broken.md Markdown editor",
+      }),
+    ).toHaveTextContent("# Recovered");
     expect(mockedReadVaultFile).toHaveBeenCalledTimes(2);
   });
 
@@ -178,7 +185,95 @@ describe("App", () => {
 
     expect(mockedReadVaultFile).toHaveBeenCalledWith("Empty.md");
     expect(
-      await screen.findByText("This Markdown file is empty."),
-    ).toBeInTheDocument();
+      await screen.findByRole("textbox", { name: "Empty.md Markdown editor" }),
+    ).toHaveAttribute("aria-placeholder", "Start writing…");
+  });
+
+  it("saves an edited vault note with Command-S", async () => {
+    const user = userEvent.setup();
+    mockedSelectVault.mockResolvedValue({
+      files: [
+        {
+          name: "Editable.md",
+          parent: "Notes",
+          relativePath: "Notes/Editable.md",
+        },
+      ],
+      name: "My Vault",
+      warnings: { skippedNonUtf8Paths: 0, skippedSymlinks: 0 },
+    });
+    mockedReadVaultFile.mockResolvedValue({
+      content: "# Before\n",
+      relativePath: "Notes/Editable.md",
+      sizeBytes: 9,
+    });
+    mockedSaveVaultFile.mockResolvedValue({
+      content: " updated# Before\n",
+      relativePath: "Notes/Editable.md",
+      sizeBytes: 17,
+    });
+    render(<App />);
+
+    await user.click(
+      screen.getByRole("button", { name: "Open vault: Personal" }),
+    );
+    await user.click(screen.getByRole("button", { name: "Editable.md" }));
+    const editor = await screen.findByRole("textbox", {
+      name: "Editable.md Markdown editor",
+    });
+
+    await user.click(editor);
+    await user.keyboard(" updated");
+    await user.keyboard("{Meta>}s{/Meta}");
+
+    expect(mockedSaveVaultFile).toHaveBeenCalledWith({
+      content: " updated# Before\n",
+      expectedContent: "# Before\n",
+      relativePath: "Notes/Editable.md",
+    });
+    expect(await screen.findByText("Saved")).toBeInTheDocument();
+  });
+
+  it("preserves local edits and shows a conflict when the file changed outside Anchored", async () => {
+    const user = userEvent.setup();
+    mockedSelectVault.mockResolvedValue({
+      files: [
+        {
+          name: "Conflict.md",
+          parent: "Notes",
+          relativePath: "Notes/Conflict.md",
+        },
+      ],
+      name: "My Vault",
+      warnings: { skippedNonUtf8Paths: 0, skippedSymlinks: 0 },
+    });
+    mockedReadVaultFile.mockResolvedValue({
+      content: "# Before\n",
+      relativePath: "Notes/Conflict.md",
+      sizeBytes: 9,
+    });
+    mockedSaveVaultFile.mockRejectedValue({
+      code: "vaultConflict",
+      message: "The file changed outside Anchored. Your edits were kept.",
+    });
+    render(<App />);
+
+    await user.click(
+      screen.getByRole("button", { name: "Open vault: Personal" }),
+    );
+    await user.click(screen.getByRole("button", { name: "Conflict.md" }));
+    const editor = await screen.findByRole("textbox", {
+      name: "Conflict.md Markdown editor",
+    });
+
+    await user.click(editor);
+    await user.keyboard(" updated");
+    await user.keyboard("{Meta>}s{/Meta}");
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "The file changed outside Anchored. Your edits were kept.",
+    );
+    expect(screen.getByText("Conflict")).toBeInTheDocument();
+    expect(editor.textContent).toBe(" updated# Before");
   });
 });

@@ -120,7 +120,9 @@ and preserves link integrity across filename changes.
 8. [ ] **Chunk: Add reliable Markdown editing**
    - Files: editor/files features, Rust write commands, CodeMirror setup, tests
    - Change: Create/open/edit/save/save-as/autosave with visible state, atomic
-     writes, external-change detection, and recoverable errors.
+     writes, external-change detection, and recoverable errors. Autosave runs
+     after one second of idle time; Command-S saves immediately. Preserve local
+     edits and show a conflict when the file changes externally.
    - Verify: Empty, large, malformed, concurrent, interrupted, and external-edit
      cases on fixtures; keyboard and visible state checks; all quality gates.
    - Risk/rollback: Data loss is the primary risk; require atomic fixture tests
@@ -249,6 +251,13 @@ Every future large plan must identify:
 - 2026-07-16: The native disposable-vault smoke test passed. The app opened
   `Notes/Smoke Test.md` with exact content, displayed the correct empty-file
   state for root-level `Empty.md`, and closed both notes without altering them.
+- 2026-07-16: Dwayne confirmed a one-second idle autosave and conflict-first
+  external-change behavior: local edits remain available instead of reloading
+  an externally changed file.
+- 2026-07-16: Added the first editing slice: CodeMirror Markdown editing for
+  opened vault notes, Command-S, one-second idle autosave, atomic save calls,
+  and visible conflict feedback. Native write verification on a disposable
+  vault and create/save-as remain before chunk 8 can close.
 
 ## Completion
 

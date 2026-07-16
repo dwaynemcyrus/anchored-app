@@ -10,6 +10,7 @@ export type AnchoredDocument = {
   body: string;
   relativePath?: string;
   sourceText?: string;
+  savedSourceText?: string;
   sizeBytes?: number;
   relatedDocumentId?: string;
   relatedLabel?: string;

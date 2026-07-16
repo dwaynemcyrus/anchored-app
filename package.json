@@ -16,7 +16,9 @@
     "tauri": "tauri"
   },
   "dependencies": {
+    "@codemirror/lang-markdown": "^6.5.1",
     "@tauri-apps/api": "^2",
+    "codemirror": "^6.0.2",
     "react": "^19.1.0",
     "react-dom": "^19.1.0"
   },

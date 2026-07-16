@@ -2,7 +2,7 @@ import { CheckIcon, MenuIcon, NewFileIcon, SearchIcon } from "./Icons";
 import { IconButton } from "./IconButton";
 
 type TitleBarProps = {
-  saveState: "saved" | "unsaved";
+  saveState: "saved" | "unsaved" | "saving" | "conflict" | "error";
   selectingVault: boolean;
   sidebarOpen: boolean;
   vaultName: string;
@@ -49,7 +49,15 @@ export function TitleBar({
       <div className="title-bar__actions">
         <span className={`save-status save-status--${saveState}`} role="status">
           {saveState === "saved" ? <CheckIcon /> : null}
-          {saveState === "saved" ? "Saved" : "Unsaved"}
+          {saveState === "saved"
+            ? "Saved"
+            : saveState === "unsaved"
+              ? "Unsaved"
+              : saveState === "saving"
+                ? "Saving…"
+                : saveState === "conflict"
+                  ? "Conflict"
+                  : "Save failed"}
         </span>
         <span aria-hidden="true" className="title-bar__rule" />
         <IconButton label="Search notes" onClick={onOpenSearch}>
