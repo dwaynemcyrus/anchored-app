@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import { EditorSurface } from "./components/EditorSurface";
 import { FileRail } from "./components/FileRail";
+import { IdentityMigrationPanel } from "./components/IdentityMigrationPanel";
 import { StatusBar } from "./components/StatusBar";
 import { TitleBar } from "./components/TitleBar";
 import {
@@ -14,12 +15,15 @@ import {
   type DocumentSaveState,
 } from "./documents";
 import {
+  applyIdentityMigration,
   createVaultFile,
+  previewIdentityMigration,
   readVaultFile,
   rescanVault,
   saveVaultFile,
   selectVault,
   type VaultSnapshot,
+  type IdentityMigrationPreview,
 } from "../lib/tauri/vault";
 
 type DocumentLoadState =
@@ -79,6 +83,13 @@ export function App() {
   const [selectingVault, setSelectingVault] = useState(false);
   const [vaultSelected, setVaultSelected] = useState(false);
   const [vaultMessage, setVaultMessage] = useState<string | null>(null);
+  const [notesNeedingIdentity, setNotesNeedingIdentity] = useState(0);
+  const [migrationPreview, setMigrationPreview] =
+    useState<IdentityMigrationPreview | null>(null);
+  const [migrationStatus, setMigrationStatus] = useState<
+    "idle" | "previewing" | "ready" | "applying"
+  >("idle");
+  const [migrationError, setMigrationError] = useState<string | undefined>();
   const [documentLoad, setDocumentLoad] = useState<DocumentLoadState>({
     status: "idle",
   });
@@ -283,6 +294,26 @@ export function App() {
     [saveDocumentAs],
   );
 
+  const adoptVaultSnapshot = useCallback((snapshot: VaultSnapshot) => {
+    const nextDocuments = mergeDocumentsFromVault(
+      documentsRef.current,
+      snapshot,
+    );
+    const nextFolders = Array.from(
+      new Set(nextDocuments.map((document) => document.folder)),
+    );
+    documentsRef.current = nextDocuments;
+    setDocuments(nextDocuments);
+    setFolderOrder(nextFolders);
+    setExpandedFolders((currentFolders) => {
+      const nextExpanded = new Set(currentFolders);
+      nextFolders.forEach((folder) => nextExpanded.add(folder));
+      return nextExpanded;
+    });
+    setNotesNeedingIdentity(snapshot.warnings.needsIdentity);
+    setVaultMessage(vaultSummaryMessage(snapshot));
+  }, []);
+
   const refreshVault = useCallback(async () => {
     if (
       !vaultSelected ||
@@ -295,28 +326,49 @@ export function App() {
     try {
       const snapshot = await rescanVault();
       if (!snapshot) return;
-      const nextDocuments = mergeDocumentsFromVault(
-        documentsRef.current,
-        snapshot,
-      );
-      const nextFolders = Array.from(
-        new Set(nextDocuments.map((document) => document.folder)),
-      );
-      documentsRef.current = nextDocuments;
-      setDocuments(nextDocuments);
-      setFolderOrder(nextFolders);
-      setExpandedFolders((currentFolders) => {
-        const nextExpanded = new Set(currentFolders);
-        nextFolders.forEach((folder) => nextExpanded.add(folder));
-        return nextExpanded;
-      });
-      setVaultMessage(vaultSummaryMessage(snapshot));
+      adoptVaultSnapshot(snapshot);
     } catch (error) {
       setVaultMessage(readErrorMessage(error));
     } finally {
       rescanInFlightRef.current = false;
     }
-  }, [vaultSelected]);
+  }, [adoptVaultSnapshot, vaultSelected]);
+
+  async function reviewIdentityMigration() {
+    setMigrationStatus("previewing");
+    setMigrationError(undefined);
+    try {
+      setMigrationPreview(await previewIdentityMigration());
+      setMigrationStatus("ready");
+    } catch (error) {
+      const message = readErrorMessage(error);
+      setMigrationError(message);
+      setVaultMessage(message);
+      setMigrationStatus("idle");
+    }
+  }
+
+  async function confirmIdentityMigration() {
+    if (!migrationPreview) return;
+    setMigrationStatus("applying");
+    setMigrationError(undefined);
+    try {
+      const result = await applyIdentityMigration();
+      adoptVaultSnapshot(result.snapshot);
+      setVaultMessage(
+        `${result.migrated} existing note identities added.${
+          result.skipped > 0
+            ? ` ${result.skipped} changed notes were skipped.`
+            : ""
+        }`,
+      );
+      setMigrationPreview(null);
+      setMigrationStatus("idle");
+    } catch (error) {
+      setMigrationError(readErrorMessage(error));
+      setMigrationStatus("ready");
+    }
+  }
 
   useEffect(() => {
     function handleKeyboardShortcut(event: KeyboardEvent) {
@@ -465,6 +517,10 @@ export function App() {
       loadRequestRef.current += 1;
       setVaultName(snapshot.name);
       setVaultSelected(true);
+      setMigrationPreview(null);
+      setMigrationStatus("idle");
+      setMigrationError(undefined);
+      setNotesNeedingIdentity(snapshot.warnings.needsIdentity);
       setDocuments(nextDocuments);
       setFolderOrder(nextFolders);
       setExpandedFolders(new Set(nextFolders));
@@ -547,7 +603,32 @@ export function App() {
       {vaultMessage ? (
         <div className="vault-message" role="status">
           {vaultMessage}
+          {vaultSelected && notesNeedingIdentity > 0 ? (
+            <button
+              className="vault-message__action"
+              disabled={migrationStatus === "previewing"}
+              type="button"
+              onClick={() => void reviewIdentityMigration()}
+            >
+              {migrationStatus === "previewing"
+                ? "Reviewing…"
+                : "Review identity migration"}
+            </button>
+          ) : null}
         </div>
+      ) : null}
+      {migrationPreview ? (
+        <IdentityMigrationPanel
+          error={migrationError}
+          preview={migrationPreview}
+          status={migrationStatus === "applying" ? "applying" : "ready"}
+          onApply={() => void confirmIdentityMigration()}
+          onClose={() => {
+            setMigrationPreview(null);
+            setMigrationStatus("idle");
+            setMigrationError(undefined);
+          }}
+        />
       ) : null}
       {activeDocument?.saveMessage ? (
         <div className="vault-message vault-message--error" role="alert">

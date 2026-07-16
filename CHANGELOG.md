@@ -22,6 +22,9 @@ Git commit. The format follows [Keep a Changelog], and releases follow
 - Existing vaults receive a read-only identity baseline; Markdown files found
   on later scans receive IDs safely, while likely renames and unsafe front
   matter remain untouched and are reported.
+- Existing ID-less notes can be reviewed before an explicit migration. Notes
+  changed after preview and notes with unsafe front matter are preserved and
+  reported instead of being rewritten.
 
 [Keep a Changelog]: https://keepachangelog.com/en/1.1.0/
 [Semantic Versioning]: https://semver.org/spec/v2.0.0.html

@@ -1,9 +1,11 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
+  applyIdentityMigration,
   createVaultFile,
+  previewIdentityMigration,
   readVaultFile,
   rescanVault,
   saveVaultFile,
@@ -12,7 +14,9 @@ import {
 import { App } from "./App";
 
 vi.mock("../lib/tauri/vault", () => ({
+  applyIdentityMigration: vi.fn(),
   createVaultFile: vi.fn(),
+  previewIdentityMigration: vi.fn(),
   readVaultFile: vi.fn(),
   rescanVault: vi.fn(),
   saveVaultFile: vi.fn(),
@@ -20,7 +24,9 @@ vi.mock("../lib/tauri/vault", () => ({
 }));
 
 const mockedSelectVault = vi.mocked(selectVault);
+const mockedApplyIdentityMigration = vi.mocked(applyIdentityMigration);
 const mockedCreateVaultFile = vi.mocked(createVaultFile);
+const mockedPreviewIdentityMigration = vi.mocked(previewIdentityMigration);
 const mockedReadVaultFile = vi.mocked(readVaultFile);
 const mockedRescanVault = vi.mocked(rescanVault);
 const mockedSaveVaultFile = vi.mocked(saveVaultFile);
@@ -34,7 +40,9 @@ const noWarnings = {
 
 describe("App", () => {
   beforeEach(() => {
+    mockedApplyIdentityMigration.mockReset();
     mockedCreateVaultFile.mockReset();
+    mockedPreviewIdentityMigration.mockReset();
     mockedSelectVault.mockReset();
     mockedReadVaultFile.mockReset();
     mockedRescanVault.mockReset();
@@ -222,6 +230,55 @@ describe("App", () => {
       await screen.findByRole("button", { name: "Finder Note.md" }),
     ).toBeInTheDocument();
     expect(screen.getByText(/1 new note identities added/)).toBeInTheDocument();
+  });
+
+  it("previews and explicitly applies existing-note identities", async () => {
+    const user = userEvent.setup();
+    const initialSnapshot = {
+      files: [
+        { name: "Legacy.md", parent: "", relativePath: "Legacy.md" },
+        { name: "Unsafe.md", parent: "", relativePath: "Unsafe.md" },
+      ],
+      name: "My Vault",
+      warnings: { ...noWarnings, identityConflicts: 1, needsIdentity: 1 },
+    };
+    mockedSelectVault.mockResolvedValue(initialSnapshot);
+    mockedPreviewIdentityMigration.mockResolvedValue({
+      eligibleFiles: ["Legacy.md"],
+      issues: [{ reason: "malformedFrontMatter", relativePath: "Unsafe.md" }],
+    });
+    mockedApplyIdentityMigration.mockResolvedValue({
+      migrated: 1,
+      skipped: 0,
+      snapshot: { ...initialSnapshot, warnings: noWarnings },
+    });
+    render(<App />);
+
+    await user.click(
+      screen.getByRole("button", { name: "Open vault: Personal" }),
+    );
+    await user.click(
+      screen.getByRole("button", { name: "Review identity migration" }),
+    );
+
+    const dialog = await screen.findByRole("dialog", {
+      name: "Add permanent note identities",
+    });
+    expect(dialog).toBeInTheDocument();
+    expect(within(dialog).getByText("Legacy.md")).toBeInTheDocument();
+    expect(within(dialog).getByText(/Unsafe.md/)).toHaveTextContent(
+      "Malformed front matter",
+    );
+
+    await user.click(
+      screen.getByRole("button", { name: "Add IDs to 1 notes" }),
+    );
+
+    expect(mockedApplyIdentityMigration).toHaveBeenCalledTimes(1);
+    expect(
+      await screen.findByText("1 existing note identities added."),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
 
   it("shows a recoverable error when a vault note cannot be read", async () => {
