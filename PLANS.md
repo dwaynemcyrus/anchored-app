@@ -330,6 +330,12 @@ Every future large plan must identify:
   quoted internal links in top-level YAML text and list properties now enter
   the same navigation, outgoing-link, and backlink graph as body links.
   Malformed YAML and non-string property values remain excluded.
+- 2026-07-16: Added the read-only rename planner foundation. Native scanning
+  now returns exact target ranges for body and quoted-property links, and the
+  planner rewrites only links that uniquely resolve to the renamed note.
+  Headings, display labels, whitespace, comments, Unicode, and line endings are
+  preserved. Ambiguous links remain unchanged; alias links gain a display label
+  so their visible text survives. No filesystem rename command exists yet.
 
 ## Completion
 
