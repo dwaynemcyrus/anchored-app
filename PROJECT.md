@@ -258,6 +258,8 @@ These scripts must exist in `package.json` after the scaffold chunk.
 | 2026-07-16 | Keep the initial MVP database-free | Authored Markdown is the source of truth and structured operational modules are out of scope |
 | 2026-07-16 | Put filesystem mutation behind Rust commands | Limits permissions and centralizes path and write-safety validation |
 | 2026-07-16 | Use stable IDs with filename-triggered link updates | Preserves identity while matching the approved Obsidian-style rename behavior |
+| 2026-07-16 | Store full 26-character ULIDs in note front matter without a prefix | Keeps permanent identity portable while filenames and aliases remain human-readable |
+| 2026-07-16 | Baseline existing vaults before automatic ID insertion | Existing ID-less notes require a previewed migration; genuinely new Finder-added notes receive an ID only after safe validation |
 | 2026-07-16 | Autosave after one second of idle time | Confirmed by Dwayne; Command-S remains an immediate save |
 | 2026-07-16 | Preserve local edits on external change | Confirmed by Dwayne; present a recoverable conflict instead of auto-reloading |
 | 2026-07-16 | Use a minimal white-on-black design | Explicit product requirement; reduces visual chrome and prioritizes writing |

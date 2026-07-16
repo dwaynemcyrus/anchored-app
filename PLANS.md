@@ -271,6 +271,10 @@ Every future large plan must identify:
 - 2026-07-16: The native disposable-vault Save As test passed. Dwayne created,
   saved, closed, and reopened a new Markdown note with its content intact.
   Chunk 8 is complete.
+- 2026-07-16: Dwayne selected full 26-character ULIDs without a `note_`
+  prefix, stored in YAML front matter while wikilinks remain filename- and
+  alias-based. Initial vault scans are read-only baselines; later Finder-added
+  notes may receive IDs automatically after stability and safety checks.
 
 ## Completion
 
