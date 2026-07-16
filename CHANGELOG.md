@@ -41,5 +41,10 @@ Git commit. The format follows [Keep a Changelog], and releases follow
   and expire automatically when they do not require an identity-migration
   decision.
 
+### Fixed
+
+- Opening the native Rename dialog no longer blocks Anchored's main interface
+  thread.
+
 [Keep a Changelog]: https://keepachangelog.com/en/1.1.0/
 [Semantic Versioning]: https://semver.org/spec/v2.0.0.html

@@ -356,6 +356,13 @@ Every future large plan must identify:
   given an explicit Dismiss control, and configured to expire after six
   seconds when no identity decision is required. Frontend gates and the
   dismissal interaction test pass; native rename QA remains open.
+- 2026-07-16: A process stack sample identified the rename stall before any
+  vault mutation: the synchronous Tauri command parked the macOS main thread
+  inside the blocking save dialog. The command now runs asynchronously, like
+  the existing Open Vault and Save As commands, while retaining the exclusive
+  rename lock. All disposable files were hash-verified unchanged after the
+  stall, and all 46 Rust tests plus strict Clippy pass. Native rename QA must be
+  rerun with the rebuilt self-contained app.
 
 ## Completion
 

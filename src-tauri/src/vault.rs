@@ -393,7 +393,7 @@ pub async fn create_vault_file(
 }
 
 #[tauri::command]
-pub fn rename_vault_file(
+pub async fn rename_vault_file(
     app: AppHandle,
     state: State<'_, VaultState>,
     relative_path: String,
