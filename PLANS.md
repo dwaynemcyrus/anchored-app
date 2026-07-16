@@ -241,6 +241,11 @@ Every future large plan must identify:
   1280×720, 900×600, and 450×600. The local native app launches, but its folder
   dialog still needs a manual disposable-vault smoke test because macOS denied
   automated assistive access to this environment.
+- 2026-07-16: Retried the native smoke test after Accessibility access was
+  granted. The `anchored` process launched and became foreground, but macOS
+  exposed zero application windows and only a menu bar, so the folder dialog
+  could not be exercised. Diagnose native window creation before beginning
+  file-writing work.
 
 ## Completion
 
