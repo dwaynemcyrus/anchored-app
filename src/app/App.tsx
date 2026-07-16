@@ -9,14 +9,17 @@ import {
   documentsFromVault,
   initialFolders,
   initialDocuments,
+  mergeDocumentsFromVault,
   type AnchoredDocument,
   type DocumentSaveState,
 } from "./documents";
 import {
   createVaultFile,
   readVaultFile,
+  rescanVault,
   saveVaultFile,
   selectVault,
+  type VaultSnapshot,
 } from "../lib/tauri/vault";
 
 type DocumentLoadState =
@@ -37,6 +40,31 @@ function readErrorMessage(error: unknown): string {
   return "This Markdown file could not be opened safely.";
 }
 
+function vaultSummaryMessage(snapshot: VaultSnapshot): string {
+  const notices = [`${snapshot.files.length} Markdown files found.`];
+  if (snapshot.warnings.addedIdentities > 0) {
+    notices.push(
+      `${snapshot.warnings.addedIdentities} new note identities added.`,
+    );
+  }
+  if (snapshot.warnings.needsIdentity > 0) {
+    notices.push(
+      `${snapshot.warnings.needsIdentity} existing notes need identities.`,
+    );
+  }
+  if (snapshot.warnings.identityConflicts > 0) {
+    notices.push(
+      `${snapshot.warnings.identityConflicts} identity conflicts need attention.`,
+    );
+  }
+  if (snapshot.warnings.skippedSymlinks > 0) {
+    notices.push(
+      `${snapshot.warnings.skippedSymlinks} symlink entries were skipped for safety.`,
+    );
+  }
+  return notices.join(" ");
+}
+
 export function App() {
   const [documents, setDocuments] =
     useState<AnchoredDocument[]>(initialDocuments);
@@ -49,12 +77,14 @@ export function App() {
   const [vaultName, setVaultName] = useState("Personal");
   const [folderOrder, setFolderOrder] = useState(initialFolders);
   const [selectingVault, setSelectingVault] = useState(false);
+  const [vaultSelected, setVaultSelected] = useState(false);
   const [vaultMessage, setVaultMessage] = useState<string | null>(null);
   const [documentLoad, setDocumentLoad] = useState<DocumentLoadState>({
     status: "idle",
   });
   const searchInputRef = useRef<HTMLInputElement>(null);
   const loadRequestRef = useRef(0);
+  const rescanInFlightRef = useRef(false);
   const documentsRef = useRef(documents);
 
   documentsRef.current = documents;
@@ -253,6 +283,41 @@ export function App() {
     [saveDocumentAs],
   );
 
+  const refreshVault = useCallback(async () => {
+    if (
+      !vaultSelected ||
+      rescanInFlightRef.current ||
+      documentsRef.current.some((document) => document.saveState === "saving")
+    ) {
+      return;
+    }
+    rescanInFlightRef.current = true;
+    try {
+      const snapshot = await rescanVault();
+      if (!snapshot) return;
+      const nextDocuments = mergeDocumentsFromVault(
+        documentsRef.current,
+        snapshot,
+      );
+      const nextFolders = Array.from(
+        new Set(nextDocuments.map((document) => document.folder)),
+      );
+      documentsRef.current = nextDocuments;
+      setDocuments(nextDocuments);
+      setFolderOrder(nextFolders);
+      setExpandedFolders((currentFolders) => {
+        const nextExpanded = new Set(currentFolders);
+        nextFolders.forEach((folder) => nextExpanded.add(folder));
+        return nextExpanded;
+      });
+      setVaultMessage(vaultSummaryMessage(snapshot));
+    } catch (error) {
+      setVaultMessage(readErrorMessage(error));
+    } finally {
+      rescanInFlightRef.current = false;
+    }
+  }, [vaultSelected]);
+
   useEffect(() => {
     function handleKeyboardShortcut(event: KeyboardEvent) {
       const commandKey = event.metaKey || event.ctrlKey;
@@ -302,6 +367,11 @@ export function App() {
 
     return () => window.clearTimeout(timeout);
   }, [activeDocument, saveDocument, saveState]);
+
+  useEffect(() => {
+    window.addEventListener("focus", refreshVault);
+    return () => window.removeEventListener("focus", refreshVault);
+  }, [refreshVault]);
 
   async function selectDocument(documentId: string) {
     const document = documents.find((candidate) => candidate.id === documentId);
@@ -394,34 +464,14 @@ export function App() {
 
       loadRequestRef.current += 1;
       setVaultName(snapshot.name);
+      setVaultSelected(true);
       setDocuments(nextDocuments);
       setFolderOrder(nextFolders);
       setExpandedFolders(new Set(nextFolders));
       setActiveDocumentId("");
       setQuery("");
       setDocumentLoad({ status: "idle" });
-      const notices = [`${snapshot.files.length} Markdown files found.`];
-      if (snapshot.warnings.addedIdentities > 0) {
-        notices.push(
-          `${snapshot.warnings.addedIdentities} new note identities added.`,
-        );
-      }
-      if (snapshot.warnings.needsIdentity > 0) {
-        notices.push(
-          `${snapshot.warnings.needsIdentity} existing notes need identities.`,
-        );
-      }
-      if (snapshot.warnings.identityConflicts > 0) {
-        notices.push(
-          `${snapshot.warnings.identityConflicts} identity conflicts need attention.`,
-        );
-      }
-      if (snapshot.warnings.skippedSymlinks > 0) {
-        notices.push(
-          `${snapshot.warnings.skippedSymlinks} symlink entries were skipped for safety.`,
-        );
-      }
-      setVaultMessage(notices.join(" "));
+      setVaultMessage(vaultSummaryMessage(snapshot));
     } catch {
       setVaultMessage(
         "Vault selection is available in the Anchored desktop app.",

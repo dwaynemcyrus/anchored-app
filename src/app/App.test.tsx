@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   createVaultFile,
   readVaultFile,
+  rescanVault,
   saveVaultFile,
   selectVault,
 } from "../lib/tauri/vault";
@@ -13,6 +14,7 @@ import { App } from "./App";
 vi.mock("../lib/tauri/vault", () => ({
   createVaultFile: vi.fn(),
   readVaultFile: vi.fn(),
+  rescanVault: vi.fn(),
   saveVaultFile: vi.fn(),
   selectVault: vi.fn(),
 }));
@@ -20,6 +22,7 @@ vi.mock("../lib/tauri/vault", () => ({
 const mockedSelectVault = vi.mocked(selectVault);
 const mockedCreateVaultFile = vi.mocked(createVaultFile);
 const mockedReadVaultFile = vi.mocked(readVaultFile);
+const mockedRescanVault = vi.mocked(rescanVault);
 const mockedSaveVaultFile = vi.mocked(saveVaultFile);
 const noWarnings = {
   addedIdentities: 0,
@@ -34,6 +37,7 @@ describe("App", () => {
     mockedCreateVaultFile.mockReset();
     mockedSelectVault.mockReset();
     mockedReadVaultFile.mockReset();
+    mockedRescanVault.mockReset();
     mockedSaveVaultFile.mockReset();
   });
 
@@ -187,6 +191,37 @@ describe("App", () => {
     expect(
       screen.getByRole("button", { name: "Own Note.md" }),
     ).not.toHaveAttribute("aria-current");
+  });
+
+  it("rescans for Finder-added notes when the app regains focus", async () => {
+    const user = userEvent.setup();
+    mockedSelectVault.mockResolvedValue({
+      files: [],
+      name: "My Vault",
+      warnings: noWarnings,
+    });
+    mockedRescanVault.mockResolvedValue({
+      files: [
+        {
+          name: "Finder Note.md",
+          parent: "Notes",
+          relativePath: "Notes/Finder Note.md",
+        },
+      ],
+      name: "My Vault",
+      warnings: { ...noWarnings, addedIdentities: 1 },
+    });
+    render(<App />);
+
+    await user.click(
+      screen.getByRole("button", { name: "Open vault: Personal" }),
+    );
+    window.dispatchEvent(new Event("focus"));
+
+    expect(
+      await screen.findByRole("button", { name: "Finder Note.md" }),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/1 new note identities added/)).toBeInTheDocument();
   });
 
   it("shows a recoverable error when a vault note cannot be read", async () => {

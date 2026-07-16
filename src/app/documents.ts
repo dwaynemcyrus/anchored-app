@@ -97,3 +97,30 @@ export function documentsFromVault(
     saveState: "saved",
   }));
 }
+
+export function mergeDocumentsFromVault(
+  currentDocuments: AnchoredDocument[],
+  snapshot: VaultSnapshot,
+): AnchoredDocument[] {
+  const currentByPath = new Map(
+    currentDocuments.flatMap((document) =>
+      document.relativePath ? [[document.relativePath, document]] : [],
+    ),
+  );
+  const scannedPaths = new Set(snapshot.files.map((file) => file.relativePath));
+  const scannedDocuments = documentsFromVault(snapshot).map((document) => {
+    const current = currentByPath.get(document.relativePath as string);
+    return current
+      ? { ...current, folder: document.folder, name: document.name }
+      : document;
+  });
+  const localOrDirtyMissingDocuments = currentDocuments.filter(
+    (document) =>
+      !document.relativePath ||
+      (!scannedPaths.has(document.relativePath) &&
+        document.saveState !== undefined &&
+        document.saveState !== "saved"),
+  );
+
+  return [...scannedDocuments, ...localOrDirtyMissingDocuments];
+}

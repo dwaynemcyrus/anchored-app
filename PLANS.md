@@ -278,6 +278,17 @@ Every future large plan must identify:
 - 2026-07-16: Added the conservative identity parser and insertion core. It
   validates YAML without reserializing it, preserves comments, Unicode, BOMs,
   and LF/CRLF endings, and refuses malformed, duplicate, or noncanonical IDs.
+- 2026-07-16: Connected identity insertion to atomic new-note creation. New
+  Anchored notes receive a full ULID, the editor adopts the returned front
+  matter, and subsequent saves cannot silently remove or replace that ID.
+- 2026-07-16: Added persistent, app-local vault baselines and reconciliation.
+  Initial scans do not rewrite legacy notes; later new files receive collision-
+  checked IDs, likely legacy renames stay unchanged, and unsafe files remain
+  pending for a safe retry after repair.
+- 2026-07-16: Added focus-triggered vault rescanning without continuous polling.
+  Finder-added notes appear when Anchored regains focus, while local drafts and
+  dirty missing files are preserved and Save As operations suppress race-prone
+  rescans.
 
 ## Completion
 
