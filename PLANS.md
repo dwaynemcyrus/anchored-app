@@ -74,7 +74,7 @@ and preserves link integrity across filename changes.
      minimal white-on-black requirements.
    - Risk/rollback: Concept could add visual scope; reject anything not required
      by the editor journey and regenerate before code uses it.
-   - Commit: pending in the current verified chunk
+   - Commit: `9fe787b docs(design): define editor direction`
 
 5. [x] **Chunk: Scaffold verified app**
    - Files: `package.json`, lockfile, Vite/TypeScript/ESLint/Prettier configs,
@@ -86,9 +86,9 @@ and preserves link integrity across filename changes.
      and Tauri configuration inspection.
    - Risk/rollback: Toolchain or dependency incompatibility; keep the scaffold
      isolated in one commit and pin successful lockfiles.
-   - Commit: pending in the current verified chunk
+   - Commit: `1b80cb8 chore(app): scaffold tauri project`
 
-6. [ ] **Chunk: Build accessible app shell**
+6. [x] **Chunk: Build accessible app shell**
    - Files: `src/app/`, `src/styles/`, component tests
    - Change: Implement the faithful white-on-black editor shell, empty/welcome
      state, file rail, editor region, status bar, and keyboard/focus behavior.
@@ -97,7 +97,7 @@ and preserves link integrity across filename changes.
      and `view_image` inspection against the concept.
    - Risk/rollback: Visual drift or excess chrome; compare every major region
      and remove nonessential UI.
-   - Commit: `feat(app): add editor shell`
+   - Commit: pending in the current verified chunk
 
 7. [ ] **Chunk: Add safe vault boundary**
    - Files: `src-tauri/src/`, `src-tauri/capabilities/`, `src/lib/`, fixtures,
@@ -188,16 +188,26 @@ and preserves link integrity across filename changes.
   rustfmt and Clippy, then generated the official Tauri 2 React/TypeScript
   scaffold. Frontend gates, Rust gates, and the optimized Tauri no-bundle build
   all pass on macOS 12.7.6.
+- 2026-07-16: Implemented the accessible editor shell with local note search,
+  wikilink navigation, note creation, saved/unsaved state, keyboard save, and a
+  responsive file rail. Browser/IAB checks passed at 1586×992, 1280×800,
+  900×600, and a 450×600 narrow/200%-zoom equivalent with no console errors or
+  page overflow.
+- 2026-07-16: Concept comparison fixed rail proportion, cursor-line reach, and
+  compact search clipping. The remaining intentional deviations are native
+  macOS window chrome outside the web surface and omission of an inert overflow
+  menu.
 
 ## Completion
 
 - **Checks run:** Documentation diff checks; native-size visual concept
   inspection; Prettier check; ESLint; TypeScript; Vitest; Vite production
-  build; Cargo format, Clippy, and tests; optimized Tauri no-bundle build.
+  build; Cargo format, Clippy, and tests; optimized and debug Tauri no-bundle
+  builds; Browser/IAB DOM, interaction, console, responsive, screenshot, and
+  concept-fidelity checks.
 - **Commits:** Overview commits listed in chunk 1; `e766c4d`; `61d1b3d`;
-  `9fe787b`; `107858e`.
+  `9fe787b`; `107858e`; `1b80cb8`.
 - **Remaining risks:** Vault data safety, cross-file rename transactions,
   packaged-app verification, and the seven-day observation period.
-- **Follow-up:** Commit the verified scaffold, then implement and visually
-  compare the accessible app shell without waiting between routine reversible
-  steps.
+- **Follow-up:** Commit the verified app shell, then begin the read-only safe
+  vault boundary with synthetic fixtures and narrow Tauri permissions.
