@@ -315,6 +315,11 @@ Every future large plan must identify:
   snapshots expose safe Obsidian aliases and only unique canonical IDs; the
   interface keys identified notes by those IDs so local editor state follows a
   Finder rename or move. Link parsing and navigation remain next.
+- 2026-07-16: Added deterministic wikilink parsing and navigation for exact
+  relative paths, filenames, aliases, headings, display labels, and embeds.
+  Command-click resolves only a unique match; missing and ambiguous targets
+  remain unopened and are reported. Rendered alias navigation passed with no
+  console errors. Backlinks and transactional rename updates remain.
 
 ## Completion
 
