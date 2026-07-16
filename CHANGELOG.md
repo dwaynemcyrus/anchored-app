@@ -33,6 +33,10 @@ Git commit. The format follows [Keep a Changelog], and releases follow
 - Each note now lists its resolved backlinks. Valid quoted internal links in
   YAML text and list properties participate like body links; escaped body
   text, inline code, fenced code, and indented code remain excluded.
+- Identified notes can be renamed or moved from the editor. Anchored updates
+  uniquely resolved filename, path, alias, heading, display-label, and quoted
+  property links as one recoverable transaction; ambiguous links remain
+  unchanged, and unfinished edits block the operation.
 
 [Keep a Changelog]: https://keepachangelog.com/en/1.1.0/
 [Semantic Versioning]: https://semver.org/spec/v2.0.0.html

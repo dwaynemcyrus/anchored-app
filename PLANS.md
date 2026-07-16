@@ -162,7 +162,10 @@ and preserves link integrity across filename changes.
     - Risk/rollback: Partial multi-file updates could corrupt references; plan
       the complete change set first, back up affected content, and roll back the
       entire transaction on any failure.
-    - Commit: `feat(links): preserve renamed links`
+    - Commits: `f7b9ad2 feat(links): plan rename updates`,
+      `065ca81 feat(files): transact note renames`,
+      `57be496 feat(files): recover rename crashes`, and
+      `41e5a16 feat(app): rename identified notes`
 
 11. [ ] **Chunk: Add retrieval and continuity**
     - Files: search and recent-file features, settings persistence, tests
@@ -335,7 +338,18 @@ Every future large plan must identify:
   planner rewrites only links that uniquely resolve to the renamed note.
   Headings, display labels, whitespace, comments, Unicode, and line endings are
   preserved. Ambiguous links remain unchanged; alias links gain a display label
-  so their visible text survives. No filesystem rename command exists yet.
+  so their visible text survives.
+- 2026-07-16: Added identified-note rename and move support. The native layer
+  preloads and rechecks every Markdown source, prepares the complete rewrite,
+  backs up all affected notes, and rolls the entire set back on any handled
+  failure. A durable, path-validated journal restores an interrupted rename or
+  finishes cleanup when the vault is reopened after a process crash. The
+  editor exposes one minimal Rename action, blocks unfinished disk-backed
+  edits, then reloads the renamed note and clears stale reference buffers.
+  Forty-two Rust tests, 29 frontend tests, lint, type-check, production build,
+  and rendered checks at desktop and 400×800 pass. A native disposable-vault
+  rename test and remaining filename/path edge fixtures are still required to
+  close chunk 10.
 
 ## Completion
 
@@ -346,7 +360,8 @@ Every future large plan must identify:
   concept-fidelity checks.
 - **Commits:** Verified implementation commits are recorded with each completed
   chunk above.
-- **Remaining risks:** Vault data safety, cross-file rename transactions,
-  packaged-app verification, and the seven-day observation period.
-- **Follow-up:** Design and implement the transactional filename rename and
-  reference-update boundary to complete chunk 10.
+- **Remaining risks:** Native disposable-vault rename verification, remaining
+  rename edge fixtures, packaged-app verification, and the seven-day
+  observation period.
+- **Follow-up:** Complete rename edge fixtures, then run the native
+  disposable-vault rename and reference-update test to close chunk 10.
