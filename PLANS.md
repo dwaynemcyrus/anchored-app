@@ -132,15 +132,26 @@ and preserves link integrity across filename changes.
      `23ede3b feat(files): create notes safely`,
      `2795bb8 feat(editor): add safe save as`
 
-9. [ ] **Chunk: Add portable metadata**
+9. [x] **Chunk: Add portable metadata**
    - Files: front-matter parser, stable-ID service, fixtures, tests, docs
    - Change: Parse and preserve YAML, add stable IDs safely, and avoid rewriting
      unsupported or ambiguous documents.
    - Verify: Round-trip, malformed YAML, duplicate ID, Unicode, line-ending,
      and unsupported syntax tests.
-   - Risk/rollback: Broad rewrites can damage notes; operate on one explicit
-     document at a time and preserve byte-level fixtures where possible.
-   - Commit: `feat(notes): add stable identities`
+   - Risk/rollback: Broad rewrites can damage notes; require an explicit
+     reviewed batch, recheck each file before an atomic write, and preserve
+     byte-level fixtures where possible.
+   - Commits: `3e13379 docs(notes): define identity policy`,
+     `b61e41a feat(notes): add identity parser`,
+     `79d44ad feat(notes): identify new files`,
+     `53308ab feat(editor): adopt generated identity`,
+     `f295236 feat(notes): baseline vault identities`,
+     `aa6a3b1 feat(app): report identity indexing`,
+     `cd27166 feat(notes): refresh Finder additions`,
+     `28727ee feat(notes): preview ID migration`,
+     `4fd333b feat(notes): wire ID migration`,
+     `cc8f863 feat(app): review ID migration`, and
+     `d173413 fix(editor): show canonical sample ID`
 
 10. [ ] **Chunk: Add links and rename updates**
     - Files: link parser/registry/resolver, backlinks, rename transaction, tests
@@ -293,6 +304,13 @@ Every future large plan must identify:
   left `Legacy.md` byte-for-byte unchanged and reported it as needing an ID;
   a later `Finder Added.md` appeared on focus, received one unprefixed ULID,
   and preserved its original heading and body.
+- 2026-07-16: Added an explicit migration preview for legacy ID-less notes.
+  Anchored lists eligible and unsafe files before confirmation, retains the
+  plan inside the native boundary, rechecks every file before writing, and
+  skips notes changed or removed after preview.
+- 2026-07-16: Dwayne confirmed the native previewed migration passed on the
+  disposable vault. `Legacy.md` received one canonical unprefixed ULID while
+  its original heading and body remained intact. Chunk 9 is complete.
 
 ## Completion
 
@@ -305,5 +323,4 @@ Every future large plan must identify:
   chunk above.
 - **Remaining risks:** Vault data safety, cross-file rename transactions,
   packaged-app verification, and the seven-day observation period.
-- **Follow-up:** Begin portable front-matter parsing and stable identities in
-  chunk 9 using synthetic fixtures before touching representative vault data.
+- **Follow-up:** Begin wikilink and alias resolution in chunk 10.
