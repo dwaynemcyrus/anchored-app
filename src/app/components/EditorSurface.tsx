@@ -1,5 +1,8 @@
+import { lazy, Suspense } from "react";
+
 import type { AnchoredDocument } from "../documents";
-import { MarkdownEditor } from "./MarkdownEditor";
+
+const MarkdownEditor = lazy(() => import("./MarkdownEditor"));
 
 type EditorSurfaceProps = {
   document?: AnchoredDocument;
@@ -14,6 +17,7 @@ type EditorSurfaceProps = {
   onOpenLinkedDocument: (documentId: string) => void;
   onRetryDocument: () => void;
   onSaveDocument: () => void;
+  onSaveDocumentAs: () => void;
 };
 
 export function EditorSurface({
@@ -26,6 +30,7 @@ export function EditorSurface({
   onOpenLinkedDocument,
   onRetryDocument,
   onSaveDocument,
+  onSaveDocumentAs,
 }: EditorSurfaceProps) {
   if (!document) {
     return (
@@ -61,17 +66,29 @@ export function EditorSurface({
           <span aria-hidden="true">/</span>
           <span>{document.name}</span>
         </span>
-        <button
-          aria-label={`Close ${document.name}`}
-          className="editor-surface__close"
-          type="button"
-          onClick={onCloseDocument}
-        >
-          Close
-        </button>
+        <div className="editor-surface__actions">
+          {document.sourceText !== undefined ? (
+            <button
+              aria-label={`Save ${document.name} as`}
+              className="editor-surface__action"
+              type="button"
+              onClick={onSaveDocumentAs}
+            >
+              Save as
+            </button>
+          ) : null}
+          <button
+            aria-label={`Close ${document.name}`}
+            className="editor-surface__action"
+            type="button"
+            onClick={onCloseDocument}
+          >
+            Close
+          </button>
+        </div>
       </header>
       <section className="document">
-        {document.relativePath ? (
+        {document.relativePath && document.sourceText === undefined ? (
           loadState.status === "loading" ? (
             <p className="document__empty" role="status">
               Opening Markdown…
@@ -88,15 +105,24 @@ export function EditorSurface({
                 Try again
               </button>
             </div>
-          ) : document.sourceText !== undefined ? (
+          ) : null
+        ) : document.sourceText !== undefined ? (
+          <Suspense
+            fallback={
+              <p className="document__empty" role="status">
+                Opening editor…
+              </p>
+            }
+          >
             <MarkdownEditor
               documentId={document.id}
               label={`${document.name} Markdown editor`}
               value={document.sourceText}
               onChange={onDocumentChange}
               onSave={onSaveDocument}
+              onSaveAs={onSaveDocumentAs}
             />
-          ) : null
+          </Suspense>
         ) : (
           <>
             <pre className="front-matter">{frontMatter}</pre>

@@ -261,6 +261,10 @@ Every future large plan must identify:
 - 2026-07-16: The native disposable-vault autosave test passed. Dwayne added
   text to `Notes/Write Test.md`; it remained after the note was closed and
   reopened.
+- 2026-07-16: Added safe new-file creation and Save As. New files are limited
+  to `.md` paths inside the selected vault, cannot replace an existing file,
+  and are created atomically. Draft content and per-note save/conflict state
+  survive note switching. Native Save As verification remains for chunk 8.
 
 ## Completion
 

@@ -10,23 +10,27 @@ type MarkdownEditorProps = {
   value: string;
   onChange: (content: string) => void;
   onSave: () => void;
+  onSaveAs: () => void;
 };
 
-export function MarkdownEditor({
+export default function MarkdownEditor({
   documentId,
   label,
   value,
   onChange,
   onSave,
+  onSaveAs,
 }: MarkdownEditorProps) {
   const hostRef = useRef<HTMLDivElement>(null);
   const valueRef = useRef(value);
   const onChangeRef = useRef(onChange);
   const onSaveRef = useRef(onSave);
+  const onSaveAsRef = useRef(onSaveAs);
 
   valueRef.current = value;
   onChangeRef.current = onChange;
   onSaveRef.current = onSave;
+  onSaveAsRef.current = onSaveAs;
 
   useEffect(() => {
     const host = hostRef.current;
@@ -45,6 +49,13 @@ export function MarkdownEditor({
           keymap.of([
             ...defaultKeymap,
             ...historyKeymap,
+            {
+              key: "Shift-Mod-s",
+              run: () => {
+                onSaveAsRef.current();
+                return true;
+              },
+            },
             {
               key: "Mod-s",
               run: () => {

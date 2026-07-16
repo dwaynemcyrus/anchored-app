@@ -10,10 +10,15 @@ import {
   initialFolders,
   initialDocuments,
   type AnchoredDocument,
+  type DocumentSaveState,
 } from "./documents";
-import { readVaultFile, saveVaultFile, selectVault } from "../lib/tauri/vault";
+import {
+  createVaultFile,
+  readVaultFile,
+  saveVaultFile,
+  selectVault,
+} from "../lib/tauri/vault";
 
-type SaveState = "saved" | "unsaved" | "saving" | "conflict" | "error";
 type DocumentLoadState =
   | { status: "idle" }
   | { status: "loading"; documentId: string }
@@ -40,13 +45,11 @@ export function App() {
     () => new Set(["Notes"]),
   );
   const [query, setQuery] = useState("");
-  const [saveState, setSaveState] = useState<SaveState>("saved");
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [vaultName, setVaultName] = useState("Personal");
   const [folderOrder, setFolderOrder] = useState(initialFolders);
   const [selectingVault, setSelectingVault] = useState(false);
   const [vaultMessage, setVaultMessage] = useState<string | null>(null);
-  const [saveMessage, setSaveMessage] = useState<string | null>(null);
   const [documentLoad, setDocumentLoad] = useState<DocumentLoadState>({
     status: "idle",
   });
@@ -59,9 +62,10 @@ export function App() {
   const activeDocument = documents.find(
     (document) => document.id === activeDocumentId,
   );
+  const saveState: DocumentSaveState = activeDocument?.saveState ?? "saved";
 
   const createNote = useCallback(() => {
-    const nextDocument = createUntitledDocument(documents);
+    const nextDocument = createUntitledDocument(documentsRef.current);
 
     loadRequestRef.current += 1;
     setDocuments((currentDocuments) => [...currentDocuments, nextDocument]);
@@ -75,67 +79,174 @@ export function App() {
         : [...currentFolders, nextDocument.folder],
     );
     setQuery("");
-    setSaveState("unsaved");
     setDocumentLoad({ status: "idle" });
     setSidebarOpen(false);
-  }, [documents]);
+  }, []);
 
-  const saveDocument = useCallback(async (documentId: string) => {
-    const document = documentsRef.current.find(
-      (candidate) => candidate.id === documentId,
-    );
-    if (
-      !document?.relativePath ||
-      document.sourceText === undefined ||
-      document.savedSourceText === undefined
-    ) {
-      return;
-    }
-    if (document.sourceText === document.savedSourceText) {
-      setSaveState("saved");
-      return;
-    }
-
-    const contentAtSave = document.sourceText;
-    setSaveState("saving");
-    setSaveMessage(null);
-
-    try {
-      const savedDocument = await saveVaultFile({
-        content: contentAtSave,
-        expectedContent: document.savedSourceText,
-        relativePath: document.relativePath,
-      });
-      const currentDocument = documentsRef.current.find(
+  const saveDocumentAs = useCallback(
+    async (documentId: string) => {
+      const document = documentsRef.current.find(
         (candidate) => candidate.id === documentId,
       );
-      const hasNewerEdit = currentDocument?.sourceText !== contentAtSave;
+      if (!document || document.sourceText === undefined) return;
 
+      const contentAtSave = document.sourceText;
       setDocuments((currentDocuments) =>
         currentDocuments.map((current) =>
           current.id === documentId
-            ? {
-                ...current,
-                savedSourceText: savedDocument.content,
-                sizeBytes: savedDocument.sizeBytes,
-              }
+            ? { ...current, saveMessage: undefined, saveState: "saving" }
             : current,
         ),
       );
-      setSaveState(hasNewerEdit ? "unsaved" : "saved");
-    } catch (error) {
-      const message = readErrorMessage(error);
-      setSaveState(
-        typeof error === "object" &&
+
+      try {
+        const savedDocument = await createVaultFile({
+          content: contentAtSave,
+          suggestedName: document.name,
+        });
+        if (!savedDocument) {
+          setDocuments((currentDocuments) =>
+            currentDocuments.map((current) =>
+              current.id === documentId
+                ? {
+                    ...current,
+                    saveState:
+                      current.relativePath &&
+                      current.sourceText === current.savedSourceText
+                        ? "saved"
+                        : "unsaved",
+                  }
+                : current,
+            ),
+          );
+          return;
+        }
+
+        const pathParts = savedDocument.relativePath.split("/");
+        const name = pathParts.pop() ?? document.name;
+        const folder = pathParts.join("/") || vaultName;
+        const currentDocument = documentsRef.current.find(
+          (candidate) => candidate.id === documentId,
+        );
+        const hasNewerEdit = currentDocument?.sourceText !== contentAtSave;
+
+        setDocuments((currentDocuments) =>
+          currentDocuments.map((current) =>
+            current.id === documentId
+              ? {
+                  ...current,
+                  folder,
+                  name,
+                  relativePath: savedDocument.relativePath,
+                  saveMessage: undefined,
+                  saveState: hasNewerEdit ? "unsaved" : "saved",
+                  savedSourceText: savedDocument.content,
+                  sizeBytes: savedDocument.sizeBytes,
+                }
+              : current,
+          ),
+        );
+        setExpandedFolders((currentFolders) =>
+          new Set(currentFolders).add(folder),
+        );
+        setFolderOrder((currentFolders) =>
+          currentFolders.includes(folder)
+            ? currentFolders
+            : [...currentFolders, folder],
+        );
+      } catch (error) {
+        setDocuments((currentDocuments) =>
+          currentDocuments.map((current) =>
+            current.id === documentId
+              ? {
+                  ...current,
+                  saveMessage: readErrorMessage(error),
+                  saveState: "error",
+                }
+              : current,
+          ),
+        );
+      }
+    },
+    [vaultName],
+  );
+
+  const saveDocument = useCallback(
+    async (documentId: string) => {
+      const document = documentsRef.current.find(
+        (candidate) => candidate.id === documentId,
+      );
+      if (!document || document.sourceText === undefined) {
+        return;
+      }
+      if (!document.relativePath || document.savedSourceText === undefined) {
+        await saveDocumentAs(documentId);
+        return;
+      }
+      if (document.sourceText === document.savedSourceText) {
+        setDocuments((currentDocuments) =>
+          currentDocuments.map((current) =>
+            current.id === documentId
+              ? { ...current, saveMessage: undefined, saveState: "saved" }
+              : current,
+          ),
+        );
+        return;
+      }
+
+      const contentAtSave = document.sourceText;
+      setDocuments((currentDocuments) =>
+        currentDocuments.map((current) =>
+          current.id === documentId
+            ? { ...current, saveMessage: undefined, saveState: "saving" }
+            : current,
+        ),
+      );
+
+      try {
+        const savedDocument = await saveVaultFile({
+          content: contentAtSave,
+          expectedContent: document.savedSourceText,
+          relativePath: document.relativePath,
+        });
+        const currentDocument = documentsRef.current.find(
+          (candidate) => candidate.id === documentId,
+        );
+        const hasNewerEdit = currentDocument?.sourceText !== contentAtSave;
+
+        setDocuments((currentDocuments) =>
+          currentDocuments.map((current) =>
+            current.id === documentId
+              ? {
+                  ...current,
+                  saveMessage: undefined,
+                  saveState: hasNewerEdit ? "unsaved" : "saved",
+                  savedSourceText: savedDocument.content,
+                  sizeBytes: savedDocument.sizeBytes,
+                }
+              : current,
+          ),
+        );
+      } catch (error) {
+        const message = readErrorMessage(error);
+        const nextSaveState =
+          typeof error === "object" &&
           error !== null &&
           "code" in error &&
           error.code === "vaultConflict"
-          ? "conflict"
-          : "error",
-      );
-      setSaveMessage(message);
-    }
-  }, []);
+            ? "conflict"
+            : "error";
+        setDocuments((currentDocuments) =>
+          currentDocuments.map((current) =>
+            current.id === documentId
+              ? { ...current, saveMessage: message, saveState: nextSaveState }
+              : current,
+          ),
+        );
+      }
+    },
+    [saveDocumentAs],
+  );
 
   useEffect(() => {
     function handleKeyboardShortcut(event: KeyboardEvent) {
@@ -152,7 +263,11 @@ export function App() {
         !event.defaultPrevented
       ) {
         event.preventDefault();
-        void saveDocument(activeDocumentId);
+        if (event.shiftKey) {
+          void saveDocumentAs(activeDocumentId);
+        } else {
+          void saveDocument(activeDocumentId);
+        }
       }
 
       if (commandKey && event.shiftKey && event.key.toLowerCase() === "f") {
@@ -163,7 +278,7 @@ export function App() {
 
     window.addEventListener("keydown", handleKeyboardShortcut);
     return () => window.removeEventListener("keydown", handleKeyboardShortcut);
-  }, [activeDocumentId, createNote, saveDocument]);
+  }, [activeDocumentId, createNote, saveDocument, saveDocumentAs]);
 
   useEffect(() => {
     if (
@@ -188,7 +303,6 @@ export function App() {
     if (!document) return;
 
     setActiveDocumentId(documentId);
-    setSaveState("saved");
     setSidebarOpen(false);
 
     if (!document.relativePath || document.sourceText !== undefined) {
@@ -214,6 +328,8 @@ export function App() {
             ? {
                 ...currentDocument,
                 sizeBytes: openedDocument.sizeBytes,
+                saveMessage: undefined,
+                saveState: "saved",
                 savedSourceText: openedDocument.content,
                 sourceText: openedDocument.content,
               }
@@ -235,8 +351,6 @@ export function App() {
     loadRequestRef.current += 1;
     setActiveDocumentId("");
     setDocumentLoad({ status: "idle" });
-    setSaveState("saved");
-    setSaveMessage(null);
   }
 
   function updateDocumentContent(content: string) {
@@ -245,16 +359,19 @@ export function App() {
     setDocuments((currentDocuments) =>
       currentDocuments.map((document) =>
         document.id === activeDocument.id
-          ? { ...document, sourceText: content }
+          ? {
+              ...document,
+              saveMessage:
+                document.saveState === "conflict"
+                  ? document.saveMessage
+                  : undefined,
+              saveState:
+                document.saveState === "conflict" ? "conflict" : "unsaved",
+              sourceText: content,
+            }
           : document,
       ),
     );
-    setSaveState((currentState) =>
-      currentState === "conflict" ? "conflict" : "unsaved",
-    );
-    if (saveState !== "conflict") {
-      setSaveMessage(null);
-    }
   }
 
   async function openVault() {
@@ -277,9 +394,7 @@ export function App() {
       setExpandedFolders(new Set(nextFolders));
       setActiveDocumentId("");
       setQuery("");
-      setSaveState("saved");
       setDocumentLoad({ status: "idle" });
-      setSaveMessage(null);
       setVaultMessage(
         snapshot.warnings.skippedSymlinks > 0
           ? `${snapshot.warnings.skippedSymlinks} symlink entries were skipped for safety.`
@@ -352,6 +467,9 @@ export function App() {
           onSaveDocument={() => {
             if (activeDocument) void saveDocument(activeDocument.id);
           }}
+          onSaveDocumentAs={() => {
+            if (activeDocument) void saveDocumentAs(activeDocument.id);
+          }}
         />
       </div>
       {vaultMessage ? (
@@ -359,9 +477,9 @@ export function App() {
           {vaultMessage}
         </div>
       ) : null}
-      {saveMessage ? (
+      {activeDocument?.saveMessage ? (
         <div className="vault-message vault-message--error" role="alert">
-          {saveMessage}
+          {activeDocument.saveMessage}
         </div>
       ) : null}
       <StatusBar document={activeDocument} vaultName={vaultName} />

@@ -1,5 +1,8 @@
 import type { VaultSnapshot } from "../lib/tauri/vault";
 
+export type DocumentSaveState =
+  "saved" | "unsaved" | "saving" | "conflict" | "error";
+
 export type AnchoredDocument = {
   id: string;
   name: string;
@@ -11,6 +14,8 @@ export type AnchoredDocument = {
   relativePath?: string;
   sourceText?: string;
   savedSourceText?: string;
+  saveMessage?: string;
+  saveState?: DocumentSaveState;
   sizeBytes?: number;
   relatedDocumentId?: string;
   relatedLabel?: string;
@@ -72,6 +77,8 @@ export function createUntitledDocument(
     aliases: [],
     tags: [],
     body: "",
+    saveState: "unsaved",
+    sourceText: "",
   };
 }
 
@@ -87,5 +94,6 @@ export function documentsFromVault(
     tags: [],
     body: "",
     relativePath: file.relativePath,
+    saveState: "saved",
   }));
 }
