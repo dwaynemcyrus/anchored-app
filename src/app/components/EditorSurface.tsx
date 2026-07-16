@@ -51,7 +51,9 @@ export function EditorSurface({
   const frontMatter = [
     "---",
     `id: ${
-      document.id.startsWith("draft-") ? "Pending save" : "note_01JZQ7K8P4"
+      document.id.startsWith("draft-")
+        ? "Pending save"
+        : "01JZQ7K8P4A6F2M9V3C5T7X1BY"
     }`,
     `aliases: [${document.aliases.join(", ")}]`,
     `tags: [${document.tags.join(", ")}]`,

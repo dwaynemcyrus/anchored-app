@@ -104,7 +104,7 @@ state. Empty and error states may add task-specific instructions later.
 - `Weekly Review.md`
 - `Notes / Leadership.md`
 - `---`
-- `id: note_01JZQ7K8P4`
+- `id: 01JZQ7K8P4A6F2M9V3C5T7X1BY`
 - `aliases: [Leading Well]`
 - `tags: [thinking]`
 - `Leadership`
