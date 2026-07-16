@@ -13,6 +13,7 @@ use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Manager, State};
 use tauri_plugin_dialog::DialogExt;
 
+use crate::links::{plan_rename_link_rewrites, LinkNote, LinkSource};
 use crate::metadata::{
     add_note_identity, assign_new_note_identity, generate_note_id, inspect_note_aliases,
     inspect_note_identity, inspect_wikilinks, NoteIdentityStatus,
@@ -130,6 +131,23 @@ pub struct VaultDocument {
     pub size_bytes: u64,
 }
 
+#[derive(Debug)]
+struct RenameTransactionEntry {
+    backup_path: PathBuf,
+    destination_path: PathBuf,
+    original_content: String,
+    original_path: PathBuf,
+    temporary_path: PathBuf,
+}
+
+#[derive(Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RenameOutcome {
+    pub relative_path: String,
+    pub updated_files: usize,
+    pub updated_links: usize,
+}
+
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct VaultError {
@@ -210,6 +228,13 @@ impl VaultError {
     fn identity_conflict(message: impl Into<String>) -> Self {
         Self {
             code: "identityConflict",
+            message: message.into(),
+        }
+    }
+
+    fn rename_conflict(message: impl Into<String>) -> Self {
+        Self {
+            code: "vaultRenameConflict",
             message: message.into(),
         }
     }
@@ -336,6 +361,40 @@ pub async fn create_vault_file(
         .map_err(|error| VaultError::invalid_file(format!("Unsupported save path: {error}")))?;
 
     create_markdown_file(&root, &selected_path, &content).map(Some)
+}
+
+#[tauri::command]
+pub async fn rename_vault_file(
+    app: AppHandle,
+    state: State<'_, VaultState>,
+    relative_path: String,
+) -> Result<Option<RenameOutcome>, VaultError> {
+    let root = state
+        .root
+        .read()
+        .map_err(|_| VaultError::state("The selected vault state could not be read."))?
+        .clone()
+        .ok_or_else(|| VaultError::state("Select a vault before renaming a Markdown file."))?;
+    let suggested_name = Path::new(&relative_path)
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or("Untitled.md");
+    let selected = app
+        .dialog()
+        .file()
+        .set_title("Rename Markdown note")
+        .set_directory(&root)
+        .set_file_name(suggested_name)
+        .add_filter("Markdown", &["md"])
+        .blocking_save_file();
+    let Some(selected) = selected else {
+        return Ok(None);
+    };
+    let destination = selected
+        .into_path()
+        .map_err(|error| VaultError::invalid_file(format!("Unsupported rename path: {error}")))?;
+
+    rename_markdown_file(&root, &relative_path, &destination, None).map(Some)
 }
 
 #[tauri::command]
@@ -1000,6 +1059,279 @@ fn create_markdown_file(
     })
 }
 
+fn rename_markdown_file(
+    root: &Path,
+    relative_path: &str,
+    destination: &Path,
+    fail_after_installations: Option<usize>,
+) -> Result<RenameOutcome, VaultError> {
+    let root = canonical_vault_root(root)?;
+    let original_path = resolve_vault_markdown_file(&root, relative_path)?;
+    let (destination_path, new_relative_path) =
+        resolve_new_vault_markdown_file(&root, destination)?;
+    if new_relative_path == relative_path {
+        return Err(VaultError::rename_conflict(
+            "Choose a different filename or folder for this note.",
+        ));
+    }
+    if destination_path.exists() {
+        let existing = fs::canonicalize(&destination_path).map_err(|error| {
+            VaultError::io("The rename destination could not be inspected", error)
+        })?;
+        if existing != original_path {
+            return Err(VaultError::file_exists());
+        }
+    }
+
+    let mut snapshot = scan_vault(&root)?;
+    enrich_vault_metadata(&root, &mut snapshot.files)?;
+    let target = snapshot
+        .files
+        .iter()
+        .find(|file| file.relative_path == relative_path)
+        .ok_or_else(|| VaultError::invalid_file("The note to rename is no longer in the vault."))?;
+    let target_identity = target.id.as_deref().ok_or_else(|| {
+        VaultError::identity_conflict(
+            "This note needs a unique permanent identity before it can be renamed safely.",
+        )
+    })?;
+
+    let mut sources = Vec::with_capacity(snapshot.files.len());
+    for file in &snapshot.files {
+        let document = read_markdown_file(&root, &file.relative_path).map_err(|error| {
+            VaultError::rename_conflict(format!(
+                "Every Markdown file must be readable before links can be updated safely. {}: {}",
+                file.relative_path, error.message
+            ))
+        })?;
+        sources.push(LinkSource {
+            content: document.content,
+            relative_path: file.relative_path.clone(),
+        });
+    }
+    let notes = snapshot
+        .files
+        .iter()
+        .map(|file| LinkNote {
+            aliases: file.aliases.clone(),
+            identity: file.id.clone(),
+            relative_path: file.relative_path.clone(),
+        })
+        .collect::<Vec<_>>();
+    let rewrites = plan_rename_link_rewrites(&notes, &sources, target_identity, &new_relative_path);
+    let updated_links = rewrites
+        .iter()
+        .map(|rewrite| rewrite.replacement_count)
+        .sum();
+    let updated_files = rewrites.len();
+    let mut final_contents = rewrites
+        .into_iter()
+        .map(|rewrite| (rewrite.relative_path, rewrite.content))
+        .collect::<BTreeMap<_, _>>();
+    let target_content = sources
+        .iter()
+        .find(|source| source.relative_path == relative_path)
+        .expect("the scanned target has loaded content")
+        .content
+        .clone();
+    final_contents
+        .entry(relative_path.to_owned())
+        .or_insert(target_content);
+
+    let mut entries: Vec<RenameTransactionEntry> = Vec::with_capacity(final_contents.len());
+    for (path, content) in final_contents {
+        let prepared = (|| {
+            let source = sources
+                .iter()
+                .find(|source| source.relative_path == path)
+                .expect("every rewrite source was loaded");
+            let source_path = resolve_vault_markdown_file(&root, &path)?;
+            let final_path = if path == relative_path {
+                destination_path.clone()
+            } else {
+                source_path.clone()
+            };
+            let temporary_path = temporary_sibling_path(&final_path)?;
+            let backup_path = transaction_sibling_path(&source_path, "backup")?;
+            let metadata = fs::metadata(&source_path)
+                .map_err(|error| VaultError::io("A Markdown file could not be inspected", error))?;
+            prepare_transaction_file(&temporary_path, &content, &metadata)?;
+            Ok::<_, VaultError>(RenameTransactionEntry {
+                backup_path,
+                destination_path: final_path,
+                original_content: source.content.clone(),
+                original_path: source_path,
+                temporary_path,
+            })
+        })();
+        match prepared {
+            Ok(entry) => entries.push(entry),
+            Err(error) => {
+                cleanup_transaction_files(&entries);
+                return Err(error);
+            }
+        }
+    }
+
+    let recheck_result = (|| {
+        for entry in &entries {
+            let current = fs::read(&entry.original_path)
+                .map_err(|error| VaultError::io("A Markdown file could not be rechecked", error))?;
+            if current != entry.original_content.as_bytes() {
+                return Err(VaultError::conflict());
+            }
+        }
+        if destination_path.exists() {
+            let existing = fs::canonicalize(&destination_path).map_err(|error| {
+                VaultError::io("The rename destination could not be rechecked", error)
+            })?;
+            if existing != original_path {
+                return Err(VaultError::file_exists());
+            }
+        }
+        Ok::<_, VaultError>(())
+    })();
+    if let Err(error) = recheck_result {
+        cleanup_transaction_files(&entries);
+        return Err(error);
+    }
+
+    commit_rename_transaction(&entries, fail_after_installations)?;
+    Ok(RenameOutcome {
+        relative_path: new_relative_path,
+        updated_files,
+        updated_links,
+    })
+}
+
+fn prepare_transaction_file(
+    temporary_path: &Path,
+    content: &str,
+    source_metadata: &fs::Metadata,
+) -> Result<(), VaultError> {
+    let mut file = OpenOptions::new()
+        .create_new(true)
+        .write(true)
+        .open(temporary_path)
+        .map_err(|error| VaultError::io("A rename temporary file could not be created", error))?;
+    if let Err(error) = file.set_permissions(source_metadata.permissions()) {
+        drop(file);
+        let _ = fs::remove_file(temporary_path);
+        return Err(VaultError::io(
+            "A rename temporary file could not be prepared",
+            error,
+        ));
+    }
+    use std::io::Write;
+    if let Err(error) = file
+        .write_all(content.as_bytes())
+        .and_then(|_| file.sync_all())
+    {
+        drop(file);
+        let _ = fs::remove_file(temporary_path);
+        return Err(VaultError::io(
+            "A rename temporary file could not be written",
+            error,
+        ));
+    }
+    Ok(())
+}
+
+fn commit_rename_transaction(
+    entries: &[RenameTransactionEntry],
+    fail_after_installations: Option<usize>,
+) -> Result<(), VaultError> {
+    let mut backed_up = 0_usize;
+    for entry in entries {
+        if let Err(error) = fs::rename(&entry.original_path, &entry.backup_path) {
+            return rollback_rename_transaction(
+                entries,
+                backed_up,
+                0,
+                VaultError::io("A Markdown backup could not be created", error),
+            );
+        }
+        backed_up += 1;
+    }
+
+    for (installed, entry) in entries.iter().enumerate() {
+        if fail_after_installations == Some(installed) {
+            return rollback_rename_transaction(
+                entries,
+                backed_up,
+                installed,
+                VaultError::state("The simulated rename interruption was triggered."),
+            );
+        }
+        if let Err(error) = fs::rename(&entry.temporary_path, &entry.destination_path) {
+            return rollback_rename_transaction(
+                entries,
+                backed_up,
+                installed,
+                VaultError::io("A renamed Markdown file could not be installed", error),
+            );
+        }
+    }
+
+    for entry in entries {
+        let _ = fs::remove_file(&entry.backup_path);
+        sync_parent_directory(&entry.original_path)?;
+        if entry.destination_path.parent() != entry.original_path.parent() {
+            sync_parent_directory(&entry.destination_path)?;
+        }
+    }
+    Ok(())
+}
+
+fn rollback_rename_transaction(
+    entries: &[RenameTransactionEntry],
+    backed_up: usize,
+    installed: usize,
+    original_error: VaultError,
+) -> Result<(), VaultError> {
+    let mut rollback_error = None;
+    for entry in entries[..installed].iter().rev() {
+        if let Err(error) = fs::remove_file(&entry.destination_path) {
+            rollback_error.get_or_insert(error);
+        }
+    }
+    for entry in entries[..backed_up].iter().rev() {
+        if let Err(error) = fs::rename(&entry.backup_path, &entry.original_path) {
+            rollback_error.get_or_insert(error);
+        }
+    }
+    cleanup_transaction_files(entries);
+
+    if let Some(error) = rollback_error {
+        return Err(VaultError::io(
+            "The rename failed and its backups could not be fully restored",
+            error,
+        ));
+    }
+    Err(original_error)
+}
+
+fn cleanup_transaction_files(entries: &[RenameTransactionEntry]) {
+    for entry in entries {
+        let _ = fs::remove_file(&entry.temporary_path);
+    }
+}
+
+fn transaction_sibling_path(destination: &Path, label: &str) -> Result<PathBuf, VaultError> {
+    let parent = destination.parent().ok_or_else(|| {
+        VaultError::invalid_file("The Markdown file does not have a writable parent directory.")
+    })?;
+    let name = destination
+        .file_name()
+        .and_then(|name| name.to_str())
+        .ok_or_else(|| VaultError::invalid_file("The Markdown file name is not valid UTF-8."))?;
+    let counter = TEMPORARY_FILE_COUNTER.fetch_add(1, Ordering::Relaxed);
+    Ok(parent.join(format!(
+        ".{name}.anchored-{}-{counter}.{label}",
+        std::process::id()
+    )))
+}
+
 fn safe_suggested_markdown_name(suggested_name: &str) -> &str {
     let path = Path::new(suggested_name);
     if path.components().count() == 1 && is_markdown(path) {
@@ -1207,8 +1539,8 @@ mod tests {
     use super::{
         apply_identity_migration_plan, build_identity_migration_preview, canonical_vault_root,
         create_markdown_file, enrich_vault_metadata, inspect_note_identity, read_markdown_file,
-        reconcile_vault_identities, save_markdown_file, scan_vault, NoteIdentityStatus,
-        MAX_MARKDOWN_FILE_BYTES,
+        reconcile_vault_identities, rename_markdown_file, save_markdown_file, scan_vault,
+        NoteIdentityStatus, RenameOutcome, MAX_MARKDOWN_FILE_BYTES,
     };
 
     #[test]
@@ -1576,6 +1908,103 @@ mod tests {
             fs::read_to_string(&note).expect("read protected note"),
             original
         );
+    }
+
+    #[test]
+    fn renames_a_note_and_updates_body_and_property_links() {
+        let vault = tempdir().expect("create fixture vault");
+        let original = vault.path().join("Old Name.md");
+        let destination = vault.path().join("New Name.md");
+        fs::write(
+            &original,
+            "---\nid: 01JZQ7K8P4A6F2M9V3C5T7X1BY\naliases: [Legacy]\n---\n# Note\n",
+        )
+        .expect("write target note");
+        fs::write(
+            vault.path().join("Reference.md"),
+            concat!(
+                "---\nid: 01JZQ91T3AA6F2M9V3C5T7X1BZ\n",
+                "related: \"[[Legacy]]\"\n---\n",
+                "[[Old Name]] [[Old Name#Part|Shown]]\n",
+            ),
+        )
+        .expect("write reference note");
+
+        let outcome = rename_markdown_file(vault.path(), "Old Name.md", &destination, None)
+            .expect("rename note");
+
+        assert_eq!(
+            outcome,
+            RenameOutcome {
+                relative_path: "New Name.md".to_owned(),
+                updated_files: 1,
+                updated_links: 3,
+            }
+        );
+        assert!(!original.exists());
+        assert!(destination.exists());
+        assert_eq!(
+            fs::read_to_string(vault.path().join("Reference.md")).expect("read reference note"),
+            concat!(
+                "---\nid: 01JZQ91T3AA6F2M9V3C5T7X1BZ\n",
+                "related: \"[[New Name|Legacy]]\"\n---\n",
+                "[[New Name]] [[New Name#Part|Shown]]\n",
+            )
+        );
+    }
+
+    #[test]
+    fn restores_every_file_when_a_rename_is_interrupted() {
+        let vault = tempdir().expect("create fixture vault");
+        let target_content = "---\nid: 01JZQ7K8P4A6F2M9V3C5T7X1BY\n---\n# Note\n";
+        let reference_content = "---\nid: 01JZQ91T3AA6F2M9V3C5T7X1BZ\n---\n[[Old Name]]\n";
+        fs::write(vault.path().join("Old Name.md"), target_content).expect("write target note");
+        fs::write(vault.path().join("Reference.md"), reference_content)
+            .expect("write reference note");
+
+        let error = rename_markdown_file(
+            vault.path(),
+            "Old Name.md",
+            &vault.path().join("New Name.md"),
+            Some(1),
+        )
+        .expect_err("interrupt rename");
+
+        assert_eq!(error.code, "vaultStateError");
+        assert_eq!(
+            fs::read_to_string(vault.path().join("Old Name.md")).expect("read restored target"),
+            target_content
+        );
+        assert_eq!(
+            fs::read_to_string(vault.path().join("Reference.md")).expect("read restored reference"),
+            reference_content
+        );
+        assert!(!vault.path().join("New Name.md").exists());
+        assert!(fs::read_dir(vault.path())
+            .expect("read vault")
+            .all(|entry| !entry
+                .expect("read vault entry")
+                .file_name()
+                .to_string_lossy()
+                .contains(".anchored-")));
+    }
+
+    #[test]
+    fn refuses_to_rename_a_note_without_a_unique_identity() {
+        let vault = tempdir().expect("create fixture vault");
+        fs::write(vault.path().join("Legacy.md"), "# Legacy\n").expect("write legacy note");
+
+        let error = rename_markdown_file(
+            vault.path(),
+            "Legacy.md",
+            &vault.path().join("Renamed.md"),
+            None,
+        )
+        .expect_err("reject unidentified note");
+
+        assert_eq!(error.code, "identityConflict");
+        assert!(vault.path().join("Legacy.md").exists());
+        assert!(!vault.path().join("Renamed.md").exists());
     }
 
     #[test]
