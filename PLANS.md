@@ -153,7 +153,7 @@ and preserves link integrity across filename changes.
      `cc8f863 feat(app): review ID migration`, and
      `d173413 fix(editor): show canonical sample ID`
 
-10. [ ] **Chunk: Add links and rename updates**
+10. [x] **Chunk: Add links and rename updates**
     - Files: link parser/registry/resolver, backlinks, rename transaction, tests
     - Change: Support wikilinks and aliases, ambiguity handling, backlinks, and
       atomic cross-file reference updates triggered only by filename changes.
@@ -165,7 +165,9 @@ and preserves link integrity across filename changes.
     - Commits: `f7b9ad2 feat(links): plan rename updates`,
       `065ca81 feat(files): transact note renames`,
       `57be496 feat(files): recover rename crashes`, and
-      `41e5a16 feat(app): rename identified notes`
+      `41e5a16 feat(app): rename identified notes`; follow-up verification and
+      usability fixes: `27f095e`, `8700583`, `6f64203`, `ba79d3b`, and
+      `200afc1`
 
 11. [ ] **Chunk: Add retrieval and continuity**
     - Files: search and recent-file features, settings persistence, tests
@@ -365,6 +367,12 @@ Every future large plan must identify:
   rename lock. All disposable files were hash-verified unchanged after the
   stall, and all 46 Rust tests plus strict Clippy pass. Native rename QA must be
   rerun with the rebuilt self-contained app.
+- 2026-07-16: The native disposable-vault rename test passed in the
+  self-contained app. `Notes/Old Name.md` moved to `Writing/New Name.md`; its
+  permanent ID and content remained intact; the filename, alias-property, and
+  path-plus-heading links in `Reference.md` all updated exactly; the unrelated
+  note remained unchanged; and no temporary, backup, or journal files remained.
+  Chunk 10 is complete.
 
 ## Completion
 
@@ -375,8 +383,7 @@ Every future large plan must identify:
   concept-fidelity checks.
 - **Commits:** Verified implementation commits are recorded with each completed
   chunk above.
-- **Remaining risks:** Native disposable-vault rename verification, remaining
-  rename edge fixtures, packaged-app verification, and the seven-day
-  observation period.
-- **Follow-up:** Complete rename edge fixtures, then run the native
-  disposable-vault rename and reference-update test to close chunk 10.
+- **Remaining risks:** Retrieval performance on a representative vault,
+  packaged-app verification, and the seven-day observation period.
+- **Follow-up:** Begin chunk 11 with bounded global Markdown search and recent
+  files while preserving the established vault safety boundary.
