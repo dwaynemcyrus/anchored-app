@@ -6,7 +6,7 @@ does not authorize technical setup or implementation.
 
 ## Status and sources
 
-- **Status:** draft
+- **Status:** approved
 - **Owner:** Dwayne Cyrus
 - **Last reviewed:** 2026-07-16
 - **Source documents or links:** `anchor-stuff.md`
@@ -238,4 +238,4 @@ Before changing the status to `approved`, confirm:
 - [x] Success and acceptance criteria are fully observable.
 - [x] Assumptions are visible.
 - [x] No blocking `[NEEDS DECISION]` items remain.
-- [ ] The human explicitly approved this overview.
+- [x] The human explicitly approved this overview on 2026-07-16.
