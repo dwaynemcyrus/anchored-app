@@ -37,6 +37,9 @@ Git commit. The format follows [Keep a Changelog], and releases follow
   uniquely resolved filename, path, alias, heading, display-label, and quoted
   property links as one recoverable transaction; ambiguous links remain
   unchanged, and unfinished edits block the operation.
+- Vault status notices appear clear of note-header controls, can be dismissed,
+  and expire automatically when they do not require an identity-migration
+  decision.
 
 [Keep a Changelog]: https://keepachangelog.com/en/1.1.0/
 [Semantic Versioning]: https://semver.org/spec/v2.0.0.html

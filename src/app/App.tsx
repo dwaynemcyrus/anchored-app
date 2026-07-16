@@ -435,6 +435,14 @@ export function App() {
     return () => window.removeEventListener("focus", refreshVault);
   }, [refreshVault]);
 
+  useEffect(() => {
+    if (!vaultMessage || (vaultSelected && notesNeedingIdentity > 0)) {
+      return;
+    }
+    const timeout = window.setTimeout(() => setVaultMessage(null), 6_000);
+    return () => window.clearTimeout(timeout);
+  }, [notesNeedingIdentity, vaultMessage, vaultSelected]);
+
   async function selectDocument(documentId: string) {
     const document = documentsRef.current.find(
       (candidate) => candidate.id === documentId,
@@ -733,7 +741,17 @@ export function App() {
       </div>
       {vaultMessage ? (
         <div className="vault-message" role="status">
-          {vaultMessage}
+          <div className="vault-message__row">
+            <span>{vaultMessage}</span>
+            <button
+              aria-label="Dismiss notification"
+              className="vault-message__dismiss"
+              type="button"
+              onClick={() => setVaultMessage(null)}
+            >
+              Dismiss
+            </button>
+          </div>
           {vaultSelected && notesNeedingIdentity > 0 ? (
             <button
               className="vault-message__action"

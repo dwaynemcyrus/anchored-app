@@ -203,6 +203,12 @@ describe("App", () => {
       screen.queryByRole("button", { name: "Leadership.md" }),
     ).not.toBeInTheDocument();
     expect(screen.getByText("1 Markdown files found.")).toBeInTheDocument();
+    await user.click(
+      screen.getByRole("button", { name: "Dismiss notification" }),
+    );
+    expect(
+      screen.queryByText("1 Markdown files found."),
+    ).not.toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "Own Note.md" }));
 

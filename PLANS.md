@@ -350,6 +350,12 @@ Every future large plan must identify:
   and rendered checks at desktop and 400×800 pass. A native disposable-vault
   rename test and remaining filename/path edge fixtures are still required to
   close chunk 10.
+- 2026-07-16: Native rename QA exposed two test-delivery and interface issues.
+  Manual testing now uses a self-contained debug app instead of a transient
+  development server. Vault notices were moved away from note-header actions,
+  given an explicit Dismiss control, and configured to expire after six
+  seconds when no identity decision is required. Frontend gates and the
+  dismissal interaction test pass; native rename QA remains open.
 
 ## Completion
 

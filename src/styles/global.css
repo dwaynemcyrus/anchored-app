@@ -569,8 +569,8 @@ input:focus-visible,
 .vault-message {
   position: fixed;
   z-index: 4;
-  top: 52px;
   right: 12px;
+  bottom: 38px;
   max-width: min(360px, calc(100vw - 24px));
   padding: 9px 12px;
   border: 1px solid var(--color-rule);
@@ -578,6 +578,23 @@ input:focus-visible,
   color: var(--color-text-muted);
   font-size: 12px;
   line-height: 1.4;
+}
+
+.vault-message__row {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+}
+
+.vault-message__dismiss {
+  flex: 0 0 auto;
+  padding: 0;
+  background: transparent;
+  color: var(--color-text);
+  cursor: pointer;
+  font: inherit;
+  text-decoration: underline;
+  text-underline-offset: 3px;
 }
 
 .vault-message--error {
