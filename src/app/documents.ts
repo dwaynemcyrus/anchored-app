@@ -1,16 +1,19 @@
+import type { VaultSnapshot } from "../lib/tauri/vault";
+
 export type AnchoredDocument = {
   id: string;
   name: string;
-  folder: "Notes" | "Writing" | "Journal" | "Archive";
+  folder: string;
   title: string;
   aliases: string[];
   tags: string[];
   body: string;
   relatedDocumentId?: string;
   relatedLabel?: string;
+  previewAvailable?: boolean;
 };
 
-export const folders: AnchoredDocument["folder"][] = [
+export const initialFolders: string[] = [
   "Notes",
   "Writing",
   "Journal",
@@ -67,4 +70,19 @@ export function createUntitledDocument(
     tags: [],
     body: "",
   };
+}
+
+export function documentsFromVault(
+  snapshot: VaultSnapshot,
+): AnchoredDocument[] {
+  return snapshot.files.map((file) => ({
+    id: `vault:${file.relativePath}`,
+    name: file.name,
+    folder: file.parent || snapshot.name,
+    title: file.name.replace(/\.md$/i, ""),
+    aliases: [],
+    tags: [],
+    body: "",
+    previewAvailable: false,
+  }));
 }

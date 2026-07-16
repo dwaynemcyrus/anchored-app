@@ -1,18 +1,23 @@
 import type { AnchoredDocument } from "../documents";
 
 type StatusBarProps = {
-  document: AnchoredDocument;
+  document?: AnchoredDocument;
+  vaultName: string;
 };
 
-export function StatusBar({ document }: StatusBarProps) {
+export function StatusBar({ document, vaultName }: StatusBarProps) {
   return (
     <footer className="status-bar">
       <div className="status-bar__path">
-        <span>Personal</span>
-        <span aria-hidden="true">›</span>
-        <span>{document.folder}</span>
-        <span aria-hidden="true">›</span>
-        <span>{document.name}</span>
+        <span>{vaultName}</span>
+        {document ? (
+          <>
+            <span aria-hidden="true">›</span>
+            <span>{document.folder}</span>
+            <span aria-hidden="true">›</span>
+            <span>{document.name}</span>
+          </>
+        ) : null}
       </div>
       <div className="status-bar__metadata">
         <span>Markdown</span>

@@ -1,6 +1,6 @@
 import type { RefObject } from "react";
 
-import { folders, type AnchoredDocument } from "../documents";
+import type { AnchoredDocument } from "../documents";
 import {
   ChevronIcon,
   FileIcon,
@@ -14,6 +14,7 @@ type FileRailProps = {
   activeDocumentId: string;
   documents: AnchoredDocument[];
   expandedFolders: Set<string>;
+  folders: string[];
   query: string;
   searchInputRef: RefObject<HTMLInputElement | null>;
   onCreateNote: () => void;
@@ -26,6 +27,7 @@ export function FileRail({
   activeDocumentId,
   documents,
   expandedFolders,
+  folders,
   query,
   searchInputRef,
   onCreateNote,
@@ -112,7 +114,11 @@ export function FileRail({
             </div>
           );
         })}
+        {documents.length === 0 ? (
+          <p className="file-tree__empty">No Markdown notes.</p>
+        ) : null}
         {normalizedQuery.length > 0 &&
+        documents.length > 0 &&
         !documents.some(
           (document) =>
             document.name.toLocaleLowerCase().includes(normalizedQuery) ||

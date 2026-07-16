@@ -1,14 +1,28 @@
 import type { AnchoredDocument } from "../documents";
 
 type EditorSurfaceProps = {
-  document: AnchoredDocument;
+  document?: AnchoredDocument;
+  vaultName: string;
   onOpenLinkedDocument: (documentId: string) => void;
 };
 
 export function EditorSurface({
   document,
+  vaultName,
   onOpenLinkedDocument,
 }: EditorSurfaceProps) {
+  if (!document) {
+    return (
+      <main className="editor-surface">
+        <header className="editor-surface__header">{vaultName}</header>
+        <section className="document document--empty">
+          <h1>No Markdown notes</h1>
+          <p>Choose another vault to continue.</p>
+        </section>
+      </main>
+    );
+  }
+
   const frontMatter = [
     "---",
     `id: ${
@@ -33,9 +47,13 @@ export function EditorSurface({
         role="textbox"
         tabIndex={0}
       >
-        <pre className="front-matter">{frontMatter}</pre>
+        {document.previewAvailable === false ? null : (
+          <pre className="front-matter">{frontMatter}</pre>
+        )}
         <h1>{document.title}</h1>
-        {document.body.length > 0 ? (
+        {document.previewAvailable === false ? (
+          <p className="document__empty">Markdown content is not loaded.</p>
+        ) : document.body.length > 0 ? (
           <p>{document.body}</p>
         ) : (
           <p className="document__empty">Start writing…</p>
