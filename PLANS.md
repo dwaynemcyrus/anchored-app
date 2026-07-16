@@ -113,7 +113,9 @@ and preserves link integrity across filename changes.
      grant no recursive mutation permission in this chunk.
    - Commits: `0919ada feat(files): add vault scan core`,
      `04faa24 feat(files): wire vault selection`,
-     `41b8a99 feat(files): read markdown safely`; visible opening pending commit.
+     `41b8a99 feat(files): read markdown safely`,
+     `34f8f78 feat(editor): open markdown files`; manual native dialog smoke
+     test remains.
 
 8. [ ] **Chunk: Add reliable Markdown editing**
    - Files: editor/files features, Rust write commands, CodeMirror setup, tests
