@@ -6,6 +6,7 @@ export type DocumentSaveState =
 export type AnchoredDocument = {
   id: string;
   name: string;
+  outgoingLinks: string[];
   folder: string;
   title: string;
   aliases: string[];
@@ -32,6 +33,7 @@ export const initialDocuments: AnchoredDocument[] = [
   {
     id: "leadership",
     name: "Leadership.md",
+    outgoingLinks: ["Reading Notes"],
     folder: "Notes",
     title: "Leadership",
     aliases: ["Leading Well"],
@@ -43,6 +45,7 @@ export const initialDocuments: AnchoredDocument[] = [
   {
     id: "reading-notes",
     name: "Reading Notes.md",
+    outgoingLinks: [],
     folder: "Notes",
     title: "Reading Notes",
     aliases: [],
@@ -52,6 +55,7 @@ export const initialDocuments: AnchoredDocument[] = [
   {
     id: "weekly-review",
     name: "Weekly Review.md",
+    outgoingLinks: [],
     folder: "Notes",
     title: "Weekly Review",
     aliases: [],
@@ -72,6 +76,7 @@ export function createUntitledDocument(
   return {
     id: `draft-${crypto.randomUUID()}`,
     name: `${title}.md`,
+    outgoingLinks: [],
     folder: "Notes",
     title,
     aliases: [],
@@ -88,6 +93,7 @@ export function documentsFromVault(
   return snapshot.files.map((file) => ({
     id: file.id ? `vault-id:${file.id}` : `vault-path:${file.relativePath}`,
     name: file.name,
+    outgoingLinks: file.outgoingLinks ?? [],
     folder: file.parent || snapshot.name,
     title: file.name.replace(/\.md$/i, ""),
     aliases: file.aliases ?? [],
@@ -124,6 +130,7 @@ export function mergeDocumentsFromVault(
           folder: document.folder,
           id: document.id,
           name: document.name,
+          outgoingLinks: document.outgoingLinks,
           relativePath: document.relativePath,
           title: document.title,
         }

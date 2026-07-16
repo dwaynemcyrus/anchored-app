@@ -15,7 +15,7 @@ use tauri_plugin_dialog::DialogExt;
 
 use crate::metadata::{
     add_note_identity, assign_new_note_identity, generate_note_id, inspect_note_aliases,
-    inspect_note_identity, NoteIdentityStatus,
+    inspect_note_identity, inspect_wikilinks, NoteIdentityStatus,
 };
 
 const MAX_VAULT_ENTRIES: usize = 50_000;
@@ -35,6 +35,7 @@ pub struct VaultFile {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub id: Option<String>,
     pub aliases: Vec<String>,
+    pub outgoing_links: Vec<String>,
     pub name: String,
     pub parent: String,
     pub relative_path: String,
@@ -480,6 +481,7 @@ fn scan_vault(root: &Path) -> Result<VaultSnapshot, VaultError> {
             files.push(VaultFile {
                 id: None,
                 aliases: Vec::new(),
+                outgoing_links: Vec::new(),
                 name,
                 parent,
                 relative_path: relative_path.to_owned(),
@@ -519,14 +521,14 @@ fn enrich_vault_metadata(root: &Path, files: &mut [VaultFile]) -> Result<(), Vau
     for file in files.iter() {
         let signature = vault_file_signature(root, &file.relative_path)?;
         if signature.size_bytes > MAX_MARKDOWN_FILE_BYTES {
-            indexed.push((None, Vec::new()));
+            indexed.push((None, Vec::new(), Vec::new()));
             continue;
         }
         let path = resolve_vault_markdown_file(root, &file.relative_path)?;
         let bytes = fs::read(path)
             .map_err(|error| VaultError::io("Note metadata could not be read", error))?;
         let Ok(content) = String::from_utf8(bytes) else {
-            indexed.push((None, Vec::new()));
+            indexed.push((None, Vec::new(), Vec::new()));
             continue;
         };
         let id = match inspect_note_identity(&content) {
@@ -536,12 +538,17 @@ fn enrich_vault_metadata(root: &Path, files: &mut [VaultFile]) -> Result<(), Vau
             }
             _ => None,
         };
-        indexed.push((id, inspect_note_aliases(&content)));
+        indexed.push((
+            id,
+            inspect_note_aliases(&content),
+            inspect_wikilinks(&content),
+        ));
     }
 
-    for (file, (id, aliases)) in files.iter_mut().zip(indexed) {
+    for (file, (id, aliases, outgoing_links)) in files.iter_mut().zip(indexed) {
         file.id = id.filter(|id| identity_counts[id] == 1);
         file.aliases = aliases;
+        file.outgoing_links = outgoing_links;
     }
     Ok(())
 }
@@ -1211,7 +1218,7 @@ mod tests {
         fs::write(vault.path().join("Zulu.md"), "# Zulu").expect("write root note");
         fs::write(
             vault.path().join("Notes/Alpha.MD"),
-            "---\nid: 01JZQ7K8P4A6F2M9V3C5T7X1BY\naliases: [First note]\n---\n# Alpha",
+            "---\nid: 01JZQ7K8P4A6F2M9V3C5T7X1BY\naliases: [First note]\n---\n# Alpha\n[[Zulu]]",
         )
         .expect("write nested note");
         fs::write(vault.path().join("Notes/ignore.txt"), "ignored").expect("write ignored file");
@@ -1230,6 +1237,7 @@ mod tests {
             Some("01JZQ7K8P4A6F2M9V3C5T7X1BY")
         );
         assert_eq!(snapshot.files[0].aliases, vec!["First note"]);
+        assert_eq!(snapshot.files[0].outgoing_links, vec!["Zulu"]);
         assert_eq!(snapshot.warnings.skipped_symlinks, 0);
     }
 

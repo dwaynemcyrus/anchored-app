@@ -123,6 +123,118 @@ pub fn inspect_note_aliases(content: &str) -> Vec<String> {
     unique
 }
 
+pub fn inspect_wikilinks(content: &str) -> Vec<String> {
+    let body = match front_matter_bounds(content) {
+        Ok(Some(bounds)) => {
+            let yaml = &content[bounds.body_start..bounds.body_end];
+            let Ok(documents) = YamlLoader::load_from_str(yaml) else {
+                return Vec::new();
+            };
+            if documents
+                .first()
+                .is_some_and(|document| !matches!(document, Yaml::Hash(_)))
+            {
+                return Vec::new();
+            }
+            let closing = &content[bounds.body_end..];
+            closing
+                .find('\n')
+                .map_or("", |line_end| &closing[line_end + 1..])
+        }
+        Ok(None) => content,
+        Err(()) => return Vec::new(),
+    };
+    let mut links = Vec::new();
+    let mut fence: Option<(u8, usize)> = None;
+
+    for line in body.lines() {
+        if line.starts_with("    ") || line.starts_with('\t') {
+            continue;
+        }
+        if let Some(marker) = fence_marker(line) {
+            if fence.is_some_and(|open| open.0 == marker.0 && marker.1 >= open.1) {
+                fence = None;
+            } else if fence.is_none() {
+                fence = Some(marker);
+            }
+            continue;
+        }
+        if fence.is_some() {
+            continue;
+        }
+        inspect_inline_wikilinks(line, &mut links);
+    }
+    links
+}
+
+fn fence_marker(line: &str) -> Option<(u8, usize)> {
+    let indentation = line.bytes().take_while(|byte| *byte == b' ').count();
+    if indentation > 3 {
+        return None;
+    }
+    let remaining = &line.as_bytes()[indentation..];
+    let marker = *remaining.first()?;
+    if marker != b'`' && marker != b'~' {
+        return None;
+    }
+    let length = remaining.iter().take_while(|byte| **byte == marker).count();
+    (length >= 3).then_some((marker, length))
+}
+
+fn inspect_inline_wikilinks(line: &str, links: &mut Vec<String>) {
+    let bytes = line.as_bytes();
+    let mut index = 0;
+    let mut inline_code_delimiter = 0;
+
+    while index < bytes.len() {
+        if bytes[index] == b'`' && !is_escaped(bytes, index) {
+            let length = bytes[index..]
+                .iter()
+                .take_while(|byte| **byte == b'`')
+                .count();
+            if inline_code_delimiter == 0 {
+                inline_code_delimiter = length;
+            } else if inline_code_delimiter == length {
+                inline_code_delimiter = 0;
+            }
+            index += length;
+            continue;
+        }
+        if inline_code_delimiter == 0
+            && bytes[index..].starts_with(b"[[")
+            && !is_escaped(bytes, index)
+        {
+            let target_start = index + 2;
+            let mut target_end = target_start;
+            while target_end + 1 < bytes.len() && !bytes[target_end..].starts_with(b"]]") {
+                target_end += 1;
+            }
+            if target_end + 1 < bytes.len() {
+                let target = line[target_start..target_end]
+                    .split('|')
+                    .next()
+                    .unwrap_or_default()
+                    .trim();
+                if !target.is_empty() && !links.iter().any(|link| link == target) {
+                    links.push(target.to_owned());
+                }
+                index = target_end + 2;
+                continue;
+            }
+        }
+        index += 1;
+    }
+}
+
+fn is_escaped(bytes: &[u8], index: usize) -> bool {
+    let backslashes = bytes[..index]
+        .iter()
+        .rev()
+        .take_while(|byte| **byte == b'\\')
+        .count();
+    backslashes % 2 == 1
+}
+
 pub fn add_note_identity(content: &str, id: &str) -> Result<String, IdentityMutationError> {
     let parsed = Ulid::from_string(id).map_err(|_| IdentityMutationError::InvalidIdentity)?;
     if parsed.to_string() != id {
@@ -295,7 +407,7 @@ fn find_top_level_id_value(yaml: &str, id: &str) -> Option<std::ops::Range<usize
 mod tests {
     use super::{
         add_note_identity, assign_new_note_identity, generate_note_id, inspect_note_aliases,
-        inspect_note_identity, IdentityMutationError, NoteIdentityStatus,
+        inspect_note_identity, inspect_wikilinks, IdentityMutationError, NoteIdentityStatus,
     };
 
     const ID: &str = "01JZQ7K8P4A6F2M9V3C5T7X1BY";
@@ -328,6 +440,33 @@ mod tests {
         assert!(inspect_note_aliases("---\naliases: [one\n---\n").is_empty());
         assert!(inspect_note_aliases("---\naliases: one\naliases: two\n---\n").is_empty());
         assert!(inspect_note_aliases("---\naliases: [valid, 2]\n---\n").is_empty());
+    }
+
+    #[test]
+    fn indexes_unique_wikilink_targets_from_markdown_body() {
+        let content = concat!(
+            "---\nrelated: '[[Front matter]]'\n---\n",
+            "See [[Notes/Leadership#Habits|Leading habits]] and ![[Zürich]].\n",
+            "Again [[Zürich]].\n",
+        );
+
+        assert_eq!(
+            inspect_wikilinks(content),
+            vec!["Notes/Leadership#Habits", "Zürich"]
+        );
+    }
+
+    #[test]
+    fn ignores_wikilink_text_in_code_or_escaped_markdown() {
+        let content = concat!(
+            "\\[[Escaped]] and `[[Inline code]]`\n",
+            "```md\n[[Fenced code]]\n```\n",
+            "    [[Indented code]]\n",
+            "[[Real note]]\n",
+        );
+
+        assert_eq!(inspect_wikilinks(content), vec!["Real note"]);
+        assert!(inspect_wikilinks("---\ntags: [broken\n---\n[[Unsafe]]").is_empty());
     }
 
     #[test]

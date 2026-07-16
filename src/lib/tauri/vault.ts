@@ -4,6 +4,7 @@ export type VaultFile = {
   aliases?: string[];
   id?: string;
   name: string;
+  outgoingLinks?: string[];
   parent: string;
   relativePath: string;
 };
