@@ -5,7 +5,7 @@ use std::{
     path::{Component, Path, PathBuf},
     sync::{
         atomic::{AtomicU64, Ordering},
-        RwLock,
+        Mutex, RwLock,
     },
 };
 
@@ -22,11 +22,13 @@ use crate::metadata::{
 const MAX_VAULT_ENTRIES: usize = 50_000;
 const MAX_VAULT_DEPTH: usize = 64;
 const MAX_MARKDOWN_FILE_BYTES: u64 = 10 * 1024 * 1024;
+const RENAME_JOURNAL_NAME: &str = ".anchored-rename-journal.json";
 static TEMPORARY_FILE_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 #[derive(Default)]
 pub struct VaultState {
     migration_preview: RwLock<Option<IdentityMigrationPlan>>,
+    rename_transaction: Mutex<()>,
     root: RwLock<Option<PathBuf>>,
 }
 
@@ -138,6 +140,31 @@ struct RenameTransactionEntry {
     original_content: String,
     original_path: PathBuf,
     temporary_path: PathBuf,
+}
+
+#[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+enum RenameJournalPhase {
+    Prepared,
+    BackedUp,
+    Installed,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct RenameJournalEntry {
+    backup_path: String,
+    destination_path: String,
+    original_path: String,
+    temporary_path: String,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct RenameJournal {
+    entries: Vec<RenameJournalEntry>,
+    phase: RenameJournalPhase,
+    version: u32,
 }
 
 #[derive(Debug, PartialEq, Eq, Serialize)]
@@ -257,6 +284,7 @@ pub async fn select_vault(
         .into_path()
         .map_err(|error| VaultError::invalid(format!("Unsupported vault path: {error}")))?;
     let root = canonical_vault_root(&selected_path)?;
+    recover_rename_transaction(&root)?;
     let mut snapshot = scan_vault(&root)?;
     let baseline_path = identity_baseline_path(&app, &root)?;
     let summary = reconcile_vault_identities(&root, &snapshot.files, &baseline_path)?;
@@ -288,6 +316,7 @@ pub async fn rescan_vault(
     let Some(root) = root else {
         return Ok(None);
     };
+    recover_rename_transaction(&root)?;
     let mut snapshot = scan_vault(&root)?;
     let baseline_path = identity_baseline_path(&app, &root)?;
     let summary = reconcile_vault_identities(&root, &snapshot.files, &baseline_path)?;
@@ -364,17 +393,22 @@ pub async fn create_vault_file(
 }
 
 #[tauri::command]
-pub async fn rename_vault_file(
+pub fn rename_vault_file(
     app: AppHandle,
     state: State<'_, VaultState>,
     relative_path: String,
 ) -> Result<Option<RenameOutcome>, VaultError> {
+    let _rename_guard = state
+        .rename_transaction
+        .lock()
+        .map_err(|_| VaultError::state("The note rename lock could not be acquired."))?;
     let root = state
         .root
         .read()
         .map_err(|_| VaultError::state("The selected vault state could not be read."))?
         .clone()
         .ok_or_else(|| VaultError::state("Select a vault before renaming a Markdown file."))?;
+    recover_rename_transaction(&root)?;
     let suggested_name = Path::new(&relative_path)
         .file_name()
         .and_then(|name| name.to_str())
@@ -1196,7 +1230,7 @@ fn rename_markdown_file(
         return Err(error);
     }
 
-    commit_rename_transaction(&entries, fail_after_installations)?;
+    commit_rename_transaction(&root, &entries, fail_after_installations)?;
     Ok(RenameOutcome {
         relative_path: new_relative_path,
         updated_files,
@@ -1238,9 +1272,19 @@ fn prepare_transaction_file(
 }
 
 fn commit_rename_transaction(
+    root: &Path,
     entries: &[RenameTransactionEntry],
     fail_after_installations: Option<usize>,
 ) -> Result<(), VaultError> {
+    let journal_path = root.join(RENAME_JOURNAL_NAME);
+    if journal_path.exists() {
+        return Err(VaultError::rename_conflict(
+            "A previous note rename needs recovery before another rename can begin.",
+        ));
+    }
+    let mut journal = build_rename_journal(root, entries)?;
+    write_rename_journal(&journal_path, &journal)?;
+
     let mut backed_up = 0_usize;
     for entry in entries {
         if let Err(error) = fs::rename(&entry.original_path, &entry.backup_path) {
@@ -1248,10 +1292,15 @@ fn commit_rename_transaction(
                 entries,
                 backed_up,
                 0,
+                &journal_path,
                 VaultError::io("A Markdown backup could not be created", error),
             );
         }
         backed_up += 1;
+    }
+    journal.phase = RenameJournalPhase::BackedUp;
+    if let Err(error) = write_rename_journal(&journal_path, &journal) {
+        return rollback_rename_transaction(entries, backed_up, 0, &journal_path, error);
     }
 
     for (installed, entry) in entries.iter().enumerate() {
@@ -1260,6 +1309,7 @@ fn commit_rename_transaction(
                 entries,
                 backed_up,
                 installed,
+                &journal_path,
                 VaultError::state("The simulated rename interruption was triggered."),
             );
         }
@@ -1268,18 +1318,40 @@ fn commit_rename_transaction(
                 entries,
                 backed_up,
                 installed,
+                &journal_path,
                 VaultError::io("A renamed Markdown file could not be installed", error),
             );
         }
     }
+    journal.phase = RenameJournalPhase::Installed;
+    if let Err(error) = write_rename_journal(&journal_path, &journal) {
+        return rollback_rename_transaction(
+            entries,
+            backed_up,
+            entries.len(),
+            &journal_path,
+            error,
+        );
+    }
 
     for entry in entries {
-        let _ = fs::remove_file(&entry.backup_path);
+        if let Err(error) = fs::remove_file(&entry.backup_path) {
+            if error.kind() != std::io::ErrorKind::NotFound {
+                return Err(VaultError::io(
+                    "A completed rename backup could not be removed",
+                    error,
+                ));
+            }
+        }
         sync_parent_directory(&entry.original_path)?;
         if entry.destination_path.parent() != entry.original_path.parent() {
             sync_parent_directory(&entry.destination_path)?;
         }
     }
+    fs::remove_file(&journal_path).map_err(|error| {
+        VaultError::io("The completed rename journal could not be removed", error)
+    })?;
+    sync_parent_directory(&journal_path)?;
     Ok(())
 }
 
@@ -1287,6 +1359,7 @@ fn rollback_rename_transaction(
     entries: &[RenameTransactionEntry],
     backed_up: usize,
     installed: usize,
+    journal_path: &Path,
     original_error: VaultError,
 ) -> Result<(), VaultError> {
     let mut rollback_error = None;
@@ -1301,6 +1374,7 @@ fn rollback_rename_transaction(
         }
     }
     cleanup_transaction_files(entries);
+    let journal_removal = fs::remove_file(journal_path);
 
     if let Some(error) = rollback_error {
         return Err(VaultError::io(
@@ -1308,7 +1382,223 @@ fn rollback_rename_transaction(
             error,
         ));
     }
+    if let Err(error) = journal_removal {
+        if error.kind() != std::io::ErrorKind::NotFound {
+            return Err(VaultError::io(
+                "The failed rename journal could not be removed",
+                error,
+            ));
+        }
+    }
     Err(original_error)
+}
+
+fn build_rename_journal(
+    root: &Path,
+    entries: &[RenameTransactionEntry],
+) -> Result<RenameJournal, VaultError> {
+    let entries = entries
+        .iter()
+        .map(|entry| {
+            Ok(RenameJournalEntry {
+                backup_path: path_for_rename_journal(root, &entry.backup_path)?,
+                destination_path: path_for_rename_journal(root, &entry.destination_path)?,
+                original_path: path_for_rename_journal(root, &entry.original_path)?,
+                temporary_path: path_for_rename_journal(root, &entry.temporary_path)?,
+            })
+        })
+        .collect::<Result<Vec<_>, VaultError>>()?;
+    Ok(RenameJournal {
+        entries,
+        phase: RenameJournalPhase::Prepared,
+        version: 1,
+    })
+}
+
+fn path_for_rename_journal(root: &Path, path: &Path) -> Result<String, VaultError> {
+    path.strip_prefix(root)
+        .ok()
+        .and_then(Path::to_str)
+        .filter(|relative| !relative.is_empty())
+        .map(str::to_owned)
+        .ok_or_else(|| VaultError::state("A rename transaction path could not be stored safely."))
+}
+
+fn write_rename_journal(path: &Path, journal: &RenameJournal) -> Result<(), VaultError> {
+    let bytes = serde_json::to_vec_pretty(journal)
+        .map_err(|error| VaultError::state(format!("The rename journal is invalid: {error}")))?;
+    let temporary_path = temporary_sibling_path(path)?;
+    let write_result = (|| {
+        let mut file = OpenOptions::new()
+            .create_new(true)
+            .write(true)
+            .open(&temporary_path)
+            .map_err(|error| VaultError::io("A rename journal could not be created", error))?;
+        use std::io::Write;
+        file.write_all(&bytes)
+            .and_then(|_| file.sync_all())
+            .map_err(|error| VaultError::io("The rename journal could not be written", error))?;
+        drop(file);
+        fs::rename(&temporary_path, path)
+            .map_err(|error| VaultError::io("The rename journal could not be installed", error))?;
+        sync_parent_directory(path)
+    })();
+    if write_result.is_err() {
+        let _ = fs::remove_file(&temporary_path);
+    }
+    write_result
+}
+
+fn recover_rename_transaction(root: &Path) -> Result<(), VaultError> {
+    let root = canonical_vault_root(root)?;
+    let journal_path = root.join(RENAME_JOURNAL_NAME);
+    let bytes = match fs::read(&journal_path) {
+        Ok(bytes) => bytes,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        Err(error) => {
+            return Err(VaultError::io(
+                "The rename journal could not be read",
+                error,
+            ))
+        }
+    };
+    let journal: RenameJournal = serde_json::from_slice(&bytes).map_err(|error| {
+        VaultError::rename_conflict(format!(
+            "A previous rename journal is invalid and was left untouched: {error}"
+        ))
+    })?;
+    if journal.version != 1 || journal.entries.is_empty() {
+        return Err(VaultError::rename_conflict(
+            "A previous rename journal has an unsupported format and was left untouched.",
+        ));
+    }
+    let entries = journal
+        .entries
+        .iter()
+        .map(|entry| {
+            Ok(RenameTransactionEntry {
+                backup_path: resolve_rename_journal_path(&root, &entry.backup_path)?,
+                destination_path: resolve_rename_journal_path(&root, &entry.destination_path)?,
+                original_content: String::new(),
+                original_path: resolve_rename_journal_path(&root, &entry.original_path)?,
+                temporary_path: resolve_rename_journal_path(&root, &entry.temporary_path)?,
+            })
+        })
+        .collect::<Result<Vec<_>, VaultError>>()?;
+    validate_rename_recovery_entries(&entries)?;
+
+    match journal.phase {
+        RenameJournalPhase::Prepared | RenameJournalPhase::BackedUp => {
+            restore_rename_backups(&entries)?;
+        }
+        RenameJournalPhase::Installed => {
+            if entries
+                .iter()
+                .any(|entry| !entry.destination_path.is_file())
+            {
+                return Err(VaultError::rename_conflict(
+                    "A completed rename is missing an installed file. Its recovery files were left untouched.",
+                ));
+            }
+            for entry in &entries {
+                if let Err(error) = fs::remove_file(&entry.backup_path) {
+                    if error.kind() != std::io::ErrorKind::NotFound {
+                        return Err(VaultError::io(
+                            "A completed rename backup could not be removed",
+                            error,
+                        ));
+                    }
+                }
+                let _ = fs::remove_file(&entry.temporary_path);
+            }
+        }
+    }
+    fs::remove_file(&journal_path).map_err(|error| {
+        VaultError::io("The recovered rename journal could not be removed", error)
+    })?;
+    sync_parent_directory(&journal_path)
+}
+
+fn restore_rename_backups(entries: &[RenameTransactionEntry]) -> Result<(), VaultError> {
+    for entry in entries.iter().rev() {
+        if entry.backup_path.exists() {
+            if entry.destination_path == entry.original_path {
+                if entry.original_path.exists() {
+                    fs::remove_file(&entry.original_path).map_err(|error| {
+                        VaultError::io("A partial rename file could not be removed", error)
+                    })?;
+                }
+            } else {
+                if entry.original_path.exists() {
+                    return Err(VaultError::rename_conflict(
+                        "A rename backup conflicts with an existing original file. Recovery files were left untouched.",
+                    ));
+                }
+                if entry.destination_path.exists() {
+                    fs::remove_file(&entry.destination_path).map_err(|error| {
+                        VaultError::io("A partial renamed file could not be removed", error)
+                    })?;
+                }
+            }
+            fs::rename(&entry.backup_path, &entry.original_path)
+                .map_err(|error| VaultError::io("A rename backup could not be restored", error))?;
+        } else if !entry.original_path.is_file() {
+            return Err(VaultError::rename_conflict(
+                "A rename recovery is missing both an original and its backup. Recovery files were left untouched.",
+            ));
+        }
+        let _ = fs::remove_file(&entry.temporary_path);
+    }
+    Ok(())
+}
+
+fn resolve_rename_journal_path(root: &Path, relative: &str) -> Result<PathBuf, VaultError> {
+    let path = Path::new(relative);
+    if relative.is_empty()
+        || path
+            .components()
+            .any(|component| !matches!(component, Component::Normal(_)))
+    {
+        return Err(VaultError::rename_conflict(
+            "A previous rename journal contains an unsafe path and was left untouched.",
+        ));
+    }
+    Ok(root.join(path))
+}
+
+fn validate_rename_recovery_entries(entries: &[RenameTransactionEntry]) -> Result<(), VaultError> {
+    let mut originals = HashSet::new();
+    let mut destinations = HashSet::new();
+    for entry in entries {
+        let backup_name = entry
+            .backup_path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or_default();
+        let temporary_name = entry
+            .temporary_path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or_default();
+        let valid = is_markdown(&entry.original_path)
+            && is_markdown(&entry.destination_path)
+            && entry.backup_path.parent() == entry.original_path.parent()
+            && entry.temporary_path.parent() == entry.destination_path.parent()
+            && backup_name.starts_with('.')
+            && backup_name.contains(".anchored-")
+            && backup_name.ends_with(".backup")
+            && temporary_name.starts_with('.')
+            && temporary_name.contains(".anchored-")
+            && temporary_name.ends_with(".tmp")
+            && originals.insert(entry.original_path.clone())
+            && destinations.insert(entry.destination_path.clone());
+        if !valid {
+            return Err(VaultError::rename_conflict(
+                "A previous rename journal failed safety validation and was left untouched.",
+            ));
+        }
+    }
+    Ok(())
 }
 
 fn cleanup_transaction_files(entries: &[RenameTransactionEntry]) {
@@ -1539,8 +1829,10 @@ mod tests {
     use super::{
         apply_identity_migration_plan, build_identity_migration_preview, canonical_vault_root,
         create_markdown_file, enrich_vault_metadata, inspect_note_identity, read_markdown_file,
-        reconcile_vault_identities, rename_markdown_file, save_markdown_file, scan_vault,
-        NoteIdentityStatus, RenameOutcome, MAX_MARKDOWN_FILE_BYTES,
+        reconcile_vault_identities, recover_rename_transaction, rename_markdown_file,
+        save_markdown_file, scan_vault, write_rename_journal, NoteIdentityStatus, RenameJournal,
+        RenameJournalEntry, RenameJournalPhase, RenameOutcome, MAX_MARKDOWN_FILE_BYTES,
+        RENAME_JOURNAL_NAME,
     };
 
     #[test]
@@ -1987,6 +2279,113 @@ mod tests {
                 .file_name()
                 .to_string_lossy()
                 .contains(".anchored-")));
+    }
+
+    #[test]
+    fn recovers_backups_after_a_crash_during_installation() {
+        let vault = tempdir().expect("create fixture vault");
+        let old = vault.path().join("Old.md");
+        let new = vault.path().join("New.md");
+        let reference = vault.path().join("Reference.md");
+        let old_backup = vault.path().join(".Old.md.anchored-test.backup");
+        let reference_backup = vault.path().join(".Reference.md.anchored-test.backup");
+        let new_temporary = vault.path().join(".New.md.anchored-test.tmp");
+        let reference_temporary = vault.path().join(".Reference.md.anchored-test.tmp");
+        fs::write(&old, "original target").expect("write target");
+        fs::write(&reference, "[[Old]]").expect("write reference");
+        fs::write(&new_temporary, "renamed target").expect("write target temporary");
+        fs::write(&reference_temporary, "[[New]]").expect("write reference temporary");
+        fs::rename(&old, &old_backup).expect("back up target");
+        fs::rename(&reference, &reference_backup).expect("back up reference");
+        fs::rename(&new_temporary, &new).expect("partially install target");
+        let journal = RenameJournal {
+            entries: vec![
+                RenameJournalEntry {
+                    backup_path: ".Old.md.anchored-test.backup".to_owned(),
+                    destination_path: "New.md".to_owned(),
+                    original_path: "Old.md".to_owned(),
+                    temporary_path: ".New.md.anchored-test.tmp".to_owned(),
+                },
+                RenameJournalEntry {
+                    backup_path: ".Reference.md.anchored-test.backup".to_owned(),
+                    destination_path: "Reference.md".to_owned(),
+                    original_path: "Reference.md".to_owned(),
+                    temporary_path: ".Reference.md.anchored-test.tmp".to_owned(),
+                },
+            ],
+            phase: RenameJournalPhase::BackedUp,
+            version: 1,
+        };
+        write_rename_journal(&vault.path().join(RENAME_JOURNAL_NAME), &journal)
+            .expect("write recovery journal");
+
+        recover_rename_transaction(vault.path()).expect("recover rename");
+
+        assert_eq!(
+            fs::read_to_string(old).expect("read target"),
+            "original target"
+        );
+        assert_eq!(
+            fs::read_to_string(reference).expect("read reference"),
+            "[[Old]]"
+        );
+        assert!(!new.exists());
+        assert!(!reference_temporary.exists());
+        assert!(!vault.path().join(RENAME_JOURNAL_NAME).exists());
+    }
+
+    #[test]
+    fn finishes_cleanup_after_a_committed_rename_crashes() {
+        let vault = tempdir().expect("create fixture vault");
+        fs::write(vault.path().join("New.md"), "renamed target").expect("write target");
+        fs::write(vault.path().join("Reference.md"), "[[New]]").expect("write reference");
+        fs::write(
+            vault.path().join(".Old.md.anchored-test.backup"),
+            "original target",
+        )
+        .expect("write target backup");
+        fs::write(
+            vault.path().join(".Reference.md.anchored-test.backup"),
+            "[[Old]]",
+        )
+        .expect("write reference backup");
+        let journal = RenameJournal {
+            entries: vec![
+                RenameJournalEntry {
+                    backup_path: ".Old.md.anchored-test.backup".to_owned(),
+                    destination_path: "New.md".to_owned(),
+                    original_path: "Old.md".to_owned(),
+                    temporary_path: ".New.md.anchored-test.tmp".to_owned(),
+                },
+                RenameJournalEntry {
+                    backup_path: ".Reference.md.anchored-test.backup".to_owned(),
+                    destination_path: "Reference.md".to_owned(),
+                    original_path: "Reference.md".to_owned(),
+                    temporary_path: ".Reference.md.anchored-test.tmp".to_owned(),
+                },
+            ],
+            phase: RenameJournalPhase::Installed,
+            version: 1,
+        };
+        write_rename_journal(&vault.path().join(RENAME_JOURNAL_NAME), &journal)
+            .expect("write recovery journal");
+
+        recover_rename_transaction(vault.path()).expect("finish rename cleanup");
+
+        assert_eq!(
+            fs::read_to_string(vault.path().join("New.md")).expect("read renamed target"),
+            "renamed target"
+        );
+        assert_eq!(
+            fs::read_to_string(vault.path().join("Reference.md")).expect("read reference"),
+            "[[New]]"
+        );
+        assert!(!vault.path().join(".Old.md.anchored-test.backup").exists());
+        assert!(!vault
+            .path()
+            .join(".Reference.md.anchored-test.backup")
+            .exists());
+        assert!(!vault.path().join(RENAME_JOURNAL_NAME).exists());
     }
 
     #[test]
