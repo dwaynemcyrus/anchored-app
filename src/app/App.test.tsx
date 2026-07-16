@@ -7,6 +7,7 @@ import {
   createVaultFile,
   previewIdentityMigration,
   readVaultFile,
+  renameVaultFile,
   rescanVault,
   saveVaultFile,
   selectVault,
@@ -18,6 +19,7 @@ vi.mock("../lib/tauri/vault", () => ({
   createVaultFile: vi.fn(),
   previewIdentityMigration: vi.fn(),
   readVaultFile: vi.fn(),
+  renameVaultFile: vi.fn(),
   rescanVault: vi.fn(),
   saveVaultFile: vi.fn(),
   selectVault: vi.fn(),
@@ -28,6 +30,7 @@ const mockedApplyIdentityMigration = vi.mocked(applyIdentityMigration);
 const mockedCreateVaultFile = vi.mocked(createVaultFile);
 const mockedPreviewIdentityMigration = vi.mocked(previewIdentityMigration);
 const mockedReadVaultFile = vi.mocked(readVaultFile);
+const mockedRenameVaultFile = vi.mocked(renameVaultFile);
 const mockedRescanVault = vi.mocked(rescanVault);
 const mockedSaveVaultFile = vi.mocked(saveVaultFile);
 const noWarnings = {
@@ -45,6 +48,7 @@ describe("App", () => {
     mockedPreviewIdentityMigration.mockReset();
     mockedSelectVault.mockReset();
     mockedReadVaultFile.mockReset();
+    mockedRenameVaultFile.mockReset();
     mockedRescanVault.mockReset();
     mockedSaveVaultFile.mockReset();
   });
@@ -372,6 +376,75 @@ describe("App", () => {
     expect(
       await screen.findByRole("textbox", { name: "Empty.md Markdown editor" }),
     ).toHaveAttribute("aria-placeholder", "Start writing…");
+  });
+
+  it("renames an identified note and reloads updated vault content", async () => {
+    const user = userEvent.setup();
+    const identity = "01JZQ7K8P4A6F2M9V3C5T7X1BY";
+    mockedSelectVault.mockResolvedValue({
+      files: [
+        {
+          id: identity,
+          name: "Old Name.md",
+          parent: "Notes",
+          relativePath: "Notes/Old Name.md",
+        },
+      ],
+      name: "My Vault",
+      warnings: noWarnings,
+    });
+    mockedReadVaultFile
+      .mockResolvedValueOnce({
+        content: "# Old Name\n",
+        relativePath: "Notes/Old Name.md",
+        sizeBytes: 11,
+      })
+      .mockResolvedValueOnce({
+        content: "# Old Name\n",
+        relativePath: "Writing/New Name.md",
+        sizeBytes: 11,
+      });
+    mockedRenameVaultFile.mockResolvedValue({
+      relativePath: "Writing/New Name.md",
+      updatedFiles: 2,
+      updatedLinks: 3,
+    });
+    mockedRescanVault.mockResolvedValue({
+      files: [
+        {
+          id: identity,
+          name: "New Name.md",
+          parent: "Writing",
+          relativePath: "Writing/New Name.md",
+        },
+      ],
+      name: "My Vault",
+      warnings: noWarnings,
+    });
+    render(<App />);
+
+    await user.click(
+      screen.getByRole("button", { name: "Open vault: Personal" }),
+    );
+    await user.click(screen.getByRole("button", { name: "Old Name.md" }));
+    await screen.findByRole("textbox", {
+      name: "Old Name.md Markdown editor",
+    });
+    await user.click(
+      screen.getByRole("button", { name: "Rename Old Name.md" }),
+    );
+
+    expect(mockedRenameVaultFile).toHaveBeenCalledWith("Notes/Old Name.md");
+    expect(mockedRescanVault).toHaveBeenCalledTimes(1);
+    expect(mockedReadVaultFile).toHaveBeenLastCalledWith("Writing/New Name.md");
+    expect(
+      await screen.findByRole("textbox", {
+        name: "New Name.md Markdown editor",
+      }),
+    ).toHaveTextContent("# Old Name");
+    expect(
+      screen.getByText("New Name.md renamed. 3 links updated across 2 notes."),
+    ).toBeInTheDocument();
   });
 
   it("saves an edited vault note with Command-S", async () => {

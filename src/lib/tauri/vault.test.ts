@@ -6,6 +6,7 @@ import {
   createVaultFile,
   previewIdentityMigration,
   readVaultFile,
+  renameVaultFile,
   rescanVault,
   saveVaultFile,
   selectVault,
@@ -110,6 +111,22 @@ describe("vault bridge", () => {
       "create_vault_file",
       createRequest,
     );
+  });
+
+  it("renames a Markdown file through the Rust-owned dialog", async () => {
+    const result = {
+      relativePath: "Notes/Leading.md",
+      updatedFiles: 2,
+      updatedLinks: 3,
+    };
+    mockedInvoke.mockResolvedValue(result);
+
+    await expect(renameVaultFile("Notes/Leadership.md")).resolves.toEqual(
+      result,
+    );
+    expect(mockedInvoke).toHaveBeenCalledWith("rename_vault_file", {
+      relativePath: "Notes/Leadership.md",
+    });
   });
 
   it("previews and applies the Rust-held identity migration plan", async () => {

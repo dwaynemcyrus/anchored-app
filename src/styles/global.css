@@ -389,6 +389,11 @@ input:focus-visible,
   color: var(--color-text);
 }
 
+.editor-surface__action:disabled {
+  color: var(--color-text-subtle);
+  cursor: default;
+}
+
 .document {
   width: min(100% - 88px, 780px);
   min-height: calc(100% - 52px);

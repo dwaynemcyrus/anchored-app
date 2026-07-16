@@ -40,6 +40,12 @@ export type CreateVaultFileRequest = {
   suggestedName: string;
 };
 
+export type RenameVaultFileResult = {
+  relativePath: string;
+  updatedFiles: number;
+  updatedLinks: number;
+};
+
 export type IdentityMigrationPreview = {
   eligibleFiles: string[];
   issues: Array<{
@@ -80,6 +86,14 @@ export function createVaultFile(
   request: CreateVaultFileRequest,
 ): Promise<VaultDocument | null> {
   return invoke<VaultDocument | null>("create_vault_file", request);
+}
+
+export function renameVaultFile(
+  relativePath: string,
+): Promise<RenameVaultFileResult | null> {
+  return invoke<RenameVaultFileResult | null>("rename_vault_file", {
+    relativePath,
+  });
 }
 
 export function previewIdentityMigration(): Promise<IdentityMigrationPreview> {

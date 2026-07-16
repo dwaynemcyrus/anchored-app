@@ -19,8 +19,10 @@ type EditorSurfaceProps = {
   onOpenLinkedDocument: (documentId: string) => void;
   onOpenWikilink: (target: string) => void;
   onRetryDocument: () => void;
+  onRenameDocument: () => void;
   onSaveDocument: () => void;
   onSaveDocumentAs: () => void;
+  renaming: boolean;
 };
 
 export function EditorSurface({
@@ -34,8 +36,10 @@ export function EditorSurface({
   onOpenLinkedDocument,
   onOpenWikilink,
   onRetryDocument,
+  onRenameDocument,
   onSaveDocument,
   onSaveDocumentAs,
+  renaming,
 }: EditorSurfaceProps) {
   if (!document) {
     return (
@@ -74,10 +78,24 @@ export function EditorSurface({
           <span>{document.name}</span>
         </span>
         <div className="editor-surface__actions">
+          {document.relativePath &&
+          document.sourceText !== undefined &&
+          document.id.startsWith("vault-id:") ? (
+            <button
+              aria-label={`Rename ${document.name}`}
+              className="editor-surface__action"
+              disabled={renaming || document.saveState !== "saved"}
+              type="button"
+              onClick={onRenameDocument}
+            >
+              {renaming ? "Renaming…" : "Rename"}
+            </button>
+          ) : null}
           {document.sourceText !== undefined ? (
             <button
               aria-label={`Save ${document.name} as`}
               className="editor-surface__action"
+              disabled={renaming}
               type="button"
               onClick={onSaveDocumentAs}
             >
@@ -87,6 +105,7 @@ export function EditorSurface({
           <button
             aria-label={`Close ${document.name}`}
             className="editor-surface__action"
+            disabled={renaming}
             type="button"
             onClick={onCloseDocument}
           >

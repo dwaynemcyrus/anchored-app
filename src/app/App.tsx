@@ -20,6 +20,7 @@ import {
   createVaultFile,
   previewIdentityMigration,
   readVaultFile,
+  renameVaultFile,
   rescanVault,
   saveVaultFile,
   selectVault,
@@ -94,6 +95,9 @@ export function App() {
   const [documentLoad, setDocumentLoad] = useState<DocumentLoadState>({
     status: "idle",
   });
+  const [renamingDocumentId, setRenamingDocumentId] = useState<string | null>(
+    null,
+  );
   const searchInputRef = useRef<HTMLInputElement>(null);
   const loadRequestRef = useRef(0);
   const rescanInFlightRef = useRef(false);
@@ -482,6 +486,91 @@ export function App() {
     }
   }
 
+  async function renameDocument(documentId: string) {
+    const document = documentsRef.current.find(
+      (candidate) => candidate.id === documentId,
+    );
+    if (!document?.relativePath || !document.id.startsWith("vault-id:")) {
+      return;
+    }
+    const hasUnfinishedFileEdits = documentsRef.current.some(
+      (candidate) =>
+        candidate.relativePath &&
+        (candidate.saveState !== "saved" ||
+          (candidate.sourceText !== undefined &&
+            candidate.sourceText !== candidate.savedSourceText)),
+    );
+    if (hasUnfinishedFileEdits) {
+      setVaultMessage("Save all open note changes before renaming a note.");
+      return;
+    }
+
+    let renameCompleted = false;
+    setRenamingDocumentId(documentId);
+    setVaultMessage(null);
+    try {
+      const outcome = await renameVaultFile(document.relativePath);
+      if (!outcome) return;
+      renameCompleted = true;
+
+      const [snapshot, openedDocument] = await Promise.all([
+        rescanVault(),
+        readVaultFile(outcome.relativePath),
+      ]);
+      if (!snapshot) {
+        throw new Error("The renamed vault could not be refreshed.");
+      }
+      const localDrafts = documentsRef.current.filter(
+        (candidate) => !candidate.relativePath,
+      );
+      const nextDocuments = [
+        ...documentsFromVault(snapshot).map((candidate) =>
+          candidate.id === documentId
+            ? {
+                ...candidate,
+                savedSourceText: openedDocument.content,
+                sizeBytes: openedDocument.sizeBytes,
+                sourceText: openedDocument.content,
+              }
+            : candidate,
+        ),
+        ...localDrafts,
+      ];
+      const nextFolders = Array.from(
+        new Set(nextDocuments.map((candidate) => candidate.folder)),
+      );
+      loadRequestRef.current += 1;
+      documentsRef.current = nextDocuments;
+      setDocuments(nextDocuments);
+      setFolderOrder(nextFolders);
+      setExpandedFolders((currentFolders) => {
+        const nextExpanded = new Set(currentFolders);
+        nextFolders.forEach((folder) => nextExpanded.add(folder));
+        return nextExpanded;
+      });
+      setNotesNeedingIdentity(snapshot.warnings.needsIdentity);
+      setActiveDocumentId(documentId);
+      setDocumentLoad({ status: "idle" });
+      const filename =
+        outcome.relativePath.split("/").pop() ?? outcome.relativePath;
+      setVaultMessage(
+        `${filename} renamed. ${outcome.updatedLinks} link${
+          outcome.updatedLinks === 1 ? "" : "s"
+        } updated across ${outcome.updatedFiles} note${
+          outcome.updatedFiles === 1 ? "" : "s"
+        }.`,
+      );
+    } catch (error) {
+      setVaultMessage(
+        renameCompleted
+          ? `The note was renamed, but Anchored could not refresh it: ${readErrorMessage(error)}`
+          : readErrorMessage(error),
+      );
+    } finally {
+      setRenamingDocumentId(null);
+    }
+  }
+
   function openWikilink(target: string) {
     const resolution = resolveWikilink(
       target,
@@ -630,12 +719,16 @@ export function App() {
           onRetryDocument={() => {
             if (activeDocument) void selectDocument(activeDocument.id);
           }}
+          onRenameDocument={() => {
+            if (activeDocument) void renameDocument(activeDocument.id);
+          }}
           onSaveDocument={() => {
             if (activeDocument) void saveDocument(activeDocument.id);
           }}
           onSaveDocumentAs={() => {
             if (activeDocument) void saveDocumentAs(activeDocument.id);
           }}
+          renaming={renamingDocumentId === activeDocument?.id}
         />
       </div>
       {vaultMessage ? (
