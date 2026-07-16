@@ -12,6 +12,10 @@ use serde::Serialize;
 use tauri::{AppHandle, State};
 use tauri_plugin_dialog::DialogExt;
 
+use crate::metadata::{
+    assign_new_note_identity, generate_note_id, inspect_note_identity, NoteIdentityStatus,
+};
+
 const MAX_VAULT_ENTRIES: usize = 50_000;
 const MAX_VAULT_DEPTH: usize = 64;
 const MAX_MARKDOWN_FILE_BYTES: u64 = 10 * 1024 * 1024;
@@ -127,6 +131,13 @@ impl VaultError {
             code: "vaultFileExists",
             message: "A Markdown file already exists at that location. Choose a different name."
                 .to_owned(),
+        }
+    }
+
+    fn identity_conflict(message: impl Into<String>) -> Self {
+        Self {
+            code: "identityConflict",
+            message: message.into(),
         }
     }
 }
@@ -386,6 +397,16 @@ fn save_markdown_file(
     if current_content != expected_content {
         return Err(VaultError::conflict());
     }
+    if let NoteIdentityStatus::Present(existing_id) = inspect_note_identity(&current_content) {
+        match inspect_note_identity(content) {
+            NoteIdentityStatus::Present(proposed_id) if proposed_id == existing_id => {}
+            _ => {
+                return Err(VaultError::identity_conflict(
+                    "This save would remove or change the note's permanent identity. Your edits were kept and were not written.",
+                ))
+            }
+        }
+    }
 
     let metadata = fs::metadata(&canonical_file)
         .map_err(|error| VaultError::io("The Markdown file could not be inspected", error))?;
@@ -408,22 +429,42 @@ fn create_markdown_file(
     destination: &Path,
     content: &str,
 ) -> Result<VaultDocument, VaultError> {
+    let content = match inspect_note_identity(content) {
+        NoteIdentityStatus::Present(_) | NoteIdentityStatus::Missing => {
+            assign_new_note_identity(content, &generate_note_id()).map_err(|_| {
+                VaultError::identity_conflict(
+                    "A permanent identity could not be added without changing unsafe front matter.",
+                )
+            })?
+        }
+        NoteIdentityStatus::Invalid
+        | NoteIdentityStatus::Duplicate
+        | NoteIdentityStatus::MalformedFrontMatter => {
+            return Err(VaultError::identity_conflict(
+                "This note has invalid or ambiguous front matter. It was not created because a permanent identity could not be added safely.",
+            ))
+        }
+    };
     if content.len() as u64 > MAX_MARKDOWN_FILE_BYTES {
         return Err(VaultError::file_too_large());
     }
 
     let (destination, relative_path) = resolve_new_vault_markdown_file(root, destination)?;
     let temporary_path = temporary_sibling_path(&destination)?;
-    let write_result = write_new_atomically(&temporary_path, &destination, content);
+    let write_result = write_new_atomically(&temporary_path, &destination, &content);
     if write_result.is_err() {
         let _ = fs::remove_file(&temporary_path);
     }
     write_result?;
 
     Ok(VaultDocument {
-        content: content.to_owned(),
+        content,
         relative_path,
-        size_bytes: content.len() as u64,
+        size_bytes: fs::metadata(&destination)
+            .map_err(|error| {
+                VaultError::io("The created Markdown file could not be inspected", error)
+            })?
+            .len(),
     })
 }
 
@@ -632,8 +673,8 @@ mod tests {
     use tempfile::tempdir;
 
     use super::{
-        canonical_vault_root, create_markdown_file, read_markdown_file, save_markdown_file,
-        scan_vault, MAX_MARKDOWN_FILE_BYTES,
+        canonical_vault_root, create_markdown_file, inspect_note_identity, read_markdown_file,
+        save_markdown_file, scan_vault, NoteIdentityStatus, MAX_MARKDOWN_FILE_BYTES,
     };
 
     #[test]
@@ -752,11 +793,15 @@ mod tests {
             .expect("create Markdown file");
 
         assert_eq!(document.relative_path, "Notes/New note.md");
-        assert_eq!(document.content, "# New note\n");
-        assert_eq!(document.size_bytes, 11);
+        assert!(matches!(
+            inspect_note_identity(&document.content),
+            NoteIdentityStatus::Present(_)
+        ));
+        assert!(document.content.ends_with("\n# New note\n"));
+        assert_eq!(document.size_bytes, document.content.len() as u64);
         assert_eq!(
             fs::read_to_string(&destination).expect("read created note"),
-            "# New note\n"
+            document.content
         );
         assert!(fs::read_dir(vault.path().join("Notes"))
             .expect("read Notes folder")
@@ -794,6 +839,57 @@ mod tests {
 
         assert_eq!(error.code, "invalidVaultFile");
         assert!(!destination.exists());
+    }
+
+    #[test]
+    fn refuses_to_create_a_note_with_unsafe_front_matter() {
+        let vault = tempdir().expect("create fixture vault");
+        let destination = vault.path().join("Unsafe.md");
+
+        let error = create_markdown_file(
+            vault.path(),
+            &destination,
+            "---\ntags: [unfinished\n---\n# Unsafe\n",
+        )
+        .expect_err("reject unsafe front matter");
+
+        assert_eq!(error.code, "identityConflict");
+        assert!(!destination.exists());
+    }
+
+    #[test]
+    fn gives_a_saved_copy_a_new_identity() {
+        let vault = tempdir().expect("create fixture vault");
+        let destination = vault.path().join("Copy.md");
+        let original_id = "01JZQ7K8P4A6F2M9V3C5T7X1BY";
+        let content = format!("---\nid: {original_id}\n---\n# Copy\n");
+
+        let document = create_markdown_file(vault.path(), &destination, &content)
+            .expect("create identified copy");
+
+        let NoteIdentityStatus::Present(created_id) = inspect_note_identity(&document.content)
+        else {
+            panic!("created copy must have an identity");
+        };
+        assert_ne!(created_id, original_id);
+        assert!(document.content.ends_with("---\n# Copy\n"));
+    }
+
+    #[test]
+    fn refuses_to_remove_an_existing_note_identity_during_save() {
+        let vault = tempdir().expect("create fixture vault");
+        let note = vault.path().join("Note.md");
+        let original = "---\nid: 01JZQ7K8P4A6F2M9V3C5T7X1BY\n---\n# Before\n";
+        fs::write(&note, original).expect("write identified note");
+
+        let error = save_markdown_file(vault.path(), "Note.md", "# After\n", original)
+            .expect_err("reject identity removal");
+
+        assert_eq!(error.code, "identityConflict");
+        assert_eq!(
+            fs::read_to_string(&note).expect("read protected note"),
+            original
+        );
     }
 
     #[test]

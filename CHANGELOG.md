@@ -17,6 +17,8 @@ Git commit. The format follows [Keep a Changelog], and releases follow
 - A minimal Markdown editing surface with new-note creation, Save As, Command-S,
   one-second idle autosave, atomic writes, and visible conflict feedback that
   keeps local edits intact.
+- Newly created notes receive a full unprefixed ULID in preserved YAML front
+  matter, and saves refuse to remove or change an established identity.
 
 [Keep a Changelog]: https://keepachangelog.com/en/1.1.0/
 [Semantic Versioning]: https://semver.org/spec/v2.0.0.html

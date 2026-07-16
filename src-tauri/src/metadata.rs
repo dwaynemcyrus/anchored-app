@@ -113,6 +113,35 @@ pub fn add_note_identity(content: &str, id: &str) -> Result<String, IdentityMuta
     }
 }
 
+pub fn assign_new_note_identity(content: &str, id: &str) -> Result<String, IdentityMutationError> {
+    let parsed = Ulid::from_string(id).map_err(|_| IdentityMutationError::InvalidIdentity)?;
+    if parsed.to_string() != id {
+        return Err(IdentityMutationError::InvalidIdentity);
+    }
+
+    match inspect_note_identity(content) {
+        NoteIdentityStatus::Missing => add_note_identity(content, id),
+        NoteIdentityStatus::Present(existing) => {
+            let bounds = front_matter_bounds(content)
+                .map_err(|_| IdentityMutationError::UnsafeFrontMatter)?
+                .ok_or(IdentityMutationError::UnsafeFrontMatter)?;
+            let yaml = &content[bounds.body_start..bounds.body_end];
+            let value_range = find_top_level_id_value(yaml, &existing)
+                .ok_or(IdentityMutationError::UnsafeFrontMatter)?;
+            let value_start = bounds.body_start + value_range.start;
+            let value_end = bounds.body_start + value_range.end;
+            let mut updated = String::with_capacity(content.len());
+            updated.push_str(&content[..value_start]);
+            updated.push_str(id);
+            updated.push_str(&content[value_end..]);
+            Ok(updated)
+        }
+        NoteIdentityStatus::Invalid
+        | NoteIdentityStatus::Duplicate
+        | NoteIdentityStatus::MalformedFrontMatter => Err(IdentityMutationError::UnsafeFrontMatter),
+    }
+}
+
 fn add_new_front_matter(content: &str, id: &str) -> String {
     let (bom, body) = content
         .strip_prefix(UTF8_BOM)
@@ -196,11 +225,30 @@ fn count_top_level_id_keys(yaml: &str) -> usize {
         .count()
 }
 
+fn find_top_level_id_value(yaml: &str, id: &str) -> Option<std::ops::Range<usize>> {
+    let mut offset = 0;
+    for line in yaml.split_inclusive('\n') {
+        let line_without_ending = line.trim_end_matches(['\r', '\n']);
+        if !line_without_ending.starts_with(char::is_whitespace) {
+            if let Some((key, value)) = line_without_ending.split_once(':') {
+                if matches!(key.trim(), "id" | "'id'" | "\"id\"") {
+                    let value_offset = line_without_ending.len() - value.len();
+                    let id_offset = value.find(id)?;
+                    let start = offset + value_offset + id_offset;
+                    return Some(start..start + id.len());
+                }
+            }
+        }
+        offset += line.len();
+    }
+    None
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
-        add_note_identity, generate_note_id, inspect_note_identity, IdentityMutationError,
-        NoteIdentityStatus,
+        add_note_identity, assign_new_note_identity, generate_note_id, inspect_note_identity,
+        IdentityMutationError, NoteIdentityStatus,
     };
 
     const ID: &str = "01JZQ7K8P4A6F2M9V3C5T7X1BY";
@@ -303,6 +351,28 @@ mod tests {
         assert_eq!(
             add_note_identity("# Note\n", &ID.to_lowercase()),
             Err(IdentityMutationError::InvalidIdentity)
+        );
+    }
+
+    #[test]
+    fn gives_a_saved_copy_a_fresh_identity_without_reformatting_yaml() {
+        let replacement = "01JZQA02MVA6F2M9V3C5T7X1BW";
+        let original = format!(
+            "---\n# retained\nid: '{ID}' # permanent identity\naliases: [Example]\n---\nBody\n"
+        );
+
+        let updated =
+            assign_new_note_identity(&original, replacement).expect("replace copied identity");
+
+        assert_eq!(
+            updated,
+            format!(
+                "---\n# retained\nid: '{replacement}' # permanent identity\naliases: [Example]\n---\nBody\n"
+            )
+        );
+        assert_eq!(
+            inspect_note_identity(&updated),
+            NoteIdentityStatus::Present(replacement.to_owned())
         );
     }
 }
