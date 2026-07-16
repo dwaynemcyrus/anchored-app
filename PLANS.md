@@ -169,6 +169,30 @@ and preserves link integrity across filename changes.
       usability fixes: `27f095e`, `8700583`, `6f64203`, `ba79d3b`, and
       `200afc1`
 
+10B. [ ] **Chunk: Complete wikilink authoring**
+    - Files: link candidate and recent-activity modules, CodeMirror editor,
+      app composition, styles, tests, changelog
+    - Change: Generate the shortest unique Obsidian-compatible target by
+      default, offer filename and alias completion after `[[`, surface known
+      unresolved placeholders without creating files immediately, and rank an
+      empty picker by unified opened, edited, created, and first-seen activity.
+      The same candidate and recency contracts will support Quick Open in
+      chunk 11. Existing links are not bulk-normalized.
+    - Verify: Unique and duplicate filenames, aliases, unresolved targets,
+      headings, quoted front-matter links, Unicode, Finder additions, stale
+      recent entries, keyboard and pointer selection, focus return, empty and
+      large candidate sets, desktop and narrow layouts, and typing latency.
+    - Risk/rollback: A filename-only target can become ambiguous after a new
+      duplicate appears. New candidates must be bounded and precomputed rather
+      than rescanning note bodies on each keystroke; ambiguous links remain
+      unopened unless their prior target can be proven. Revert focused commits
+      without changing existing Markdown content.
+    - Approved decisions: Use shortest unique stored targets rather than Live
+      Preview hiding; selecting an unresolved candidate inserts the placeholder
+      only and creates no file; recency uses one local history of opened,
+      edited, created, and first-seen notes rather than filesystem birth dates.
+    - Expected commit: `feat(links): complete link authoring`
+
 11. [ ] **Chunk: Add retrieval and continuity**
     - Files: search and recent-file features, settings persistence, tests
     - Change: Add global Markdown search, file-local find, recent files, quick
@@ -373,6 +397,11 @@ Every future large plan must identify:
   path-plus-heading links in `Reference.md` all updated exactly; the unrelated
   note remained unchanged; and no temporary, backup, or journal files remained.
   Chunk 10 is complete.
+- 2026-07-16: Dwayne approved a link-authoring bridge before retrieval work.
+  Anchored will default to the shortest unique stored wikilink target, insert
+  unresolved placeholders without creating files, and use one local
+  opened/edited/created/first-seen history. Chunk 10B will establish the shared
+  candidates and ranking that Quick Open can reuse in chunk 11.
 
 ## Completion
 
