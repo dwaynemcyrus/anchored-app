@@ -1,4 +1,4 @@
-use std::fmt;
+use std::{fmt, ops::Range};
 
 use ulid::Ulid;
 use yaml_rust2::{Yaml, YamlLoader};
@@ -38,6 +38,13 @@ struct FrontMatterBounds {
     body_end: usize,
     opening_end: usize,
     newline: &'static str,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WikilinkOccurrence {
+    pub has_display_label: bool,
+    pub target: String,
+    pub target_range: Range<usize>,
 }
 
 pub fn generate_note_id() -> String {
@@ -125,7 +132,17 @@ pub fn inspect_note_aliases(content: &str) -> Vec<String> {
 
 pub fn inspect_wikilinks(content: &str) -> Vec<String> {
     let mut links = Vec::new();
-    let body = match front_matter_bounds(content) {
+    for occurrence in inspect_wikilink_occurrences(content) {
+        if !links.contains(&occurrence.target) {
+            links.push(occurrence.target);
+        }
+    }
+    links
+}
+
+pub fn inspect_wikilink_occurrences(content: &str) -> Vec<WikilinkOccurrence> {
+    let mut occurrences = Vec::new();
+    let body_start = match front_matter_bounds(content) {
         Ok(Some(bounds)) => {
             let yaml = &content[bounds.body_start..bounds.body_end];
             let Ok(documents) = YamlLoader::load_from_str(yaml) else {
@@ -137,23 +154,22 @@ pub fn inspect_wikilinks(content: &str) -> Vec<String> {
             {
                 return Vec::new();
             }
-            if let Some(Yaml::Hash(mapping)) = documents.first() {
-                for value in mapping.values() {
-                    inspect_property_value_wikilinks(value, &mut links);
-                }
-            }
+            inspect_quoted_property_wikilinks(yaml, bounds.body_start, &mut occurrences);
             let closing = &content[bounds.body_end..];
             closing
                 .find('\n')
-                .map_or("", |line_end| &closing[line_end + 1..])
+                .map_or(content.len(), |line_end| bounds.body_end + line_end + 1)
         }
-        Ok(None) => content,
+        Ok(None) => 0,
         Err(()) => return Vec::new(),
     };
     let mut fence: Option<(u8, usize)> = None;
+    let mut line_offset = body_start;
 
-    for line in body.lines() {
+    for line_with_ending in content[body_start..].split_inclusive('\n') {
+        let line = line_with_ending.trim_end_matches(['\r', '\n']);
         if line.starts_with("    ") || line.starts_with('\t') {
+            line_offset += line_with_ending.len();
             continue;
         }
         if let Some(marker) = fence_marker(line) {
@@ -162,39 +178,90 @@ pub fn inspect_wikilinks(content: &str) -> Vec<String> {
             } else if fence.is_none() {
                 fence = Some(marker);
             }
+            line_offset += line_with_ending.len();
             continue;
         }
-        if fence.is_some() {
-            continue;
+        if fence.is_none() {
+            inspect_inline_wikilink_occurrences(line, line_offset, &mut occurrences);
         }
-        inspect_inline_wikilinks(line, &mut links);
+        line_offset += line_with_ending.len();
     }
-    links
+    occurrences
 }
 
-fn inspect_property_value_wikilinks(value: &Yaml, links: &mut Vec<String>) {
-    match value {
-        Yaml::String(value) => inspect_property_string_wikilinks(value, links),
-        Yaml::Array(values) => {
-            for value in values {
-                if let Yaml::String(value) = value {
-                    inspect_property_string_wikilinks(value, links);
-                }
+pub fn rewrite_wikilink_targets(
+    content: &str,
+    replacements: &[(Range<usize>, String)],
+) -> Option<String> {
+    let mut ordered = replacements.iter().collect::<Vec<_>>();
+    ordered.sort_by_key(|(range, _)| range.start);
+    let mut rewritten = String::with_capacity(content.len());
+    let mut cursor = 0;
+    for (range, replacement) in ordered {
+        if range.start < cursor || range.start > range.end || range.end > content.len() {
+            return None;
+        }
+        rewritten.push_str(content.get(cursor..range.start)?);
+        rewritten.push_str(replacement);
+        cursor = range.end;
+    }
+    rewritten.push_str(content.get(cursor..)?);
+    Some(rewritten)
+}
+
+fn inspect_quoted_property_wikilinks(
+    yaml: &str,
+    yaml_offset: usize,
+    occurrences: &mut Vec<WikilinkOccurrence>,
+) {
+    let bytes = yaml.as_bytes();
+    let mut index = 0;
+    let mut quote: Option<u8> = None;
+    while index < bytes.len() {
+        let byte = bytes[index];
+        let Some(active_quote) = quote else {
+            if byte == b'#' {
+                index = bytes[index..]
+                    .iter()
+                    .position(|byte| *byte == b'\n')
+                    .map_or(bytes.len(), |line_end| index + line_end + 1);
+                continue;
+            }
+            if byte == b'\'' || byte == b'"' {
+                quote = Some(byte);
+            }
+            index += 1;
+            continue;
+        };
+        if active_quote == b'"' && byte == b'\\' {
+            index = (index + 2).min(bytes.len());
+            continue;
+        }
+        if active_quote == b'\'' && byte == b'\'' && bytes.get(index + 1) == Some(&b'\'') {
+            index += 2;
+            continue;
+        }
+        if byte == active_quote {
+            quote = None;
+            index += 1;
+            continue;
+        }
+        if bytes[index..].starts_with(b"[[") {
+            let target_start = index + 2;
+            let mut target_end = target_start;
+            while target_end + 1 < bytes.len()
+                && !bytes[target_end..].starts_with(b"]]")
+                && bytes[target_end] != active_quote
+            {
+                target_end += 1;
+            }
+            if target_end + 1 < bytes.len() && bytes[target_end..].starts_with(b"]]") {
+                push_wikilink_occurrence(yaml, yaml_offset, target_start, target_end, occurrences);
+                index = target_end + 2;
+                continue;
             }
         }
-        _ => {}
-    }
-}
-
-fn inspect_property_string_wikilinks(value: &str, links: &mut Vec<String>) {
-    let mut remaining = value;
-    while let Some(opening) = remaining.find("[[") {
-        let after_opening = &remaining[opening + 2..];
-        let Some(closing) = after_opening.find("]]") else {
-            break;
-        };
-        push_unique_wikilink_target(&after_opening[..closing], links);
-        remaining = &after_opening[closing + 2..];
+        index += 1;
     }
 }
 
@@ -212,7 +279,11 @@ fn fence_marker(line: &str) -> Option<(u8, usize)> {
     (length >= 3).then_some((marker, length))
 }
 
-fn inspect_inline_wikilinks(line: &str, links: &mut Vec<String>) {
+fn inspect_inline_wikilink_occurrences(
+    line: &str,
+    line_offset: usize,
+    occurrences: &mut Vec<WikilinkOccurrence>,
+) {
     let bytes = line.as_bytes();
     let mut index = 0;
     let mut inline_code_delimiter = 0;
@@ -241,7 +312,7 @@ fn inspect_inline_wikilinks(line: &str, links: &mut Vec<String>) {
                 target_end += 1;
             }
             if target_end + 1 < bytes.len() {
-                push_unique_wikilink_target(&line[target_start..target_end], links);
+                push_wikilink_occurrence(line, line_offset, target_start, target_end, occurrences);
                 index = target_end + 2;
                 continue;
             }
@@ -250,10 +321,24 @@ fn inspect_inline_wikilinks(line: &str, links: &mut Vec<String>) {
     }
 }
 
-fn push_unique_wikilink_target(value: &str, links: &mut Vec<String>) {
-    let target = value.split('|').next().unwrap_or_default().trim();
-    if !target.is_empty() && !links.iter().any(|link| link == target) {
-        links.push(target.to_owned());
+fn push_wikilink_occurrence(
+    source: &str,
+    source_offset: usize,
+    value_start: usize,
+    value_end: usize,
+    occurrences: &mut Vec<WikilinkOccurrence>,
+) {
+    let value = &source[value_start..value_end];
+    let target_value = value.split('|').next().unwrap_or_default();
+    let leading_whitespace = target_value.len() - target_value.trim_start().len();
+    let target = target_value.trim();
+    if !target.is_empty() {
+        let target_start = source_offset + value_start + leading_whitespace;
+        occurrences.push(WikilinkOccurrence {
+            has_display_label: value.contains('|'),
+            target: target.to_owned(),
+            target_range: target_start..target_start + target.len(),
+        });
     }
 }
 
@@ -438,7 +523,8 @@ fn find_top_level_id_value(yaml: &str, id: &str) -> Option<std::ops::Range<usize
 mod tests {
     use super::{
         add_note_identity, assign_new_note_identity, generate_note_id, inspect_note_aliases,
-        inspect_note_identity, inspect_wikilinks, IdentityMutationError, NoteIdentityStatus,
+        inspect_note_identity, inspect_wikilink_occurrences, inspect_wikilinks,
+        rewrite_wikilink_targets, IdentityMutationError, NoteIdentityStatus,
     };
 
     const ID: &str = "01JZQ7K8P4A6F2M9V3C5T7X1BY";
@@ -492,6 +578,48 @@ mod tests {
                 "Notes/Leadership#Habits",
                 "Zürich"
             ]
+        );
+    }
+
+    #[test]
+    fn rewrites_only_exact_wikilink_target_ranges() {
+        let content = concat!(
+            "---\r\nrelated: \"[[Old Name#Heading|Shown]]\"\r\n---\r\n",
+            "Body [[ Old Name |Label]] and [[Other]].\r\n",
+        );
+        let occurrences = inspect_wikilink_occurrences(content);
+
+        assert_eq!(
+            occurrences
+                .iter()
+                .map(|occurrence| (
+                    occurrence.target.as_str(),
+                    &content[occurrence.target_range.clone()]
+                ))
+                .collect::<Vec<_>>(),
+            vec![
+                ("Old Name#Heading", "Old Name#Heading"),
+                ("Old Name", "Old Name"),
+                ("Other", "Other")
+            ]
+        );
+        let replacements = occurrences[..2]
+            .iter()
+            .map(|occurrence| {
+                let suffix = occurrence
+                    .target
+                    .find('#')
+                    .map_or("", |index| &occurrence.target[index..]);
+                (occurrence.target_range.clone(), format!("New Name{suffix}"))
+            })
+            .collect::<Vec<_>>();
+
+        assert_eq!(
+            rewrite_wikilink_targets(content, &replacements).as_deref(),
+            Some(concat!(
+                "---\r\nrelated: \"[[New Name#Heading|Shown]]\"\r\n---\r\n",
+                "Body [[ New Name |Label]] and [[Other]].\r\n",
+            ))
         );
     }
 
