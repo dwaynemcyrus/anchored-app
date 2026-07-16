@@ -5,6 +5,7 @@ import {
   backlinksForDocument,
   resolveWikilink,
   wikilinkAtOffset,
+  wikilinkCompletionAtOffset,
   wikilinksInContent,
 } from "./links";
 
@@ -78,6 +79,37 @@ describe("wikilinks", () => {
     expect(
       wikilinkAtOffset(content, content.indexOf("Front matter") + 2),
     ).toMatchObject({ target: "Front matter" });
+  });
+
+  it("finds open link completion in body and quoted front matter", () => {
+    const body = "See [[Lea";
+    expect(wikilinkCompletionAtOffset(body, body.length)).toEqual({
+      from: 6,
+      query: "Lea",
+    });
+
+    const property = '---\nrelated: "[[Reading N"\n---\nBody';
+    const propertyOffset = property.indexOf('"\n---');
+    expect(wikilinkCompletionAtOffset(property, propertyOffset)).toEqual({
+      from: property.indexOf("[[") + 2,
+      query: "Reading N",
+    });
+  });
+
+  it("refuses completion in code, comments, malformed links, or YAML text", () => {
+    const cases = [
+      "`[[Code",
+      "    [[Indented",
+      "```md\n[[Fenced",
+      "\\[[Escaped",
+      "[[Label|Display",
+      "---\nplain: [[Not quoted",
+      '---\n# "[[Commented',
+    ];
+
+    for (const content of cases) {
+      expect(wikilinkCompletionAtOffset(content, content.length)).toBeNull();
+    }
   });
 
   it("prefers an exact path and supports headings and extensions", () => {

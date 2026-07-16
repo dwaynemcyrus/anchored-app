@@ -137,6 +137,7 @@ describe("wikilink candidates", () => {
       ["note", "Action"],
       ["alias", "Act now"],
       ["unresolved", "Act Later"],
+      ["unresolved", "act"],
     ]);
   });
 
@@ -170,6 +171,27 @@ describe("wikilink candidates", () => {
     const ranked = rankWikilinkCandidates(candidates, "note", undefined, 12);
     expect(ranked).toHaveLength(12);
     expect(ranked[0].label).toBe("Note 000");
-    expect(ranked[11].label).toBe("Note 011");
+    expect(ranked[10].label).toBe("Note 010");
+    expect(ranked[11].detail).toBe("New uncreated link");
+  });
+
+  it("offers typed text as a placeholder only when no exact target exists", () => {
+    const candidates = buildWikilinkCandidates(
+      [note("one", "Notes/Leadership.md")],
+      new Map(),
+    );
+
+    expect(rankWikilinkCandidates(candidates, "Leadership")).toHaveLength(1);
+    expect(
+      rankWikilinkCandidates(candidates, "Future idea").slice(-1)[0],
+    ).toEqual({
+      activityAt: 0,
+      detail: "New uncreated link",
+      kind: "unresolved",
+      label: "Future idea",
+      referenceCount: 0,
+      target: "Future idea",
+    });
+    expect(rankWikilinkCandidates(candidates, "Unsafe|link")).toEqual([]);
   });
 });

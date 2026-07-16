@@ -12,6 +12,11 @@ export type WikilinkResolution =
   | { status: "ambiguous"; matches: string[] }
   | { status: "missing" };
 
+export type WikilinkCompletionContext = {
+  from: number;
+  query: string;
+};
+
 function normalized(value: string): string {
   return value.trim().toLocaleLowerCase();
 }
@@ -73,6 +78,148 @@ export function wikilinksInContent(content: string): WikilinkMatch[] {
     lineOffset += lineWithEnding.length;
   }
   return links;
+}
+
+export function wikilinkCompletionAtOffset(
+  content: string,
+  offset: number,
+): WikilinkCompletionContext | null {
+  if (offset < 0 || offset > content.length) return null;
+  const { bodyStart, frontMatterEnd, frontMatterStart } =
+    markdownBounds(content);
+  if (
+    frontMatterStart !== undefined &&
+    frontMatterEnd !== undefined &&
+    offset >= frontMatterStart &&
+    offset <= frontMatterEnd
+  ) {
+    return quotedPropertyCompletion(
+      content.slice(frontMatterStart, offset),
+      frontMatterStart,
+    );
+  }
+  if (offset < bodyStart) return null;
+
+  let lineOffset = bodyStart;
+  let fenceMarker: string | undefined;
+  let fenceLength = 0;
+  for (const lineWithEnding of content.slice(bodyStart).split(/(?<=\n)/)) {
+    const line = lineWithEnding.replace(/\r?\n$/, "");
+    const lineEnd = lineOffset + line.length;
+    const fenceMatch = line.match(/^ {0,3}(`{3,}|~{3,})/);
+    const isFenceLine = Boolean(fenceMatch);
+    if (fenceMatch) {
+      const marker = fenceMatch[1][0];
+      const length = fenceMatch[1].length;
+      if (fenceMarker === marker && length >= fenceLength) {
+        fenceMarker = undefined;
+        fenceLength = 0;
+      } else if (fenceMarker === undefined) {
+        fenceMarker = marker;
+        fenceLength = length;
+      }
+    }
+
+    if (offset >= lineOffset && offset <= lineEnd) {
+      if (isFenceLine || fenceMarker !== undefined || /^( {4}|\t)/.test(line)) {
+        return null;
+      }
+      return inlineCompletion(line.slice(0, offset - lineOffset), lineOffset);
+    }
+    lineOffset += lineWithEnding.length;
+  }
+  return null;
+}
+
+function completionFromQuery(
+  query: string,
+  from: number,
+): WikilinkCompletionContext | null {
+  return /[|`\n\r]/.test(query) || query.includes("[") || query.includes("]")
+    ? null
+    : { from, query };
+}
+
+function quotedPropertyCompletion(
+  yaml: string,
+  yamlOffset: number,
+): WikilinkCompletionContext | null {
+  let index = 0;
+  let quote: '"' | "'" | undefined;
+  while (index < yaml.length) {
+    const character = yaml[index];
+    if (!quote) {
+      if (character === "#") {
+        const lineEnd = yaml.indexOf("\n", index);
+        index = lineEnd === -1 ? yaml.length : lineEnd + 1;
+        continue;
+      }
+      if (character === '"' || character === "'") quote = character;
+      index += 1;
+      continue;
+    }
+    if (quote === '"' && character === "\\") {
+      index += 2;
+      continue;
+    }
+    if (quote === "'" && character === "'" && yaml[index + 1] === "'") {
+      index += 2;
+      continue;
+    }
+    if (character === quote) {
+      quote = undefined;
+      index += 1;
+      continue;
+    }
+    if (yaml.startsWith("[[", index)) {
+      const closing = yaml.indexOf("]]", index + 2);
+      if (closing === -1) {
+        return completionFromQuery(
+          yaml.slice(index + 2),
+          yamlOffset + index + 2,
+        );
+      }
+      index = closing + 2;
+      continue;
+    }
+    index += 1;
+  }
+  return null;
+}
+
+function inlineCompletion(
+  line: string,
+  lineOffset: number,
+): WikilinkCompletionContext | null {
+  let index = 0;
+  let inlineCodeDelimiter = 0;
+  while (index < line.length) {
+    if (line[index] === "`" && !isEscaped(line, index)) {
+      let length = 1;
+      while (line[index + length] === "`") length += 1;
+      if (inlineCodeDelimiter === 0) inlineCodeDelimiter = length;
+      else if (inlineCodeDelimiter === length) inlineCodeDelimiter = 0;
+      index += length;
+      continue;
+    }
+    if (
+      inlineCodeDelimiter === 0 &&
+      line.startsWith("[[", index) &&
+      !isEscaped(line, index)
+    ) {
+      const closing = line.indexOf("]]", index + 2);
+      if (closing === -1) {
+        return completionFromQuery(
+          line.slice(index + 2),
+          lineOffset + index + 2,
+        );
+      }
+      index = closing + 2;
+      continue;
+    }
+    index += 1;
+  }
+  return null;
 }
 
 function markdownBounds(content: string): {

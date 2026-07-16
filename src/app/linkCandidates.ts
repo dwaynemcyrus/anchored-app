@@ -228,7 +228,7 @@ export function rankWikilinkCandidates(
       .slice(0, limit);
   }
 
-  return candidates
+  const ranked = candidates
     .flatMap((candidate) => {
       const score = matchScore(candidate, normalizedQuery);
       return score === null ? [] : [{ candidate, score }];
@@ -241,6 +241,25 @@ export function rankWikilinkCandidates(
           (left.candidate.referenceCount ?? 0) ||
         left.candidate.label.localeCompare(right.candidate.label),
     )
-    .slice(0, limit)
     .map(({ candidate }) => candidate);
+  const hasExactCandidate = ranked.some(
+    (candidate) =>
+      normalized(candidate.label) === normalizedQuery ||
+      normalized(candidate.target.split("|", 1)[0]) === normalizedQuery,
+  );
+  const typedPlaceholder =
+    !hasExactCandidate && safeTarget(query.trim())
+      ? {
+          activityAt: 0,
+          detail: "New uncreated link",
+          kind: "unresolved" as const,
+          label: query.trim(),
+          referenceCount: 0,
+          target: query.trim(),
+        }
+      : null;
+
+  return typedPlaceholder
+    ? [...ranked.slice(0, Math.max(0, limit - 1)), typedPlaceholder]
+    : ranked.slice(0, limit);
 }
