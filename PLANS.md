@@ -410,6 +410,11 @@ Every future large plan must identify:
   All automated frontend gates and 44 tests pass. Native rendered verification
   remains before the chunk is marked complete because the local browser QA
   surface refused the preview address.
+- 2026-07-16: Native blank-window investigation reproduced an uncaught WebKit
+  `SecurityError` when optional activity storage is unavailable. Anchored now
+  falls back to an empty activity history so storage denial cannot prevent the
+  editor shell from rendering. All 45 frontend tests and configured gates pass;
+  native visual confirmation remains.
 
 ## Completion
 

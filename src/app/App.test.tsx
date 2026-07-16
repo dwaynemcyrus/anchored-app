@@ -66,6 +66,21 @@ describe("App", () => {
     ).toHaveAttribute("aria-current", "page");
   });
 
+  it("renders when local activity storage is unavailable", () => {
+    const storageSpy = vi
+      .spyOn(window, "localStorage", "get")
+      .mockImplementation(() => {
+        throw new DOMException("Storage is unavailable", "SecurityError");
+      });
+
+    try {
+      render(<App />);
+      expect(screen.getByText("Anchored")).toBeInTheDocument();
+    } finally {
+      storageSpy.mockRestore();
+    }
+  });
+
   it("filters notes by filename or alias", async () => {
     const user = userEvent.setup();
     render(<App />);

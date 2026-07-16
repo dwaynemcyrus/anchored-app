@@ -48,6 +48,8 @@ Git commit. The format follows [Keep a Changelog], and releases follow
 
 - Opening the native Rename dialog no longer blocks Anchored's main interface
   thread.
+- The editor shell no longer becomes a blank window when WebKit denies access
+  to optional local note-activity storage.
 
 [Keep a Changelog]: https://keepachangelog.com/en/1.1.0/
 [Semantic Versioning]: https://semver.org/spec/v2.0.0.html

@@ -22,7 +22,10 @@ import {
   type DocumentSaveState,
 } from "./documents";
 import { backlinksForDocument, resolveWikilink } from "./links";
-import { buildWikilinkCandidates } from "./linkCandidates";
+import {
+  buildWikilinkCandidates,
+  type DocumentActivity,
+} from "./linkCandidates";
 import {
   loadDocumentActivity,
   markDocumentActive,
@@ -120,9 +123,13 @@ export function App() {
   const [renamingDocumentId, setRenamingDocumentId] = useState<string | null>(
     null,
   );
-  const [documentActivity, setDocumentActivity] = useState(() =>
-    loadDocumentActivity(window.localStorage),
-  );
+  const [documentActivity, setDocumentActivity] = useState(() => {
+    try {
+      return loadDocumentActivity(window.localStorage);
+    } catch {
+      return new Map<string, DocumentActivity>();
+    }
+  });
   const searchInputRef = useRef<HTMLInputElement>(null);
   const loadRequestRef = useRef(0);
   const rescanInFlightRef = useRef(false);
@@ -441,7 +448,11 @@ export function App() {
   }
 
   useEffect(() => {
-    saveDocumentActivity(window.localStorage, documentActivity);
+    try {
+      saveDocumentActivity(window.localStorage, documentActivity);
+    } catch {
+      // Activity ranking is optional and must never block the editor shell.
+    }
   }, [documentActivity]);
 
   useEffect(() => {
