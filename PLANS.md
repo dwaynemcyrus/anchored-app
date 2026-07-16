@@ -197,6 +197,10 @@ and preserves link integrity across filename changes.
   compact search clipping. The remaining intentional deviations are native
   macOS window chrome outside the web surface and omission of an inert overflow
   menu.
+- 2026-07-16: Began the read-only vault boundary with a Rust-owned native folder
+  dialog, private selected-root state, bounded recursive Markdown discovery,
+  symlink refusal, no absolute-path response, and a typed frontend bridge. UI
+  replacement of seeded documents remains pending, so chunk 7 is still active.
 
 ## Completion
 
