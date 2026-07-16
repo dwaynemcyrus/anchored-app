@@ -76,7 +76,7 @@ and preserves link integrity across filename changes.
      by the editor journey and regenerate before code uses it.
    - Commit: pending in the current verified chunk
 
-5. [ ] **Chunk: Scaffold verified app**
+5. [x] **Chunk: Scaffold verified app**
    - Files: `package.json`, lockfile, Vite/TypeScript/ESLint/Prettier configs,
      `index.html`, `src/`, `src-tauri/`, `.gitignore`
    - Change: Install Rust, scaffold Tauri 2 with React and TypeScript, configure
@@ -86,7 +86,7 @@ and preserves link integrity across filename changes.
      and Tauri configuration inspection.
    - Risk/rollback: Toolchain or dependency incompatibility; keep the scaffold
      isolated in one commit and pin successful lockfiles.
-   - Commit: `chore(app): scaffold tauri project`
+   - Commit: pending in the current verified chunk
 
 6. [ ] **Chunk: Build accessible app shell**
    - Files: `src/app/`, `src/styles/`, component tests
@@ -184,14 +184,20 @@ and preserves link integrity across filename changes.
   native 1586×992 size. The design uses a true-black open canvas, a single file
   rail, serif document typography, compact system chrome, and one active anchor
   line as its signature.
+- 2026-07-16: Installed and repaired the stable Rust 1.97 toolchain with
+  rustfmt and Clippy, then generated the official Tauri 2 React/TypeScript
+  scaffold. Frontend gates, Rust gates, and the optimized Tauri no-bundle build
+  all pass on macOS 12.7.6.
 
 ## Completion
 
-- **Checks run:** Documentation diff checks and native-size visual concept
-  inspection; implementation has not yet reached a code quality gate.
-- **Commits:** Overview commits listed in chunk 1; `e766c4d`; `61d1b3d`.
-- **Remaining risks:** Rust setup, vault data safety, cross-file rename
-  transactions, macOS 12 compatibility, and the seven-day observation period.
-- **Follow-up:** Continue with the technical contract commit, visual reference,
-  verified scaffold, and subsequent chunks without waiting between routine
-  reversible steps.
+- **Checks run:** Documentation diff checks; native-size visual concept
+  inspection; Prettier check; ESLint; TypeScript; Vitest; Vite production
+  build; Cargo format, Clippy, and tests; optimized Tauri no-bundle build.
+- **Commits:** Overview commits listed in chunk 1; `e766c4d`; `61d1b3d`;
+  `9fe787b`; `107858e`.
+- **Remaining risks:** Vault data safety, cross-file rename transactions,
+  packaged-app verification, and the seven-day observation period.
+- **Follow-up:** Commit the verified scaffold, then implement and visually
+  compare the accessible app shell without waiting between routine reversible
+  steps.

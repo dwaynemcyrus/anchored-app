@@ -89,8 +89,9 @@ Product scope remains governed by `OVERVIEW.md`.
 - **External services:** none
 
 Dependencies must have a clear MVP purpose. Paid services require human
-approval. Versions above are initial targets and must be confirmed by the
-generated lockfiles and successful local builds.
+approval. The generated lockfiles currently resolve React 19.2, Vite 7.3,
+Tauri CLI 2.11, Tauri 2.11, TypeScript 5.8, and Rust 1.97. Update this contract
+when a major-version change is intentionally adopted.
 
 ## Repository structure
 
@@ -217,8 +218,8 @@ These scripts must exist in `package.json` after the scaffold chunk.
 
 ## Known risks and constraints
 
-- Rust is not currently installed on the development machine and is required
-  before a Tauri build can be verified.
+- Full Xcode is not installed. The Xcode Command Line Tools satisfy Tauri's
+  documented desktop-only prerequisite; iOS development remains unavailable.
 - The target vault can contain symlinks, unsupported syntax, external edits,
   duplicate names, ambiguous aliases, and malformed front matter.
 - Stable-ID insertion and cross-file rename updates are high-risk data changes;
