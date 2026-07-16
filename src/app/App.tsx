@@ -1,4 +1,11 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useDeferredValue,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 
 import { EditorSurface } from "./components/EditorSurface";
 import { FileRail } from "./components/FileRail";
@@ -15,6 +22,13 @@ import {
   type DocumentSaveState,
 } from "./documents";
 import { backlinksForDocument, resolveWikilink } from "./links";
+import { buildWikilinkCandidates } from "./linkCandidates";
+import {
+  loadDocumentActivity,
+  markDocumentActive,
+  registerFirstSeenDocuments,
+  saveDocumentActivity,
+} from "./recentDocuments";
 import {
   applyIdentityMigration,
   createVaultFile,
@@ -27,6 +41,8 @@ import {
   type VaultSnapshot,
   type IdentityMigrationPreview,
 } from "../lib/tauri/vault";
+
+const ACTIVITY_REFRESH_INTERVAL_MS = 60_000;
 
 type DocumentLoadState =
   | { status: "idle" }
@@ -104,6 +120,9 @@ export function App() {
   const [renamingDocumentId, setRenamingDocumentId] = useState<string | null>(
     null,
   );
+  const [documentActivity, setDocumentActivity] = useState(() =>
+    loadDocumentActivity(window.localStorage),
+  );
   const searchInputRef = useRef<HTMLInputElement>(null);
   const loadRequestRef = useRef(0);
   const rescanInFlightRef = useRef(false);
@@ -116,10 +135,17 @@ export function App() {
     (document) => document.id === activeDocumentId,
   );
   const saveState: DocumentSaveState = activeDocument?.saveState ?? "saved";
+  const deferredDocuments = useDeferredValue(documents);
   const backlinks = useMemo(
     () =>
-      activeDocumentId ? backlinksForDocument(documents, activeDocumentId) : [],
-    [activeDocumentId, documents],
+      activeDocumentId
+        ? backlinksForDocument(deferredDocuments, activeDocumentId)
+        : [],
+    [activeDocumentId, deferredDocuments],
+  );
+  const wikilinkCandidates = useMemo(
+    () => buildWikilinkCandidates(deferredDocuments, documentActivity),
+    [deferredDocuments, documentActivity],
   );
 
   const addVaultNotice = useCallback((text: string, identityAction = false) => {
@@ -154,6 +180,9 @@ export function App() {
     setQuery("");
     setDocumentLoad({ status: "idle" });
     setSidebarOpen(false);
+    setDocumentActivity((current) =>
+      markDocumentActive(current, nextDocument.id, Date.now()),
+    );
   }, []);
 
   const saveDocumentAs = useCallback(
@@ -337,6 +366,9 @@ export function App() {
       );
       documentsRef.current = nextDocuments;
       setDocuments(nextDocuments);
+      setDocumentActivity((current) =>
+        registerFirstSeenDocuments(current, nextDocuments, Date.now()),
+      );
       setFolderOrder(nextFolders);
       setExpandedFolders((currentFolders) => {
         const nextExpanded = new Set(currentFolders);
@@ -409,6 +441,10 @@ export function App() {
   }
 
   useEffect(() => {
+    saveDocumentActivity(window.localStorage, documentActivity);
+  }, [documentActivity]);
+
+  useEffect(() => {
     function handleKeyboardShortcut(event: KeyboardEvent) {
       const commandKey = event.metaKey || event.ctrlKey;
 
@@ -469,6 +505,9 @@ export function App() {
     );
     if (!document) return;
 
+    setDocumentActivity((current) =>
+      markDocumentActive(current, documentId, Date.now()),
+    );
     setActiveDocumentId(documentId);
     setSidebarOpen(false);
 
@@ -569,6 +608,9 @@ export function App() {
       loadRequestRef.current += 1;
       documentsRef.current = nextDocuments;
       setDocuments(nextDocuments);
+      setDocumentActivity((current) =>
+        registerFirstSeenDocuments(current, nextDocuments, Date.now()),
+      );
       setFolderOrder(nextFolders);
       setExpandedFolders((currentFolders) => {
         const nextExpanded = new Set(currentFolders);
@@ -635,6 +677,14 @@ export function App() {
   function updateDocumentContent(content: string) {
     if (!activeDocument) return;
 
+    const now = Date.now();
+    setDocumentActivity((current) => {
+      const lastActiveAt = current.get(activeDocument.id)?.lastActiveAt ?? 0;
+      return now - lastActiveAt >= ACTIVITY_REFRESH_INTERVAL_MS
+        ? markDocumentActive(current, activeDocument.id, now)
+        : current;
+    });
+
     setDocuments((currentDocuments) =>
       currentDocuments.map((document) =>
         document.id === activeDocument.id
@@ -674,6 +724,9 @@ export function App() {
       setMigrationError(undefined);
       setNotesNeedingIdentity(snapshot.warnings.needsIdentity);
       setDocuments(nextDocuments);
+      setDocumentActivity((current) =>
+        registerFirstSeenDocuments(current, nextDocuments, Date.now()),
+      );
       setFolderOrder(nextFolders);
       setExpandedFolders(new Set(nextFolders));
       setActiveDocumentId("");
@@ -742,6 +795,7 @@ export function App() {
               : { status: "idle" }
           }
           vaultName={vaultName}
+          wikilinkCandidates={wikilinkCandidates}
           onCloseDocument={closeDocument}
           onDocumentChange={updateDocumentContent}
           onOpenLinkedDocument={(documentId) => void selectDocument(documentId)}

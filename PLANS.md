@@ -402,6 +402,14 @@ Every future large plan must identify:
   unresolved placeholders without creating files, and use one local
   opened/edited/created/first-seen history. Chunk 10B will establish the shared
   candidates and ranking that Quick Open can reuse in chunk 11.
+- 2026-07-16: Implemented the Chunk 10B authoring flow. Typing `[[` opens a
+  bounded picker for recent notes, filename and alias matches, and known or
+  newly typed unresolved placeholders; completion inserts the shortest unique
+  Obsidian-compatible target and creates no file. Activity is stored only for
+  stable note IDs and edit refreshes are throttled to protect typing latency.
+  All automated frontend gates and 44 tests pass. Native rendered verification
+  remains before the chunk is marked complete because the local browser QA
+  surface refused the preview address.
 
 ## Completion
 

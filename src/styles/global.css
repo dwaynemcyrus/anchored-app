@@ -481,6 +481,52 @@ input:focus-visible,
   background: #2c2c2c;
 }
 
+.markdown-editor .cm-tooltip.cm-tooltip-autocomplete {
+  border: 1px solid var(--color-rule);
+  border-radius: 6px;
+  background: #080808;
+  color: var(--color-text);
+  box-shadow: 0 12px 32px rgb(0 0 0 / 45%);
+}
+
+.markdown-editor .cm-tooltip-autocomplete > ul {
+  min-width: min(360px, calc(100vw - 32px));
+  max-width: min(480px, calc(100vw - 32px));
+  max-height: 260px;
+  padding: 4px;
+  font-family: "SFMono-Regular", Consolas, monospace;
+}
+
+.markdown-editor .cm-tooltip-autocomplete > ul > li {
+  display: flex;
+  min-height: 34px;
+  align-items: baseline;
+  gap: 14px;
+  padding: 7px 9px;
+  border-radius: 4px;
+}
+
+.markdown-editor .cm-tooltip-autocomplete > ul > li[aria-selected] {
+  background: var(--color-row-active);
+  color: var(--color-text);
+}
+
+.markdown-editor .cm-completionLabel {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.markdown-editor .cm-completionDetail {
+  margin-left: auto;
+  overflow: hidden;
+  color: var(--color-text-muted);
+  font-style: normal;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .backlinks {
   padding-top: 24px;
   border-top: 1px solid var(--color-rule);

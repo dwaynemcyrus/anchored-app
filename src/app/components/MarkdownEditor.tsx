@@ -1,15 +1,25 @@
 import { defaultKeymap, history, historyKeymap } from "@codemirror/commands";
+import {
+  autocompletion,
+  type CompletionContext,
+  type CompletionResult,
+} from "@codemirror/autocomplete";
 import { markdown } from "@codemirror/lang-markdown";
 import { EditorState } from "@codemirror/state";
 import { EditorView, keymap, placeholder } from "@codemirror/view";
 import { useEffect, useRef } from "react";
 
-import { wikilinkAtOffset } from "../links";
+import {
+  rankWikilinkCandidates,
+  type WikilinkCandidate,
+} from "../linkCandidates";
+import { wikilinkAtOffset, wikilinkCompletionAtOffset } from "../links";
 
 type MarkdownEditorProps = {
   documentId: string;
   label: string;
   value: string;
+  wikilinkCandidates: WikilinkCandidate[];
   onChange: (content: string) => void;
   onOpenWikilink: (target: string) => void;
   onSave: () => void;
@@ -20,6 +30,7 @@ export default function MarkdownEditor({
   documentId,
   label,
   value,
+  wikilinkCandidates,
   onChange,
   onOpenWikilink,
   onSave,
@@ -31,16 +42,55 @@ export default function MarkdownEditor({
   const onOpenWikilinkRef = useRef(onOpenWikilink);
   const onSaveRef = useRef(onSave);
   const onSaveAsRef = useRef(onSaveAs);
+  const wikilinkCandidatesRef = useRef(wikilinkCandidates);
 
   valueRef.current = value;
   onChangeRef.current = onChange;
   onOpenWikilinkRef.current = onOpenWikilink;
   onSaveRef.current = onSave;
   onSaveAsRef.current = onSaveAs;
+  wikilinkCandidatesRef.current = wikilinkCandidates;
 
   useEffect(() => {
     const host = hostRef.current;
     if (!host) return;
+
+    function completeWikilink(
+      context: CompletionContext,
+    ): CompletionResult | null {
+      const partial = wikilinkCompletionAtOffset(
+        context.state.doc.toString(),
+        context.pos,
+      );
+      if (!partial) return null;
+      const candidates = rankWikilinkCandidates(
+        wikilinkCandidatesRef.current,
+        partial.query,
+        documentId,
+      );
+      if (candidates.length === 0) return null;
+
+      return {
+        filter: false,
+        from: partial.from,
+        options: candidates.map((candidate) => ({
+          apply: (editor, _completion, from, to) => {
+            const inserted = `${candidate.target}]]`;
+            editor.dispatch({
+              changes: { from, insert: inserted, to },
+              selection: { anchor: from + inserted.length },
+            });
+          },
+          detail: candidate.detail,
+          displayLabel: candidate.label,
+          label: candidate.target,
+        })),
+        // Rerank synchronously as the query grows instead of briefly showing
+        // stale recent-note results while a new async query is scheduled.
+        update: (_current, _from, _to, nextContext) =>
+          completeWikilink(nextContext),
+      };
+    }
 
     const view = new EditorView({
       parent: host,
@@ -52,6 +102,13 @@ export default function MarkdownEditor({
           EditorView.lineWrapping,
           EditorView.contentAttributes.of({ "aria-label": label }),
           placeholder("Start writing…"),
+          autocompletion({
+            activateOnTyping: true,
+            icons: false,
+            interactionDelay: 0,
+            maxRenderedOptions: 24,
+            override: [completeWikilink],
+          }),
           keymap.of([
             ...defaultKeymap,
             ...historyKeymap,

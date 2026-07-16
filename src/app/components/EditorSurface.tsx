@@ -1,6 +1,7 @@
 import { lazy, Suspense } from "react";
 
 import type { AnchoredDocument } from "../documents";
+import type { WikilinkCandidate } from "../linkCandidates";
 import { Backlinks } from "./Backlinks";
 
 const MarkdownEditor = lazy(() => import("./MarkdownEditor"));
@@ -14,6 +15,7 @@ type EditorSurfaceProps = {
     | { status: "loading"; documentId: string }
     | { status: "error"; documentId: string; message: string };
   vaultName: string;
+  wikilinkCandidates: WikilinkCandidate[];
   onCloseDocument: () => void;
   onDocumentChange: (content: string) => void;
   onOpenLinkedDocument: (documentId: string) => void;
@@ -31,6 +33,7 @@ export function EditorSurface({
   hasDocuments,
   loadState,
   vaultName,
+  wikilinkCandidates,
   onCloseDocument,
   onDocumentChange,
   onOpenLinkedDocument,
@@ -146,6 +149,7 @@ export function EditorSurface({
               documentId={document.id}
               label={`${document.name} Markdown editor`}
               value={document.sourceText}
+              wikilinkCandidates={wikilinkCandidates}
               onChange={onDocumentChange}
               onOpenWikilink={onOpenWikilink}
               onSave={onSaveDocument}

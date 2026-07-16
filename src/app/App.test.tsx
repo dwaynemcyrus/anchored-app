@@ -43,6 +43,7 @@ const noWarnings = {
 
 describe("App", () => {
   beforeEach(() => {
+    window.localStorage.clear();
     mockedApplyIdentityMigration.mockReset();
     mockedCreateVaultFile.mockReset();
     mockedPreviewIdentityMigration.mockReset();
@@ -125,6 +126,85 @@ describe("App", () => {
         name: "Untitled.md Markdown editor",
       }),
     ).toHaveTextContent("# Draft");
+  });
+
+  it("completes compact filename, alias, and unresolved wikilinks", async () => {
+    const user = userEvent.setup();
+    mockedSelectVault.mockResolvedValue({
+      files: [
+        {
+          id: "01JZQ7K8P4A6F2M9V3C5T7X1BY",
+          name: "Source.md",
+          parent: "Notes",
+          relativePath: "Notes/Source.md",
+        },
+        {
+          aliases: ["Leading Well"],
+          id: "01JZQ91T3AA6F2M9V3C5T7X1BZ",
+          name: "Leadership.md",
+          outgoingLinks: ["Future Idea"],
+          parent: "Notes",
+          relativePath: "Notes/Leadership.md",
+        },
+      ],
+      name: "My Vault",
+      warnings: noWarnings,
+    });
+    mockedReadVaultFile.mockResolvedValue({
+      content: "",
+      relativePath: "Notes/Source.md",
+      sizeBytes: 0,
+    });
+    mockedSaveVaultFile.mockImplementation(async (request) => ({
+      content: request.content,
+      relativePath: request.relativePath,
+      sizeBytes: request.content.length,
+    }));
+    render(<App />);
+
+    await user.click(
+      screen.getByRole("button", { name: "Open vault: Personal" }),
+    );
+    await user.click(screen.getByRole("button", { name: "Source.md" }));
+    const editor = await screen.findByRole("textbox", {
+      name: "Source.md Markdown editor",
+    });
+    await user.click(editor);
+    await user.keyboard("[[[[");
+
+    const completions = await screen.findByRole("listbox", {
+      name: "Completions",
+    });
+    expect(
+      within(completions).getByText("Leadership", {
+        selector: ".cm-completionLabel",
+      }),
+    ).toBeInTheDocument();
+    await user.keyboard("Lea");
+    await within(
+      await screen.findByRole("listbox", { name: "Completions" }),
+    ).findByText("New uncreated link");
+    await user.keyboard("{Enter}");
+    expect(editor).toHaveTextContent("[[Leadership]]");
+
+    await user.keyboard(" [[[[Future");
+    expect(
+      await screen.findByRole("listbox", { name: "Completions" }),
+    ).toHaveTextContent("Future IdeaUncreated · 1 reference");
+    await user.keyboard("{Enter}");
+    expect(editor).toHaveTextContent("[[Leadership]] [[Future Idea]]");
+
+    await user.keyboard(" [[[[Leading W");
+    expect(
+      await screen.findByRole("listbox", { name: "Completions" }),
+    ).toHaveTextContent("Leading WellAlias · Notes");
+    await user.click(
+      screen.getByText("Leading Well", { selector: ".cm-completionLabel" }),
+    );
+    expect(editor).toHaveFocus();
+    expect(editor).toHaveTextContent(
+      "[[Leadership]] [[Future Idea]] [[Leadership|Leading Well]]",
+    );
   });
 
   it("creates a real vault note through Save As", async () => {

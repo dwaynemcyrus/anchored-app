@@ -33,6 +33,9 @@ Git commit. The format follows [Keep a Changelog], and releases follow
 - Each note now lists its resolved backlinks. Valid quoted internal links in
   YAML text and list properties participate like body links; escaped body
   text, inline code, fenced code, and indented code remain excluded.
+- Typing `[[` now opens a keyboard- and pointer-accessible link picker. It
+  suggests recent notes, shortest unique filename targets, aliases, and known
+  uncreated placeholders without creating files automatically.
 - Identified notes can be renamed or moved from the editor. Anchored updates
   uniquely resolved filename, path, alias, heading, display-label, and quoted
   property links as one recoverable transaction; ambiguous links remain
