@@ -25,6 +25,7 @@ static TEMPORARY_FILE_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 #[derive(Default)]
 pub struct VaultState {
+    migration_preview: RwLock<Option<IdentityMigrationPlan>>,
     root: RwLock<Option<PathBuf>>,
 }
 
@@ -81,6 +82,40 @@ struct IdentitySummary {
     added: usize,
     conflicts: usize,
     needs_identity: usize,
+}
+
+#[derive(Debug, Clone)]
+struct IdentityMigrationPlan {
+    entries: Vec<IdentityMigrationPlanEntry>,
+    root: PathBuf,
+}
+
+#[derive(Debug, Clone)]
+struct IdentityMigrationPlanEntry {
+    relative_path: String,
+    signature: FileSignature,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct IdentityMigrationIssue {
+    reason: &'static str,
+    relative_path: String,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct IdentityMigrationPreview {
+    eligible_files: Vec<String>,
+    issues: Vec<IdentityMigrationIssue>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct IdentityMigrationResult {
+    migrated: usize,
+    skipped: usize,
+    snapshot: VaultSnapshot,
 }
 
 #[derive(Debug, Serialize)]
@@ -295,6 +330,63 @@ pub async fn create_vault_file(
         .map_err(|error| VaultError::invalid_file(format!("Unsupported save path: {error}")))?;
 
     create_markdown_file(&root, &selected_path, &content).map(Some)
+}
+
+#[tauri::command]
+pub async fn preview_identity_migration(
+    state: State<'_, VaultState>,
+) -> Result<IdentityMigrationPreview, VaultError> {
+    let root = state
+        .root
+        .read()
+        .map_err(|_| VaultError::state("The selected vault state could not be read."))?
+        .clone()
+        .ok_or_else(|| VaultError::state("Select a vault before reviewing note identities."))?;
+    let snapshot = scan_vault(&root)?;
+    let (preview, plan) = build_identity_migration_preview(&root, &snapshot.files)?;
+    *state
+        .migration_preview
+        .write()
+        .map_err(|_| VaultError::state("The identity migration preview could not be stored."))? =
+        Some(plan);
+    Ok(preview)
+}
+
+#[tauri::command]
+pub async fn apply_identity_migration(
+    app: AppHandle,
+    state: State<'_, VaultState>,
+) -> Result<IdentityMigrationResult, VaultError> {
+    let plan = state
+        .migration_preview
+        .write()
+        .map_err(|_| VaultError::state("The identity migration preview could not be read."))?
+        .take()
+        .ok_or_else(|| VaultError::state("Review the identity migration before applying it."))?;
+    let current_root = state
+        .root
+        .read()
+        .map_err(|_| VaultError::state("The selected vault state could not be read."))?
+        .clone()
+        .ok_or_else(|| VaultError::state("Select a vault before applying note identities."))?;
+    if canonical_vault_root(&current_root)? != plan.root {
+        return Err(VaultError::state(
+            "The selected vault changed after the identity preview.",
+        ));
+    }
+
+    let (migrated, skipped) = apply_identity_migration_plan(&plan)?;
+    let mut snapshot = scan_vault(&plan.root)?;
+    let baseline_path = identity_baseline_path(&app, &plan.root)?;
+    let summary = reconcile_vault_identities(&plan.root, &snapshot.files, &baseline_path)?;
+    snapshot.warnings.added_identities = migrated + summary.added;
+    snapshot.warnings.identity_conflicts = summary.conflicts;
+    snapshot.warnings.needs_identity = summary.needs_identity;
+    Ok(IdentityMigrationResult {
+        migrated,
+        skipped,
+        snapshot,
+    })
 }
 
 fn canonical_vault_root(path: &Path) -> Result<PathBuf, VaultError> {
@@ -543,6 +635,113 @@ fn reconcile_vault_identities(
         },
     )?;
     Ok(summary)
+}
+
+fn build_identity_migration_preview(
+    root: &Path,
+    files: &[VaultFile],
+) -> Result<(IdentityMigrationPreview, IdentityMigrationPlan), VaultError> {
+    let root = canonical_vault_root(root)?;
+    let mut inspected = Vec::with_capacity(files.len());
+    let mut identity_counts = HashMap::<String, usize>::new();
+    for file in files {
+        let signature = vault_file_signature(&root, &file.relative_path)?;
+        let status = read_identity_status(&root, &file.relative_path, signature)?;
+        if let NoteIdentityStatus::Present(id) = &status {
+            *identity_counts.entry(id.clone()).or_default() += 1;
+        }
+        inspected.push((file.relative_path.clone(), signature, status));
+    }
+
+    let mut eligible_files = Vec::new();
+    let mut entries = Vec::new();
+    let mut issues = Vec::new();
+    for (relative_path, signature, status) in inspected {
+        match status {
+            NoteIdentityStatus::Missing => {
+                eligible_files.push(relative_path.clone());
+                entries.push(IdentityMigrationPlanEntry {
+                    relative_path,
+                    signature,
+                });
+            }
+            NoteIdentityStatus::Present(id) if identity_counts[&id] > 1 => {
+                issues.push(IdentityMigrationIssue {
+                    reason: "duplicateIdentity",
+                    relative_path,
+                });
+            }
+            NoteIdentityStatus::Invalid => issues.push(IdentityMigrationIssue {
+                reason: "invalidIdentity",
+                relative_path,
+            }),
+            NoteIdentityStatus::Duplicate => issues.push(IdentityMigrationIssue {
+                reason: "duplicateIdField",
+                relative_path,
+            }),
+            NoteIdentityStatus::MalformedFrontMatter => {
+                issues.push(IdentityMigrationIssue {
+                    reason: "malformedFrontMatter",
+                    relative_path,
+                });
+            }
+            NoteIdentityStatus::Present(_) => {}
+        }
+    }
+
+    Ok((
+        IdentityMigrationPreview {
+            eligible_files,
+            issues,
+        },
+        IdentityMigrationPlan { entries, root },
+    ))
+}
+
+fn apply_identity_migration_plan(
+    plan: &IdentityMigrationPlan,
+) -> Result<(usize, usize), VaultError> {
+    let snapshot = scan_vault(&plan.root)?;
+    let mut known_identities = HashSet::new();
+    for file in &snapshot.files {
+        let signature = vault_file_signature(&plan.root, &file.relative_path)?;
+        if let NoteIdentityStatus::Present(id) =
+            read_identity_status(&plan.root, &file.relative_path, signature)?
+        {
+            known_identities.insert(id);
+        }
+    }
+
+    let mut migrated = 0;
+    let mut skipped = 0;
+    for entry in &plan.entries {
+        let Ok(current_signature) = vault_file_signature(&plan.root, &entry.relative_path) else {
+            skipped += 1;
+            continue;
+        };
+        if current_signature != entry.signature {
+            skipped += 1;
+            continue;
+        }
+        let expected = read_markdown_file(&plan.root, &entry.relative_path)?.content;
+        if !matches!(
+            inspect_note_identity(&expected),
+            NoteIdentityStatus::Missing
+        ) {
+            skipped += 1;
+            continue;
+        }
+        let id = generate_unique_note_id(&known_identities);
+        let updated = add_note_identity(&expected, &id).map_err(|_| {
+            VaultError::identity_conflict(
+                "A legacy note could not receive an identity without changing unsafe front matter.",
+            )
+        })?;
+        save_markdown_file(&plan.root, &entry.relative_path, &updated, &expected)?;
+        known_identities.insert(id);
+        migrated += 1;
+    }
+    Ok((migrated, skipped))
 }
 
 fn generate_unique_note_id(existing: &HashSet<String>) -> String {
@@ -957,7 +1156,8 @@ mod tests {
     use tempfile::tempdir;
 
     use super::{
-        canonical_vault_root, create_markdown_file, inspect_note_identity, read_markdown_file,
+        apply_identity_migration_plan, build_identity_migration_preview, canonical_vault_root,
+        create_markdown_file, inspect_note_identity, read_markdown_file,
         reconcile_vault_identities, save_markdown_file, scan_vault, NoteIdentityStatus,
         MAX_MARKDOWN_FILE_BYTES,
     };
@@ -1068,6 +1268,58 @@ mod tests {
             ),
             NoteIdentityStatus::Present(_)
         ));
+    }
+
+    #[test]
+    fn previews_and_applies_only_safe_legacy_identity_changes() {
+        let vault = tempdir().expect("create fixture vault");
+        fs::write(vault.path().join("Legacy.md"), "# Legacy\n").expect("write legacy note");
+        fs::write(
+            vault.path().join("Unsafe.md"),
+            "---\ntags: [broken\n---\nBody\n",
+        )
+        .expect("write unsafe note");
+        let snapshot = scan_vault(vault.path()).expect("scan fixture vault");
+
+        let (preview, plan) = build_identity_migration_preview(vault.path(), &snapshot.files)
+            .expect("preview migration");
+
+        assert_eq!(preview.eligible_files, vec!["Legacy.md"]);
+        assert_eq!(preview.issues.len(), 1);
+        assert_eq!(preview.issues[0].relative_path, "Unsafe.md");
+        assert_eq!(preview.issues[0].reason, "malformedFrontMatter");
+
+        let (migrated, skipped) = apply_identity_migration_plan(&plan).expect("apply migration");
+        assert_eq!((migrated, skipped), (1, 0));
+        assert!(matches!(
+            inspect_note_identity(
+                &fs::read_to_string(vault.path().join("Legacy.md")).expect("read migrated note")
+            ),
+            NoteIdentityStatus::Present(_)
+        ));
+        assert_eq!(
+            fs::read_to_string(vault.path().join("Unsafe.md")).expect("read unsafe note"),
+            "---\ntags: [broken\n---\nBody\n"
+        );
+    }
+
+    #[test]
+    fn skips_a_legacy_note_changed_after_preview() {
+        let vault = tempdir().expect("create fixture vault");
+        let note = vault.path().join("Legacy.md");
+        fs::write(&note, "# Before\n").expect("write legacy note");
+        let snapshot = scan_vault(vault.path()).expect("scan fixture vault");
+        let (_, plan) = build_identity_migration_preview(vault.path(), &snapshot.files)
+            .expect("preview migration");
+        fs::write(&note, "# Changed after preview\n").expect("change legacy note");
+
+        let (migrated, skipped) = apply_identity_migration_plan(&plan).expect("apply migration");
+
+        assert_eq!((migrated, skipped), (0, 1));
+        assert_eq!(
+            fs::read_to_string(&note).expect("read changed note"),
+            "# Changed after preview\n"
+        );
     }
 
     #[test]

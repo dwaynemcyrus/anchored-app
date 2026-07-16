@@ -11,7 +11,9 @@ pub fn run() {
             vault::rescan_vault,
             vault::read_vault_file,
             vault::save_vault_file,
-            vault::create_vault_file
+            vault::create_vault_file,
+            vault::preview_identity_migration,
+            vault::apply_identity_migration
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
