@@ -49,23 +49,23 @@ and preserves link integrity across filename changes.
    - Risk/rollback: Documentation only; revert focused commits.
    - Commits: `389a049`, `20f06b8`, `e36644b`, `9729a1f`, `e8f7f4e`
 
-2. [ ] **Chunk: Define technical contract**
+2. [x] **Chunk: Define technical contract**
    - Files: `PROJECT.md`
    - Change: Record stack, boundaries, commands, data safety, active guides,
      delivery, risks, and durable decisions.
    - Verify: Placeholder scan, Markdown diff check, source cross-check.
    - Risk/rollback: Incorrect contract could guide later work; review against
      the approved overview and revert the focused commit if needed.
-   - Commit: `docs: define project contract`
+   - Commit: `e766c4d docs: define project contract`
 
-3. [ ] **Chunk: Establish build plan**
+3. [x] **Chunk: Establish build plan**
    - Files: `PLANS.md`
    - Change: Stage the MVP into independently verifiable, reversible chunks.
    - Verify: Every overview requirement maps to a chunk and acceptance check.
    - Risk/rollback: Planning only; update as discoveries change sequencing.
-   - Commit: `docs: plan anchored mvp`
+   - Commit: `61d1b3d docs: plan anchored mvp`
 
-4. [ ] **Chunk: Set visual reference**
+4. [x] **Chunk: Set visual reference**
    - Files: `docs/design/anchored-editor-concept.png`,
      `docs/design/editor-design.md`
    - Change: Generate and inspect the complete primary editor screen, then
@@ -74,7 +74,7 @@ and preserves link integrity across filename changes.
      minimal white-on-black requirements.
    - Risk/rollback: Concept could add visual scope; reject anything not required
      by the editor journey and regenerate before code uses it.
-   - Commit: `docs(design): define editor direction`
+   - Commit: pending in the current verified chunk
 
 5. [ ] **Chunk: Scaffold verified app**
    - Files: `package.json`, lockfile, Vite/TypeScript/ESLint/Prettier configs,
@@ -180,12 +180,16 @@ and preserves link integrity across filename changes.
   are installed; Rust is missing and must be installed before Tauri checks.
 - 2026-07-16: Frontend and data guides activated. Hosted deployment guide is
   inactive for the local-only MVP.
+- 2026-07-16: Generated and inspected the full primary editor concept at its
+  native 1586×992 size. The design uses a true-black open canvas, a single file
+  rail, serif document typography, compact system chrome, and one active anchor
+  line as its signature.
 
 ## Completion
 
-- **Checks run:** Documentation diff checks only; implementation has not yet
-  reached a code quality gate.
-- **Commits:** Overview commits listed in chunk 1.
+- **Checks run:** Documentation diff checks and native-size visual concept
+  inspection; implementation has not yet reached a code quality gate.
+- **Commits:** Overview commits listed in chunk 1; `e766c4d`; `61d1b3d`.
 - **Remaining risks:** Rust setup, vault data safety, cross-file rename
   transactions, macOS 12 compatibility, and the seven-day observation period.
 - **Follow-up:** Continue with the technical contract commit, visual reference,
