@@ -78,13 +78,15 @@ export function EditorSurface({
           <span>{document.name}</span>
         </span>
         <div className="editor-surface__actions">
-          {document.relativePath &&
-          document.sourceText !== undefined &&
-          document.id.startsWith("vault-id:") ? (
+          {document.relativePath && document.id.startsWith("vault-id:") ? (
             <button
               aria-label={`Rename ${document.name}`}
               className="editor-surface__action"
-              disabled={renaming || document.saveState !== "saved"}
+              disabled={
+                renaming ||
+                document.saveState !== "saved" ||
+                loadState.status === "loading"
+              }
               type="button"
               onClick={onRenameDocument}
             >

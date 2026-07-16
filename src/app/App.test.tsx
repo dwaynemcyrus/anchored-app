@@ -378,6 +378,34 @@ describe("App", () => {
     ).toHaveAttribute("aria-placeholder", "Start writing…");
   });
 
+  it("keeps rename visible while an identified note is opening", async () => {
+    const user = userEvent.setup();
+    mockedSelectVault.mockResolvedValue({
+      files: [
+        {
+          id: "01JZQ7K8P4A6F2M9V3C5T7X1BY",
+          name: "Opening.md",
+          parent: "Notes",
+          relativePath: "Notes/Opening.md",
+        },
+      ],
+      name: "My Vault",
+      warnings: noWarnings,
+    });
+    mockedReadVaultFile.mockReturnValue(new Promise(() => undefined));
+    render(<App />);
+
+    await user.click(
+      screen.getByRole("button", { name: "Open vault: Personal" }),
+    );
+    await user.click(screen.getByRole("button", { name: "Opening.md" }));
+
+    expect(
+      screen.getByRole("button", { name: "Rename Opening.md" }),
+    ).toBeDisabled();
+    expect(screen.getByText("Opening Markdown…")).toBeInTheDocument();
+  });
+
   it("renames an identified note and reloads updated vault content", async () => {
     const user = userEvent.setup();
     const identity = "01JZQ7K8P4A6F2M9V3C5T7X1BY";
