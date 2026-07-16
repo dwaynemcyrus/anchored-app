@@ -37,6 +37,24 @@ export type CreateVaultFileRequest = {
   suggestedName: string;
 };
 
+export type IdentityMigrationPreview = {
+  eligibleFiles: string[];
+  issues: Array<{
+    reason:
+      | "duplicateIdentity"
+      | "duplicateIdField"
+      | "invalidIdentity"
+      | "malformedFrontMatter";
+    relativePath: string;
+  }>;
+};
+
+export type IdentityMigrationResult = {
+  migrated: number;
+  skipped: number;
+  snapshot: VaultSnapshot;
+};
+
 export function selectVault(): Promise<VaultSnapshot | null> {
   return invoke<VaultSnapshot | null>("select_vault");
 }
@@ -59,4 +77,12 @@ export function createVaultFile(
   request: CreateVaultFileRequest,
 ): Promise<VaultDocument | null> {
   return invoke<VaultDocument | null>("create_vault_file", request);
+}
+
+export function previewIdentityMigration(): Promise<IdentityMigrationPreview> {
+  return invoke<IdentityMigrationPreview>("preview_identity_migration");
+}
+
+export function applyIdentityMigration(): Promise<IdentityMigrationResult> {
+  return invoke<IdentityMigrationResult>("apply_identity_migration");
 }

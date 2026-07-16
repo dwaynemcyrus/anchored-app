@@ -2,7 +2,9 @@ import { invoke } from "@tauri-apps/api/core";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
+  applyIdentityMigration,
   createVaultFile,
+  previewIdentityMigration,
   readVaultFile,
   rescanVault,
   saveVaultFile,
@@ -108,5 +110,26 @@ describe("vault bridge", () => {
       "create_vault_file",
       createRequest,
     );
+  });
+
+  it("previews and applies the Rust-held identity migration plan", async () => {
+    const preview = { eligibleFiles: ["Legacy.md"], issues: [] };
+    mockedInvoke.mockResolvedValueOnce(preview).mockResolvedValueOnce({
+      migrated: 1,
+      skipped: 0,
+      snapshot,
+    });
+
+    await expect(previewIdentityMigration()).resolves.toEqual(preview);
+    await expect(applyIdentityMigration()).resolves.toEqual({
+      migrated: 1,
+      skipped: 0,
+      snapshot,
+    });
+    expect(mockedInvoke).toHaveBeenNthCalledWith(
+      1,
+      "preview_identity_migration",
+    );
+    expect(mockedInvoke).toHaveBeenNthCalledWith(2, "apply_identity_migration");
   });
 });
