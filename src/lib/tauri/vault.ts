@@ -1,6 +1,8 @@
 import { invoke } from "@tauri-apps/api/core";
 
 export type VaultFile = {
+  aliases?: string[];
+  id?: string;
   name: string;
   parent: string;
   relativePath: string;

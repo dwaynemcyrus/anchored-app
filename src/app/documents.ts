@@ -86,11 +86,11 @@ export function documentsFromVault(
   snapshot: VaultSnapshot,
 ): AnchoredDocument[] {
   return snapshot.files.map((file) => ({
-    id: `vault:${file.relativePath}`,
+    id: file.id ? `vault-id:${file.id}` : `vault-path:${file.relativePath}`,
     name: file.name,
     folder: file.parent || snapshot.name,
     title: file.name.replace(/\.md$/i, ""),
-    aliases: [],
+    aliases: file.aliases ?? [],
     tags: [],
     body: "",
     relativePath: file.relativePath,
@@ -107,17 +107,33 @@ export function mergeDocumentsFromVault(
       document.relativePath ? [[document.relativePath, document]] : [],
     ),
   );
+  const currentById = new Map(
+    currentDocuments.map((document) => [document.id, document]),
+  );
   const scannedPaths = new Set(snapshot.files.map((file) => file.relativePath));
-  const scannedDocuments = documentsFromVault(snapshot).map((document) => {
-    const current = currentByPath.get(document.relativePath as string);
+  const incomingDocuments = documentsFromVault(snapshot);
+  const scannedIds = new Set(incomingDocuments.map((document) => document.id));
+  const scannedDocuments = incomingDocuments.map((document) => {
+    const current =
+      currentById.get(document.id) ??
+      currentByPath.get(document.relativePath as string);
     return current
-      ? { ...current, folder: document.folder, name: document.name }
+      ? {
+          ...current,
+          aliases: document.aliases,
+          folder: document.folder,
+          id: document.id,
+          name: document.name,
+          relativePath: document.relativePath,
+          title: document.title,
+        }
       : document;
   });
   const localOrDirtyMissingDocuments = currentDocuments.filter(
     (document) =>
       !document.relativePath ||
-      (!scannedPaths.has(document.relativePath) &&
+      (!scannedIds.has(document.id) &&
+        !scannedPaths.has(document.relativePath) &&
         document.saveState !== undefined &&
         document.saveState !== "saved"),
   );

@@ -81,6 +81,48 @@ pub fn inspect_note_identity(content: &str) -> NoteIdentityStatus {
     NoteIdentityStatus::Present(id.clone())
 }
 
+pub fn inspect_note_aliases(content: &str) -> Vec<String> {
+    let bounds = match front_matter_bounds(content) {
+        Ok(Some(bounds)) => bounds,
+        Ok(None) | Err(()) => return Vec::new(),
+    };
+    let yaml = &content[bounds.body_start..bounds.body_end];
+    if count_top_level_keys(yaml, "aliases") != 1 {
+        return Vec::new();
+    }
+    let Ok(documents) = YamlLoader::load_from_str(yaml) else {
+        return Vec::new();
+    };
+    let Some(Yaml::Hash(mapping)) = documents.first() else {
+        return Vec::new();
+    };
+    let Some(value) = mapping.get(&Yaml::String("aliases".to_owned())) else {
+        return Vec::new();
+    };
+
+    let aliases = match value {
+        Yaml::String(alias) => vec![alias.clone()],
+        Yaml::Array(values) if values.iter().all(|value| matches!(value, Yaml::String(_))) => {
+            values
+                .iter()
+                .filter_map(|value| match value {
+                    Yaml::String(alias) => Some(alias.clone()),
+                    _ => None,
+                })
+                .collect()
+        }
+        _ => return Vec::new(),
+    };
+
+    let mut unique = Vec::new();
+    for alias in aliases {
+        if !alias.is_empty() && !unique.contains(&alias) {
+            unique.push(alias);
+        }
+    }
+    unique
+}
+
 pub fn add_note_identity(content: &str, id: &str) -> Result<String, IdentityMutationError> {
     let parsed = Ulid::from_string(id).map_err(|_| IdentityMutationError::InvalidIdentity)?;
     if parsed.to_string() != id {
@@ -211,7 +253,7 @@ fn front_matter_bounds(content: &str) -> Result<Option<FrontMatterBounds>, ()> {
     Err(())
 }
 
-fn count_top_level_id_keys(yaml: &str) -> usize {
+fn count_top_level_keys(yaml: &str, expected: &str) -> usize {
     yaml.lines()
         .filter(|line| {
             if line.starts_with(char::is_whitespace) || line.trim_start().starts_with('#') {
@@ -220,9 +262,14 @@ fn count_top_level_id_keys(yaml: &str) -> usize {
             let Some((key, _)) = line.split_once(':') else {
                 return false;
             };
-            matches!(key.trim(), "id" | "'id'" | "\"id\"")
+            let key = key.trim();
+            key == expected || key == format!("'{expected}'") || key == format!("\"{expected}\"")
         })
         .count()
+}
+
+fn count_top_level_id_keys(yaml: &str) -> usize {
+    count_top_level_keys(yaml, "id")
 }
 
 fn find_top_level_id_value(yaml: &str, id: &str) -> Option<std::ops::Range<usize>> {
@@ -247,8 +294,8 @@ fn find_top_level_id_value(yaml: &str, id: &str) -> Option<std::ops::Range<usize
 #[cfg(test)]
 mod tests {
     use super::{
-        add_note_identity, assign_new_note_identity, generate_note_id, inspect_note_identity,
-        IdentityMutationError, NoteIdentityStatus,
+        add_note_identity, assign_new_note_identity, generate_note_id, inspect_note_aliases,
+        inspect_note_identity, IdentityMutationError, NoteIdentityStatus,
     };
 
     const ID: &str = "01JZQ7K8P4A6F2M9V3C5T7X1BY";
@@ -260,6 +307,27 @@ mod tests {
         assert_eq!(id.len(), 26);
         assert!(!id.starts_with("note_"));
         assert!(id.parse::<ulid::Ulid>().is_ok());
+    }
+
+    #[test]
+    fn reads_obsidian_alias_lists_without_rewriting_yaml() {
+        let content = "---\naliases: [Leading Well, 'Zürich Notes', Leading Well]\n---\nBody\n";
+
+        assert_eq!(
+            inspect_note_aliases(content),
+            vec!["Leading Well".to_owned(), "Zürich Notes".to_owned()]
+        );
+        assert_eq!(
+            inspect_note_aliases("---\naliases: One alias\n---\n"),
+            vec!["One alias".to_owned()]
+        );
+    }
+
+    #[test]
+    fn ignores_ambiguous_or_invalid_alias_properties() {
+        assert!(inspect_note_aliases("---\naliases: [one\n---\n").is_empty());
+        assert!(inspect_note_aliases("---\naliases: one\naliases: two\n---\n").is_empty());
+        assert!(inspect_note_aliases("---\naliases: [valid, 2]\n---\n").is_empty());
     }
 
     #[test]

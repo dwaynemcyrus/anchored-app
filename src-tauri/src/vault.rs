@@ -14,8 +14,8 @@ use tauri::{AppHandle, Manager, State};
 use tauri_plugin_dialog::DialogExt;
 
 use crate::metadata::{
-    add_note_identity, assign_new_note_identity, generate_note_id, inspect_note_identity,
-    NoteIdentityStatus,
+    add_note_identity, assign_new_note_identity, generate_note_id, inspect_note_aliases,
+    inspect_note_identity, NoteIdentityStatus,
 };
 
 const MAX_VAULT_ENTRIES: usize = 50_000;
@@ -32,6 +32,9 @@ pub struct VaultState {
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct VaultFile {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub id: Option<String>,
+    pub aliases: Vec<String>,
     pub name: String,
     pub parent: String,
     pub relative_path: String,
@@ -234,6 +237,7 @@ pub async fn select_vault(
     snapshot.warnings.added_identities = summary.added;
     snapshot.warnings.identity_conflicts = summary.conflicts;
     snapshot.warnings.needs_identity = summary.needs_identity;
+    enrich_vault_metadata(&root, &mut snapshot.files)?;
 
     let mut stored_root = state
         .root
@@ -264,6 +268,7 @@ pub async fn rescan_vault(
     snapshot.warnings.added_identities = summary.added;
     snapshot.warnings.identity_conflicts = summary.conflicts;
     snapshot.warnings.needs_identity = summary.needs_identity;
+    enrich_vault_metadata(&root, &mut snapshot.files)?;
     Ok(Some(snapshot))
 }
 
@@ -382,6 +387,7 @@ pub async fn apply_identity_migration(
     snapshot.warnings.added_identities = migrated + summary.added;
     snapshot.warnings.identity_conflicts = summary.conflicts;
     snapshot.warnings.needs_identity = summary.needs_identity;
+    enrich_vault_metadata(&plan.root, &mut snapshot.files)?;
     Ok(IdentityMigrationResult {
         migrated,
         skipped,
@@ -472,6 +478,8 @@ fn scan_vault(root: &Path) -> Result<VaultSnapshot, VaultError> {
                 .to_owned();
 
             files.push(VaultFile {
+                id: None,
+                aliases: Vec::new(),
                 name,
                 parent,
                 relative_path: relative_path.to_owned(),
@@ -502,6 +510,40 @@ fn scan_vault(root: &Path) -> Result<VaultSnapshot, VaultError> {
             skipped_symlinks,
         },
     })
+}
+
+fn enrich_vault_metadata(root: &Path, files: &mut [VaultFile]) -> Result<(), VaultError> {
+    let mut indexed = Vec::with_capacity(files.len());
+    let mut identity_counts = HashMap::<String, usize>::new();
+
+    for file in files.iter() {
+        let signature = vault_file_signature(root, &file.relative_path)?;
+        if signature.size_bytes > MAX_MARKDOWN_FILE_BYTES {
+            indexed.push((None, Vec::new()));
+            continue;
+        }
+        let path = resolve_vault_markdown_file(root, &file.relative_path)?;
+        let bytes = fs::read(path)
+            .map_err(|error| VaultError::io("Note metadata could not be read", error))?;
+        let Ok(content) = String::from_utf8(bytes) else {
+            indexed.push((None, Vec::new()));
+            continue;
+        };
+        let id = match inspect_note_identity(&content) {
+            NoteIdentityStatus::Present(id) => {
+                *identity_counts.entry(id.clone()).or_default() += 1;
+                Some(id)
+            }
+            _ => None,
+        };
+        indexed.push((id, inspect_note_aliases(&content)));
+    }
+
+    for (file, (id, aliases)) in files.iter_mut().zip(indexed) {
+        file.id = id.filter(|id| identity_counts[id] == 1);
+        file.aliases = aliases;
+    }
+    Ok(())
 }
 
 fn identity_baseline_path(app: &AppHandle, root: &Path) -> Result<PathBuf, VaultError> {
@@ -1157,7 +1199,7 @@ mod tests {
 
     use super::{
         apply_identity_migration_plan, build_identity_migration_preview, canonical_vault_root,
-        create_markdown_file, inspect_note_identity, read_markdown_file,
+        create_markdown_file, enrich_vault_metadata, inspect_note_identity, read_markdown_file,
         reconcile_vault_identities, save_markdown_file, scan_vault, NoteIdentityStatus,
         MAX_MARKDOWN_FILE_BYTES,
     };
@@ -1167,10 +1209,15 @@ mod tests {
         let vault = tempdir().expect("create fixture vault");
         fs::create_dir(vault.path().join("Notes")).expect("create Notes folder");
         fs::write(vault.path().join("Zulu.md"), "# Zulu").expect("write root note");
-        fs::write(vault.path().join("Notes/Alpha.MD"), "# Alpha").expect("write nested note");
+        fs::write(
+            vault.path().join("Notes/Alpha.MD"),
+            "---\nid: 01JZQ7K8P4A6F2M9V3C5T7X1BY\naliases: [First note]\n---\n# Alpha",
+        )
+        .expect("write nested note");
         fs::write(vault.path().join("Notes/ignore.txt"), "ignored").expect("write ignored file");
 
-        let snapshot = scan_vault(vault.path()).expect("scan fixture vault");
+        let mut snapshot = scan_vault(vault.path()).expect("scan fixture vault");
+        enrich_vault_metadata(vault.path(), &mut snapshot.files).expect("index note metadata");
         let paths = snapshot
             .files
             .iter()
@@ -1178,6 +1225,11 @@ mod tests {
             .collect::<Vec<_>>();
 
         assert_eq!(paths, vec!["Notes/Alpha.MD", "Zulu.md"]);
+        assert_eq!(
+            snapshot.files[0].id.as_deref(),
+            Some("01JZQ7K8P4A6F2M9V3C5T7X1BY")
+        );
+        assert_eq!(snapshot.files[0].aliases, vec!["First note"]);
         assert_eq!(snapshot.warnings.skipped_symlinks, 0);
     }
 

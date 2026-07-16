@@ -25,6 +25,8 @@ Git commit. The format follows [Keep a Changelog], and releases follow
 - Existing ID-less notes can be reviewed before an explicit migration. Notes
   changed after preview and notes with unsafe front matter are preserved and
   reported instead of being rewritten.
+- The vault index now reads Obsidian aliases and unique permanent note IDs.
+  Identified notes keep their local editor state when their file path changes.
 
 [Keep a Changelog]: https://keepachangelog.com/en/1.1.0/
 [Semantic Versioning]: https://semver.org/spec/v2.0.0.html
