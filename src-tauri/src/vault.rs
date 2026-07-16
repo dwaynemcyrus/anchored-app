@@ -1,4 +1,5 @@
 use std::{
+    collections::{BTreeMap, HashMap, HashSet},
     fs,
     fs::OpenOptions,
     path::{Component, Path, PathBuf},
@@ -8,12 +9,13 @@ use std::{
     },
 };
 
-use serde::Serialize;
-use tauri::{AppHandle, State};
+use serde::{Deserialize, Serialize};
+use tauri::{AppHandle, Manager, State};
 use tauri_plugin_dialog::DialogExt;
 
 use crate::metadata::{
-    assign_new_note_identity, generate_note_id, inspect_note_identity, NoteIdentityStatus,
+    add_note_identity, assign_new_note_identity, generate_note_id, inspect_note_identity,
+    NoteIdentityStatus,
 };
 
 const MAX_VAULT_ENTRIES: usize = 50_000;
@@ -37,6 +39,9 @@ pub struct VaultFile {
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct VaultWarnings {
+    pub added_identities: usize,
+    pub identity_conflicts: usize,
+    pub needs_identity: usize,
     pub skipped_non_utf8_paths: usize,
     pub skipped_symlinks: usize,
 }
@@ -47,6 +52,35 @@ pub struct VaultSnapshot {
     pub files: Vec<VaultFile>,
     pub name: String,
     pub warnings: VaultWarnings,
+}
+
+#[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq, Hash)]
+#[serde(rename_all = "camelCase")]
+struct FileSignature {
+    size_bytes: u64,
+    modified_millis: u64,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct BaselineEntry {
+    pending_identity: bool,
+    signature: FileSignature,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct IdentityBaseline {
+    files: BTreeMap<String, BaselineEntry>,
+    vault_root: String,
+    version: u32,
+}
+
+#[derive(Debug, Default)]
+struct IdentitySummary {
+    added: usize,
+    conflicts: usize,
+    needs_identity: usize,
 }
 
 #[derive(Debug, Serialize)]
@@ -159,7 +193,12 @@ pub async fn select_vault(
         .into_path()
         .map_err(|error| VaultError::invalid(format!("Unsupported vault path: {error}")))?;
     let root = canonical_vault_root(&selected_path)?;
-    let snapshot = scan_vault(&root)?;
+    let mut snapshot = scan_vault(&root)?;
+    let baseline_path = identity_baseline_path(&app, &root)?;
+    let summary = reconcile_vault_identities(&root, &snapshot.files, &baseline_path)?;
+    snapshot.warnings.added_identities = summary.added;
+    snapshot.warnings.identity_conflicts = summary.conflicts;
+    snapshot.warnings.needs_identity = summary.needs_identity;
 
     let mut stored_root = state
         .root
@@ -172,6 +211,7 @@ pub async fn select_vault(
 
 #[tauri::command]
 pub async fn rescan_vault(
+    app: AppHandle,
     state: State<'_, VaultState>,
 ) -> Result<Option<VaultSnapshot>, VaultError> {
     let root = state
@@ -180,7 +220,16 @@ pub async fn rescan_vault(
         .map_err(|_| VaultError::state("The selected vault state could not be read."))?
         .clone();
 
-    root.map(|root| scan_vault(&root)).transpose()
+    let Some(root) = root else {
+        return Ok(None);
+    };
+    let mut snapshot = scan_vault(&root)?;
+    let baseline_path = identity_baseline_path(&app, &root)?;
+    let summary = reconcile_vault_identities(&root, &snapshot.files, &baseline_path)?;
+    snapshot.warnings.added_identities = summary.added;
+    snapshot.warnings.identity_conflicts = summary.conflicts;
+    snapshot.warnings.needs_identity = summary.needs_identity;
+    Ok(Some(snapshot))
 }
 
 #[tauri::command]
@@ -354,10 +403,245 @@ fn scan_vault(root: &Path) -> Result<VaultSnapshot, VaultError> {
         files,
         name,
         warnings: VaultWarnings {
+            added_identities: 0,
+            identity_conflicts: 0,
+            needs_identity: 0,
             skipped_non_utf8_paths,
             skipped_symlinks,
         },
     })
+}
+
+fn identity_baseline_path(app: &AppHandle, root: &Path) -> Result<PathBuf, VaultError> {
+    let directory = app
+        .path()
+        .app_data_dir()
+        .map_err(|error| {
+            VaultError::state(format!(
+                "The identity index location is unavailable: {error}"
+            ))
+        })?
+        .join("identity-baselines");
+    fs::create_dir_all(&directory).map_err(|error| {
+        VaultError::io("The identity index directory could not be created", error)
+    })?;
+    let mut hash = 0xcbf29ce484222325_u64;
+    for byte in root.to_string_lossy().as_bytes() {
+        hash ^= u64::from(*byte);
+        hash = hash.wrapping_mul(0x100000001b3);
+    }
+    Ok(directory.join(format!("{hash:016x}.json")))
+}
+
+fn reconcile_vault_identities(
+    root: &Path,
+    files: &[VaultFile],
+    baseline_path: &Path,
+) -> Result<IdentitySummary, VaultError> {
+    let root = canonical_vault_root(root)?;
+    let previous = load_identity_baseline(baseline_path, &root)?;
+    let is_initial_baseline = previous.is_none();
+    let previous_files = previous
+        .as_ref()
+        .map(|baseline| &baseline.files)
+        .cloned()
+        .unwrap_or_default();
+    let current_paths = files
+        .iter()
+        .map(|file| file.relative_path.as_str())
+        .collect::<HashSet<_>>();
+    let disappeared_signatures = previous_files
+        .iter()
+        .filter(|(path, _)| !current_paths.contains(path.as_str()))
+        .map(|(_, entry)| entry.signature)
+        .collect::<HashSet<_>>();
+
+    let mut statuses = BTreeMap::new();
+    let mut signatures = BTreeMap::new();
+    let mut identity_counts = HashMap::<String, usize>::new();
+    for file in files {
+        let signature = vault_file_signature(&root, &file.relative_path)?;
+        let status = read_identity_status(&root, &file.relative_path, signature)?;
+        if let NoteIdentityStatus::Present(id) = &status {
+            *identity_counts.entry(id.clone()).or_default() += 1;
+        }
+        signatures.insert(file.relative_path.clone(), signature);
+        statuses.insert(file.relative_path.clone(), status);
+    }
+
+    let mut known_identities = identity_counts.keys().cloned().collect::<HashSet<_>>();
+    let mut summary = IdentitySummary::default();
+    let mut next_files = BTreeMap::new();
+
+    for file in files {
+        let path = &file.relative_path;
+        let original_signature = signatures[path];
+        let status = statuses.get(path).expect("status collected for every file");
+        let previous_entry = previous_files.get(path);
+        let likely_rename =
+            previous_entry.is_none() && disappeared_signatures.contains(&original_signature);
+        let genuinely_new = !is_initial_baseline && previous_entry.is_none() && !likely_rename;
+        let retry_pending = previous_entry.is_some_and(|entry| entry.pending_identity);
+        let should_assign =
+            (genuinely_new || retry_pending) && matches!(status, NoteIdentityStatus::Missing);
+
+        let mut pending_identity = false;
+        let mut final_signature = original_signature;
+        if should_assign {
+            let expected = read_markdown_file(&root, path)?.content;
+            if vault_file_signature(&root, path)? == original_signature {
+                let id = generate_unique_note_id(&known_identities);
+                let updated = add_note_identity(&expected, &id).map_err(|_| {
+                    VaultError::identity_conflict(
+                        "A new Markdown file could not receive an identity without changing unsafe front matter.",
+                    )
+                })?;
+                save_markdown_file(&root, path, &updated, &expected)?;
+                known_identities.insert(id);
+                summary.added += 1;
+                final_signature = vault_file_signature(&root, path)?;
+            } else {
+                pending_identity = true;
+                summary.needs_identity += 1;
+            }
+        } else {
+            match status {
+                NoteIdentityStatus::Missing => summary.needs_identity += 1,
+                NoteIdentityStatus::Present(id) if identity_counts[id] > 1 => {
+                    summary.conflicts += 1
+                }
+                NoteIdentityStatus::Invalid
+                | NoteIdentityStatus::Duplicate
+                | NoteIdentityStatus::MalformedFrontMatter => {
+                    summary.conflicts += 1;
+                    if genuinely_new || retry_pending {
+                        pending_identity = true;
+                    }
+                }
+                NoteIdentityStatus::Present(_) => {}
+            }
+            if retry_pending && matches!(status, NoteIdentityStatus::Missing) {
+                pending_identity = true;
+            }
+        }
+
+        next_files.insert(
+            path.clone(),
+            BaselineEntry {
+                pending_identity,
+                signature: final_signature,
+            },
+        );
+    }
+
+    write_identity_baseline(
+        baseline_path,
+        &IdentityBaseline {
+            files: next_files,
+            vault_root: root.to_string_lossy().into_owned(),
+            version: 1,
+        },
+    )?;
+    Ok(summary)
+}
+
+fn generate_unique_note_id(existing: &HashSet<String>) -> String {
+    loop {
+        let id = generate_note_id();
+        if !existing.contains(&id) {
+            return id;
+        }
+    }
+}
+
+fn vault_file_signature(root: &Path, relative_path: &str) -> Result<FileSignature, VaultError> {
+    let path = resolve_vault_markdown_file(root, relative_path)?;
+    let metadata = fs::metadata(path)
+        .map_err(|error| VaultError::io("A Markdown file could not be inspected", error))?;
+    let modified_millis = metadata
+        .modified()
+        .ok()
+        .and_then(|modified| modified.duration_since(std::time::UNIX_EPOCH).ok())
+        .map(|duration| duration.as_millis().min(u128::from(u64::MAX)) as u64)
+        .unwrap_or_default();
+    Ok(FileSignature {
+        modified_millis,
+        size_bytes: metadata.len(),
+    })
+}
+
+fn read_identity_status(
+    root: &Path,
+    relative_path: &str,
+    signature: FileSignature,
+) -> Result<NoteIdentityStatus, VaultError> {
+    if signature.size_bytes > MAX_MARKDOWN_FILE_BYTES {
+        return Ok(NoteIdentityStatus::Invalid);
+    }
+    let path = resolve_vault_markdown_file(root, relative_path)?;
+    let bytes = fs::read(path)
+        .map_err(|error| VaultError::io("A Markdown file could not be read", error))?;
+    let Ok(content) = String::from_utf8(bytes) else {
+        return Ok(NoteIdentityStatus::Invalid);
+    };
+    Ok(inspect_note_identity(&content))
+}
+
+fn load_identity_baseline(
+    path: &Path,
+    root: &Path,
+) -> Result<Option<IdentityBaseline>, VaultError> {
+    let bytes = match fs::read(path) {
+        Ok(bytes) => bytes,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(error) => {
+            return Err(VaultError::io(
+                "The identity baseline could not be read",
+                error,
+            ))
+        }
+    };
+    let baseline: IdentityBaseline = serde_json::from_slice(&bytes)
+        .map_err(|error| VaultError::state(format!("The identity baseline is invalid: {error}")))?;
+    if baseline.version != 1 || baseline.vault_root != root.to_string_lossy() {
+        return Err(VaultError::state(
+            "The identity baseline does not match the selected vault.",
+        ));
+    }
+    Ok(Some(baseline))
+}
+
+fn write_identity_baseline(path: &Path, baseline: &IdentityBaseline) -> Result<(), VaultError> {
+    let bytes = serde_json::to_vec_pretty(baseline).map_err(|error| {
+        VaultError::state(format!(
+            "The identity baseline could not be encoded: {error}"
+        ))
+    })?;
+    let temporary_path = path.with_extension(format!(
+        "json.anchored-{}-{}.tmp",
+        std::process::id(),
+        TEMPORARY_FILE_COUNTER.fetch_add(1, Ordering::Relaxed)
+    ));
+    let mut file = OpenOptions::new()
+        .create_new(true)
+        .write(true)
+        .open(&temporary_path)
+        .map_err(|error| {
+            VaultError::io("A temporary identity baseline could not be created", error)
+        })?;
+    use std::io::Write;
+    file.write_all(&bytes)
+        .and_then(|_| file.sync_all())
+        .map_err(|error| VaultError::io("The identity baseline could not be written", error))?;
+    drop(file);
+    if let Err(error) = fs::rename(&temporary_path, path) {
+        let _ = fs::remove_file(&temporary_path);
+        return Err(VaultError::io(
+            "The identity baseline could not be replaced",
+            error,
+        ));
+    }
+    sync_parent_directory(path)
 }
 
 fn read_markdown_file(root: &Path, relative_path: &str) -> Result<VaultDocument, VaultError> {
@@ -674,7 +958,8 @@ mod tests {
 
     use super::{
         canonical_vault_root, create_markdown_file, inspect_note_identity, read_markdown_file,
-        save_markdown_file, scan_vault, NoteIdentityStatus, MAX_MARKDOWN_FILE_BYTES,
+        reconcile_vault_identities, save_markdown_file, scan_vault, NoteIdentityStatus,
+        MAX_MARKDOWN_FILE_BYTES,
     };
 
     #[test]
@@ -694,6 +979,95 @@ mod tests {
 
         assert_eq!(paths, vec!["Notes/Alpha.MD", "Zulu.md"]);
         assert_eq!(snapshot.warnings.skipped_symlinks, 0);
+    }
+
+    #[test]
+    fn baselines_existing_notes_then_identifies_a_new_file() {
+        let vault = tempdir().expect("create fixture vault");
+        let baseline = vault.path().join("baseline.json");
+        let legacy = vault.path().join("Legacy.md");
+        fs::write(&legacy, "# Legacy\n").expect("write legacy note");
+
+        let initial = scan_vault(vault.path()).expect("scan initial vault");
+        let initial_summary = reconcile_vault_identities(vault.path(), &initial.files, &baseline)
+            .expect("create read-only baseline");
+
+        assert_eq!(initial_summary.added, 0);
+        assert_eq!(initial_summary.needs_identity, 1);
+        assert_eq!(
+            fs::read_to_string(&legacy).expect("read legacy note"),
+            "# Legacy\n"
+        );
+
+        let imported = vault.path().join("Imported.md");
+        fs::write(&imported, "# Imported\n").expect("write imported note");
+        let updated = scan_vault(vault.path()).expect("scan updated vault");
+        let updated_summary = reconcile_vault_identities(vault.path(), &updated.files, &baseline)
+            .expect("identify imported note");
+        let imported_content = fs::read_to_string(&imported).expect("read imported note");
+
+        assert_eq!(updated_summary.added, 1);
+        assert_eq!(updated_summary.needs_identity, 1);
+        assert!(matches!(
+            inspect_note_identity(&imported_content),
+            NoteIdentityStatus::Present(_)
+        ));
+        assert!(imported_content.ends_with("\n# Imported\n"));
+    }
+
+    #[test]
+    fn treats_a_renamed_legacy_note_as_existing() {
+        let vault = tempdir().expect("create fixture vault");
+        let baseline = vault.path().join("baseline.json");
+        let original = vault.path().join("Original.md");
+        let renamed = vault.path().join("Renamed.md");
+        fs::write(&original, "# Legacy\n").expect("write legacy note");
+        let initial = scan_vault(vault.path()).expect("scan initial vault");
+        reconcile_vault_identities(vault.path(), &initial.files, &baseline)
+            .expect("create baseline");
+
+        fs::rename(&original, &renamed).expect("rename legacy note");
+        let updated = scan_vault(vault.path()).expect("scan renamed vault");
+        let summary = reconcile_vault_identities(vault.path(), &updated.files, &baseline)
+            .expect("reconcile rename");
+
+        assert_eq!(summary.added, 0);
+        assert_eq!(summary.needs_identity, 1);
+        assert_eq!(
+            fs::read_to_string(&renamed).expect("read renamed note"),
+            "# Legacy\n"
+        );
+    }
+
+    #[test]
+    fn retries_a_new_note_after_unsafe_front_matter_is_repaired() {
+        let vault = tempdir().expect("create fixture vault");
+        let baseline = vault.path().join("baseline.json");
+        let initial = scan_vault(vault.path()).expect("scan empty vault");
+        reconcile_vault_identities(vault.path(), &initial.files, &baseline)
+            .expect("create empty baseline");
+
+        let imported = vault.path().join("Imported.md");
+        fs::write(&imported, "---\ntags: [broken\n---\nBody\n").expect("write unsafe note");
+        let unsafe_scan = scan_vault(vault.path()).expect("scan unsafe note");
+        let unsafe_summary =
+            reconcile_vault_identities(vault.path(), &unsafe_scan.files, &baseline)
+                .expect("record unsafe note");
+        assert_eq!(unsafe_summary.conflicts, 1);
+
+        fs::write(&imported, "# Repaired\n").expect("repair note");
+        let repaired_scan = scan_vault(vault.path()).expect("scan repaired note");
+        let repaired_summary =
+            reconcile_vault_identities(vault.path(), &repaired_scan.files, &baseline)
+                .expect("identify repaired note");
+
+        assert_eq!(repaired_summary.added, 1);
+        assert!(matches!(
+            inspect_note_identity(
+                &fs::read_to_string(&imported).expect("read identified repaired note")
+            ),
+            NoteIdentityStatus::Present(_)
+        ));
     }
 
     #[test]

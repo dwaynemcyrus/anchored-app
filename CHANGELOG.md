@@ -19,6 +19,9 @@ Git commit. The format follows [Keep a Changelog], and releases follow
   keeps local edits intact.
 - Newly created notes receive a full unprefixed ULID in preserved YAML front
   matter, and saves refuse to remove or change an established identity.
+- Existing vaults receive a read-only identity baseline; Markdown files found
+  on later scans receive IDs safely, while likely renames and unsafe front
+  matter remain untouched and are reported.
 
 [Keep a Changelog]: https://keepachangelog.com/en/1.1.0/
 [Semantic Versioning]: https://semver.org/spec/v2.0.0.html
