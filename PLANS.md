@@ -289,6 +289,10 @@ Every future large plan must identify:
   Finder-added notes appear when Anchored regains focus, while local drafts and
   dirty missing files are preserved and Save As operations suppress race-prone
   rescans.
+- 2026-07-16: The native Finder-import identity test passed. The initial scan
+  left `Legacy.md` byte-for-byte unchanged and reported it as needing an ID;
+  a later `Finder Added.md` appeared on focus, received one unprefixed ULID,
+  and preserved its original heading and body.
 
 ## Completion
 
