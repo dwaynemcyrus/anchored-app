@@ -321,11 +321,15 @@ Every future large plan must identify:
   remain unopened and are reported. Rendered alias navigation passed with no
   console errors. Backlinks and transactional rename updates remain.
 - 2026-07-16: Added a read-only native outgoing-link index and resolved
-  backlinks, including live unsaved drafts without front matter. Front matter,
-  escaped links, inline code, fenced code, and indented code are excluded. The
-  compact backlink section passed rendered mouse navigation, semantic
-  inspection, and console checks; keyboard activation is covered by the
-  component flow test. Transactional filename rename updates remain.
+  backlinks, including live unsaved drafts without front matter. Escaped body
+  links, inline code, fenced code, and indented code are excluded. The compact
+  backlink section passed rendered mouse navigation, semantic inspection, and
+  console checks; keyboard activation is covered by the component flow test.
+  Transactional filename rename updates remain.
+- 2026-07-16: Corrected front-matter compatibility before rename work. Valid
+  quoted internal links in top-level YAML text and list properties now enter
+  the same navigation, outgoing-link, and backlink graph as body links.
+  Malformed YAML and non-string property values remain excluded.
 
 ## Completion
 
