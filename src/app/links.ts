@@ -12,8 +12,6 @@ export type WikilinkResolution =
   | { status: "ambiguous"; matches: string[] }
   | { status: "missing" };
 
-const WIKILINK_PATTERN = /!?\[\[([^\]\n]+)\]\]/g;
-
 function normalized(value: string): string {
   return value.trim().toLocaleLowerCase();
 }
@@ -26,23 +24,126 @@ export function wikilinkAtOffset(
   content: string,
   offset: number,
 ): WikilinkMatch | null {
-  WIKILINK_PATTERN.lastIndex = 0;
-  for (const match of content.matchAll(WIKILINK_PATTERN)) {
-    const start = match.index;
-    const end = start + match[0].length;
-    if (offset < start || offset > end) continue;
+  return (
+    wikilinksInContent(content).find(
+      (link) => offset >= link.start && offset <= link.end,
+    ) ?? null
+  );
+}
 
-    const [targetPart, labelPart] = match[1].split("|", 2);
-    const target = targetPart.trim();
-    if (!target) return null;
-    return {
-      end,
-      label: labelPart?.trim() || target,
-      start,
-      target,
-    };
+export function wikilinksInContent(content: string): WikilinkMatch[] {
+  const bodyStart = markdownBodyStart(content);
+  const body = content.slice(bodyStart);
+  const links: WikilinkMatch[] = [];
+  let lineOffset = bodyStart;
+  let fenceMarker: string | undefined;
+  let fenceLength = 0;
+
+  for (const lineWithEnding of body.split(/(?<=\n)/)) {
+    const line = lineWithEnding.replace(/\r?\n$/, "");
+    if (/^( {4}|\t)/.test(line)) {
+      lineOffset += lineWithEnding.length;
+      continue;
+    }
+    const fenceMatch = line.match(/^ {0,3}(`{3,}|~{3,})/);
+    if (fenceMatch) {
+      const marker = fenceMatch[1][0];
+      const length = fenceMatch[1].length;
+      if (fenceMarker === marker && length >= fenceLength) {
+        fenceMarker = undefined;
+        fenceLength = 0;
+      } else if (fenceMarker === undefined) {
+        fenceMarker = marker;
+        fenceLength = length;
+      }
+      lineOffset += lineWithEnding.length;
+      continue;
+    }
+    if (fenceMarker === undefined) {
+      inspectInlineWikilinks(line, lineOffset, links);
+    }
+    lineOffset += lineWithEnding.length;
   }
-  return null;
+  return links;
+}
+
+function markdownBodyStart(content: string): number {
+  const bomLength = content.startsWith("\ufeff") ? 1 : 0;
+  const body = content.slice(bomLength);
+  const opening = body.startsWith("---\r\n")
+    ? 5
+    : body.startsWith("---\n")
+      ? 4
+      : 0;
+  if (opening === 0) return bomLength;
+
+  let lineStart = bomLength + opening;
+  while (lineStart <= content.length) {
+    const lineEnd = content.indexOf("\n", lineStart);
+    const end = lineEnd === -1 ? content.length : lineEnd;
+    const line = content.slice(lineStart, end).replace(/\r$/, "");
+    if (line === "---" || line === "...") {
+      return lineEnd === -1 ? content.length : lineEnd + 1;
+    }
+    if (lineEnd === -1) break;
+    lineStart = lineEnd + 1;
+  }
+  return content.length;
+}
+
+function inspectInlineWikilinks(
+  line: string,
+  lineOffset: number,
+  links: WikilinkMatch[],
+) {
+  let index = 0;
+  let inlineCodeDelimiter = 0;
+  while (index < line.length) {
+    if (line[index] === "`" && !isEscaped(line, index)) {
+      let length = 1;
+      while (line[index + length] === "`") length += 1;
+      if (inlineCodeDelimiter === 0) inlineCodeDelimiter = length;
+      else if (inlineCodeDelimiter === length) inlineCodeDelimiter = 0;
+      index += length;
+      continue;
+    }
+    if (
+      inlineCodeDelimiter === 0 &&
+      line.startsWith("[[", index) &&
+      !isEscaped(line, index)
+    ) {
+      const closing = line.indexOf("]]", index + 2);
+      if (closing === -1) break;
+      const [targetPart, labelPart] = line
+        .slice(index + 2, closing)
+        .split("|", 2);
+      const target = targetPart.trim();
+      if (target) {
+        const embedded = index > 0 && line[index - 1] === "!";
+        links.push({
+          end: lineOffset + closing + 2,
+          label: labelPart?.trim() || target,
+          start: lineOffset + index - (embedded ? 1 : 0),
+          target,
+        });
+      }
+      index = closing + 2;
+      continue;
+    }
+    index += 1;
+  }
+}
+
+function isEscaped(content: string, index: number): boolean {
+  let backslashes = 0;
+  for (
+    let offset = index - 1;
+    offset >= 0 && content[offset] === "\\";
+    offset--
+  ) {
+    backslashes += 1;
+  }
+  return backslashes % 2 === 1;
 }
 
 export function resolveWikilink(
@@ -92,4 +193,25 @@ function resolutionFrom(documents: AnchoredDocument[]): WikilinkResolution {
     return { status: "ambiguous", matches: documentIds };
   }
   return { status: "missing" };
+}
+
+export function backlinksForDocument(
+  documents: AnchoredDocument[],
+  targetDocumentId: string,
+): AnchoredDocument[] {
+  return documents.filter((source) => {
+    if (source.id === targetDocumentId) return false;
+    const outgoingLinks =
+      source.sourceText !== undefined &&
+      !source.sourceText.replace(/^\ufeff/, "").startsWith("---")
+        ? wikilinksInContent(source.sourceText).map((link) => link.target)
+        : source.outgoingLinks;
+    return outgoingLinks.some((target) => {
+      const resolution = resolveWikilink(target, documents, source.id);
+      return (
+        resolution.status === "resolved" &&
+        resolution.documentId === targetDocumentId
+      );
+    });
+  });
 }
