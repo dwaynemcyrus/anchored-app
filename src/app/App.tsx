@@ -11,9 +11,26 @@ import {
   initialDocuments,
   type AnchoredDocument,
 } from "./documents";
-import { selectVault } from "../lib/tauri/vault";
+import { readVaultFile, selectVault } from "../lib/tauri/vault";
 
 type SaveState = "saved" | "unsaved";
+type DocumentLoadState =
+  | { status: "idle" }
+  | { status: "loading"; documentId: string }
+  | { status: "error"; documentId: string; message: string };
+
+function readErrorMessage(error: unknown): string {
+  if (
+    typeof error === "object" &&
+    error !== null &&
+    "message" in error &&
+    typeof error.message === "string"
+  ) {
+    return error.message;
+  }
+
+  return "This Markdown file could not be opened safely.";
+}
 
 export function App() {
   const [documents, setDocuments] =
@@ -29,7 +46,11 @@ export function App() {
   const [folderOrder, setFolderOrder] = useState(initialFolders);
   const [selectingVault, setSelectingVault] = useState(false);
   const [vaultMessage, setVaultMessage] = useState<string | null>(null);
+  const [documentLoad, setDocumentLoad] = useState<DocumentLoadState>({
+    status: "idle",
+  });
   const searchInputRef = useRef<HTMLInputElement>(null);
+  const loadRequestRef = useRef(0);
 
   const activeDocument = documents.find(
     (document) => document.id === activeDocumentId,
@@ -38,6 +59,7 @@ export function App() {
   const createNote = useCallback(() => {
     const nextDocument = createUntitledDocument(documents);
 
+    loadRequestRef.current += 1;
     setDocuments((currentDocuments) => [...currentDocuments, nextDocument]);
     setActiveDocumentId(nextDocument.id);
     setExpandedFolders((currentFolders) =>
@@ -50,6 +72,7 @@ export function App() {
     );
     setQuery("");
     setSaveState("unsaved");
+    setDocumentLoad({ status: "idle" });
     setSidebarOpen(false);
   }, [documents]);
 
@@ -77,10 +100,58 @@ export function App() {
     return () => window.removeEventListener("keydown", handleKeyboardShortcut);
   }, [createNote]);
 
-  function selectDocument(documentId: string) {
+  async function selectDocument(documentId: string) {
+    const document = documents.find((candidate) => candidate.id === documentId);
+    if (!document) return;
+
     setActiveDocumentId(documentId);
     setSaveState("saved");
     setSidebarOpen(false);
+
+    if (!document.relativePath || document.sourceText !== undefined) {
+      loadRequestRef.current += 1;
+      setDocumentLoad({ status: "idle" });
+      return;
+    }
+
+    const requestId = loadRequestRef.current + 1;
+    loadRequestRef.current = requestId;
+    setDocumentLoad({ status: "loading", documentId });
+
+    try {
+      const openedDocument = await readVaultFile(document.relativePath);
+      if (loadRequestRef.current !== requestId) return;
+      if (openedDocument.relativePath !== document.relativePath) {
+        throw new Error("The opened file did not match the requested note.");
+      }
+
+      setDocuments((currentDocuments) =>
+        currentDocuments.map((currentDocument) =>
+          currentDocument.id === documentId
+            ? {
+                ...currentDocument,
+                sizeBytes: openedDocument.sizeBytes,
+                sourceText: openedDocument.content,
+              }
+            : currentDocument,
+        ),
+      );
+      setDocumentLoad({ status: "idle" });
+    } catch (error) {
+      if (loadRequestRef.current !== requestId) return;
+      setDocumentLoad({
+        status: "error",
+        documentId,
+        message: readErrorMessage(error),
+      });
+    }
+  }
+
+  function closeDocument() {
+    loadRequestRef.current += 1;
+    setActiveDocumentId("");
+    setDocumentLoad({ status: "idle" });
+    setSaveState("saved");
   }
 
   async function openVault() {
@@ -96,13 +167,15 @@ export function App() {
         new Set(nextDocuments.map((document) => document.folder)),
       );
 
+      loadRequestRef.current += 1;
       setVaultName(snapshot.name);
       setDocuments(nextDocuments);
       setFolderOrder(nextFolders);
       setExpandedFolders(new Set(nextFolders));
-      setActiveDocumentId(nextDocuments[0]?.id ?? "");
+      setActiveDocumentId("");
       setQuery("");
       setSaveState("saved");
+      setDocumentLoad({ status: "idle" });
       setVaultMessage(
         snapshot.warnings.skippedSymlinks > 0
           ? `${snapshot.warnings.skippedSymlinks} symlink entries were skipped for safety.`
@@ -158,8 +231,19 @@ export function App() {
         />
         <EditorSurface
           document={activeDocument}
+          hasDocuments={documents.length > 0}
+          loadState={
+            documentLoad.status !== "idle" &&
+            documentLoad.documentId === activeDocument?.id
+              ? documentLoad
+              : { status: "idle" }
+          }
           vaultName={vaultName}
-          onOpenLinkedDocument={selectDocument}
+          onCloseDocument={closeDocument}
+          onOpenLinkedDocument={(documentId) => void selectDocument(documentId)}
+          onRetryDocument={() => {
+            if (activeDocument) void selectDocument(activeDocument.id);
+          }}
         />
       </div>
       {vaultMessage ? (

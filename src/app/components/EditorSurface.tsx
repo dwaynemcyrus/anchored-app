@@ -2,22 +2,37 @@ import type { AnchoredDocument } from "../documents";
 
 type EditorSurfaceProps = {
   document?: AnchoredDocument;
+  hasDocuments: boolean;
+  loadState:
+    | { status: "idle" }
+    | { status: "loading"; documentId: string }
+    | { status: "error"; documentId: string; message: string };
   vaultName: string;
+  onCloseDocument: () => void;
   onOpenLinkedDocument: (documentId: string) => void;
+  onRetryDocument: () => void;
 };
 
 export function EditorSurface({
   document,
+  hasDocuments,
+  loadState,
   vaultName,
+  onCloseDocument,
   onOpenLinkedDocument,
+  onRetryDocument,
 }: EditorSurfaceProps) {
   if (!document) {
     return (
       <main className="editor-surface">
         <header className="editor-surface__header">{vaultName}</header>
         <section className="document document--empty">
-          <h1>No Markdown notes</h1>
-          <p>Choose another vault to continue.</p>
+          <h1>{hasDocuments ? "No note open" : "No Markdown notes"}</h1>
+          <p>
+            {hasDocuments
+              ? "Choose a note from the file explorer."
+              : "Choose another vault to continue."}
+          </p>
         </section>
       </main>
     );
@@ -36,9 +51,19 @@ export function EditorSurface({
   return (
     <main className="editor-surface">
       <header className="editor-surface__header">
-        <span>{document.folder}</span>
-        <span aria-hidden="true">/</span>
-        <span>{document.name}</span>
+        <span className="editor-surface__path">
+          <span>{document.folder}</span>
+          <span aria-hidden="true">/</span>
+          <span>{document.name}</span>
+        </span>
+        <button
+          aria-label={`Close ${document.name}`}
+          className="editor-surface__close"
+          type="button"
+          onClick={onCloseDocument}
+        >
+          Close
+        </button>
       </header>
       <article
         aria-label={`${document.name} Markdown document`}
@@ -47,34 +72,56 @@ export function EditorSurface({
         role="textbox"
         tabIndex={0}
       >
-        {document.previewAvailable === false ? null : (
-          <pre className="front-matter">{frontMatter}</pre>
-        )}
-        <h1>{document.title}</h1>
-        {document.previewAvailable === false ? (
-          <p className="document__empty">Markdown content is not loaded.</p>
-        ) : document.body.length > 0 ? (
-          <p>{document.body}</p>
+        {document.relativePath ? (
+          loadState.status === "loading" ? (
+            <p className="document__empty" role="status">
+              Opening Markdown…
+            </p>
+          ) : loadState.status === "error" ? (
+            <div className="document__error" role="alert">
+              <h1>Could not open this note</h1>
+              <p>{loadState.message}</p>
+              <button
+                className="wikilink"
+                type="button"
+                onClick={onRetryDocument}
+              >
+                Try again
+              </button>
+            </div>
+          ) : document.sourceText === "" ? (
+            <p className="document__empty">This Markdown file is empty.</p>
+          ) : document.sourceText !== undefined ? (
+            <pre className="document__source">{document.sourceText}</pre>
+          ) : null
         ) : (
-          <p className="document__empty">Start writing…</p>
+          <>
+            <pre className="front-matter">{frontMatter}</pre>
+            <h1>{document.title}</h1>
+            {document.body.length > 0 ? (
+              <p>{document.body}</p>
+            ) : (
+              <p className="document__empty">Start writing…</p>
+            )}
+            {document.relatedDocumentId && document.relatedLabel ? (
+              <p>
+                Related:{" "}
+                <button
+                  className="wikilink"
+                  type="button"
+                  onClick={() =>
+                    onOpenLinkedDocument(document.relatedDocumentId as string)
+                  }
+                >
+                  [[{document.relatedLabel}]]
+                </button>
+              </p>
+            ) : null}
+            <div aria-hidden="true" className="cursor-line">
+              <span className="caret" />
+            </div>
+          </>
         )}
-        {document.relatedDocumentId && document.relatedLabel ? (
-          <p>
-            Related:{" "}
-            <button
-              className="wikilink"
-              type="button"
-              onClick={() =>
-                onOpenLinkedDocument(document.relatedDocumentId as string)
-              }
-            >
-              [[{document.relatedLabel}]]
-            </button>
-          </p>
-        ) : null}
-        <div aria-hidden="true" className="cursor-line">
-          <span className="caret" />
-        </div>
       </article>
     </main>
   );

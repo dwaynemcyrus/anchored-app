@@ -348,11 +348,38 @@ input:focus-visible,
   display: flex;
   height: 52px;
   align-items: center;
+  justify-content: space-between;
   gap: 10px;
   padding: 0 44px;
   color: var(--color-text-muted);
   font-family: "SFMono-Regular", Consolas, monospace;
   font-size: 12px;
+}
+
+.editor-surface__path {
+  display: flex;
+  min-width: 0;
+  gap: 10px;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.editor-surface__path span:last-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.editor-surface__close {
+  flex: 0 0 auto;
+  padding: 5px 0 5px 10px;
+  background: transparent;
+  color: var(--color-text-muted);
+  cursor: pointer;
+  font: inherit;
+}
+
+.editor-surface__close:hover {
+  color: var(--color-text);
 }
 
 .document {
@@ -390,6 +417,21 @@ input:focus-visible,
 
 .document__empty {
   color: var(--color-text-muted);
+}
+
+.document__source {
+  margin: 0;
+  color: var(--color-text);
+  font-family: "SFMono-Regular", Consolas, monospace;
+  font-size: 15px;
+  line-height: 1.7;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.document__error button {
+  font-family: ui-serif, "New York", Charter, Georgia, serif;
+  font-size: 18px;
 }
 
 .wikilink {

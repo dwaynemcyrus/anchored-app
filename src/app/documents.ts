@@ -8,9 +8,11 @@ export type AnchoredDocument = {
   aliases: string[];
   tags: string[];
   body: string;
+  relativePath?: string;
+  sourceText?: string;
+  sizeBytes?: number;
   relatedDocumentId?: string;
   relatedLabel?: string;
-  previewAvailable?: boolean;
 };
 
 export const initialFolders: string[] = [
@@ -83,6 +85,6 @@ export function documentsFromVault(
     aliases: [],
     tags: [],
     body: "",
-    previewAvailable: false,
+    relativePath: file.relativePath,
   }));
 }

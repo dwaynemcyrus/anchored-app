@@ -99,18 +99,21 @@ and preserves link integrity across filename changes.
      and `view_image` inspection against the concept.
    - Risk/rollback: Visual drift or excess chrome; compare every major region
      and remove nonessential UI.
-   - Commit: pending in the current verified chunk
+   - Commit: `d665368 feat(app): add editor shell`
 
 7. [ ] **Chunk: Add safe vault boundary**
    - Files: `src-tauri/src/`, `src-tauri/capabilities/`, `src/lib/`, fixtures,
      Rust and TypeScript tests
-   - Change: Add folder selection and read-only vault traversal through narrow,
-     typed commands with canonical path and symlink validation.
+   - Change: Add folder selection, read-only vault traversal, and safe Markdown
+     file opening and closing through narrow, typed commands with canonical
+     path, file-size, encoding, and symlink validation.
    - Verify: Permission, traversal, symlink, empty, malformed, and fixture-vault
      tests; Rust and frontend gates; manual selection of a disposable vault.
    - Risk/rollback: Private data exposure or path escape; begin read-only and
      grant no recursive mutation permission in this chunk.
-   - Commit: `feat(files): open vault safely`
+   - Commits: `0919ada feat(files): add vault scan core`,
+     `04faa24 feat(files): wire vault selection`,
+     `41b8a99 feat(files): read markdown safely`; visible opening pending commit.
 
 8. [ ] **Chunk: Add reliable Markdown editing**
    - Files: editor/files features, Rust write commands, CodeMirror setup, tests
@@ -228,6 +231,14 @@ Every future large plan must identify:
 - 2026-07-16: Added changelog and Semantic Versioning governance. No tags or
   reliable release history exist, so the changelog begins at `[Unreleased]`;
   the current `0.1.0` version remains unchanged.
+- 2026-07-16: Began the final read-only vault work. The conservative file-open
+  contract rejects traversal, symlinks, non-Markdown files, invalid UTF-8, and
+  notes larger than 10 MiB; closing a note keeps its vault open.
+- 2026-07-16: Implemented visible read-only file opening, exact Markdown text
+  display, close, loading, and recoverable error states. Browser checks pass at
+  1280×720, 900×600, and 450×600. The local native app launches, but its folder
+  dialog still needs a manual disposable-vault smoke test because macOS denied
+  automated assistive access to this environment.
 
 ## Completion
 

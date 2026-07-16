@@ -12,6 +12,8 @@ Git commit. The format follows [Keep a Changelog], and releases follow
   unsaved-state feedback, and responsive layouts.
 - Native vault folder selection and read-only Markdown discovery with path,
   traversal, and symlink safeguards.
+- Safe, read-only Markdown file opening and closing with exact-text display,
+  UTF-8 validation, and a 10 MiB per-file limit.
 
 [Keep a Changelog]: https://keepachangelog.com/en/1.1.0/
 [Semantic Versioning]: https://semver.org/spec/v2.0.0.html

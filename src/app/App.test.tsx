@@ -2,17 +2,22 @@ import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { selectVault } from "../lib/tauri/vault";
+import { readVaultFile, selectVault } from "../lib/tauri/vault";
 import { App } from "./App";
 
 vi.mock("../lib/tauri/vault", () => ({
+  readVaultFile: vi.fn(),
   selectVault: vi.fn(),
 }));
 
 const mockedSelectVault = vi.mocked(selectVault);
+const mockedReadVaultFile = vi.mocked(readVaultFile);
 
 describe("App", () => {
-  beforeEach(() => mockedSelectVault.mockReset());
+  beforeEach(() => {
+    mockedSelectVault.mockReset();
+    mockedReadVaultFile.mockReset();
+  });
 
   it("renders the seeded editor surface", () => {
     render(<App />);
@@ -55,7 +60,7 @@ describe("App", () => {
     expect(screen.getByRole("status")).toHaveTextContent("Unsaved");
   });
 
-  it("replaces seeded files with a safely scanned vault", async () => {
+  it("opens exact Markdown from a safely scanned vault and closes it", async () => {
     const user = userEvent.setup();
     mockedSelectVault.mockResolvedValue({
       files: [
@@ -68,19 +73,81 @@ describe("App", () => {
       name: "My Vault",
       warnings: { skippedNonUtf8Paths: 0, skippedSymlinks: 0 },
     });
+    mockedReadVaultFile.mockResolvedValue({
+      content: "---\ntitle: Own note\n---\n# Exact Markdown\n",
+      relativePath: "Knowledge/Own Note.md",
+      sizeBytes: 45,
+    });
     render(<App />);
 
     await user.click(
       screen.getByRole("button", { name: "Open vault: Personal" }),
     );
 
-    expect(screen.getByRole("button", { name: "Own Note.md" })).toHaveAttribute(
-      "aria-current",
-      "page",
-    );
+    expect(
+      screen.getByRole("heading", { level: 1, name: "No note open" }),
+    ).toBeInTheDocument();
     expect(
       screen.queryByRole("button", { name: "Leadership.md" }),
     ).not.toBeInTheDocument();
     expect(screen.getByText("1 Markdown files found.")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Own Note.md" }));
+
+    expect(mockedReadVaultFile).toHaveBeenCalledWith("Knowledge/Own Note.md");
+    expect(
+      await screen.findByRole("textbox", {
+        name: "Own Note.md Markdown document",
+      }),
+    ).toHaveTextContent("--- title: Own note --- # Exact Markdown");
+
+    screen.getByRole("button", { name: "Close Own Note.md" }).focus();
+    await user.keyboard("{Enter}");
+
+    expect(
+      screen.getByRole("heading", { level: 1, name: "No note open" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Own Note.md" }),
+    ).not.toHaveAttribute("aria-current");
+  });
+
+  it("shows a recoverable error when a vault note cannot be read", async () => {
+    const user = userEvent.setup();
+    mockedSelectVault.mockResolvedValue({
+      files: [
+        {
+          name: "Broken.md",
+          parent: "Notes",
+          relativePath: "Notes/Broken.md",
+        },
+      ],
+      name: "My Vault",
+      warnings: { skippedNonUtf8Paths: 0, skippedSymlinks: 0 },
+    });
+    mockedReadVaultFile
+      .mockRejectedValueOnce({
+        message: "This Markdown file is not valid UTF-8.",
+      })
+      .mockResolvedValueOnce({
+        content: "# Recovered\n",
+        relativePath: "Notes/Broken.md",
+        sizeBytes: 12,
+      });
+    render(<App />);
+
+    await user.click(
+      screen.getByRole("button", { name: "Open vault: Personal" }),
+    );
+    await user.click(screen.getByRole("button", { name: "Broken.md" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "This Markdown file is not valid UTF-8.",
+    );
+
+    await user.click(screen.getByRole("button", { name: "Try again" }));
+
+    expect(await screen.findByText("# Recovered")).toBeInTheDocument();
+    expect(mockedReadVaultFile).toHaveBeenCalledTimes(2);
   });
 });
