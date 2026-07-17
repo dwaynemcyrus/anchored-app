@@ -20,8 +20,6 @@ import {
 import {
   createUntitledDocument,
   documentsFromVault,
-  initialFolders,
-  initialDocuments,
   mergeDocumentsFromVault,
   type AnchoredDocument,
   type DocumentSaveState,
@@ -104,11 +102,10 @@ function vaultSummaryMessage(snapshot: VaultSnapshot): string {
 }
 
 export function App() {
-  const [documents, setDocuments] =
-    useState<AnchoredDocument[]>(initialDocuments);
-  const [activeDocumentId, setActiveDocumentId] = useState("leadership");
-  const [expandedFolders, setExpandedFolders] = useState(
-    () => new Set(["Notes"]),
+  const [documents, setDocuments] = useState<AnchoredDocument[]>([]);
+  const [activeDocumentId, setActiveDocumentId] = useState("");
+  const [expandedFolders, setExpandedFolders] = useState<Set<string>>(
+    () => new Set(),
   );
   const [query, setQuery] = useState("");
   const [quickOpenQuery, setQuickOpenQuery] = useState("");
@@ -120,8 +117,8 @@ export function App() {
   const [vaultSearchVisible, setVaultSearchVisible] = useState(false);
   const [findRequest, setFindRequest] = useState(0);
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [vaultName, setVaultName] = useState("Personal");
-  const [folderOrder, setFolderOrder] = useState(initialFolders);
+  const [vaultName, setVaultName] = useState("");
+  const [folderOrder, setFolderOrder] = useState<string[]>([]);
   const [selectingVault, setSelectingVault] = useState(false);
   const [vaultSelected, setVaultSelected] = useState(false);
   const [vaultNotices, setVaultNotices] = useState<VaultNotice[]>([]);
@@ -874,9 +871,10 @@ export function App() {
   return (
     <div className="app-shell">
       <TitleBar
-        saveState={saveState}
+        saveState={activeDocument ? saveState : undefined}
         selectingVault={selectingVault}
         sidebarOpen={sidebarOpen}
+        vaultSelected={vaultSelected}
         vaultName={vaultName}
         onCreateNote={createNote}
         onOpenSearch={() => {
@@ -911,6 +909,7 @@ export function App() {
               : { status: "idle" }
           }
           vaultName={vaultName}
+          vaultSelected={vaultSelected}
           wikilinkCandidates={wikilinkCandidates}
           onCloseDocument={closeDocument}
           onDocumentChange={updateDocumentContent}

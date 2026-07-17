@@ -16,6 +16,7 @@ type EditorSurfaceProps = {
     | { status: "loading"; documentId: string }
     | { status: "error"; documentId: string; message: string };
   vaultName: string;
+  vaultSelected: boolean;
   wikilinkCandidates: WikilinkCandidate[];
   onCloseDocument: () => void;
   onDocumentChange: (content: string) => void;
@@ -35,6 +36,7 @@ export function EditorSurface({
   hasDocuments,
   loadState,
   vaultName,
+  vaultSelected,
   wikilinkCandidates,
   onCloseDocument,
   onDocumentChange,
@@ -49,13 +51,23 @@ export function EditorSurface({
   if (!document) {
     return (
       <main className="editor-surface">
-        <header className="editor-surface__header">{vaultName}</header>
+        <header className="editor-surface__header">
+          {vaultSelected ? vaultName : "Open a vault to begin"}
+        </header>
         <section className="document document--empty">
-          <h1>{hasDocuments ? "No note open" : "No Markdown notes"}</h1>
+          <h1>
+            {!vaultSelected
+              ? "No vault open"
+              : hasDocuments
+                ? "No note open"
+                : "No Markdown notes"}
+          </h1>
           <p>
-            {hasDocuments
-              ? "Choose a note from the file explorer."
-              : "Choose another vault to continue."}
+            {!vaultSelected
+              ? "Choose Open vault, then select a folder containing Markdown files."
+              : hasDocuments
+                ? "Choose a note from the file explorer."
+                : "Choose another vault to continue."}
           </p>
         </section>
       </main>

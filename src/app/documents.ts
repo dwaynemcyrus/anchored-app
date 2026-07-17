@@ -22,48 +22,6 @@ export type AnchoredDocument = {
   relatedLabel?: string;
 };
 
-export const initialFolders: string[] = [
-  "Notes",
-  "Writing",
-  "Journal",
-  "Archive",
-];
-
-export const initialDocuments: AnchoredDocument[] = [
-  {
-    id: "leadership",
-    name: "Leadership.md",
-    outgoingLinks: ["Reading Notes"],
-    folder: "Notes",
-    title: "Leadership",
-    aliases: ["Leading Well"],
-    tags: ["thinking"],
-    body: "A calm system should make connections visible without getting in the way.",
-    relatedDocumentId: "reading-notes",
-    relatedLabel: "Reading Notes",
-  },
-  {
-    id: "reading-notes",
-    name: "Reading Notes.md",
-    outgoingLinks: [],
-    folder: "Notes",
-    title: "Reading Notes",
-    aliases: [],
-    tags: ["reading"],
-    body: "Highlights become useful when they return to active thought.",
-  },
-  {
-    id: "weekly-review",
-    name: "Weekly Review.md",
-    outgoingLinks: [],
-    folder: "Notes",
-    title: "Weekly Review",
-    aliases: [],
-    tags: ["review"],
-    body: "Review what changed, then choose what deserves attention next.",
-  },
-];
-
 export function createUntitledDocument(
   documents: AnchoredDocument[],
 ): AnchoredDocument {

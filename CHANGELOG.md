@@ -50,6 +50,8 @@ Git commit. The format follows [Keep a Changelog], and releases follow
 
 ### Fixed
 
+- Startup now shows an explicit no-vault state instead of presenting static
+  demonstration notes as though they were editable vault files.
 - Opening the native Rename dialog no longer blocks Anchored's main interface
   thread.
 - The editor shell no longer becomes a blank window when WebKit denies access

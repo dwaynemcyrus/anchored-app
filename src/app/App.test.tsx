@@ -58,16 +58,17 @@ describe("App", () => {
     mockedSearchVault.mockReset();
   });
 
-  it("renders the seeded editor surface", () => {
+  it("starts with an explicit no-vault state", () => {
     render(<App />);
 
     expect(screen.getByText("Anchored")).toBeInTheDocument();
     expect(
-      screen.getByRole("heading", { level: 1, name: "Leadership" }),
+      screen.getByRole("heading", { level: 1, name: "No vault open" }),
     ).toBeInTheDocument();
     expect(
-      screen.getByRole("button", { name: "Leadership.md" }),
-    ).toHaveAttribute("aria-current", "page");
+      screen.getByRole("button", { name: "Open vault" }),
+    ).toBeInTheDocument();
+    expect(screen.queryByText("Saved")).not.toBeInTheDocument();
   });
 
   it("renders when local activity storage is unavailable", () => {
@@ -87,7 +88,26 @@ describe("App", () => {
 
   it("filters notes by filename or alias", async () => {
     const user = userEvent.setup();
+    mockedSelectVault.mockResolvedValue({
+      files: [
+        {
+          aliases: ["Leading Well"],
+          name: "Leadership.md",
+          parent: "Notes",
+          relativePath: "Notes/Leadership.md",
+        },
+        {
+          name: "Reading Notes.md",
+          parent: "Notes",
+          relativePath: "Notes/Reading Notes.md",
+        },
+      ],
+      name: "My Vault",
+      warnings: noWarnings,
+    });
     render(<App />);
+
+    await user.click(screen.getByRole("button", { name: "Open vault" }));
 
     await user.type(
       screen.getByRole("searchbox", { name: "Filter notes" }),
@@ -135,9 +155,7 @@ describe("App", () => {
     });
     render(<App />);
 
-    await user.click(
-      screen.getByRole("button", { name: "Open vault: Personal" }),
-    );
+    await user.click(screen.getByRole("button", { name: "Open vault" }));
     await user.keyboard("{Meta>}{Shift>}f{/Shift}{/Meta}");
     const dialog = screen.getByRole("dialog", { name: "Search vault" });
     await user.type(
@@ -184,9 +202,7 @@ describe("App", () => {
     });
     render(<App />);
 
-    await user.click(
-      screen.getByRole("button", { name: "Open vault: Personal" }),
-    );
+    await user.click(screen.getByRole("button", { name: "Open vault" }));
     await user.click(screen.getByRole("button", { name: "Search vault" }));
     await user.type(
       screen.getByRole("combobox", { name: "Search Markdown content" }),
@@ -230,9 +246,7 @@ describe("App", () => {
     });
     render(<App />);
 
-    await user.click(
-      screen.getByRole("button", { name: "Open vault: Personal" }),
-    );
+    await user.click(screen.getByRole("button", { name: "Open vault" }));
     await user.keyboard("{Meta>}p{/Meta}");
 
     const dialog = screen.getByRole("dialog", { name: "Quick Open" });
@@ -263,21 +277,46 @@ describe("App", () => {
 
   it("shows resolved backlinks and opens their source note", async () => {
     const user = userEvent.setup();
+    mockedSelectVault.mockResolvedValue({
+      files: [
+        {
+          name: "Leadership.md",
+          outgoingLinks: ["Reading Notes"],
+          parent: "Notes",
+          relativePath: "Notes/Leadership.md",
+        },
+        {
+          name: "Reading Notes.md",
+          parent: "Notes",
+          relativePath: "Notes/Reading Notes.md",
+        },
+      ],
+      name: "My Vault",
+      warnings: noWarnings,
+    });
+    mockedReadVaultFile.mockImplementation(async (relativePath) => ({
+      content: `# ${relativePath.includes("Leadership") ? "Leadership" : "Reading Notes"}`,
+      relativePath,
+      sizeBytes: 16,
+    }));
     render(<App />);
 
+    await user.click(screen.getByRole("button", { name: "Open vault" }));
     await user.click(screen.getByRole("button", { name: "Reading Notes.md" }));
     const backlinks = screen.getByRole("complementary", {
       name: "Backlinks (1)",
     });
     const backlink = within(backlinks).getByRole("button", {
-      name: "Leadership.md",
+      name: "Notes/Leadership.md",
     });
     backlink.focus();
     await user.keyboard("{Enter}");
 
     expect(
-      screen.getByRole("heading", { level: 1, name: "Leadership" }),
-    ).toBeInTheDocument();
+      await screen.findByRole("textbox", {
+        name: "Leadership.md Markdown editor",
+      }),
+    ).toHaveTextContent("# Leadership");
   });
 
   it("creates a local unsaved note", async () => {
@@ -294,8 +333,12 @@ describe("App", () => {
 
     await user.click(editor);
     await user.keyboard("# Draft");
-    await user.click(screen.getByRole("button", { name: "Leadership.md" }));
-    expect(screen.getByText("Saved")).toBeInTheDocument();
+    await user.click(screen.getAllByRole("button", { name: "New note" })[0]);
+    expect(
+      await screen.findByRole("textbox", {
+        name: "Untitled 2.md Markdown editor",
+      }),
+    ).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Untitled.md" }));
 
     expect(screen.getByText("Unsaved")).toBeInTheDocument();
@@ -363,9 +406,7 @@ describe("App", () => {
     }));
     render(<App />);
 
-    await user.click(
-      screen.getByRole("button", { name: "Open vault: Personal" }),
-    );
+    await user.click(screen.getByRole("button", { name: "Open vault" }));
     await user.click(screen.getByRole("button", { name: "Source.md" }));
     const editor = await screen.findByRole("textbox", {
       name: "Source.md Markdown editor",
@@ -424,9 +465,7 @@ describe("App", () => {
     });
     render(<App />);
 
-    await user.click(
-      screen.getByRole("button", { name: "Open vault: Personal" }),
-    );
+    await user.click(screen.getByRole("button", { name: "Open vault" }));
     await user.click(screen.getAllByRole("button", { name: "New note" })[0]);
     const editor = await screen.findByRole("textbox", {
       name: "Untitled.md Markdown editor",
@@ -473,9 +512,7 @@ describe("App", () => {
     });
     render(<App />);
 
-    await user.click(
-      screen.getByRole("button", { name: "Open vault: Personal" }),
-    );
+    await user.click(screen.getByRole("button", { name: "Open vault" }));
 
     expect(
       screen.getByRole("heading", { level: 1, name: "No note open" }),
@@ -533,9 +570,7 @@ describe("App", () => {
     });
     render(<App />);
 
-    await user.click(
-      screen.getByRole("button", { name: "Open vault: Personal" }),
-    );
+    await user.click(screen.getByRole("button", { name: "Open vault" }));
     window.dispatchEvent(new Event("focus"));
 
     expect(
@@ -582,9 +617,7 @@ describe("App", () => {
     });
     render(<App />);
 
-    await user.click(
-      screen.getByRole("button", { name: "Open vault: Personal" }),
-    );
+    await user.click(screen.getByRole("button", { name: "Open vault" }));
     await user.click(
       screen.getByRole("button", { name: "Review identity migration" }),
     );
@@ -633,9 +666,7 @@ describe("App", () => {
       });
     render(<App />);
 
-    await user.click(
-      screen.getByRole("button", { name: "Open vault: Personal" }),
-    );
+    await user.click(screen.getByRole("button", { name: "Open vault" }));
     await user.click(screen.getByRole("button", { name: "Broken.md" }));
 
     expect(await screen.findByRole("alert")).toHaveTextContent(
@@ -672,9 +703,7 @@ describe("App", () => {
     });
     render(<App />);
 
-    await user.click(
-      screen.getByRole("button", { name: "Open vault: Personal" }),
-    );
+    await user.click(screen.getByRole("button", { name: "Open vault" }));
     await user.click(screen.getByRole("button", { name: "Empty.md" }));
 
     expect(mockedReadVaultFile).toHaveBeenCalledWith("Empty.md");
@@ -700,9 +729,7 @@ describe("App", () => {
     mockedReadVaultFile.mockReturnValue(new Promise(() => undefined));
     render(<App />);
 
-    await user.click(
-      screen.getByRole("button", { name: "Open vault: Personal" }),
-    );
+    await user.click(screen.getByRole("button", { name: "Open vault" }));
     await user.click(screen.getByRole("button", { name: "Opening.md" }));
 
     expect(
@@ -756,9 +783,7 @@ describe("App", () => {
     });
     render(<App />);
 
-    await user.click(
-      screen.getByRole("button", { name: "Open vault: Personal" }),
-    );
+    await user.click(screen.getByRole("button", { name: "Open vault" }));
     await user.click(screen.getByRole("button", { name: "Old Name.md" }));
     await screen.findByRole("textbox", {
       name: "Old Name.md Markdown editor",
@@ -805,9 +830,7 @@ describe("App", () => {
     });
     render(<App />);
 
-    await user.click(
-      screen.getByRole("button", { name: "Open vault: Personal" }),
-    );
+    await user.click(screen.getByRole("button", { name: "Open vault" }));
     await user.click(screen.getByRole("button", { name: "Editable.md" }));
     const editor = await screen.findByRole("textbox", {
       name: "Editable.md Markdown editor",
@@ -855,9 +878,7 @@ describe("App", () => {
     });
     render(<App />);
 
-    await user.click(
-      screen.getByRole("button", { name: "Open vault: Personal" }),
-    );
+    await user.click(screen.getByRole("button", { name: "Open vault" }));
     await user.click(screen.getByRole("button", { name: "Conflict.md" }));
     const editor = await screen.findByRole("textbox", {
       name: "Conflict.md Markdown editor",
