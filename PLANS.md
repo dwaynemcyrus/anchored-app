@@ -465,6 +465,55 @@ and preserves link integrity across filename changes.
       the expected interaction state and no console warnings or errors.
     - Commit: current implementation chunk
 
+16. [ ] **Chunk: Create vaults at user-selected locations**
+    - Issues: [#8](https://github.com/dwaynemcyrus/anchored-app/issues/8)
+    - Files: native vault commands and tests, typed frontend bridge, vault
+      selector UI, app composition, `CHANGELOG.md`, and `PLANS.md`
+    - Change: Add a native-owned create-vault flow that lets the user enter a
+      vault name, choose a parent folder, create the new vault directory
+      safely, initialize Anchored metadata, remember the vault, and open it
+      immediately without exposing arbitrary filesystem paths to the interface.
+    - Verify: Empty-name, duplicate-name, invalid-name, canceled-selection,
+      nested-parent, hidden-internal-path, remembered-vault registration, and
+      immediate-open tests; frontend and Rust quality gates; native disposable-
+      vault smoke test.
+    - Risk/rollback: Folder creation mutates the filesystem. Validate names,
+      refuse reserved or occupied destinations, create only one directory
+      inside the chosen parent, and revert the focused chunk without touching
+      existing vault Markdown.
+
+17. [ ] **Chunk: Add safe reload continuity**
+    - Issues: [#13](https://github.com/dwaynemcyrus/anchored-app/issues/13)
+    - Files: startup boundary and app session state, new settings UI and tests,
+      typed frontend bridge if needed, `CHANGELOG.md`, and `PLANS.md`
+    - Change: Add a settings modal with a danger-scoped reload action that
+      saves pending note changes first, reloads Anchored, and restores the
+      current remembered vault plus the currently open note after startup. This
+      chunk does not introduce future tab-session scope before tabs exist.
+    - Verify: Saved and unsaved current-note reloads, blocked conflict/error
+      cases, no-vault reload, startup-boundary reload, restored active note,
+      keyboard/focus behavior, frontend quality gates, and rendered QA.
+    - Risk/rollback: A mistaken reload flow can interrupt writing or restore
+      stale state. Persist only the minimum current session state, save before
+      reload, and refuse automatic reload when save conflicts or failures need
+      human action.
+
+18. [ ] **Chunk: Add folder creation and note moves**
+    - Files: native folder and note-move commands and tests, typed frontend
+      bridge, file-rail and app state, targeted UI for folder creation and note
+      moves, `CHANGELOG.md`, and `PLANS.md`
+    - Change: Add safe creation of root folders and subfolders plus note moves
+      between folders inside the selected vault. Preserve permanent note IDs,
+      update affected links through the existing rename transaction path, and
+      refresh the visible folder tree without exposing arbitrary paths.
+    - Verify: Root and nested folder creation, invalid names, occupied
+      destinations, note moves across folders, unchanged-content collision
+      refusal, link-update coverage, keyboard flows, frontend and Rust quality
+      gates, and disposable-vault UI checks.
+    - Risk/rollback: Moving notes is a cross-file mutation. Reuse the existing
+      rename transaction safety model, refuse occupied destinations, and avoid
+      folder deletes or folder renames in this chunk.
+
 ## Requirements for future large plans
 
 Every future large plan must identify:
