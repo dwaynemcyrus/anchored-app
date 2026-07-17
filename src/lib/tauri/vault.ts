@@ -29,6 +29,17 @@ export type VaultDocument = {
   sizeBytes: number;
 };
 
+export type VaultSearchResult = {
+  matches: Array<{
+    line: number;
+    relativePath: string;
+    snippet: string;
+  }>;
+  searchedFiles: number;
+  skippedFiles: number;
+  truncated: boolean;
+};
+
 export type SaveVaultFileRequest = {
   content: string;
   expectedContent: string;
@@ -74,6 +85,10 @@ export function rescanVault(): Promise<VaultSnapshot | null> {
 
 export function readVaultFile(relativePath: string): Promise<VaultDocument> {
   return invoke<VaultDocument>("read_vault_file", { relativePath });
+}
+
+export function searchVault(query: string): Promise<VaultSearchResult> {
+  return invoke<VaultSearchResult>("search_vault", { query });
 }
 
 export function saveVaultFile(

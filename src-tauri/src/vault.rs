@@ -22,6 +22,9 @@ use crate::metadata::{
 const MAX_VAULT_ENTRIES: usize = 50_000;
 const MAX_VAULT_DEPTH: usize = 64;
 const MAX_MARKDOWN_FILE_BYTES: u64 = 10 * 1024 * 1024;
+const MAX_SEARCH_QUERY_CHARS: usize = 200;
+const MAX_SEARCH_RESULTS: usize = 100;
+const MAX_SEARCH_TOTAL_BYTES: u64 = 64 * 1024 * 1024;
 const RENAME_JOURNAL_NAME: &str = ".anchored-rename-journal.json";
 static TEMPORARY_FILE_COUNTER: AtomicU64 = AtomicU64::new(0);
 
@@ -131,6 +134,23 @@ pub struct VaultDocument {
     pub content: String,
     pub relative_path: String,
     pub size_bytes: u64,
+}
+
+#[derive(Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct VaultSearchMatch {
+    pub line: usize,
+    pub relative_path: String,
+    pub snippet: String,
+}
+
+#[derive(Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct VaultSearchResult {
+    pub matches: Vec<VaultSearchMatch>,
+    pub searched_files: usize,
+    pub skipped_files: usize,
+    pub truncated: bool,
 }
 
 #[derive(Debug)]
@@ -340,6 +360,23 @@ pub async fn read_vault_file(
         .ok_or_else(|| VaultError::state("Select a vault before opening a Markdown file."))?;
 
     read_markdown_file(&root, &relative_path)
+}
+
+#[tauri::command]
+pub async fn search_vault(
+    state: State<'_, VaultState>,
+    query: String,
+) -> Result<VaultSearchResult, VaultError> {
+    let root = state
+        .root
+        .read()
+        .map_err(|_| VaultError::state("The selected vault state could not be read."))?
+        .clone()
+        .ok_or_else(|| VaultError::state("Select a vault before searching Markdown files."))?;
+
+    tauri::async_runtime::spawn_blocking(move || search_markdown_files(&root, &query))
+        .await
+        .map_err(|error| VaultError::state(format!("Vault search could not finish: {error}")))?
 }
 
 #[tauri::command]
@@ -605,6 +642,101 @@ fn scan_vault(root: &Path) -> Result<VaultSnapshot, VaultError> {
             skipped_symlinks,
         },
     })
+}
+
+fn search_markdown_files(root: &Path, query: &str) -> Result<VaultSearchResult, VaultError> {
+    let query = query.trim();
+    if query.is_empty() {
+        return Ok(VaultSearchResult {
+            matches: Vec::new(),
+            searched_files: 0,
+            skipped_files: 0,
+            truncated: false,
+        });
+    }
+    if query.chars().count() > MAX_SEARCH_QUERY_CHARS {
+        return Err(VaultError::invalid_file(format!(
+            "Search text must be {MAX_SEARCH_QUERY_CHARS} characters or fewer."
+        )));
+    }
+
+    let snapshot = scan_vault(root)?;
+    let normalized_query = query.to_lowercase();
+    let mut matches = Vec::new();
+    let mut searched_files = 0_usize;
+    let mut skipped_files = 0_usize;
+    let mut searched_bytes = 0_u64;
+    let mut truncated = false;
+
+    for file in snapshot.files {
+        let path = resolve_vault_markdown_file(root, &file.relative_path)?;
+        let metadata = fs::metadata(&path)
+            .map_err(|error| VaultError::io("A Markdown file could not be inspected", error))?;
+        if metadata.len() > MAX_MARKDOWN_FILE_BYTES
+            || searched_bytes.saturating_add(metadata.len()) > MAX_SEARCH_TOTAL_BYTES
+        {
+            skipped_files += 1;
+            truncated = true;
+            continue;
+        }
+
+        let bytes = fs::read(path)
+            .map_err(|error| VaultError::io("A Markdown file could not be searched", error))?;
+        searched_bytes = searched_bytes.saturating_add(bytes.len() as u64);
+        let Ok(content) = String::from_utf8(bytes) else {
+            skipped_files += 1;
+            continue;
+        };
+        searched_files += 1;
+
+        for (line_index, line) in content.lines().enumerate() {
+            let normalized_line = line.to_lowercase();
+            let Some(match_byte_index) = normalized_line.find(&normalized_query) else {
+                continue;
+            };
+            let match_character_index = normalized_line[..match_byte_index].chars().count();
+            matches.push(VaultSearchMatch {
+                line: line_index + 1,
+                relative_path: file.relative_path.clone(),
+                snippet: search_snippet(line, match_character_index),
+            });
+            if matches.len() == MAX_SEARCH_RESULTS {
+                truncated = true;
+                return Ok(VaultSearchResult {
+                    matches,
+                    searched_files,
+                    skipped_files,
+                    truncated,
+                });
+            }
+        }
+    }
+
+    Ok(VaultSearchResult {
+        matches,
+        searched_files,
+        skipped_files,
+        truncated,
+    })
+}
+
+fn search_snippet(line: &str, match_character_index: usize) -> String {
+    const MAX_SNIPPET_CHARS: usize = 180;
+    const CONTEXT_BEFORE_CHARS: usize = 60;
+
+    let characters = line.trim_end().chars().collect::<Vec<_>>();
+    let start = match_character_index
+        .saturating_sub(CONTEXT_BEFORE_CHARS)
+        .min(characters.len());
+    let end = (start + MAX_SNIPPET_CHARS).min(characters.len());
+    let mut snippet = characters[start..end].iter().collect::<String>();
+    if start > 0 {
+        snippet.insert(0, '…');
+    }
+    if end < characters.len() {
+        snippet.push('…');
+    }
+    snippet
 }
 
 fn enrich_vault_metadata(root: &Path, files: &mut [VaultFile]) -> Result<(), VaultError> {
@@ -1823,6 +1955,7 @@ fn is_markdown(path: &Path) -> bool {
 #[cfg(test)]
 mod tests {
     use std::fs;
+    use std::time::{Duration, Instant};
 
     use tempfile::tempdir;
 
@@ -1830,9 +1963,9 @@ mod tests {
         apply_identity_migration_plan, build_identity_migration_preview, canonical_vault_root,
         create_markdown_file, enrich_vault_metadata, inspect_note_identity, read_markdown_file,
         reconcile_vault_identities, recover_rename_transaction, rename_markdown_file,
-        save_markdown_file, scan_vault, write_rename_journal, NoteIdentityStatus, RenameJournal,
-        RenameJournalEntry, RenameJournalPhase, RenameOutcome, MAX_MARKDOWN_FILE_BYTES,
-        RENAME_JOURNAL_NAME,
+        save_markdown_file, scan_vault, search_markdown_files, write_rename_journal,
+        NoteIdentityStatus, RenameJournal, RenameJournalEntry, RenameJournalPhase, RenameOutcome,
+        MAX_MARKDOWN_FILE_BYTES, MAX_SEARCH_RESULTS, RENAME_JOURNAL_NAME,
     };
 
     #[test]
@@ -1863,6 +1996,64 @@ mod tests {
         assert_eq!(snapshot.files[0].aliases, vec!["First note"]);
         assert_eq!(snapshot.files[0].outgoing_links, vec!["Reading", "Zulu"]);
         assert_eq!(snapshot.warnings.skipped_symlinks, 0);
+    }
+
+    #[test]
+    fn searches_unicode_markdown_with_line_context() {
+        let vault = tempdir().expect("create fixture vault");
+        fs::create_dir(vault.path().join("Notes")).expect("create Notes folder");
+        fs::write(
+            vault.path().join("Notes/Thoughts.md"),
+            "First line\nA quiet CAFÉ for writing.\nLast line\n",
+        )
+        .expect("write searchable note");
+        fs::write(vault.path().join("Notes/Ignore.txt"), "café").expect("write ignored text file");
+
+        let result = search_markdown_files(vault.path(), "café").expect("search fixture vault");
+
+        assert_eq!(result.matches.len(), 1);
+        assert_eq!(result.matches[0].relative_path, "Notes/Thoughts.md");
+        assert_eq!(result.matches[0].line, 2);
+        assert_eq!(result.matches[0].snippet, "A quiet CAFÉ for writing.");
+        assert_eq!(result.searched_files, 1);
+        assert_eq!(result.skipped_files, 0);
+        assert!(!result.truncated);
+    }
+
+    #[test]
+    fn bounds_results_from_repeated_matches() {
+        let vault = tempdir().expect("create fixture vault");
+        let content = (0..(MAX_SEARCH_RESULTS + 20))
+            .map(|index| format!("match {index}"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        fs::write(vault.path().join("Matches.md"), content).expect("write repeated matches");
+
+        let result = search_markdown_files(vault.path(), "match").expect("search repeated matches");
+
+        assert_eq!(result.matches.len(), MAX_SEARCH_RESULTS);
+        assert!(result.truncated);
+    }
+
+    #[test]
+    fn searches_a_large_fixture_within_the_interaction_budget() {
+        let vault = tempdir().expect("create fixture vault");
+        for index in 0..1_000 {
+            let content = if index == 999 {
+                "The final needle is here.".to_owned()
+            } else {
+                format!("Ordinary fixture note {index} with enough text to scan.")
+            };
+            fs::write(vault.path().join(format!("Note {index:04}.md")), content)
+                .expect("write fixture note");
+        }
+
+        let started = Instant::now();
+        let result = search_markdown_files(vault.path(), "needle").expect("search large fixture");
+
+        assert_eq!(result.matches.len(), 1);
+        assert_eq!(result.searched_files, 1_000);
+        assert!(started.elapsed() < Duration::from_secs(5));
     }
 
     #[test]

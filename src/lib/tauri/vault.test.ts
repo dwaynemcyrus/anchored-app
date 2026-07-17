@@ -9,6 +9,7 @@ import {
   renameVaultFile,
   rescanVault,
   saveVaultFile,
+  searchVault,
   selectVault,
   type SaveVaultFileRequest,
   type VaultDocument,
@@ -81,6 +82,27 @@ describe("vault bridge", () => {
     );
     expect(mockedInvoke).toHaveBeenCalledWith("read_vault_file", {
       relativePath: "Notes/Leadership.md",
+    });
+  });
+
+  it("searches Markdown through the retained Rust vault", async () => {
+    const result = {
+      matches: [
+        {
+          line: 4,
+          relativePath: "Notes/Leadership.md",
+          snippet: "Calm leadership",
+        },
+      ],
+      searchedFiles: 1,
+      skippedFiles: 0,
+      truncated: false,
+    };
+    mockedInvoke.mockResolvedValue(result);
+
+    await expect(searchVault("leadership")).resolves.toEqual(result);
+    expect(mockedInvoke).toHaveBeenCalledWith("search_vault", {
+      query: "leadership",
     });
   });
 
