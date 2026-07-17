@@ -60,6 +60,19 @@ Git commit. The format follows [Keep a Changelog], and releases follow
   file entries. Full-vault search (`Command-Shift-F`) finds Unicode Markdown
   content with line snippets through a bounded background scan, while
   note-local Find (`Command-F`) searches the active editor.
+- A minimal white `A` on black now identifies Anchored in Finder, the Dock,
+  dialogs, the application bundle, and the private-alpha disk image.
+- A repeatable private-alpha packaging command now produces an ad-hoc-signed
+  Intel DMG and SHA-256 checksum, verifies both signatures and disk-image
+  integrity, and confirms the macOS 12 deployment target before handoff.
+
+### Changed
+
+- The desktop bundle now uses a restrictive production content security
+  policy, a hardened runtime without exception entitlements, and only the
+  explicit event and window permissions required by the interface.
+- New-note controls remain unavailable until a vault is selected, preventing
+  drafts that have no valid save boundary.
 
 ### Fixed
 
@@ -74,6 +87,11 @@ Git commit. The format follows [Keep a Changelog], and releases follow
 - Wikilink parsing no longer uses regular-expression lookbehind unsupported by
   the macOS 12 WebView. Startup failures now remain visible with a reload action
   instead of leaving an empty native window.
+- Closing a window or quitting with unfinished drafts, unsaved edits, save
+  failures, or conflicts now requires an explicit save, discard, or cancel
+  choice instead of silently losing local text.
+- Modal panels now contain keyboard focus, close with Escape, declare their
+  dialog semantics, and restore focus to the control that opened them.
 
 [Keep a Changelog]: https://keepachangelog.com/en/1.1.0/
 [Semantic Versioning]: https://semver.org/spec/v2.0.0.html

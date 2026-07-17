@@ -1,19 +1,20 @@
-# Anchored public testing checklist
+# Anchored alpha and public testing checklist
 
-Use this checklist for each release-candidate build. Record failures with the
-build version, macOS version, vault size, exact steps, expected result, actual
-result, and whether any file bytes changed.
+Use this checklist for each private-alpha or later release-candidate build.
+Record failures with the build version, macOS version, vault size, exact steps,
+expected result, actual result, and whether any file bytes changed.
 
-> **Do not start public vault testing while a release blocker in
-> [FEATURES.md](FEATURES.md#release-blockers) remains open.** Until then, this
-> checklist is suitable only for developers and informed private testers using
-> disposable data.
+> **Current scope:** Dwayne's private, ad-hoc-signed Intel alpha using
+> disposable data or a verified backup. Public website distribution remains
+> deferred until Developer ID signing and notarization are available. Do not
+> use a primary vault until the seven-day observation passes.
 
 ## Test record
 
 - [ ] Anchored version/commit:
 - [ ] macOS version and Mac model:
-- [ ] Installation type: development / unsigned package / signed package
+- [ ] Installation type: development / private ad-hoc-signed DMG / future
+      Developer ID package
 - [ ] Test vault name and approximate Markdown-file count:
 - [ ] Backup location and time verified:
 - [ ] Start date:
@@ -36,8 +37,14 @@ result, and whether any file bytes changed.
 
 ## 2. Install, launch, and recovery shell
 
-- [ ] Install or open the build using its documented procedure.
-- [ ] Confirm macOS does not report an unexplained or misleading publisher.
+- [ ] For the private alpha, build with `npm run release:alpha:macos` and verify
+      that the command completes its signature, integrity, architecture,
+      deployment-target, and checksum checks.
+- [ ] Open the DMG, drag Anchored into Applications, eject the image, and launch
+      Anchored from Applications without a terminal.
+- [ ] If a trusted transferred copy is blocked, use macOS's explicit Privacy &
+      Security approval and record the exact message. A Developer ID publisher
+      identity is not expected for the private ad-hoc-signed alpha.
 - [ ] Launch with no vault selected; expect **No vault open** and an **Open
   vault** action.
 - [ ] Confirm there are no startup error messages or empty white/black window.
@@ -95,8 +102,7 @@ result, and whether any file bytes changed.
 - [ ] Close a note with unfinished edits; expect Anchored to keep it open and
   explain what must be saved.
 - [ ] Create a new unsaved note, try to close the window, and then quit the app;
-  expect an explicit save/discard/cancel guard. **This currently fails and is a
-  release blocker.**
+  expect an explicit save/discard/cancel guard.
 - [ ] Relaunch and reopen saved notes; content and identities are intact.
 
 ## 6. External changes and Finder indexing
@@ -238,7 +244,7 @@ a heading, and references from several notes and quoted YAML values.
 - [ ] Return to the first vault; confirm its count and records return.
 - [ ] Confirm Escape and Close dismiss the panel and restore focus.
 - [ ] Keyboard-tab through the panel; focus must not move into obscured app
-  controls. **This requires correction before public testing.**
+  controls.
 
 ## 14. Reversible Trash
 

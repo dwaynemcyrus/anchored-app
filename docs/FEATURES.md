@@ -5,15 +5,17 @@ pre-release reference for testers, not a promise of full Obsidian parity.
 The inventory was checked against the application source, automated tests, and
 rendered interface on 2026-07-17.
 
-> **Testing status:** Anchored is not ready for a primary vault or broad public
-> distribution yet. Use a disposable vault or a verified backup copy. See
-> [Public testing checklist](PUBLIC_TEST_CHECKLIST.md) and
-> [Release blockers](#release-blockers).
+> **Testing status:** The ad-hoc-signed Intel build is ready for Dwayne's
+> private in-house alpha on a disposable or verified backup vault. It is not
+> ready for a primary vault or broad public distribution. See the
+> [testing checklist](PUBLIC_TEST_CHECKLIST.md) and
+> [stability log](ALPHA_STABILITY_LOG.md).
 
 ## Product and platform
 
 - Native macOS application wrapped with Tauri 2.
 - Supports macOS 12 Monterey and later.
+- Current private-alpha DMG targets Intel (`x86_64`) Macs and is ad-hoc signed.
 - Local-first and usable offline.
 - No account, cloud service, analytics, advertising, or telemetry.
 - True-black, white-text, keyboard-first interface.
@@ -54,6 +56,10 @@ rendered interface on 2026-07-17.
 - Preserve the established permanent note ID during later saves.
 - Close a note without closing its vault. A note with unfinished edits is
   kept open and reported instead of being silently discarded.
+- Protect unfinished drafts, unsaved edits, conflicts, and failed saves when a
+  native window is closed or the app is quit. The user must save, discard, or
+  cancel explicitly.
+- Keep new-note actions unavailable until a vault is selected.
 
 Anchored currently edits Markdown source only. It does not provide rendered
 Markdown preview or rich-text editing.
@@ -224,29 +230,22 @@ The following are not active features:
 - Permanent deletion from Trash.
 - Accounts, sync, collaboration, mobile apps, publishing, AI, PDFs, or EPUBs.
 
-## Release blockers
+## Distribution status
 
-These findings must be resolved before Anchored is presented as ready for
-public vault testing:
+The app-level blockers found during the pre-package review are resolved:
+native quit protection, vault-gated note creation, restrictive production CSP,
+modal focus containment, and Anchored bundle artwork are implemented and
+verified. The current private package is ad-hoc signed with a hardened runtime
+and no exception entitlements.
 
-1. **Unsaved first-save drafts can be lost on app quit.** A new note exists only
-   in memory until Save As succeeds. The native window currently has no
-   close/quit guard for that state.
-2. **New note is available before a vault is open.** This allows a draft that
-   has nowhere valid to save and compounds the quit-loss risk.
-3. **The production content security policy is unset.** A restrictive Tauri
-   policy should be established and verified before distributing a build that
-   reads personal vaults.
-4. **Several side panels are incomplete modal dialogs.** They restore focus and
-   close with Escape, but do not consistently declare modality or constrain
-   keyboard focus to the open panel.
-5. **The app still uses the default Tauri icon.** Public test packages need an
-   Anchored application icon so testers can identify the app and its dialogs.
-6. **[NEEDS DECISION] Signing and notarization are undecided.** Public testers
-   need either a signed/notarized package or explicit, accurate instructions
-   for an unsigned test build.
+Broad public website distribution remains deferred. A future public macOS
+package needs a paid Apple Developer Program membership, Developer ID
+Application signing, Apple notarization, ticket stapling, and Gatekeeper
+verification. Apple Silicon/universal and Linux packages also require separate
+build and verification work. These are external or future-scope prerequisites,
+not blockers for Dwayne's private Intel alpha.
 
-## Review observations that do not currently block a private smoke test
+## Remaining private-alpha observations
 
 - The main React application module is large and should be separated by feature
   before further expansion.
@@ -256,5 +255,5 @@ public vault testing:
 - Attachment syntax preservation is covered by the source-editing design, but
   a dedicated attachment fixture and byte-for-byte regression test are still
   needed before claiming the full attachment acceptance criterion.
-- The required seven consecutive days of representative stability testing have
-  not begun.
+- The required seven consecutive days of representative stability testing are
+  pending in [`ALPHA_STABILITY_LOG.md`](ALPHA_STABILITY_LOG.md).

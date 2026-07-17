@@ -4,8 +4,36 @@ Anchored is a minimal local-first Markdown editor for macOS. It opens a folder
 as a vault, edits the Markdown files directly, and maintains Obsidian-style
 wikilinks, aliases, backlinks, and permanent note identities.
 
-Anchored is still under development. Use a backed-up or disposable vault until
-the release candidate and seven-day stability observation are complete.
+Anchored `0.1.0` is available as a private Intel Mac alpha for in-house testing.
+Use a backed-up or disposable vault until the seven-day stability observation
+is complete. This package is not yet intended for public website downloads.
+
+## Install the private macOS alpha
+
+The current package supports Intel Macs running macOS 12 Monterey or later.
+Build the verified ad-hoc-signed DMG from the repository:
+
+```sh
+npm ci
+npm run release:alpha:macos
+```
+
+The command creates the DMG and a SHA-256 checksum in:
+
+```text
+src-tauri/target/release/bundle/dmg/
+```
+
+Open `Anchored_0.1.0_x64.dmg`, drag **Anchored** into **Applications**, eject
+the disk image, and open Anchored from Applications. No terminal is required
+after installation. A copy built locally on this Mac should open normally.
+If macOS blocks an ad-hoc-signed copy after it has been transferred or
+downloaded, use the explicit approval shown in **System Settings > Privacy &
+Security** only when you trust the package and verified its checksum.
+
+The packaging command verifies the app and DMG signatures, disk-image
+integrity, Intel architecture, macOS 12 minimum version, and checksum before it
+reports success.
 
 ## Run the development app
 
@@ -77,7 +105,9 @@ cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
 - [`docs/FEATURES.md`](docs/FEATURES.md) — current feature and limitation
   reference
 - [`docs/PUBLIC_TEST_CHECKLIST.md`](docs/PUBLIC_TEST_CHECKLIST.md) — repeatable
-  pre-release and public-testing checklist
+  private-alpha and future public-testing checklist
+- [`docs/ALPHA_STABILITY_LOG.md`](docs/ALPHA_STABILITY_LOG.md) — seven-day
+  in-house stability record
 - [`OVERVIEW.md`](OVERVIEW.md) — approved product intent
 - [`PROJECT.md`](PROJECT.md) — technical contract and commands
 - [`PLANS.md`](PLANS.md) — staged implementation and verification plan

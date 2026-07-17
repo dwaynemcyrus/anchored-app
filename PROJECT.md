@@ -9,9 +9,9 @@ Product scope remains governed by `OVERVIEW.md`.
 - **Overview status:** approved on 2026-07-16
 - **Additional source documents:** `anchor-stuff.md`
 - **Contract last reviewed:** 2026-07-17
-- **Blocking decisions:** `[NEEDS DECISION]` Public test distribution must
-  choose a signed/notarized package or explicit unsigned-build instructions.
-  App-level release blockers are tracked in `docs/FEATURES.md`.
+- **Blocking decisions:** none for the private in-house alpha. Public website
+  distribution remains deferred until Developer ID signing and notarization
+  prerequisites are available.
 
 ## Identity
 
@@ -63,7 +63,8 @@ Product scope remains governed by `OVERVIEW.md`.
 
 ### Acceptance criteria
 
-- A signed or local development build launches on macOS 12 or later.
+- The ad-hoc-signed private alpha or a local development build launches on
+  macOS 12 or later.
 - A representative backup copy of the existing vault can be selected and
   navigated by folder, recent file, search, wikilink, and alias.
 - Markdown files can be created and edited; manual save, save-as, and autosave
@@ -135,6 +136,7 @@ These scripts must exist in `package.json` after the scaffold chunk.
 | Test | `npm test` |
 | Build frontend | `npm run build` |
 | Build desktop app | `npm run tauri build` |
+| Package private Intel alpha | `npm run release:alpha:macos` |
 
 ## Architecture and boundaries
 
@@ -206,11 +208,12 @@ These scripts must exist in `package.json` after the scaffold chunk.
 
 ## Environments and delivery
 
-- **Environments:** local development and local packaged builds
+- **Environments:** local development and private in-house packaged builds
 - **Environment variables:** none required for the MVP
 - **CI provider:** none initially; add only when a remote repository and CI
   requirement are confirmed
-- **Deployment method:** local Tauri `.app`/installer build for macOS
+- **Deployment method:** ad-hoc-signed Intel `.dmg` for private installation;
+  public website delivery is deferred
 - **Rollback method:** revert code through focused Git commits or reinstall a
   previous packaged build; restore user data only from an explicit vault
   backup, never from an assumed application cache
@@ -244,6 +247,10 @@ These scripts must exist in `package.json` after the scaffold chunk.
 
 - Full Xcode is not installed. The Xcode Command Line Tools satisfy Tauri's
   documented desktop-only prerequisite; iOS development remains unavailable.
+- A paid Apple Developer Program membership, Developer ID Application
+  certificate, Team ID, and notarization credentials are unavailable. This
+  does not block the private ad-hoc-signed alpha, but it blocks a frictionless
+  public website download.
 - The target vault can contain symlinks, unsupported syntax, external edits,
   duplicate names, ambiguous aliases, and malformed front matter.
 - Stable-ID insertion and cross-file rename updates are high-risk data changes;
@@ -272,3 +279,5 @@ These scripts must exist in `package.json` after the scaffold chunk.
 | 2026-07-16 | Use Tauri configuration as the app version source | The desktop bundle configuration defines the application version; npm and Rust manifests mirror it |
 | 2026-07-17 | Use stable vault IDs and native-only remembered paths | Notification history follows a moved vault without exposing absolute paths to the interface |
 | 2026-07-17 | Use `.anchored/trash/` for reversible deletion | Same-vault moves preserve exact note bytes, stay out of active indexes, and permit conflict-safe restore without permanent deletion |
+| 2026-07-17 | Package `0.1.0` as a private ad-hoc-signed Intel alpha | Supports local testing on Dwayne's 2015 MacBook Pro without implying public Gatekeeper or notarization readiness |
+| 2026-07-17 | Defer public website, Apple Silicon, and Linux packages | These delivery targets require separate prerequisites and verification and are outside the current private-alpha scope |

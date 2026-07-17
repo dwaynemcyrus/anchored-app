@@ -338,7 +338,7 @@ and preserves link integrity across filename changes.
       regression fixture, and the seven-day stability observation is pending.
     - Commit: `docs(review): add public test guide`
 
-11F. [ ] **Chunk: Harden the public test candidate**
+11F. [x] **Chunk: Harden the private-alpha candidate**
     - Files: close-protection and modal components, app composition and tests,
       title bar and file explorer controls, global styles, Tauri capabilities
       and security configuration, macOS bundle assets and release scripts,
@@ -378,8 +378,17 @@ and preserves link integrity across filename changes.
       complete modal keyboard behavior, production CSP, branded bundle assets,
       and private-alpha packaging safeguards. Version remains `0.1.0` until an
       explicit release request.
+    - Verification result: Close protection, vault-gated creation, modal focus
+      containment, restrictive production and development CSP, least-privilege
+      capability generation, hardened runtime, complete icon assets, startup,
+      and editor interaction pass automated and native installed-app checks.
+    - Commits: `91c7200 fix(safety): guard unsaved app close`, `79a1b0a
+      fix(editor): require an open vault`, `da81866 fix(a11y): contain modal
+      focus`, `805eb5d docs(plan): target private alpha`, `067aa75
+      fix(security): harden desktop policy`, and `165de3d chore(brand): add
+      Anchored app icon`.
 
-12. [ ] **Chunk: Package private alpha candidate**
+12. [x] **Chunk: Package private alpha candidate**
     - Files: Tauri bundle configuration, icons/assets, README, release checklist
     - Change: Produce an ad-hoc-signed Intel macOS 12-compatible local package
       and document install, first-launch approval, backup, recovery, supported
@@ -388,7 +397,14 @@ and preserves link integrity across filename changes.
       accessibility, baseline-machine checks, and disposable-vault smoke test.
     - Risk/rollback: Platform or signing limitations; retain the development
       workflow and previous private alpha package as rollback options.
-    - Commit: `chore(release): package alpha candidate`
+    - Verification result: `Anchored_0.1.0_x64.dmg` and its SHA-256 checksum
+      were produced, ad-hoc signed, integrity checked, mounted, and inspected.
+      The contained and installed apps verify as `x86_64` with a macOS 12.0
+      minimum. Native QA selected a seven-note disposable vault, dismissed a
+      notification, opened and edited a note, observed autosave, quit and
+      relaunched, reopened the remembered vault, and confirmed the saved marker
+      persisted. All configured frontend and Rust gates pass.
+    - Commit: `fdb2d9c chore(release): build private alpha`
 
 13. [ ] **Chunk: Complete stability observation**
     - Files: `PLANS.md`, issue documentation if defects are found
@@ -423,6 +439,14 @@ Every future large plan must identify:
 
 ## Progress notes
 
+- 2026-07-17: The private `0.1.0` Intel alpha is installed in Applications and
+  passed native package QA with screen and accessibility inspection. The final
+  DMG, app, and checksum verify; the no-vault shell, seven-note disposable
+  vault, notification dismissal, Markdown editing/autosave, clean quit,
+  remembered-vault quick reopen, and persisted content all work. All 80
+  frontend tests, 59 Rust tests, formatting, lint, type-checking, strict
+  Clippy, and production builds pass. Chunk 13's real seven-day observation is
+  now the only unfinished acceptance phase.
 - 2026-07-17: Completed the pre-package release review and published the
   verified feature reference and comprehensive public-testing checklist. All
   configured frontend and native gates and the optimized application build
@@ -642,14 +666,18 @@ Every future large plan must identify:
 
 ## Completion
 
-- **Checks run:** Documentation diff checks; native-size visual concept
-  inspection; Prettier check; ESLint; TypeScript; Vitest; Vite production
-  build; Cargo format, Clippy, and tests; optimized and debug Tauri no-bundle
-  builds; Browser/IAB DOM, interaction, console, responsive, screenshot, and
-  concept-fidelity checks.
+- **Checks run:** Documentation diff checks; Prettier check; ESLint;
+  TypeScript; 80 Vitest tests; Vite production build; Cargo format, strict
+  Clippy, and 59 Rust tests; optimized Tauri and DMG builds; codesign and DMG
+  integrity checks; architecture and deployment-target inspection; installed
+  native no-vault, vault-open, edit/autosave, quit/relaunch, remembered-vault,
+  and content-persistence checks. Browser-only preview startup reaches the
+  expected Tauri IPC boundary and is not an authoritative desktop test.
 - **Commits:** Verified implementation commits are recorded with each completed
   chunk above.
-- **Remaining risks:** Retrieval performance on a representative vault,
-  packaged-app verification, and the seven-day observation period.
-- **Follow-up:** Begin chunk 11 with bounded global Markdown search and recent
-  files while preserving the established vault safety boundary.
+- **Remaining risks:** The CodeMirror production chunk still triggers the 500
+  kB build warning; baseline timings and attachment-preservation regression
+  coverage remain desirable; public Developer ID/notarized, Apple Silicon, and
+  Linux packages are deferred; and the seven-day observation is incomplete.
+- **Follow-up:** Complete Chunk 13 using `docs/ALPHA_STABILITY_LOG.md` on a
+  backed-up representative vault copy before primary-vault use.
