@@ -1999,6 +1999,34 @@ mod tests {
     }
 
     #[test]
+    fn indexes_the_checked_in_smoke_vault() {
+        let root =
+            std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../fixtures/smoke-vault");
+        let mut snapshot = scan_vault(&root).expect("scan checked-in smoke vault");
+        enrich_vault_metadata(&root, &mut snapshot.files).expect("index smoke vault metadata");
+
+        assert_eq!(snapshot.files.len(), 6);
+        assert_eq!(
+            snapshot
+                .files
+                .iter()
+                .filter(|file| file.id.is_some())
+                .count(),
+            5
+        );
+        let leadership = snapshot
+            .files
+            .iter()
+            .find(|file| file.relative_path == "Notes/Leadership.md")
+            .expect("find leadership fixture");
+        assert_eq!(leadership.aliases, vec!["Leading Well", "Calm Leadership"]);
+        assert_eq!(
+            leadership.outgoing_links,
+            vec!["Daily Practice", "Reading List", "Future Idea"]
+        );
+    }
+
+    #[test]
     fn searches_unicode_markdown_with_line_context() {
         let vault = tempdir().expect("create fixture vault");
         fs::create_dir(vault.path().join("Notes")).expect("create Notes folder");
