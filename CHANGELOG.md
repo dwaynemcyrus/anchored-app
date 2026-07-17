@@ -50,6 +50,9 @@ Git commit. The format follows [Keep a Changelog], and releases follow
   thread.
 - The editor shell no longer becomes a blank window when WebKit denies access
   to optional local note-activity storage.
+- Wikilink parsing no longer uses regular-expression lookbehind unsupported by
+  the macOS 12 WebView. Startup failures now remain visible with a reload action
+  instead of leaving an empty native window.
 
 [Keep a Changelog]: https://keepachangelog.com/en/1.1.0/
 [Semantic Versioning]: https://semver.org/spec/v2.0.0.html

@@ -25,6 +25,24 @@ function withoutMarkdownExtension(value: string): string {
   return value.replace(/\.md$/i, "");
 }
 
+function linesWithEndings(content: string): string[] {
+  const lines: string[] = [];
+  let start = 0;
+
+  while (start < content.length) {
+    const newline = content.indexOf("\n", start);
+    if (newline === -1) {
+      lines.push(content.slice(start));
+      return lines;
+    }
+    lines.push(content.slice(start, newline + 1));
+    start = newline + 1;
+  }
+
+  if (content.length === 0 || content.endsWith("\n")) lines.push("");
+  return lines;
+}
+
 export function wikilinkAtOffset(
   content: string,
   offset: number,
@@ -52,7 +70,7 @@ export function wikilinksInContent(content: string): WikilinkMatch[] {
   let fenceMarker: string | undefined;
   let fenceLength = 0;
 
-  for (const lineWithEnding of body.split(/(?<=\n)/)) {
+  for (const lineWithEnding of linesWithEndings(body)) {
     const line = lineWithEnding.replace(/\r?\n$/, "");
     if (/^( {4}|\t)/.test(line)) {
       lineOffset += lineWithEnding.length;
@@ -103,7 +121,7 @@ export function wikilinkCompletionAtOffset(
   let lineOffset = bodyStart;
   let fenceMarker: string | undefined;
   let fenceLength = 0;
-  for (const lineWithEnding of content.slice(bodyStart).split(/(?<=\n)/)) {
+  for (const lineWithEnding of linesWithEndings(content.slice(bodyStart))) {
     const line = lineWithEnding.replace(/\r?\n$/, "");
     const lineEnd = lineOffset + line.length;
     const fenceMatch = line.match(/^ {0,3}(`{3,}|~{3,})/);

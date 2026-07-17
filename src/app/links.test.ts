@@ -96,6 +96,20 @@ describe("wikilinks", () => {
     });
   });
 
+  it("preserves offsets across CRLF and a final unterminated line", () => {
+    const content = "First\r\n[[Second]]\r\nLast [[Third]]";
+
+    expect(wikilinksInContent(content)).toMatchObject([
+      { start: content.indexOf("[[Second]]"), target: "Second" },
+      { start: content.indexOf("[[Third]]"), target: "Third" },
+    ]);
+    const completion = "First\r\n[[Thi";
+    expect(wikilinkCompletionAtOffset(completion, completion.length)).toEqual({
+      from: 9,
+      query: "Thi",
+    });
+  });
+
   it("refuses completion in code, comments, malformed links, or YAML text", () => {
     const cases = [
       "`[[Code",

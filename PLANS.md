@@ -415,6 +415,12 @@ Every future large plan must identify:
   falls back to an empty activity history so storage denial cannot prevent the
   editor shell from rendering. All 45 frontend tests and configured gates pass;
   native visual confirmation remains.
+- 2026-07-17: The startup boundary exposed the remaining native failure as an
+  unsupported regular-expression lookbehind in the wikilink parser. Replaced
+  both expressions with an explicit line scanner that preserves LF, CRLF,
+  trailing lines, and link offsets on the macOS 12 WebView. Startup failures
+  now render an actionable local error instead of an empty window. All 46
+  frontend tests and configured gates pass; native UI confirmation remains.
 
 ## Completion
 
