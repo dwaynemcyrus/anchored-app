@@ -160,6 +160,48 @@ describe("App", () => {
     expect(mockedReadVaultFile).toHaveBeenCalledWith("Notes/Leadership.md");
   });
 
+  it("explains when content search needs an open vault", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+
+    await user.click(screen.getByRole("button", { name: "Search vault" }));
+
+    expect(
+      screen.getByText("Open a vault to search its Markdown notes."),
+    ).toBeInTheDocument();
+    expect(mockedSearchVault).not.toHaveBeenCalled();
+  });
+
+  it("keeps vault search usable after a native search error", async () => {
+    const user = userEvent.setup();
+    mockedSelectVault.mockResolvedValue({
+      files: [],
+      name: "My Vault",
+      warnings: noWarnings,
+    });
+    mockedSearchVault.mockRejectedValue({
+      message: "One folder could not be searched.",
+    });
+    render(<App />);
+
+    await user.click(
+      screen.getByRole("button", { name: "Open vault: Personal" }),
+    );
+    await user.click(screen.getByRole("button", { name: "Search vault" }));
+    await user.type(
+      screen.getByRole("combobox", { name: "Search Markdown content" }),
+      "missing",
+    );
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "One folder could not be searched.",
+    );
+    await user.keyboard("{Escape}");
+    expect(
+      screen.queryByRole("dialog", { name: "Search vault" }),
+    ).not.toBeInTheDocument();
+  });
+
   it("quick-opens notes by filename or alias with the keyboard", async () => {
     const user = userEvent.setup();
     mockedSelectVault.mockResolvedValue({
