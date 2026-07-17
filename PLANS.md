@@ -429,6 +429,35 @@ and preserves link integrity across filename changes.
       commit if the policy is rejected.
     - Commit: current documentation chunk
 
+15. [ ] **Chunk: Fix close and notification regressions**
+    - Issues: [#1](https://github.com/dwaynemcyrus/anchored-app/issues/1),
+      [#3](https://github.com/dwaynemcyrus/anchored-app/issues/3), and
+      [#4](https://github.com/dwaynemcyrus/anchored-app/issues/4)
+    - Files: `src/app/closeProtection.ts`, `src/app/closeProtection.test.tsx`,
+      `src/app/App.tsx`, `src/app/App.test.tsx`,
+      `src/app/components/StatusBar.tsx`, `src/styles/global.css`, and
+      `CHANGELOG.md`
+    - Change: Reproduce and correct the native macOS window-close behavior;
+      retain explicit protection only when unsaved work exists. Remove the
+      routine Markdown-file count from immediate and history notifications,
+      and show the live vault count quietly in the status bar. Automatically
+      dismiss non-critical, non-actionable notices after 12 seconds while
+      preserving manual dismissal and keeping errors, conflicts, and
+      action-required messages visible.
+    - Verify: Native close-control smoke test with clean and unfinished drafts;
+      fake-timer tests for notice expiry and cleanup; tests proving critical
+      notices persist; status-bar count updates after vault scans; notification
+      history excludes routine count events; keyboard and narrow-window checks;
+      Prettier, ESLint, TypeScript, Vitest, Vite build, Rust format, Clippy,
+      and Rust tests.
+    - Risk/rollback: Incorrect close handling could lose edits, and overly
+      broad timers could hide actionable failures. Treat clean-close and
+      draft-protection paths separately, clear timers on dismissal or unmount,
+      and preserve all critical notices. Revert the focused commit without
+      touching vault Markdown files.
+    - Assumption: The status bar is the appropriate quiet location for the
+      Markdown-file count; it should display the active vault's current count.
+
 ## Requirements for future large plans
 
 Every future large plan must identify:
