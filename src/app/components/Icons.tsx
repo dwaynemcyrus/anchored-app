@@ -123,3 +123,22 @@ export function SearchIcon(props: IconProps) {
     </IconFrame>
   );
 }
+
+export function NotificationIcon(props: IconProps) {
+  return (
+    <IconFrame {...props}>
+      <path
+        d="M6.5 10.5a5.5 5.5 0 0 1 11 0c0 4 1.75 5 1.75 5H4.75s1.75-1 1.75-5Z"
+        stroke="currentColor"
+        strokeLinejoin="round"
+        strokeWidth="1.5"
+      />
+      <path
+        d="M9.75 18.25a2.5 2.5 0 0 0 4.5 0"
+        stroke="currentColor"
+        strokeLinecap="round"
+        strokeWidth="1.5"
+      />
+    </IconFrame>
+  );
+}

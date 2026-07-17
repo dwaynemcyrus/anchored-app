@@ -86,6 +86,35 @@ describe("App", () => {
     }
   });
 
+  it("keeps a timestamped vault event in dismissible notification history", async () => {
+    const user = userEvent.setup();
+    mockedSelectVault.mockResolvedValue({
+      files: [],
+      name: "My Vault",
+      warnings: noWarnings,
+    });
+    render(<App />);
+
+    await user.click(screen.getByRole("button", { name: "Open vault" }));
+    await user.click(
+      screen.getByRole("button", { name: "Open notification history (1)" }),
+    );
+
+    const history = screen.getByRole("dialog", {
+      name: "Notification history",
+    });
+    expect(within(history).getByText("0 Markdown files found.")).toBeVisible();
+    expect(within(history).getByText("Vault")).toBeVisible();
+    expect(within(history).getByRole("time")).toHaveAttribute("dateTime");
+
+    await user.click(
+      within(history).getByRole("button", {
+        name: "Delete notification: 0 Markdown files found.",
+      }),
+    );
+    expect(within(history).getByText("No notifications yet.")).toBeVisible();
+  });
+
   it("filters notes by filename or alias", async () => {
     const user = userEvent.setup();
     mockedSelectVault.mockResolvedValue({
@@ -910,5 +939,22 @@ describe("App", () => {
       ).textContent,
     ).toBe(" updated# Before");
     expect(screen.getByText("Saved")).toBeInTheDocument();
+
+    await user.click(
+      screen.getByRole("button", { name: /Open notification history/ }),
+    );
+    const history = screen.getByRole("dialog", {
+      name: "Notification history",
+    });
+    expect(
+      within(history).getByText(
+        "Conflict.md has unsaved changes because its file changed outside Anchored.",
+      ),
+    ).toBeVisible();
+    expect(
+      within(history).getByRole("button", {
+        name: "Delete notification: Conflict.md has unsaved changes because its file changed outside Anchored.",
+      }),
+    ).toBeVisible();
   });
 });

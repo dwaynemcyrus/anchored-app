@@ -1,13 +1,21 @@
-import { CheckIcon, MenuIcon, NewFileIcon, SearchIcon } from "./Icons";
+import {
+  CheckIcon,
+  MenuIcon,
+  NewFileIcon,
+  NotificationIcon,
+  SearchIcon,
+} from "./Icons";
 import { IconButton } from "./IconButton";
 
 type TitleBarProps = {
   saveState?: "saved" | "unsaved" | "saving" | "conflict" | "error";
   selectingVault: boolean;
   sidebarOpen: boolean;
+  notificationCount: number;
   vaultName: string;
   vaultSelected: boolean;
   onCreateNote: () => void;
+  onOpenNotifications: () => void;
   onOpenSearch: () => void;
   onSelectVault: () => void;
   onToggleSidebar: () => void;
@@ -17,9 +25,11 @@ export function TitleBar({
   saveState,
   selectingVault,
   sidebarOpen,
+  notificationCount,
   vaultName,
   vaultSelected,
   onCreateNote,
+  onOpenNotifications,
   onOpenSearch,
   onSelectVault,
   onToggleSidebar,
@@ -73,6 +83,21 @@ export function TitleBar({
             <span aria-hidden="true" className="title-bar__rule" />
           </>
         ) : null}
+        <span className="notification-history-button">
+          <IconButton
+            label={`Open notification history${
+              notificationCount > 0 ? ` (${notificationCount})` : ""
+            }`}
+            onClick={onOpenNotifications}
+          >
+            <NotificationIcon />
+          </IconButton>
+          {notificationCount > 0 ? (
+            <span aria-hidden="true" className="notification-history-count">
+              {notificationCount > 99 ? "99+" : notificationCount}
+            </span>
+          ) : null}
+        </span>
         <IconButton label="Search vault" onClick={onOpenSearch}>
           <SearchIcon />
         </IconButton>

@@ -223,7 +223,7 @@ and preserves link integrity across filename changes.
       `5670240 test(vault): add retrieval smoke vault`, and
       `09d1d16 fix(dev): recover stale app server`.
 
-11C. [ ] **Chunk: Add notification history**
+11C. [x] **Chunk: Add notification history**
     - Files: notification history model and tests, notification-center UI,
       app composition, title-bar icon, styles, `CHANGELOG.md`, `PLANS.md`
     - Change: Keep the existing immediate notification stack and add a local,
@@ -245,6 +245,10 @@ and preserves link integrity across filename changes.
     - Expected changelog: Add a user-visible notification center with local
       timestamps, cleanup, and bounded retention. Version remains `0.1.0`
       until an explicit release request.
+    - Verification result: Storage validation, expiration, active-conflict,
+      deduplication, bounds, blocked-storage, focus, Escape, empty, delete,
+      clear, and integration tests pass. Rendered checks pass at 1280×720 and
+      400×800 with no console warnings, clipping, or horizontal overflow.
 
 12. [ ] **Chunk: Package release candidate**
     - Files: Tauri bundle configuration, icons/assets, README, release checklist
@@ -289,6 +293,10 @@ Every future large plan must identify:
 
 ## Progress notes
 
+- 2026-07-17: Chunk 11C adds an optional local notification history behind a
+  top-bar bell. Meaningful events are timestamped, deduplicated, capped at 250,
+  and retained for 28 days; active conflicts persist until automatic or manual
+  resolution. Routine autosaves and clean rescans do not create history noise.
 - 2026-07-17: Dwayne confirmed all Chunk 11 retrieval and editing flows work in
   the native smoke vault. Chunk 11 is complete. Notification history was then
   approved as Chunk 11C before packaging, using local 28-day retention while

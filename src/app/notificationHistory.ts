@@ -152,8 +152,10 @@ export function recordNotification(
       entry.kind === input.kind &&
       entry.message === input.message &&
       entry.sourceId === input.sourceId &&
+      entry.requiresAction === (input.requiresAction ?? false) &&
       entry.resolvedAt === undefined &&
-      now - entry.updatedAt <= DEDUPLICATION_WINDOW_MS,
+      ((input.requiresAction ?? false) ||
+        now - entry.updatedAt <= DEDUPLICATION_WINDOW_MS),
   );
 
   if (duplicate) {
@@ -190,13 +192,39 @@ export function resolveNotifications(
   sourceId: string,
   now: number,
 ): NotificationHistoryEntry[] {
-  return current.map((entry) =>
-    entry.sourceId === sourceId &&
-    entry.requiresAction &&
-    entry.resolvedAt === undefined
-      ? { ...entry, resolvedAt: now, updatedAt: now }
-      : entry,
-  );
+  let changed = false;
+  const next = current.map((entry) => {
+    if (
+      entry.sourceId !== sourceId ||
+      !entry.requiresAction ||
+      entry.resolvedAt !== undefined
+    ) {
+      return entry;
+    }
+    changed = true;
+    return { ...entry, resolvedAt: now, updatedAt: now };
+  });
+  return changed ? next : (current as NotificationHistoryEntry[]);
+}
+
+export function resolveNotification(
+  current: readonly NotificationHistoryEntry[],
+  entryId: string,
+  now: number,
+): NotificationHistoryEntry[] {
+  let changed = false;
+  const next = current.map((entry) => {
+    if (
+      entry.id !== entryId ||
+      !entry.requiresAction ||
+      entry.resolvedAt !== undefined
+    ) {
+      return entry;
+    }
+    changed = true;
+    return { ...entry, resolvedAt: now, updatedAt: now };
+  });
+  return changed ? next : (current as NotificationHistoryEntry[]);
 }
 
 export function clearResolvedNotifications(

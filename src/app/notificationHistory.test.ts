@@ -6,6 +6,7 @@ import {
   NOTIFICATION_RETENTION_DAYS,
   pruneNotificationHistory,
   recordNotification,
+  resolveNotification,
   resolveNotifications,
   saveNotificationHistory,
   type NotificationHistoryEntry,
@@ -142,5 +143,17 @@ describe("notification history", () => {
         { ...conflict, id: "resolved", resolvedAt: 200 },
       ]),
     ).toEqual([conflict]);
+  });
+
+  it("allows an active conflict to be marked resolved explicitly", () => {
+    const conflict = entry({
+      id: "conflict",
+      kind: "conflict",
+      requiresAction: true,
+    });
+
+    expect(resolveNotification([conflict], "conflict", 250)).toEqual([
+      { ...conflict, resolvedAt: 250, updatedAt: 250 },
+    ]);
   });
 });
