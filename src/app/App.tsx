@@ -12,6 +12,7 @@ import { FileRail } from "./components/FileRail";
 import { IdentityMigrationPanel } from "./components/IdentityMigrationPanel";
 import { NotificationCenter } from "./components/NotificationCenter";
 import { QuickOpenPalette } from "./components/QuickOpenPalette";
+import { QuitConfirmation } from "./components/QuitConfirmation";
 import { StatusBar } from "./components/StatusBar";
 import { TitleBar } from "./components/TitleBar";
 import { TrashPanel } from "./components/TrashPanel";
@@ -39,6 +40,7 @@ import {
   saveDocumentActivity,
 } from "./recentDocuments";
 import { rankQuickOpenResults } from "./retrieval";
+import { useCloseProtection } from "./closeProtection";
 import {
   clearResolvedNotifications,
   GENERAL_NOTIFICATION_SCOPE,
@@ -128,6 +130,15 @@ function vaultSummaryMessage(snapshot: VaultSnapshot): string {
   return notices.join(" ");
 }
 
+function documentHasUnfinishedEdits(document: AnchoredDocument): boolean {
+  return (
+    !document.relativePath ||
+    document.saveState !== "saved" ||
+    (document.sourceText !== undefined &&
+      document.sourceText !== document.savedSourceText)
+  );
+}
+
 export function App() {
   const [documents, setDocuments] = useState<AnchoredDocument[]>([]);
   const [activeDocumentId, setActiveDocumentId] = useState("");
@@ -173,6 +184,7 @@ export function App() {
   const [vaultNotices, setVaultNotices] = useState<VaultNotice[]>([]);
   const [notificationHistoryVisible, setNotificationHistoryVisible] =
     useState(false);
+  const [quitConfirmationVisible, setQuitConfirmationVisible] = useState(false);
   const [notificationHistory, setNotificationHistory] = useState(() => {
     try {
       return loadNotificationHistory(window.localStorage, Date.now());
@@ -242,6 +254,9 @@ export function App() {
     () => notificationHistoryForScope(notificationHistory, notificationScopeId),
     [notificationHistory, notificationScopeId],
   );
+  const unfinishedDocumentCount = documents.filter(
+    documentHasUnfinishedEdits,
+  ).length;
 
   const addHistoryEntry = useCallback(
     (
@@ -299,16 +314,19 @@ export function App() {
   );
 
   const hasUnfinishedEdits = useCallback(
-    () =>
-      documentsRef.current.some(
-        (document) =>
-          !document.relativePath ||
-          document.saveState !== "saved" ||
-          (document.sourceText !== undefined &&
-            document.sourceText !== document.savedSourceText),
-      ),
+    () => documentsRef.current.some(documentHasUnfinishedEdits),
     [],
   );
+
+  const discardEditsAndClose = useCloseProtection({
+    hasUnfinishedEdits: unfinishedDocumentCount > 0,
+    onCloseBlocked: () => setQuitConfirmationVisible(true),
+    onError: () =>
+      addVaultNotice(
+        "Anchored could not install its quit protection. Save every note before closing the app.",
+        { history: { kind: "error" } },
+      ),
+  });
 
   const refreshRememberedVaults = useCallback(async () => {
     setRememberedVaultsLoading(true);
@@ -733,6 +751,12 @@ export function App() {
       setMigrationStatus("ready");
     }
   }
+
+  useEffect(() => {
+    if (unfinishedDocumentCount === 0) {
+      setQuitConfirmationVisible(false);
+    }
+  }, [unfinishedDocumentCount]);
 
   useEffect(() => {
     try {
@@ -1466,6 +1490,13 @@ export function App() {
             setMigrationStatus("idle");
             setMigrationError(undefined);
           }}
+        />
+      ) : null}
+      {quitConfirmationVisible ? (
+        <QuitConfirmation
+          unfinishedCount={unfinishedDocumentCount}
+          onCancel={() => setQuitConfirmationVisible(false)}
+          onDiscard={() => void discardEditsAndClose()}
         />
       ) : null}
       <StatusBar document={activeDocument} vaultName={vaultName} />
