@@ -199,7 +199,7 @@ and preserves link integrity across filename changes.
       `82e915a fix(app): survive blocked activity storage`, and
       `b17813a fix(app): support older WebKit regex`
 
-11. [ ] **Chunk: Add retrieval and continuity**
+11. [x] **Chunk: Add retrieval and continuity**
     - Files: search and recent-file features, settings persistence, tests
     - Change: Add global Markdown search, file-local find, recent files, quick
       open, and required keyboard shortcuts without a database.
@@ -210,8 +210,9 @@ and preserves link integrity across filename changes.
     - Implemented limits: Search work runs outside the interface thread with a
       200-character query limit, 100-result limit, 10 MiB per-note limit, and
       64 MiB total-content budget. Results report skipped or limited scans.
-    - Remaining verification: Native keyboard and pointer smoke test at desktop
-      and narrow window sizes using `fixtures/smoke-vault`.
+    - Native verification: Dwayne confirmed editing, Quick Open, full-vault
+      search, note-local Find, aliases, and keyboard and pointer flows work in
+      `fixtures/smoke-vault` on 2026-07-17.
     - Commits: `bb99fd4 feat(search): rank recent notes`,
       `df6500f feat(search): add quick open`,
       `e75d641 feat(search): scan vault content`,
@@ -221,6 +222,29 @@ and preserves link integrity across filename changes.
       `9f7daa3 fix(app): remove static sample notes`,
       `5670240 test(vault): add retrieval smoke vault`, and
       `09d1d16 fix(dev): recover stale app server`.
+
+11C. [ ] **Chunk: Add notification history**
+    - Files: notification history model and tests, notification-center UI,
+      app composition, title-bar icon, styles, `CHANGELOG.md`, `PLANS.md`
+    - Change: Keep the existing immediate notification stack and add a local,
+      timestamped history for meaningful vault, identity, link, rename, save,
+      conflict, and error outcomes. Retain resolved entries for 28 days, keep
+      unresolved conflicts until resolved, cap storage, and provide individual
+      delete and Clear all actions.
+    - Verify: Malformed and blocked storage, expiration, unresolved conflict,
+      deduplication, bounded history, keyboard focus, Escape, empty state,
+      individual delete, Clear all, desktop and narrow layouts, and no routine
+      autosave or repeated clean scan noise.
+    - Risk/rollback: A noisy or privacy-heavy log would distract from writing.
+      Store no note contents or absolute paths, record only selected outcomes,
+      keep persistence optional, and revert the focused chunk without touching
+      Markdown files.
+    - Approved decisions: Local-only storage, 28-day default retention,
+      unresolved conflicts exempt from expiration, and immediate messages
+      remain independently dismissible from their history records.
+    - Expected changelog: Add a user-visible notification center with local
+      timestamps, cleanup, and bounded retention. Version remains `0.1.0`
+      until an explicit release request.
 
 12. [ ] **Chunk: Package release candidate**
     - Files: Tauri bundle configuration, icons/assets, README, release checklist
@@ -265,10 +289,14 @@ Every future large plan must identify:
 
 ## Progress notes
 
-- 2026-07-17: Chunk 11 retrieval implementation is complete pending its native
-  smoke test. Quick Open, bounded background vault-content search, file-local
-  Find, stale activity cleanup, Unicode matching, focus, keyboard, empty/error,
-  and a 1,000-file performance fixture pass automated verification.
+- 2026-07-17: Dwayne confirmed all Chunk 11 retrieval and editing flows work in
+  the native smoke vault. Chunk 11 is complete. Notification history was then
+  approved as Chunk 11C before packaging, using local 28-day retention while
+  preserving unresolved conflicts until they are resolved.
+- 2026-07-17: Chunk 11 retrieval implementation completed automated checks for
+  Quick Open, bounded background vault-content search, file-local Find, stale
+  activity cleanup, Unicode matching, focus, keyboard, empty/error, and a
+  1,000-file performance fixture before its successful native smoke test.
 - 2026-07-17: Native QA exposed two non-product failures: a stale Vite process
   caused the generic `beforeDevCommand` error, and hard-coded startup samples
   appeared to be notes despite having no editable vault source. Anchored now
