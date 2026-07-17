@@ -60,7 +60,7 @@ export function TitleBar({
                   : "Save failed"}
         </span>
         <span aria-hidden="true" className="title-bar__rule" />
-        <IconButton label="Search notes" onClick={onOpenSearch}>
+        <IconButton label="Search vault" onClick={onOpenSearch}>
           <SearchIcon />
         </IconButton>
         <IconButton label="New note" onClick={onCreateNote}>

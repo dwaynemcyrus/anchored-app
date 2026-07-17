@@ -41,19 +41,18 @@ export function FileRail({
     <aside aria-label="File explorer" className="file-rail">
       <div className="file-rail__tools">
         <label className="search-field">
-          <span className="visually-hidden">Search notes</span>
+          <span className="visually-hidden">Filter notes</span>
           <SearchIcon />
           <input
             ref={searchInputRef}
-            aria-label="Search notes"
+            aria-label="Filter notes"
             autoComplete="off"
-            placeholder="Search notes"
+            placeholder="Filter notes"
             spellCheck="false"
             type="search"
             value={query}
             onChange={(event) => onQueryChange(event.target.value)}
           />
-          <kbd>⌘⇧F</kbd>
         </label>
         <IconButton label="New note" onClick={onCreateNote}>
           <NewFileIcon />

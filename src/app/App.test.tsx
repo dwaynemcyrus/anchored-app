@@ -10,6 +10,7 @@ import {
   renameVaultFile,
   rescanVault,
   saveVaultFile,
+  searchVault,
   selectVault,
 } from "../lib/tauri/vault";
 import { App } from "./App";
@@ -22,6 +23,7 @@ vi.mock("../lib/tauri/vault", () => ({
   renameVaultFile: vi.fn(),
   rescanVault: vi.fn(),
   saveVaultFile: vi.fn(),
+  searchVault: vi.fn(),
   selectVault: vi.fn(),
 }));
 
@@ -33,6 +35,7 @@ const mockedReadVaultFile = vi.mocked(readVaultFile);
 const mockedRenameVaultFile = vi.mocked(renameVaultFile);
 const mockedRescanVault = vi.mocked(rescanVault);
 const mockedSaveVaultFile = vi.mocked(saveVaultFile);
+const mockedSearchVault = vi.mocked(searchVault);
 const noWarnings = {
   addedIdentities: 0,
   identityConflicts: 0,
@@ -52,6 +55,7 @@ describe("App", () => {
     mockedRenameVaultFile.mockReset();
     mockedRescanVault.mockReset();
     mockedSaveVaultFile.mockReset();
+    mockedSearchVault.mockReset();
   });
 
   it("renders the seeded editor surface", () => {
@@ -86,7 +90,7 @@ describe("App", () => {
     render(<App />);
 
     await user.type(
-      screen.getByRole("searchbox", { name: "Search notes" }),
+      screen.getByRole("searchbox", { name: "Filter notes" }),
       "Leading Well",
     );
 
@@ -96,6 +100,64 @@ describe("App", () => {
     expect(
       screen.queryByRole("button", { name: "Reading Notes.md" }),
     ).not.toBeInTheDocument();
+  });
+
+  it("searches Markdown content and opens a result", async () => {
+    const user = userEvent.setup();
+    mockedSelectVault.mockResolvedValue({
+      files: [
+        {
+          id: "01JZQ7K8P4A6F2M9V3C5T7X1BY",
+          name: "Leadership.md",
+          parent: "Notes",
+          relativePath: "Notes/Leadership.md",
+        },
+      ],
+      name: "My Vault",
+      warnings: noWarnings,
+    });
+    mockedSearchVault.mockResolvedValue({
+      matches: [
+        {
+          line: 8,
+          relativePath: "Notes/Leadership.md",
+          snippet: "A calm system supports daily writing.",
+        },
+      ],
+      searchedFiles: 1,
+      skippedFiles: 0,
+      truncated: false,
+    });
+    mockedReadVaultFile.mockResolvedValue({
+      content: "A calm system supports daily writing.",
+      relativePath: "Notes/Leadership.md",
+      sizeBytes: 37,
+    });
+    render(<App />);
+
+    await user.click(
+      screen.getByRole("button", { name: "Open vault: Personal" }),
+    );
+    await user.keyboard("{Meta>}{Shift>}f{/Shift}{/Meta}");
+    const dialog = screen.getByRole("dialog", { name: "Search vault" });
+    await user.type(
+      within(dialog).getByRole("combobox", {
+        name: "Search Markdown content",
+      }),
+      "calm",
+    );
+
+    const result = await within(dialog).findByRole("option");
+    expect(mockedSearchVault).toHaveBeenCalledWith("calm");
+    expect(result).toHaveTextContent("Leadership.md");
+    expect(result).toHaveTextContent("Line 8");
+    expect(result).toHaveTextContent("A calm system");
+    await user.keyboard("{Enter}");
+
+    expect(
+      screen.queryByRole("dialog", { name: "Search vault" }),
+    ).not.toBeInTheDocument();
+    expect(mockedReadVaultFile).toHaveBeenCalledWith("Notes/Leadership.md");
   });
 
   it("quick-opens notes by filename or alias with the keyboard", async () => {

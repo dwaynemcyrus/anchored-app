@@ -14,6 +14,10 @@ import { QuickOpenPalette } from "./components/QuickOpenPalette";
 import { StatusBar } from "./components/StatusBar";
 import { TitleBar } from "./components/TitleBar";
 import {
+  VaultSearchPalette,
+  type VaultSearchState,
+} from "./components/VaultSearchPalette";
+import {
   createUntitledDocument,
   documentsFromVault,
   initialFolders,
@@ -42,6 +46,7 @@ import {
   renameVaultFile,
   rescanVault,
   saveVaultFile,
+  searchVault,
   selectVault,
   type VaultSnapshot,
   type IdentityMigrationPreview,
@@ -108,6 +113,11 @@ export function App() {
   const [query, setQuery] = useState("");
   const [quickOpenQuery, setQuickOpenQuery] = useState("");
   const [quickOpenVisible, setQuickOpenVisible] = useState(false);
+  const [vaultSearchQuery, setVaultSearchQuery] = useState("");
+  const [vaultSearchState, setVaultSearchState] = useState<VaultSearchState>({
+    status: "idle",
+  });
+  const [vaultSearchVisible, setVaultSearchVisible] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [vaultName, setVaultName] = useState("Personal");
   const [folderOrder, setFolderOrder] = useState(initialFolders);
@@ -136,6 +146,7 @@ export function App() {
   });
   const searchInputRef = useRef<HTMLInputElement>(null);
   const loadRequestRef = useRef(0);
+  const searchRequestRef = useRef(0);
   const rescanInFlightRef = useRef(false);
   const vaultNoticeIdRef = useRef(0);
   const documentsRef = useRef(documents);
@@ -470,6 +481,37 @@ export function App() {
   }, [documentActivity]);
 
   useEffect(() => {
+    searchRequestRef.current += 1;
+    const requestId = searchRequestRef.current;
+    const query = vaultSearchQuery.trim();
+
+    if (!vaultSearchVisible || !vaultSelected || query.length === 0) {
+      setVaultSearchState({ status: "idle" });
+      return;
+    }
+
+    setVaultSearchState({ status: "searching" });
+    const timeout = window.setTimeout(() => {
+      void searchVault(query)
+        .then((result) => {
+          if (searchRequestRef.current === requestId) {
+            setVaultSearchState({ result, status: "success" });
+          }
+        })
+        .catch((error: unknown) => {
+          if (searchRequestRef.current === requestId) {
+            setVaultSearchState({
+              message: readErrorMessage(error),
+              status: "error",
+            });
+          }
+        });
+    }, 180);
+
+    return () => window.clearTimeout(timeout);
+  }, [vaultSearchQuery, vaultSearchVisible, vaultSelected]);
+
+  useEffect(() => {
     function handleKeyboardShortcut(event: KeyboardEvent) {
       const commandKey = event.metaKey || event.ctrlKey;
 
@@ -484,6 +526,12 @@ export function App() {
         setQuickOpenVisible(true);
       }
 
+      if (commandKey && event.shiftKey && event.key.toLowerCase() === "f") {
+        event.preventDefault();
+        setVaultSearchQuery("");
+        setVaultSearchVisible(true);
+      }
+
       if (
         commandKey &&
         event.key.toLowerCase() === "s" &&
@@ -495,11 +543,6 @@ export function App() {
         } else {
           void saveDocument(activeDocumentId);
         }
-      }
-
-      if (commandKey && event.shiftKey && event.key.toLowerCase() === "f") {
-        event.preventDefault();
-        searchInputRef.current?.focus();
       }
     }
 
@@ -582,6 +625,33 @@ export function App() {
         message: readErrorMessage(error),
       });
     }
+  }
+
+  async function openVaultSearchResult(relativePath: string) {
+    let document = documentsRef.current.find(
+      (candidate) => candidate.relativePath === relativePath,
+    );
+    if (!document) {
+      try {
+        const snapshot = await rescanVault();
+        if (snapshot) {
+          adoptVaultSnapshot(snapshot);
+          document = documentsRef.current.find(
+            (candidate) => candidate.relativePath === relativePath,
+          );
+        }
+      } catch (error) {
+        addVaultNotice(readErrorMessage(error));
+        return;
+      }
+    }
+
+    if (!document) {
+      addVaultNotice("That search result is no longer in the vault.");
+      return;
+    }
+    setVaultSearchVisible(false);
+    await selectDocument(document.id);
   }
 
   async function renameDocument(documentId: string) {
@@ -798,7 +868,10 @@ export function App() {
         sidebarOpen={sidebarOpen}
         vaultName={vaultName}
         onCreateNote={createNote}
-        onOpenSearch={() => searchInputRef.current?.focus()}
+        onOpenSearch={() => {
+          setVaultSearchQuery("");
+          setVaultSearchVisible(true);
+        }}
         onSelectVault={openVault}
         onToggleSidebar={() => setSidebarOpen((isOpen) => !isOpen)}
       />
@@ -918,6 +991,16 @@ export function App() {
             void selectDocument(documentId);
           }}
           onQueryChange={setQuickOpenQuery}
+        />
+      ) : null}
+      {vaultSearchVisible ? (
+        <VaultSearchPalette
+          query={vaultSearchQuery}
+          searchState={vaultSearchState}
+          vaultSelected={vaultSelected}
+          onClose={() => setVaultSearchVisible(false)}
+          onOpen={(relativePath) => void openVaultSearchResult(relativePath)}
+          onQueryChange={setVaultSearchQuery}
         />
       ) : null}
       {migrationPreview ? (
