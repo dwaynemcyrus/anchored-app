@@ -285,6 +285,18 @@ and preserves link integrity across filename changes.
     - Expected changelog: Add vault-specific notification history, remembered
       vault switching, and reversible soft deletion. Version remains `0.1.0`
       until an explicit release request.
+    - Verification result: Vault metadata, registry recovery, hidden-path
+      exclusion, exact-byte Trash moves, crash recovery, restore conflicts,
+      recreated folders, symlink refusal, scoped-history migration, quick
+      switching, Forget, Trash/restore flows, focus, Escape, loading, empty,
+      and error states pass automated checks. Rendered checks pass at 1280×720
+      and 400×800 without console warnings or overflow. The debug native build
+      passes; disposable-vault manual confirmation remains before completion.
+    - Commits: `1edf260 docs(plan): add vault continuity`,
+      `85cbaf6 feat(vault): remember vault identity`,
+      `a3c2f14 feat(vault): add reversible trash`,
+      `c7eb3bc feat(notify): scope history by vault`, and
+      `2f30973 feat(app): add vault continuity`.
 
 12. [ ] **Chunk: Package release candidate**
     - Files: Tauri bundle configuration, icons/assets, README, release checklist
@@ -329,6 +341,11 @@ Every future large plan must identify:
 
 ## Progress notes
 
+- 2026-07-17: Chunk 11D implementation and automated verification completed.
+  Anchored now keeps a stable hidden vault identity, native-only remembered
+  paths, vault-scoped notifications, quick switching with Forget, and exact-
+  byte reversible Trash with conflict-safe restore. Two disposable vaults and
+  the verified debug app are ready for final native UI confirmation.
 - 2026-07-17: Dwayne approved Chunk 11D. Anchored will own one hidden
   `.anchored` directory per vault for stable vault identity and reversible
   trash, while remembered absolute paths remain private to native app data.
