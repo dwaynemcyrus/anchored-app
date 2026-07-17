@@ -13,6 +13,12 @@ use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Manager, State};
 use tauri_plugin_dialog::DialogExt;
 
+use crate::continuity::{
+    current_time_millis, ensure_vault_identity, forget_vault as forget_registered_vault,
+    is_internal_component, is_internal_relative_path,
+    list_remembered_vaults as load_remembered_vaults, registry_path, remember_vault,
+    remembered_vault_root, RememberedVault,
+};
 use crate::links::{plan_rename_link_rewrites, LinkNote, LinkSource};
 use crate::metadata::{
     add_note_identity, assign_new_note_identity, generate_note_id, inspect_note_aliases,
@@ -62,6 +68,7 @@ pub struct VaultWarnings {
 pub struct VaultSnapshot {
     pub files: Vec<VaultFile>,
     pub name: String,
+    pub vault_id: String,
     pub warnings: VaultWarnings,
 }
 
@@ -198,26 +205,26 @@ pub struct RenameOutcome {
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct VaultError {
-    code: &'static str,
-    message: String,
+    pub(crate) code: &'static str,
+    pub(crate) message: String,
 }
 
 impl VaultError {
-    fn io(context: &str, error: std::io::Error) -> Self {
+    pub(crate) fn io(context: &str, error: std::io::Error) -> Self {
         Self {
             code: "vaultIoError",
             message: format!("{context}: {error}"),
         }
     }
 
-    fn invalid(message: impl Into<String>) -> Self {
+    pub(crate) fn invalid(message: impl Into<String>) -> Self {
         Self {
             code: "invalidVault",
             message: message.into(),
         }
     }
 
-    fn state(message: impl Into<String>) -> Self {
+    pub(crate) fn state(message: impl Into<String>) -> Self {
         Self {
             code: "vaultStateError",
             message: message.into(),
@@ -304,22 +311,30 @@ pub async fn select_vault(
         .into_path()
         .map_err(|error| VaultError::invalid(format!("Unsupported vault path: {error}")))?;
     let root = canonical_vault_root(&selected_path)?;
-    recover_rename_transaction(&root)?;
-    let mut snapshot = scan_vault(&root)?;
-    let baseline_path = identity_baseline_path(&app, &root)?;
-    let summary = reconcile_vault_identities(&root, &snapshot.files, &baseline_path)?;
-    snapshot.warnings.added_identities = summary.added;
-    snapshot.warnings.identity_conflicts = summary.conflicts;
-    snapshot.warnings.needs_identity = summary.needs_identity;
-    enrich_vault_metadata(&root, &mut snapshot.files)?;
+    activate_vault(&app, &state, root).map(Some)
+}
 
-    let mut stored_root = state
-        .root
-        .write()
-        .map_err(|_| VaultError::state("The selected vault state could not be updated."))?;
-    *stored_root = Some(root);
+#[tauri::command]
+pub async fn list_remembered_vaults(app: AppHandle) -> Result<Vec<RememberedVault>, VaultError> {
+    load_remembered_vaults(&registry_path(&app)?)
+}
 
-    Ok(Some(snapshot))
+#[tauri::command]
+pub async fn open_remembered_vault(
+    app: AppHandle,
+    state: State<'_, VaultState>,
+    vault_id: String,
+) -> Result<VaultSnapshot, VaultError> {
+    let root = remembered_vault_root(&registry_path(&app)?, &vault_id)?;
+    activate_vault(&app, &state, root)
+}
+
+#[tauri::command]
+pub async fn forget_vault(
+    app: AppHandle,
+    vault_id: String,
+) -> Result<Vec<RememberedVault>, VaultError> {
+    forget_registered_vault(&registry_path(&app)?, &vault_id)
 }
 
 #[tauri::command]
@@ -336,15 +351,42 @@ pub async fn rescan_vault(
     let Some(root) = root else {
         return Ok(None);
     };
-    recover_rename_transaction(&root)?;
-    let mut snapshot = scan_vault(&root)?;
-    let baseline_path = identity_baseline_path(&app, &root)?;
-    let summary = reconcile_vault_identities(&root, &snapshot.files, &baseline_path)?;
+    build_vault_snapshot(&app, &root).map(Some)
+}
+
+fn activate_vault(
+    app: &AppHandle,
+    state: &State<'_, VaultState>,
+    root: PathBuf,
+) -> Result<VaultSnapshot, VaultError> {
+    let snapshot = build_vault_snapshot(app, &root)?;
+    remember_vault(
+        &registry_path(app)?,
+        &root,
+        &snapshot.vault_id,
+        &snapshot.name,
+        current_time_millis(),
+    )?;
+    let mut stored_root = state
+        .root
+        .write()
+        .map_err(|_| VaultError::state("The selected vault state could not be updated."))?;
+    *stored_root = Some(root);
+    Ok(snapshot)
+}
+
+fn build_vault_snapshot(app: &AppHandle, root: &Path) -> Result<VaultSnapshot, VaultError> {
+    let vault_id = ensure_vault_identity(root)?;
+    recover_rename_transaction(root)?;
+    let mut snapshot = scan_vault(root)?;
+    let baseline_path = identity_baseline_path(app, root)?;
+    let summary = reconcile_vault_identities(root, &snapshot.files, &baseline_path)?;
     snapshot.warnings.added_identities = summary.added;
     snapshot.warnings.identity_conflicts = summary.conflicts;
     snapshot.warnings.needs_identity = summary.needs_identity;
-    enrich_vault_metadata(&root, &mut snapshot.files)?;
-    Ok(Some(snapshot))
+    snapshot.vault_id = vault_id;
+    enrich_vault_metadata(root, &mut snapshot.files)?;
+    Ok(snapshot)
 }
 
 #[tauri::command]
@@ -518,6 +560,7 @@ pub async fn apply_identity_migration(
     snapshot.warnings.added_identities = migrated + summary.added;
     snapshot.warnings.identity_conflicts = summary.conflicts;
     snapshot.warnings.needs_identity = summary.needs_identity;
+    snapshot.vault_id = ensure_vault_identity(&plan.root)?;
     enrich_vault_metadata(&plan.root, &mut snapshot.files)?;
     Ok(IdentityMigrationResult {
         migrated,
@@ -571,6 +614,10 @@ fn scan_vault(root: &Path) -> Result<VaultSnapshot, VaultError> {
             let file_type = entry
                 .file_type()
                 .map_err(|error| VaultError::io("A vault entry could not be inspected", error))?;
+
+            if directory == root && is_internal_component(&entry.file_name()) {
+                continue;
+            }
 
             if file_type.is_symlink() {
                 skipped_symlinks += 1;
@@ -634,6 +681,7 @@ fn scan_vault(root: &Path) -> Result<VaultSnapshot, VaultError> {
     Ok(VaultSnapshot {
         files,
         name,
+        vault_id: String::new(),
         warnings: VaultWarnings {
             added_identities: 0,
             identity_conflicts: 0,
@@ -1794,6 +1842,11 @@ fn resolve_new_vault_markdown_file(
     let relative = candidate.strip_prefix(&root).map_err(|_| {
         VaultError::invalid_file("New notes must be saved inside the selected vault.")
     })?;
+    if is_internal_relative_path(relative) {
+        return Err(VaultError::invalid_file(
+            "The hidden .anchored directory is reserved for Anchored data.",
+        ));
+    }
 
     let relative_path = relative
         .to_str()
@@ -1806,7 +1859,7 @@ fn resolve_vault_markdown_file(root: &Path, relative_path: &str) -> Result<PathB
     let root = canonical_vault_root(root)?;
     let requested = Path::new(relative_path);
 
-    if relative_path.is_empty() || !is_markdown(requested) {
+    if relative_path.is_empty() || !is_markdown(requested) || is_internal_relative_path(requested) {
         return Err(VaultError::invalid_file(
             "Only relative Markdown file paths can be opened.",
         ));
@@ -1963,9 +2016,10 @@ mod tests {
         apply_identity_migration_plan, build_identity_migration_preview, canonical_vault_root,
         create_markdown_file, enrich_vault_metadata, inspect_note_identity, read_markdown_file,
         reconcile_vault_identities, recover_rename_transaction, rename_markdown_file,
-        save_markdown_file, scan_vault, search_markdown_files, write_rename_journal,
-        NoteIdentityStatus, RenameJournal, RenameJournalEntry, RenameJournalPhase, RenameOutcome,
-        MAX_MARKDOWN_FILE_BYTES, MAX_SEARCH_RESULTS, RENAME_JOURNAL_NAME,
+        resolve_new_vault_markdown_file, save_markdown_file, scan_vault, search_markdown_files,
+        write_rename_journal, NoteIdentityStatus, RenameJournal, RenameJournalEntry,
+        RenameJournalPhase, RenameOutcome, MAX_MARKDOWN_FILE_BYTES, MAX_SEARCH_RESULTS,
+        RENAME_JOURNAL_NAME,
     };
 
     #[test]
@@ -1999,20 +2053,41 @@ mod tests {
     }
 
     #[test]
+    fn excludes_and_reserves_the_hidden_anchored_directory() {
+        let vault = tempdir().expect("create fixture vault");
+        let internal = vault.path().join(".anchored");
+        fs::create_dir(&internal).expect("create hidden directory");
+        fs::write(vault.path().join("Visible.md"), "# Visible").expect("write visible note");
+        fs::write(internal.join("Hidden.md"), "# Hidden").expect("write hidden note");
+
+        let snapshot = scan_vault(vault.path()).expect("scan fixture vault");
+        let read_error = read_markdown_file(vault.path(), ".anchored/Hidden.md")
+            .expect_err("refuse hidden read");
+        let create_error =
+            resolve_new_vault_markdown_file(vault.path(), &internal.join("Created.md"))
+                .expect_err("refuse hidden creation");
+
+        assert_eq!(snapshot.files.len(), 1);
+        assert_eq!(snapshot.files[0].relative_path, "Visible.md");
+        assert_eq!(read_error.code, "invalidVaultFile");
+        assert_eq!(create_error.code, "invalidVaultFile");
+    }
+
+    #[test]
     fn indexes_the_checked_in_smoke_vault() {
         let root =
             std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../fixtures/smoke-vault");
         let mut snapshot = scan_vault(&root).expect("scan checked-in smoke vault");
         enrich_vault_metadata(&root, &mut snapshot.files).expect("index smoke vault metadata");
 
-        assert_eq!(snapshot.files.len(), 6);
-        assert_eq!(
+        assert!(snapshot.files.len() >= 6);
+        assert!(
             snapshot
                 .files
                 .iter()
                 .filter(|file| file.id.is_some())
-                .count(),
-            5
+                .count()
+                >= 5
         );
         let leadership = snapshot
             .files

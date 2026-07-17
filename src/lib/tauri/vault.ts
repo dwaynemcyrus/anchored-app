@@ -20,7 +20,15 @@ export type VaultWarnings = {
 export type VaultSnapshot = {
   files: VaultFile[];
   name: string;
+  vaultId?: string;
   warnings: VaultWarnings;
+};
+
+export type RememberedVault = {
+  available: boolean;
+  id: string;
+  lastOpenedAt: number;
+  name: string;
 };
 
 export type VaultDocument = {
@@ -77,6 +85,18 @@ export type IdentityMigrationResult = {
 
 export function selectVault(): Promise<VaultSnapshot | null> {
   return invoke<VaultSnapshot | null>("select_vault");
+}
+
+export function listRememberedVaults(): Promise<RememberedVault[]> {
+  return invoke<RememberedVault[]>("list_remembered_vaults");
+}
+
+export function openRememberedVault(vaultId: string): Promise<VaultSnapshot> {
+  return invoke<VaultSnapshot>("open_remembered_vault", { vaultId });
+}
+
+export function forgetVault(vaultId: string): Promise<RememberedVault[]> {
+  return invoke<RememberedVault[]>("forget_vault", { vaultId });
 }
 
 export function rescanVault(): Promise<VaultSnapshot | null> {

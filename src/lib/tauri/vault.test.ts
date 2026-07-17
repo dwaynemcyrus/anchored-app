@@ -4,6 +4,9 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   applyIdentityMigration,
   createVaultFile,
+  forgetVault,
+  listRememberedVaults,
+  openRememberedVault,
   previewIdentityMigration,
   readVaultFile,
   renameVaultFile,
@@ -31,6 +34,7 @@ const snapshot: VaultSnapshot = {
     },
   ],
   name: "Personal",
+  vaultId: "01JZQ7K8P4A6F2M9V3C5T7X1BY",
   warnings: {
     addedIdentities: 0,
     identityConflicts: 0,
@@ -65,6 +69,34 @@ describe("vault bridge", () => {
 
     await expect(selectVault()).resolves.toEqual(snapshot);
     expect(mockedInvoke).toHaveBeenCalledWith("select_vault");
+  });
+
+  it("lists, opens, and forgets remembered vaults without frontend paths", async () => {
+    const remembered = [
+      {
+        available: true,
+        id: "01JZQ7K8P4A6F2M9V3C5T7X1BY",
+        lastOpenedAt: 100,
+        name: "Personal",
+      },
+    ];
+    mockedInvoke
+      .mockResolvedValueOnce(remembered)
+      .mockResolvedValueOnce(snapshot)
+      .mockResolvedValueOnce([]);
+
+    await expect(listRememberedVaults()).resolves.toEqual(remembered);
+    await expect(openRememberedVault(remembered[0].id)).resolves.toEqual(
+      snapshot,
+    );
+    await expect(forgetVault(remembered[0].id)).resolves.toEqual([]);
+    expect(mockedInvoke).toHaveBeenNthCalledWith(1, "list_remembered_vaults");
+    expect(mockedInvoke).toHaveBeenNthCalledWith(2, "open_remembered_vault", {
+      vaultId: remembered[0].id,
+    });
+    expect(mockedInvoke).toHaveBeenNthCalledWith(3, "forget_vault", {
+      vaultId: remembered[0].id,
+    });
   });
 
   it("rescans only the vault retained by Rust state", async () => {

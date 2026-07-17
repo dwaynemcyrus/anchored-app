@@ -1,3 +1,4 @@
+mod continuity;
 pub mod links;
 pub mod metadata;
 mod vault;
@@ -9,6 +10,9 @@ pub fn run() {
         .manage(vault::VaultState::default())
         .invoke_handler(tauri::generate_handler![
             vault::select_vault,
+            vault::list_remembered_vaults,
+            vault::open_remembered_vault,
+            vault::forget_vault,
             vault::rescan_vault,
             vault::search_vault,
             vault::read_vault_file,
