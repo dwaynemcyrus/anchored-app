@@ -11,6 +11,7 @@
     "format:check": "prettier --check .",
     "lint": "eslint . --max-warnings 0",
     "preview": "vite preview",
+    "release:alpha:macos": "node scripts/build-macos-alpha.mjs",
     "test": "vitest run",
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit",
