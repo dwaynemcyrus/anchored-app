@@ -298,6 +298,26 @@ and preserves link integrity across filename changes.
       `c7eb3bc feat(notify): scope history by vault`, and
       `2f30973 feat(app): add vault continuity`.
 
+11E. [ ] **Chunk: Complete pre-package review**
+    - Files: application and native source review, automated checks,
+      `docs/FEATURES.md`, `docs/PUBLIC_TEST_CHECKLIST.md`, `PLANS.md`
+    - Change: Audit the implemented editor journey and trusted filesystem
+      boundary before packaging. Publish an evidence-based feature reference
+      and a repeatable public-testing checklist that separates supported
+      behavior, safety expectations, known limitations, and release blockers.
+    - Verify: Compare every documented feature with code and tests; inspect
+      permissions, persistence, recovery, limits, error states, shortcuts,
+      accessibility, and release configuration; run all configured frontend
+      and Rust gates plus rendered desktop and narrow smoke checks.
+    - Risk/rollback: Public documentation that overstates support can expose
+      testers' vaults to avoidable risk. Mark unverified behavior and known
+      limitations explicitly, keep primary-vault testing out of scope, and
+      revert the documentation commit without changing app or vault data.
+    - Expected changelog: None for review-only documentation. Any discovered
+      user-visible fix must receive its own verified implementation and
+      `[Unreleased]` entry before packaging. Version remains `0.1.0` until an
+      explicitly authorized release.
+
 12. [ ] **Chunk: Package release candidate**
     - Files: Tauri bundle configuration, icons/assets, README, release checklist
     - Change: Produce a macOS 12-compatible local package and document install,
