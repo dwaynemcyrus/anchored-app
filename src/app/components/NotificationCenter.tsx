@@ -20,6 +20,7 @@ const KIND_LABELS: Record<NotificationKind, string> = {
   identity: "Identity",
   link: "Link",
   rename: "Rename",
+  trash: "Trash",
   vault: "Vault",
 };
 

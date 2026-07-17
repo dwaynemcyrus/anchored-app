@@ -39,7 +39,9 @@ import {
 import { rankQuickOpenResults } from "./retrieval";
 import {
   clearResolvedNotifications,
+  GENERAL_NOTIFICATION_SCOPE,
   loadNotificationHistory,
+  notificationHistoryForScope,
   recordNotification,
   resolveNotification,
   resolveNotifications,
@@ -74,7 +76,10 @@ type VaultNotice = {
 };
 
 type VaultNoticeOptions = {
-  history?: Omit<NewNotificationHistoryEntry, "id" | "message">;
+  history?: Omit<
+    NewNotificationHistoryEntry,
+    "id" | "message" | "scopeId"
+  >;
   identityAction?: boolean;
 };
 
@@ -133,6 +138,7 @@ export function App() {
   const [findRequest, setFindRequest] = useState(0);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [vaultName, setVaultName] = useState("");
+  const [vaultId, setVaultId] = useState("");
   const [folderOrder, setFolderOrder] = useState<string[]>([]);
   const [selectingVault, setSelectingVault] = useState(false);
   const [vaultSelected, setVaultSelected] = useState(false);
@@ -173,6 +179,7 @@ export function App() {
   const vaultNoticeIdRef = useRef(0);
   const notificationIdRef = useRef(0);
   const documentsRef = useRef(documents);
+  const vaultIdRef = useRef("");
 
   documentsRef.current = documents;
 
@@ -202,11 +209,20 @@ export function App() {
       ),
     [activeDocumentId, deferredDocuments, quickOpenQuery, wikilinkCandidates],
   );
+  const notificationScopeId = vaultId || GENERAL_NOTIFICATION_SCOPE;
+  const visibleNotificationHistory = useMemo(
+    () =>
+      notificationHistoryForScope(notificationHistory, notificationScopeId),
+    [notificationHistory, notificationScopeId],
+  );
 
   const addHistoryEntry = useCallback(
     (
       message: string,
-      input: Omit<NewNotificationHistoryEntry, "id" | "message">,
+      input: Omit<
+        NewNotificationHistoryEntry,
+        "id" | "message" | "scopeId"
+      >,
     ) => {
       const now = Date.now();
       notificationIdRef.current += 1;
@@ -217,6 +233,7 @@ export function App() {
             ...input,
             id: `${now}-${notificationIdRef.current}`,
             message,
+            scopeId: vaultIdRef.current || GENERAL_NOTIFICATION_SCOPE,
           },
           now,
         ),
@@ -227,7 +244,12 @@ export function App() {
 
   const resolveHistorySource = useCallback((sourceId: string) => {
     setNotificationHistory((current) =>
-      resolveNotifications(current, sourceId, Date.now()),
+      resolveNotifications(
+        current,
+        vaultIdRef.current || GENERAL_NOTIFICATION_SCOPE,
+        sourceId,
+        Date.now(),
+      ),
     );
   }, []);
 
@@ -510,6 +532,10 @@ export function App() {
 
   const adoptVaultSnapshot = useCallback(
     (snapshot: VaultSnapshot) => {
+      if (snapshot.vaultId) {
+        vaultIdRef.current = snapshot.vaultId;
+        setVaultId(snapshot.vaultId);
+      }
       const nextDocuments = mergeDocumentsFromVault(
         documentsRef.current,
         snapshot,
@@ -986,6 +1012,8 @@ export function App() {
       );
 
       loadRequestRef.current += 1;
+      vaultIdRef.current = snapshot.vaultId ?? "";
+      setVaultId(snapshot.vaultId ?? "");
       setVaultName(snapshot.name);
       setVaultSelected(true);
       setMigrationPreview(null);
@@ -1033,7 +1061,7 @@ export function App() {
   return (
     <div className="app-shell">
       <TitleBar
-        notificationCount={notificationHistory.length}
+        notificationCount={visibleNotificationHistory.length}
         saveState={activeDocument ? saveState : undefined}
         selectingVault={selectingVault}
         sidebarOpen={sidebarOpen}
@@ -1158,10 +1186,10 @@ export function App() {
       ) : null}
       {notificationHistoryVisible ? (
         <NotificationCenter
-          entries={notificationHistory}
+          entries={visibleNotificationHistory}
           onClearResolved={() =>
             setNotificationHistory((current) =>
-              clearResolvedNotifications(current),
+              clearResolvedNotifications(current, notificationScopeId),
             )
           }
           onClose={() => setNotificationHistoryVisible(false)}
@@ -1176,7 +1204,12 @@ export function App() {
           }
           onResolve={(entryId) =>
             setNotificationHistory((current) =>
-              resolveNotification(current, entryId, Date.now()),
+              resolveNotification(
+                current,
+                notificationScopeId,
+                entryId,
+                Date.now(),
+              ),
             )
           }
         />

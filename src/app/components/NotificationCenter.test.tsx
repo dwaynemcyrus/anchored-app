@@ -15,6 +15,7 @@ function entry(
     kind: "vault",
     message: "Vault opened with 6 Markdown files.",
     requiresAction: false,
+    scopeId: "vault-one",
     updatedAt: Date.UTC(2026, 6, 17, 8),
     ...overrides,
   };
