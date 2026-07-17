@@ -338,6 +338,47 @@ and preserves link integrity across filename changes.
       regression fixture, and the seven-day stability observation is pending.
     - Commit: `docs(review): add public test guide`
 
+11F. [ ] **Chunk: Harden the public test candidate**
+    - Files: close-protection and modal components, app composition and tests,
+      title bar and file explorer controls, global styles, Tauri capabilities
+      and security configuration, macOS bundle assets and release scripts,
+      `README.md`, `docs/FEATURES.md`, `docs/PUBLIC_TEST_CHECKLIST.md`,
+      `CHANGELOG.md`, `PROJECT.md`, `PLANS.md`
+    - Change: Prevent loss of first-save drafts on native close or quit, prevent
+      note creation without a selected vault, provide complete modal focus
+      containment, install a restrictive production CSP, replace the default
+      Tauri artwork, and configure direct macOS distribution for Developer ID
+      signing, hardened runtime, Apple notarization, stapling, and Gatekeeper
+      verification without storing credentials in the repository.
+    - Verify: Multiple unsaved and conflict states, cancel and explicit discard
+      paths, no-vault mouse and keyboard creation, focus entry/loop/return and
+      Escape for every dialog, CSP startup and editor interaction, least-
+      privilege capability generation, complete icon set, unsigned local build
+      isolation, signed/notarized release preflight, all frontend and Rust
+      gates, optimized Tauri build, and rendered desktop/minimum-window QA.
+    - Risk/rollback: Close interception and CSP mistakes can trap users or stop
+      the app from loading, while signing configuration can leak credentials or
+      produce packages Gatekeeper rejects. Keep one explicit discard escape,
+      retain a visible startup boundary, use environment-only secrets, fail a
+      public release before building when prerequisites are absent, and revert
+      this focused chunk without changing vault data.
+    - Decisions: Public packages use Developer ID Application signing,
+      hardened runtime, notarization, ticket stapling, and Gatekeeper checks.
+      Unsigned/ad-hoc output remains development-only and is never documented
+      as a public installation path. The app uses no hardened-runtime exception
+      entitlements unless a verified feature requires one.
+    - Assumption: `[ASSUMPTION]` Until Dwayne supplies final brand artwork, the
+      public-test icon will use a minimal black-and-white Anchored mark derived
+      from the approved interface direction and can be replaced without
+      changing application behavior.
+    - Blocking verification: `[NEEDS INPUT]` A paid Apple Developer membership,
+      installed Developer ID Application certificate, Team ID, and notarization
+      credentials are required to produce and verify the final public DMG.
+    - Expected changelog: Add quit protection, vault-gated note creation,
+      complete modal keyboard behavior, production CSP, branded bundle assets,
+      and notarized public distribution safeguards. Version remains `0.1.0`
+      until an explicit release request.
+
 12. [ ] **Chunk: Package release candidate**
     - Files: Tauri bundle configuration, icons/assets, README, release checklist
     - Change: Produce a macOS 12-compatible local package and document install,
