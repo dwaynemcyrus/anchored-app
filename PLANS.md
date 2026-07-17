@@ -169,7 +169,7 @@ and preserves link integrity across filename changes.
       usability fixes: `27f095e`, `8700583`, `6f64203`, `ba79d3b`, and
       `200afc1`
 
-10B. [ ] **Chunk: Complete wikilink authoring**
+10B. [x] **Chunk: Complete wikilink authoring**
     - Files: link candidate and recent-activity modules, CodeMirror editor,
       app composition, styles, tests, changelog
     - Change: Generate the shortest unique Obsidian-compatible target by
@@ -191,7 +191,13 @@ and preserves link integrity across filename changes.
       Preview hiding; selecting an unresolved candidate inserts the placeholder
       only and creates no file; recency uses one local history of opened,
       edited, created, and first-seen notes rather than filesystem birth dates.
-    - Expected commit: `feat(links): complete link authoring`
+    - Commits: `46e3116 docs(plan): add link authoring`,
+      `b866b59 feat(links): rank link candidates`,
+      `fca6d43 feat(notes): remember recent activity`,
+      `cafba02 feat(links): complete link queries`,
+      `e9c1308 feat(links): complete link authoring`,
+      `82e915a fix(app): survive blocked activity storage`, and
+      `b17813a fix(app): support older WebKit regex`
 
 11. [ ] **Chunk: Add retrieval and continuity**
     - Files: search and recent-file features, settings persistence, tests
@@ -421,6 +427,9 @@ Every future large plan must identify:
   trailing lines, and link offsets on the macOS 12 WebView. Startup failures
   now render an actionable local error instead of an empty window. All 46
   frontend tests and configured gates pass; native UI confirmation remains.
+- 2026-07-17: Dwayne confirmed Anchored reloads to the normal native interface
+  after the WebKit compatibility fix. Chunk 10B is complete; the shared bounded
+  candidate and activity contracts are ready for Quick Open in chunk 11.
 
 ## Completion
 
