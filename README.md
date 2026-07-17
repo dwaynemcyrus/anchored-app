@@ -74,6 +74,10 @@ cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
 
 ## Project documents
 
+- [`docs/FEATURES.md`](docs/FEATURES.md) — current feature and limitation
+  reference
+- [`docs/PUBLIC_TEST_CHECKLIST.md`](docs/PUBLIC_TEST_CHECKLIST.md) — repeatable
+  pre-release and public-testing checklist
 - [`OVERVIEW.md`](OVERVIEW.md) — approved product intent
 - [`PROJECT.md`](PROJECT.md) — technical contract and commands
 - [`PLANS.md`](PLANS.md) — staged implementation and verification plan

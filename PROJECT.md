@@ -9,7 +9,9 @@ Product scope remains governed by `OVERVIEW.md`.
 - **Overview status:** approved on 2026-07-16
 - **Additional source documents:** `anchor-stuff.md`
 - **Contract last reviewed:** 2026-07-17
-- **Blocking decisions:** none
+- **Blocking decisions:** `[NEEDS DECISION]` Public test distribution must
+  choose a signed/notarized package or explicit unsigned-build instructions.
+  App-level release blockers are tracked in `docs/FEATURES.md`.
 
 ## Identity
 

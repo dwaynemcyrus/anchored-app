@@ -298,9 +298,10 @@ and preserves link integrity across filename changes.
       `c7eb3bc feat(notify): scope history by vault`, and
       `2f30973 feat(app): add vault continuity`.
 
-11E. [ ] **Chunk: Complete pre-package review**
+11E. [x] **Chunk: Complete pre-package review**
     - Files: application and native source review, automated checks,
-      `docs/FEATURES.md`, `docs/PUBLIC_TEST_CHECKLIST.md`, `PLANS.md`
+      `docs/FEATURES.md`, `docs/PUBLIC_TEST_CHECKLIST.md`, `README.md`,
+      `PROJECT.md`, `PLANS.md`
     - Change: Audit the implemented editor journey and trusted filesystem
       boundary before packaging. Publish an evidence-based feature reference
       and a repeatable public-testing checklist that separates supported
@@ -317,6 +318,25 @@ and preserves link integrity across filename changes.
       user-visible fix must receive its own verified implementation and
       `[Unreleased]` entry before packaging. Version remains `0.1.0` until an
       explicitly authorized release.
+    - Verification result: The feature inventory was checked against source,
+      77 frontend tests, 59 Rust tests, formatting, lint, type-checking, strict
+      Clippy, the production frontend build, and an optimized Tauri no-bundle
+      build. The rendered no-vault and unsaved-draft shell passed at the native
+      900×600 minimum without page overflow, blank UI, console warnings, or
+      errors. Public reference and repeatable test documents now cover the
+      entire implemented journey and its bounds.
+    - Release blockers found: A new first-save draft can be lost on native
+      close/quit and can currently be created without an open vault; production
+      CSP is unset; side-panel modality/focus containment is incomplete; the
+      package uses the default Tauri icon; and public signing/notarization or
+      unsigned distribution instructions remain undecided. Packaging must not
+      begin until the app-level blockers are fixed and the delivery decision is
+      made.
+    - Non-blocking observations: `App.tsx` is oversized, the lazy editor bundle
+      still triggers the 500 kB build warning, representative baseline-machine
+      timing is not recorded, linked-attachment preservation needs a dedicated
+      regression fixture, and the seven-day stability observation is pending.
+    - Commit: `docs(review): add public test guide`
 
 12. [ ] **Chunk: Package release candidate**
     - Files: Tauri bundle configuration, icons/assets, README, release checklist
@@ -361,6 +381,12 @@ Every future large plan must identify:
 
 ## Progress notes
 
+- 2026-07-17: Completed the pre-package release review and published the
+  verified feature reference and comprehensive public-testing checklist. All
+  configured frontend and native gates and the optimized application build
+  pass. Packaging is held for unsaved-draft quit protection, no-vault draft
+  prevention, CSP hardening, modal focus containment, an Anchored app icon, and
+  the `[NEEDS DECISION]` public distribution/signing choice.
 - 2026-07-17: Dwayne confirmed all three Chunk 11D native checkpoints pass:
   vault switching and scoped history, reversible Trash and restore, and a
   conflict-safe restore refusal. Chunk 11D is complete.
