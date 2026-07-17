@@ -17,7 +17,10 @@ use crate::vault::VaultError;
 pub(crate) const INTERNAL_DIRECTORY_NAME: &str = ".anchored";
 const VAULT_METADATA_NAME: &str = "vault.json";
 const REGISTRY_NAME: &str = "vault-registry.json";
+const TRASH_DIRECTORY_NAME: &str = "trash";
+const TRASH_INDEX_NAME: &str = "index.json";
 const MAX_REMEMBERED_VAULTS: usize = 50;
+const MAX_TRASH_ENTRIES: usize = 10_000;
 const MAX_METADATA_BYTES: u64 = 64 * 1024;
 static CONTINUITY_FILE_COUNTER: AtomicU64 = AtomicU64::new(0);
 
@@ -51,6 +54,40 @@ pub(crate) struct RememberedVault {
     pub id: String,
     pub last_opened_at: u64,
     pub name: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct TrashEntry {
+    pub id: String,
+    pub name: String,
+    pub original_path: String,
+    pub trashed_at: u64,
+}
+
+#[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+enum TrashEntryState {
+    Active,
+    Moving,
+    Restoring,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct StoredTrashEntry {
+    id: String,
+    name: String,
+    original_path: String,
+    state: TrashEntryState,
+    trashed_at: u64,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct TrashIndex {
+    entries: Vec<StoredTrashEntry>,
+    version: u32,
 }
 
 pub(crate) fn is_internal_component(component: &OsStr) -> bool {
@@ -234,6 +271,346 @@ pub(crate) fn current_time_millis() -> u64 {
         .min(u128::from(u64::MAX)) as u64
 }
 
+pub(crate) fn list_trash_entries(root: &Path) -> Result<Vec<TrashEntry>, VaultError> {
+    let (_, index) = load_and_recover_trash(root)?;
+    Ok(public_trash_entries(&index))
+}
+
+pub(crate) fn move_note_to_trash(
+    root: &Path,
+    relative_path: &str,
+    now: u64,
+) -> Result<TrashEntry, VaultError> {
+    let source = crate::vault::resolve_vault_markdown_file(root, relative_path)?;
+    let original_path = Path::new(relative_path);
+    validate_original_path(original_path)?;
+    let name = original_path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .ok_or_else(|| VaultError::invalid_file("The Markdown filename is not valid UTF-8."))?
+        .to_owned();
+    ensure_vault_identity(root)?;
+    let (trash_directory, mut index) = load_and_recover_trash(root)?;
+    if index.entries.len() >= MAX_TRASH_ENTRIES {
+        return Err(VaultError::state(
+            "The Anchored trash index has reached its safe entry limit.",
+        ));
+    }
+
+    let id = Ulid::new().to_string();
+    let destination = trash_file_path(&trash_directory, &id);
+    let entry = StoredTrashEntry {
+        id: id.clone(),
+        name: name.clone(),
+        original_path: relative_path.to_owned(),
+        state: TrashEntryState::Moving,
+        trashed_at: now,
+    };
+    index.entries.push(entry.clone());
+    write_trash_index(&trash_directory, &index)?;
+
+    if let Err(error) = fs::rename(&source, &destination) {
+        index.entries.retain(|candidate| candidate.id != id);
+        let _ = write_trash_index(&trash_directory, &index);
+        return Err(VaultError::io(
+            "The Markdown note could not be moved to Trash",
+            error,
+        ));
+    }
+    sync_parent(&source)?;
+    sync_directory(&trash_directory)?;
+
+    if let Some(stored) = index
+        .entries
+        .iter_mut()
+        .find(|candidate| candidate.id == id)
+    {
+        stored.state = TrashEntryState::Active;
+    }
+    if let Err(error) = write_trash_index(&trash_directory, &index) {
+        if fs::rename(&destination, &source).is_ok() {
+            index.entries.retain(|candidate| candidate.id != id);
+            let _ = write_trash_index(&trash_directory, &index);
+        }
+        return Err(error);
+    }
+
+    Ok(TrashEntry {
+        id,
+        name,
+        original_path: relative_path.to_owned(),
+        trashed_at: now,
+    })
+}
+
+pub(crate) fn restore_note_from_trash(
+    root: &Path,
+    trash_id: &str,
+) -> Result<TrashEntry, VaultError> {
+    validate_vault_id(trash_id)?;
+    let (trash_directory, mut index) = load_and_recover_trash(root)?;
+    let entry_index = index
+        .entries
+        .iter()
+        .position(|entry| entry.id == trash_id)
+        .ok_or_else(|| VaultError::state("This trashed note is no longer available."))?;
+    let entry = index.entries[entry_index].clone();
+    let destination = validated_original_destination(root, &entry.original_path, false)?;
+    if destination.exists() {
+        return Err(VaultError::file_exists());
+    }
+    let source = trash_file_path(&trash_directory, trash_id);
+    index.entries[entry_index].state = TrashEntryState::Restoring;
+    write_trash_index(&trash_directory, &index)?;
+
+    let destination = match validated_original_destination(root, &entry.original_path, true) {
+        Ok(destination) => destination,
+        Err(error) => {
+            index.entries[entry_index].state = TrashEntryState::Active;
+            let _ = write_trash_index(&trash_directory, &index);
+            return Err(error);
+        }
+    };
+    if let Err(error) = fs::rename(&source, &destination) {
+        index.entries[entry_index].state = TrashEntryState::Active;
+        let _ = write_trash_index(&trash_directory, &index);
+        return Err(VaultError::io(
+            "The Markdown note could not be restored",
+            error,
+        ));
+    }
+    sync_directory(&trash_directory)?;
+    sync_parent(&destination)?;
+
+    index.entries.remove(entry_index);
+    if let Err(error) = write_trash_index(&trash_directory, &index) {
+        if fs::rename(&destination, &source).is_ok() {
+            index.entries.push(entry.clone());
+            let _ = write_trash_index(&trash_directory, &index);
+        }
+        return Err(error);
+    }
+
+    Ok(TrashEntry {
+        id: entry.id,
+        name: entry.name,
+        original_path: entry.original_path,
+        trashed_at: entry.trashed_at,
+    })
+}
+
+fn load_and_recover_trash(root: &Path) -> Result<(PathBuf, TrashIndex), VaultError> {
+    let internal = root.join(INTERNAL_DIRECTORY_NAME);
+    let trash_directory = internal.join(TRASH_DIRECTORY_NAME);
+    ensure_normal_directory(&trash_directory)?;
+    let index_path = trash_directory.join(TRASH_INDEX_NAME);
+    let mut index = load_trash_index(&index_path)?;
+    let mut changed = false;
+    let mut recovered = Vec::with_capacity(index.entries.len());
+
+    for mut entry in index.entries {
+        validate_stored_trash_entry(&entry)?;
+        let trashed = trash_file_path(&trash_directory, &entry.id);
+        let trashed_exists = trashed.exists();
+        match entry.state {
+            TrashEntryState::Active if trashed_exists => recovered.push(entry),
+            TrashEntryState::Moving | TrashEntryState::Restoring => {
+                let original = validated_original_destination(root, &entry.original_path, false)?;
+                let original_exists = original.exists();
+                match entry.state {
+                    TrashEntryState::Moving if trashed_exists && !original_exists => {
+                        entry.state = TrashEntryState::Active;
+                        recovered.push(entry);
+                        changed = true;
+                    }
+                    TrashEntryState::Moving if original_exists && !trashed_exists => {
+                        changed = true;
+                    }
+                    TrashEntryState::Restoring if original_exists && !trashed_exists => {
+                        changed = true;
+                    }
+                    TrashEntryState::Restoring if trashed_exists && !original_exists => {
+                        entry.state = TrashEntryState::Active;
+                        recovered.push(entry);
+                        changed = true;
+                    }
+                    _ => {
+                        return Err(VaultError::state(
+                            "The Anchored trash index and stored files do not agree.",
+                        ))
+                    }
+                }
+            }
+            _ => {
+                return Err(VaultError::state(
+                    "The Anchored trash index and stored files do not agree.",
+                ))
+            }
+        }
+    }
+    index = TrashIndex {
+        entries: recovered,
+        version: 1,
+    };
+    if changed {
+        write_trash_index(&trash_directory, &index)?;
+    }
+    Ok((trash_directory, index))
+}
+
+fn ensure_normal_directory(path: &Path) -> Result<(), VaultError> {
+    match fs::symlink_metadata(path) {
+        Ok(metadata) if metadata.file_type().is_symlink() || !metadata.is_dir() => Err(
+            VaultError::invalid("The Anchored Trash path must be a normal directory."),
+        ),
+        Ok(_) => Ok(()),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            fs::create_dir(path).map_err(|error| {
+                VaultError::io("The Anchored Trash could not be created", error)
+            })?;
+            sync_parent(path)
+        }
+        Err(error) => Err(VaultError::io(
+            "The Anchored Trash could not be inspected",
+            error,
+        )),
+    }
+}
+
+fn load_trash_index(path: &Path) -> Result<TrashIndex, VaultError> {
+    let bytes = match fs::read(path) {
+        Ok(bytes) => bytes,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            return Ok(TrashIndex {
+                entries: Vec::new(),
+                version: 1,
+            })
+        }
+        Err(error) => {
+            return Err(VaultError::io(
+                "The Anchored trash index could not be read",
+                error,
+            ))
+        }
+    };
+    if bytes.len() as u64 > MAX_METADATA_BYTES * 16 {
+        return Err(VaultError::state("The Anchored trash index is too large."));
+    }
+    let index: TrashIndex = serde_json::from_slice(&bytes).map_err(|error| {
+        VaultError::state(format!("The Anchored trash index is invalid: {error}"))
+    })?;
+    if index.version != 1 || index.entries.len() > MAX_TRASH_ENTRIES {
+        return Err(VaultError::state("The Anchored trash index is invalid."));
+    }
+    let mut ids = std::collections::HashSet::new();
+    if index
+        .entries
+        .iter()
+        .any(|entry| validate_stored_trash_entry(entry).is_err() || !ids.insert(entry.id.as_str()))
+    {
+        return Err(VaultError::state("The Anchored trash index is invalid."));
+    }
+    Ok(index)
+}
+
+fn write_trash_index(trash_directory: &Path, index: &TrashIndex) -> Result<(), VaultError> {
+    let bytes = encode_json(index, "The Anchored trash index could not be encoded")?;
+    write_json_atomically(
+        &trash_directory.join(TRASH_INDEX_NAME),
+        &bytes,
+        "The Anchored trash index could not be written",
+    )
+}
+
+fn validate_stored_trash_entry(entry: &StoredTrashEntry) -> Result<(), VaultError> {
+    validate_vault_id(&entry.id)?;
+    let original = Path::new(&entry.original_path);
+    validate_original_path(original)?;
+    if original.file_name().and_then(|name| name.to_str()) != Some(entry.name.as_str()) {
+        return Err(VaultError::state("The Anchored trash index is invalid."));
+    }
+    Ok(())
+}
+
+fn validate_original_path(path: &Path) -> Result<(), VaultError> {
+    if path.as_os_str().is_empty()
+        || is_internal_relative_path(path)
+        || path
+            .extension()
+            .and_then(|extension| extension.to_str())
+            .is_none_or(|extension| !extension.eq_ignore_ascii_case("md"))
+        || path
+            .components()
+            .any(|component| !matches!(component, std::path::Component::Normal(_)))
+    {
+        return Err(VaultError::invalid_file(
+            "The trashed note has an invalid original Markdown path.",
+        ));
+    }
+    Ok(())
+}
+
+fn validated_original_destination(
+    root: &Path,
+    relative_path: &str,
+    create_parents: bool,
+) -> Result<PathBuf, VaultError> {
+    let relative = Path::new(relative_path);
+    validate_original_path(relative)?;
+    let mut destination = root.to_path_buf();
+    let parent = relative.parent().unwrap_or_else(|| Path::new(""));
+    for component in parent.components() {
+        let std::path::Component::Normal(segment) = component else {
+            return Err(VaultError::invalid_file(
+                "The trashed note has an invalid original Markdown path.",
+            ));
+        };
+        destination.push(segment);
+        match fs::symlink_metadata(&destination) {
+            Ok(metadata) if metadata.file_type().is_symlink() || !metadata.is_dir() => {
+                return Err(VaultError::invalid_file(
+                    "The restore folder must not contain symlinks or files.",
+                ))
+            }
+            Ok(_) => {}
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound && create_parents => {
+                fs::create_dir(&destination).map_err(|error| {
+                    VaultError::io("A restore folder could not be created", error)
+                })?;
+                sync_parent(&destination)?;
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(error) => {
+                return Err(VaultError::io(
+                    "A restore folder could not be inspected",
+                    error,
+                ))
+            }
+        }
+    }
+    Ok(root.join(relative))
+}
+
+fn trash_file_path(trash_directory: &Path, id: &str) -> PathBuf {
+    trash_directory.join(format!("{id}.md"))
+}
+
+fn public_trash_entries(index: &TrashIndex) -> Vec<TrashEntry> {
+    let mut entries = index
+        .entries
+        .iter()
+        .filter(|entry| entry.state == TrashEntryState::Active)
+        .map(|entry| TrashEntry {
+            id: entry.id.clone(),
+            name: entry.name.clone(),
+            original_path: entry.original_path.clone(),
+            trashed_at: entry.trashed_at,
+        })
+        .collect::<Vec<_>>();
+    entries.sort_by_key(|entry| Reverse(entry.trashed_at));
+    entries
+}
+
 fn public_registry(registry: &VaultRegistry) -> Vec<RememberedVault> {
     registry
         .vaults
@@ -404,8 +781,10 @@ mod tests {
     use tempfile::tempdir;
 
     use super::{
-        ensure_vault_identity, forget_vault, list_remembered_vaults, load_vault_identity,
-        remember_vault, remembered_vault_root, INTERNAL_DIRECTORY_NAME,
+        ensure_vault_identity, forget_vault, list_remembered_vaults, list_trash_entries,
+        load_trash_index, load_vault_identity, move_note_to_trash, remember_vault,
+        remembered_vault_root, restore_note_from_trash, trash_file_path, write_trash_index,
+        TrashEntryState, INTERNAL_DIRECTORY_NAME,
     };
 
     #[test]
@@ -468,6 +847,94 @@ mod tests {
 
         assert!(forget_vault(&registry, &id).unwrap().is_empty());
         assert!(moved.join(INTERNAL_DIRECTORY_NAME).is_dir());
+    }
+
+    #[test]
+    fn moves_and_restores_exact_markdown_bytes_and_missing_folders() {
+        let vault = tempdir().expect("create fixture vault");
+        let notes = vault.path().join("Notes");
+        fs::create_dir(&notes).expect("create notes folder");
+        let source = notes.join("Original.md");
+        let content = b"---\r\nid: 01JZQ7K8P4A6F2M9V3C5T7X1BY\r\n---\r\n# Caf\xC3\xA9\r\n";
+        fs::write(&source, content).expect("write source note");
+
+        let trashed =
+            move_note_to_trash(vault.path(), "Notes/Original.md", 100).expect("trash note");
+        assert!(!source.exists());
+        assert_eq!(
+            list_trash_entries(vault.path()).unwrap(),
+            vec![trashed.clone()]
+        );
+        fs::remove_dir(&notes).expect("remove empty original folder");
+
+        let restored = restore_note_from_trash(vault.path(), &trashed.id).expect("restore note");
+        assert_eq!(restored, trashed);
+        assert_eq!(fs::read(&source).expect("read restored note"), content);
+        assert!(list_trash_entries(vault.path()).unwrap().is_empty());
+    }
+
+    #[test]
+    fn refuses_restore_conflicts_without_changing_either_file() {
+        let vault = tempdir().expect("create fixture vault");
+        let source = vault.path().join("Note.md");
+        fs::write(&source, "# Original").expect("write original note");
+        let trashed = move_note_to_trash(vault.path(), "Note.md", 100).expect("trash note");
+        fs::write(&source, "# Replacement").expect("write replacement note");
+
+        let error = restore_note_from_trash(vault.path(), &trashed.id)
+            .expect_err("refuse occupied restore path");
+
+        assert_eq!(error.code, "vaultFileExists");
+        assert_eq!(fs::read_to_string(&source).unwrap(), "# Replacement");
+        assert_eq!(list_trash_entries(vault.path()).unwrap(), vec![trashed]);
+    }
+
+    #[test]
+    fn recovers_interrupted_move_and_restore_index_phases() {
+        let vault = tempdir().expect("create fixture vault");
+        let source = vault.path().join("Note.md");
+        fs::write(&source, "# Original").expect("write original note");
+        let trashed = move_note_to_trash(vault.path(), "Note.md", 100).expect("trash note");
+        let trash_directory = vault.path().join(INTERNAL_DIRECTORY_NAME).join("trash");
+        let index_path = trash_directory.join("index.json");
+        let mut index = load_trash_index(&index_path).expect("load trash index");
+        index.entries[0].state = TrashEntryState::Moving;
+        write_trash_index(&trash_directory, &index).expect("write moving phase");
+
+        assert_eq!(
+            list_trash_entries(vault.path()).unwrap(),
+            vec![trashed.clone()]
+        );
+
+        let trash_file = trash_file_path(&trash_directory, &trashed.id);
+        fs::rename(&trash_file, &source).expect("simulate restored file installation");
+        let mut index = load_trash_index(&index_path).expect("reload trash index");
+        index.entries[0].state = TrashEntryState::Restoring;
+        write_trash_index(&trash_directory, &index).expect("write restoring phase");
+
+        assert!(list_trash_entries(vault.path()).unwrap().is_empty());
+        assert_eq!(fs::read_to_string(source).unwrap(), "# Original");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn refuses_restore_through_a_symlinked_original_folder() {
+        use std::os::unix::fs::symlink;
+
+        let vault = tempdir().expect("create fixture vault");
+        let outside = tempdir().expect("create outside folder");
+        fs::create_dir(vault.path().join("Notes")).expect("create notes folder");
+        fs::write(vault.path().join("Notes/Note.md"), "# Original").expect("write original note");
+        let trashed = move_note_to_trash(vault.path(), "Notes/Note.md", 100).expect("trash note");
+        fs::remove_dir(vault.path().join("Notes")).expect("remove notes folder");
+        symlink(outside.path(), vault.path().join("Notes")).expect("link outside folder");
+
+        let error = restore_note_from_trash(vault.path(), &trashed.id)
+            .expect_err("refuse symlinked restore");
+
+        assert_eq!(error.code, "invalidVaultFile");
+        assert!(!outside.path().join("Note.md").exists());
+        assert_eq!(list_trash_entries(vault.path()).unwrap(), vec![trashed]);
     }
 
     #[cfg(unix)]

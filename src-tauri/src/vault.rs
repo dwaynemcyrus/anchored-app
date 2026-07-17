@@ -16,8 +16,9 @@ use tauri_plugin_dialog::DialogExt;
 use crate::continuity::{
     current_time_millis, ensure_vault_identity, forget_vault as forget_registered_vault,
     is_internal_component, is_internal_relative_path,
-    list_remembered_vaults as load_remembered_vaults, registry_path, remember_vault,
-    remembered_vault_root, RememberedVault,
+    list_remembered_vaults as load_remembered_vaults, list_trash_entries, move_note_to_trash,
+    registry_path, remember_vault, remembered_vault_root, restore_note_from_trash, RememberedVault,
+    TrashEntry,
 };
 use crate::links::{plan_rename_link_rewrites, LinkNote, LinkSource};
 use crate::metadata::{
@@ -204,6 +205,13 @@ pub struct RenameOutcome {
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
+pub struct TrashMutationResult {
+    pub entry: TrashEntry,
+    pub snapshot: VaultSnapshot,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct VaultError {
     pub(crate) code: &'static str,
     pub(crate) message: String,
@@ -240,7 +248,7 @@ impl VaultError {
         }
     }
 
-    fn invalid_file(message: impl Into<String>) -> Self {
+    pub(crate) fn invalid_file(message: impl Into<String>) -> Self {
         Self {
             code: "invalidVaultFile",
             message: message.into(),
@@ -271,7 +279,7 @@ impl VaultError {
         }
     }
 
-    fn file_exists() -> Self {
+    pub(crate) fn file_exists() -> Self {
         Self {
             code: "vaultFileExists",
             message: "A Markdown file already exists at that location. Choose a different name."
@@ -352,6 +360,56 @@ pub async fn rescan_vault(
         return Ok(None);
     };
     build_vault_snapshot(&app, &root).map(Some)
+}
+
+#[tauri::command]
+pub async fn list_vault_trash(state: State<'_, VaultState>) -> Result<Vec<TrashEntry>, VaultError> {
+    let root = selected_vault_root(&state, "viewing Trash")?;
+    list_trash_entries(&root)
+}
+
+#[tauri::command]
+pub async fn move_vault_file_to_trash(
+    app: AppHandle,
+    state: State<'_, VaultState>,
+    relative_path: String,
+) -> Result<TrashMutationResult, VaultError> {
+    let _guard = state
+        .rename_transaction
+        .lock()
+        .map_err(|_| VaultError::state("The vault file operation lock could not be acquired."))?;
+    let root = selected_vault_root(&state, "moving a note to Trash")?;
+    let entry = move_note_to_trash(&root, &relative_path, current_time_millis())?;
+    let snapshot = build_vault_snapshot(&app, &root)?;
+    Ok(TrashMutationResult { entry, snapshot })
+}
+
+#[tauri::command]
+pub async fn restore_vault_file_from_trash(
+    app: AppHandle,
+    state: State<'_, VaultState>,
+    trash_id: String,
+) -> Result<TrashMutationResult, VaultError> {
+    let _guard = state
+        .rename_transaction
+        .lock()
+        .map_err(|_| VaultError::state("The vault file operation lock could not be acquired."))?;
+    let root = selected_vault_root(&state, "restoring a note from Trash")?;
+    let entry = restore_note_from_trash(&root, &trash_id)?;
+    let snapshot = build_vault_snapshot(&app, &root)?;
+    Ok(TrashMutationResult { entry, snapshot })
+}
+
+fn selected_vault_root(
+    state: &State<'_, VaultState>,
+    operation: &str,
+) -> Result<PathBuf, VaultError> {
+    state
+        .root
+        .read()
+        .map_err(|_| VaultError::state("The selected vault state could not be read."))?
+        .clone()
+        .ok_or_else(|| VaultError::state(format!("Select a vault before {operation}.")))
 }
 
 fn activate_vault(
@@ -1855,7 +1913,10 @@ fn resolve_new_vault_markdown_file(
     Ok((candidate, relative_path))
 }
 
-fn resolve_vault_markdown_file(root: &Path, relative_path: &str) -> Result<PathBuf, VaultError> {
+pub(crate) fn resolve_vault_markdown_file(
+    root: &Path,
+    relative_path: &str,
+) -> Result<PathBuf, VaultError> {
     let root = canonical_vault_root(root)?;
     let requested = Path::new(relative_path);
 

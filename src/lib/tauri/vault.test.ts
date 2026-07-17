@@ -6,11 +6,14 @@ import {
   createVaultFile,
   forgetVault,
   listRememberedVaults,
+  listVaultTrash,
+  moveVaultFileToTrash,
   openRememberedVault,
   previewIdentityMigration,
   readVaultFile,
   renameVaultFile,
   rescanVault,
+  restoreVaultFileFromTrash,
   saveVaultFile,
   searchVault,
   selectVault,
@@ -104,6 +107,39 @@ describe("vault bridge", () => {
 
     await expect(rescanVault()).resolves.toEqual(snapshot);
     expect(mockedInvoke).toHaveBeenCalledWith("rescan_vault");
+  });
+
+  it("lists, trashes, and restores notes through narrow native commands", async () => {
+    const entry = {
+      id: "01JZQ91T3AA6F2M9V3C5T7X1BZ",
+      name: "Leadership.md",
+      originalPath: "Notes/Leadership.md",
+      trashedAt: 200,
+    };
+    const mutation = { entry, snapshot };
+    mockedInvoke
+      .mockResolvedValueOnce([entry])
+      .mockResolvedValueOnce(mutation)
+      .mockResolvedValueOnce(mutation);
+
+    await expect(listVaultTrash()).resolves.toEqual([entry]);
+    await expect(moveVaultFileToTrash("Notes/Leadership.md")).resolves.toEqual(
+      mutation,
+    );
+    await expect(restoreVaultFileFromTrash(entry.id)).resolves.toEqual(
+      mutation,
+    );
+    expect(mockedInvoke).toHaveBeenNthCalledWith(1, "list_vault_trash");
+    expect(mockedInvoke).toHaveBeenNthCalledWith(
+      2,
+      "move_vault_file_to_trash",
+      { relativePath: "Notes/Leadership.md" },
+    );
+    expect(mockedInvoke).toHaveBeenNthCalledWith(
+      3,
+      "restore_vault_file_from_trash",
+      { trashId: entry.id },
+    );
   });
 
   it("reads a relative file through the retained Rust vault", async () => {

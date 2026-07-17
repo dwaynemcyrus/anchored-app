@@ -31,6 +31,18 @@ export type RememberedVault = {
   name: string;
 };
 
+export type TrashEntry = {
+  id: string;
+  name: string;
+  originalPath: string;
+  trashedAt: number;
+};
+
+export type TrashMutationResult = {
+  entry: TrashEntry;
+  snapshot: VaultSnapshot;
+};
+
 export type VaultDocument = {
   content: string;
   relativePath: string;
@@ -101,6 +113,26 @@ export function forgetVault(vaultId: string): Promise<RememberedVault[]> {
 
 export function rescanVault(): Promise<VaultSnapshot | null> {
   return invoke<VaultSnapshot | null>("rescan_vault");
+}
+
+export function listVaultTrash(): Promise<TrashEntry[]> {
+  return invoke<TrashEntry[]>("list_vault_trash");
+}
+
+export function moveVaultFileToTrash(
+  relativePath: string,
+): Promise<TrashMutationResult> {
+  return invoke<TrashMutationResult>("move_vault_file_to_trash", {
+    relativePath,
+  });
+}
+
+export function restoreVaultFileFromTrash(
+  trashId: string,
+): Promise<TrashMutationResult> {
+  return invoke<TrashMutationResult>("restore_vault_file_from_trash", {
+    trashId,
+  });
 }
 
 export function readVaultFile(relativePath: string): Promise<VaultDocument> {
