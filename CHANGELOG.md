@@ -43,6 +43,10 @@ Git commit. The format follows [Keep a Changelog], and releases follow
 - Vault status and save notices form a persistent top-center stack clear of
   note-header controls. Each message can be dismissed independently, and
   repeated identical messages are deduplicated.
+- Quick Open (`Command-P`) ranks recent notes and alias matches without stale
+  file entries. Full-vault search (`Command-Shift-F`) finds Unicode Markdown
+  content with line snippets through a bounded background scan, while
+  note-local Find (`Command-F`) searches the active editor.
 
 ### Fixed
 

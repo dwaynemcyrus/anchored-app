@@ -207,7 +207,17 @@ and preserves link integrity across filename changes.
       focus, empty/error states, and performance measurement.
     - Risk/rollback: Unbounded scanning can stall the editor; isolate indexing
       work and establish budgets from the representative fixture.
-    - Commit: `feat(search): add vault retrieval`
+    - Implemented limits: Search work runs outside the interface thread with a
+      200-character query limit, 100-result limit, 10 MiB per-note limit, and
+      64 MiB total-content budget. Results report skipped or limited scans.
+    - Remaining verification: Native keyboard and pointer smoke test at desktop
+      and narrow window sizes.
+    - Commits: `bb99fd4 feat(search): rank recent notes`,
+      `df6500f feat(search): add quick open`,
+      `e75d641 feat(search): scan vault content`,
+      `9331135 feat(search): add vault search UI`,
+      `2bb0682 feat(search): add note-local find`, and
+      `7df3875 test(search): cover retrieval states`
 
 12. [ ] **Chunk: Package release candidate**
     - Files: Tauri bundle configuration, icons/assets, README, release checklist
@@ -251,6 +261,11 @@ Every future large plan must identify:
 - changelog verification in release acceptance criteria
 
 ## Progress notes
+
+- 2026-07-17: Chunk 11 retrieval implementation is complete pending its native
+  smoke test. Quick Open, bounded background vault-content search, file-local
+  Find, stale activity cleanup, Unicode matching, focus, keyboard, empty/error,
+  and a 1,000-file performance fixture pass automated verification.
 
 - 2026-07-16: Overview approved; Tauri 2 and filename-triggered reference
   updates confirmed as product requirements.
