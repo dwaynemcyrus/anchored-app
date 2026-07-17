@@ -8,6 +8,7 @@ const MarkdownEditor = lazy(() => import("./MarkdownEditor"));
 
 type EditorSurfaceProps = {
   document?: AnchoredDocument;
+  findRequest: number;
   backlinks: AnchoredDocument[];
   hasDocuments: boolean;
   loadState:
@@ -29,6 +30,7 @@ type EditorSurfaceProps = {
 
 export function EditorSurface({
   document,
+  findRequest,
   backlinks,
   hasDocuments,
   loadState,
@@ -147,6 +149,7 @@ export function EditorSurface({
           >
             <MarkdownEditor
               documentId={document.id}
+              findRequest={findRequest}
               label={`${document.name} Markdown editor`}
               value={document.sourceText}
               wikilinkCandidates={wikilinkCandidates}

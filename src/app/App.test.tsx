@@ -264,6 +264,29 @@ describe("App", () => {
     ).toHaveTextContent("# Draft");
   });
 
+  it("finds text within the active Markdown note with Command-F", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+
+    await user.click(screen.getAllByRole("button", { name: "New note" })[0]);
+    const editor = await screen.findByRole("textbox", {
+      name: "Untitled.md Markdown editor",
+    });
+    await user.click(editor);
+    await user.keyboard("Daily writing and reliable links");
+    await user.click(screen.getByText("Anchored"));
+    await user.keyboard("{Meta>}f{/Meta}");
+
+    const find = screen.getByRole("textbox", { name: "Find" });
+    expect(find).toHaveFocus();
+    await user.type(find, "reliable");
+    expect(find).toHaveValue("reliable");
+    await user.keyboard("{Escape}");
+    expect(
+      screen.queryByRole("textbox", { name: "Find" }),
+    ).not.toBeInTheDocument();
+  });
+
   it("completes compact filename, alias, and unresolved wikilinks", async () => {
     const user = userEvent.setup();
     mockedSelectVault.mockResolvedValue({

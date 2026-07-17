@@ -6,6 +6,11 @@ import {
 } from "@codemirror/autocomplete";
 import { markdown } from "@codemirror/lang-markdown";
 import { EditorState } from "@codemirror/state";
+import {
+  highlightSelectionMatches,
+  openSearchPanel,
+  searchKeymap,
+} from "@codemirror/search";
 import { EditorView, keymap, placeholder } from "@codemirror/view";
 import { useEffect, useRef } from "react";
 
@@ -17,6 +22,7 @@ import { wikilinkAtOffset, wikilinkCompletionAtOffset } from "../links";
 
 type MarkdownEditorProps = {
   documentId: string;
+  findRequest: number;
   label: string;
   value: string;
   wikilinkCandidates: WikilinkCandidate[];
@@ -28,6 +34,7 @@ type MarkdownEditorProps = {
 
 export default function MarkdownEditor({
   documentId,
+  findRequest,
   label,
   value,
   wikilinkCandidates,
@@ -37,6 +44,7 @@ export default function MarkdownEditor({
   onSaveAs,
 }: MarkdownEditorProps) {
   const hostRef = useRef<HTMLDivElement>(null);
+  const editorRef = useRef<EditorView | null>(null);
   const valueRef = useRef(value);
   const onChangeRef = useRef(onChange);
   const onOpenWikilinkRef = useRef(onOpenWikilink);
@@ -99,6 +107,7 @@ export default function MarkdownEditor({
         extensions: [
           history(),
           markdown(),
+          highlightSelectionMatches(),
           EditorView.lineWrapping,
           EditorView.contentAttributes.of({ "aria-label": label }),
           placeholder("Start writing…"),
@@ -112,6 +121,7 @@ export default function MarkdownEditor({
           keymap.of([
             ...defaultKeymap,
             ...historyKeymap,
+            ...searchKeymap,
             {
               key: "Shift-Mod-s",
               run: () => {
@@ -168,9 +178,24 @@ export default function MarkdownEditor({
         ],
       }),
     });
+    editorRef.current = view;
 
-    return () => view.destroy();
+    return () => {
+      editorRef.current = null;
+      view.destroy();
+    };
   }, [documentId, label]);
+
+  useEffect(() => {
+    if (findRequest > 0 && editorRef.current) {
+      openSearchPanel(editorRef.current);
+      const findInput = hostRef.current?.querySelector<HTMLInputElement>(
+        ".cm-search [main-field]",
+      );
+      findInput?.focus();
+      findInput?.select();
+    }
+  }, [findRequest]);
 
   return <div className="markdown-editor" ref={hostRef} />;
 }

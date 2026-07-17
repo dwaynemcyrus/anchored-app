@@ -118,6 +118,7 @@ export function App() {
     status: "idle",
   });
   const [vaultSearchVisible, setVaultSearchVisible] = useState(false);
+  const [findRequest, setFindRequest] = useState(0);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [vaultName, setVaultName] = useState("Personal");
   const [folderOrder, setFolderOrder] = useState(initialFolders);
@@ -534,6 +535,16 @@ export function App() {
 
       if (
         commandKey &&
+        !event.shiftKey &&
+        event.key.toLowerCase() === "f" &&
+        !event.defaultPrevented
+      ) {
+        event.preventDefault();
+        setFindRequest((current) => current + 1);
+      }
+
+      if (
+        commandKey &&
         event.key.toLowerCase() === "s" &&
         !event.defaultPrevented
       ) {
@@ -892,6 +903,7 @@ export function App() {
           backlinks={backlinks}
           document={activeDocument}
           hasDocuments={documents.length > 0}
+          findRequest={findRequest}
           loadState={
             documentLoad.status !== "idle" &&
             documentLoad.documentId === activeDocument?.id
