@@ -8,7 +8,7 @@ Product scope remains governed by `OVERVIEW.md`.
 - **Overview:** `OVERVIEW.md`
 - **Overview status:** approved on 2026-07-16
 - **Additional source documents:** `anchor-stuff.md`
-- **Contract last reviewed:** 2026-07-16
+- **Contract last reviewed:** 2026-07-17
 - **Blocking decisions:** none
 
 ## Identity
@@ -82,8 +82,10 @@ Product scope remains governed by `OVERVIEW.md`.
 - **Frontend:** React 19 with Vite 7
 - **Editor:** CodeMirror 6
 - **Package manager:** npm, using the committed lockfile
-- **Persistence:** Markdown and attachments in the selected vault; local JSON
-  or platform preferences only for lightweight app settings and recent files
+- **Persistence:** Markdown and attachments in the selected vault; additive
+  `.anchored` vault identity and reversible-trash metadata; native app-data JSON
+  for remembered vault paths; local interface storage for scoped history and
+  recent files
 - **Database:** none for the initial Markdown-editor MVP
 - **Hosting:** local desktop application only
 - **External services:** none
@@ -156,8 +158,10 @@ These scripts must exist in `package.json` after the scaffold chunk.
 
 ## Data and security
 
-- **Stored data:** User Markdown, YAML front matter, attachments, lightweight
-  local settings, recent-file references, and derived indexes when introduced.
+- **Stored data:** User Markdown, YAML front matter, attachments, vault-local
+  `.anchored` identity and reversible-trash data, native-only remembered paths,
+  lightweight local settings, scoped notification history, recent-file
+  references, and derived indexes.
 - **Sensitive data:** The personal vault may contain private writing and
   attachments. Its content must not be logged, uploaded, or exposed to third
   parties.
@@ -264,3 +268,5 @@ These scripts must exist in `package.json` after the scaffold chunk.
 | 2026-07-16 | Preserve local edits on external change | Confirmed by Dwayne; present a recoverable conflict instead of auto-reloading |
 | 2026-07-16 | Use a minimal white-on-black design | Explicit product requirement; reduces visual chrome and prioritizes writing |
 | 2026-07-16 | Use Tauri configuration as the app version source | The desktop bundle configuration defines the application version; npm and Rust manifests mirror it |
+| 2026-07-17 | Use stable vault IDs and native-only remembered paths | Notification history follows a moved vault without exposing absolute paths to the interface |
+| 2026-07-17 | Use `.anchored/trash/` for reversible deletion | Same-vault moves preserve exact note bytes, stay out of active indexes, and permit conflict-safe restore without permanent deletion |

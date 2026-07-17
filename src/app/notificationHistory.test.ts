@@ -96,12 +96,7 @@ describe("notification history", () => {
     expect(pruneNotificationHistory([conflict], now)).toEqual([conflict]);
     expect(
       pruneNotificationHistory(
-        resolveNotifications(
-          [conflict],
-          "vault-one",
-          "vault-id:one",
-          200,
-        ),
+        resolveNotifications([conflict], "vault-one", "vault-id:one", 200),
         now,
       ),
     ).toEqual([]);

@@ -1,10 +1,15 @@
-import { render, screen, within } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
   applyIdentityMigration,
   createVaultFile,
+  forgetVault,
+  listRememberedVaults,
+  listVaultTrash,
+  moveVaultFileToTrash,
+  openRememberedVault,
   previewIdentityMigration,
   readVaultFile,
   renameVaultFile,
@@ -12,12 +17,18 @@ import {
   saveVaultFile,
   searchVault,
   selectVault,
+  restoreVaultFileFromTrash,
 } from "../lib/tauri/vault";
 import { App } from "./App";
 
 vi.mock("../lib/tauri/vault", () => ({
   applyIdentityMigration: vi.fn(),
   createVaultFile: vi.fn(),
+  forgetVault: vi.fn(),
+  listRememberedVaults: vi.fn(),
+  listVaultTrash: vi.fn(),
+  moveVaultFileToTrash: vi.fn(),
+  openRememberedVault: vi.fn(),
   previewIdentityMigration: vi.fn(),
   readVaultFile: vi.fn(),
   renameVaultFile: vi.fn(),
@@ -25,17 +36,24 @@ vi.mock("../lib/tauri/vault", () => ({
   saveVaultFile: vi.fn(),
   searchVault: vi.fn(),
   selectVault: vi.fn(),
+  restoreVaultFileFromTrash: vi.fn(),
 }));
 
 const mockedSelectVault = vi.mocked(selectVault);
 const mockedApplyIdentityMigration = vi.mocked(applyIdentityMigration);
 const mockedCreateVaultFile = vi.mocked(createVaultFile);
+const mockedForgetVault = vi.mocked(forgetVault);
+const mockedListRememberedVaults = vi.mocked(listRememberedVaults);
+const mockedListVaultTrash = vi.mocked(listVaultTrash);
+const mockedMoveVaultFileToTrash = vi.mocked(moveVaultFileToTrash);
+const mockedOpenRememberedVault = vi.mocked(openRememberedVault);
 const mockedPreviewIdentityMigration = vi.mocked(previewIdentityMigration);
 const mockedReadVaultFile = vi.mocked(readVaultFile);
 const mockedRenameVaultFile = vi.mocked(renameVaultFile);
 const mockedRescanVault = vi.mocked(rescanVault);
 const mockedSaveVaultFile = vi.mocked(saveVaultFile);
 const mockedSearchVault = vi.mocked(searchVault);
+const mockedRestoreVaultFileFromTrash = vi.mocked(restoreVaultFileFromTrash);
 const noWarnings = {
   addedIdentities: 0,
   identityConflicts: 0,
@@ -49,6 +67,11 @@ describe("App", () => {
     window.localStorage.clear();
     mockedApplyIdentityMigration.mockReset();
     mockedCreateVaultFile.mockReset();
+    mockedForgetVault.mockReset();
+    mockedListRememberedVaults.mockReset();
+    mockedListVaultTrash.mockReset();
+    mockedMoveVaultFileToTrash.mockReset();
+    mockedOpenRememberedVault.mockReset();
     mockedPreviewIdentityMigration.mockReset();
     mockedSelectVault.mockReset();
     mockedReadVaultFile.mockReset();
@@ -56,6 +79,9 @@ describe("App", () => {
     mockedRescanVault.mockReset();
     mockedSaveVaultFile.mockReset();
     mockedSearchVault.mockReset();
+    mockedRestoreVaultFileFromTrash.mockReset();
+    mockedListRememberedVaults.mockResolvedValue([]);
+    mockedListVaultTrash.mockResolvedValue([]);
   });
 
   it("starts with an explicit no-vault state", () => {
@@ -113,6 +139,149 @@ describe("App", () => {
       }),
     );
     expect(within(history).getByText("No notifications yet.")).toBeVisible();
+  });
+
+  it("opens and forgets a remembered vault from the switcher", async () => {
+    const user = userEvent.setup();
+    const rememberedVault = {
+      available: true,
+      id: "01JZQ7K8P4A6F2M9V3C5T7X1BY",
+      lastOpenedAt: Date.UTC(2026, 6, 17, 8),
+      name: "Second Vault",
+    };
+    mockedListRememberedVaults.mockResolvedValue([rememberedVault]);
+    mockedOpenRememberedVault.mockResolvedValue({
+      files: [],
+      name: rememberedVault.name,
+      vaultId: rememberedVault.id,
+      warnings: noWarnings,
+    });
+    mockedForgetVault.mockResolvedValue([]);
+    render(<App />);
+
+    await waitFor(() => expect(mockedListRememberedVaults).toHaveBeenCalled());
+    await user.click(screen.getByRole("button", { name: "Open vault" }));
+    const switcher = screen.getByRole("dialog", { name: "Switch vault" });
+    expect(within(switcher).getByText("Second Vault")).toBeVisible();
+    await user.click(within(switcher).getByRole("button", { name: "Open" }));
+
+    expect(mockedOpenRememberedVault).toHaveBeenCalledWith(rememberedVault.id);
+    expect(
+      await screen.findByRole("button", {
+        name: "Switch vault: Second Vault",
+      }),
+    ).toBeVisible();
+
+    await user.click(
+      screen.getByRole("button", { name: "Switch vault: Second Vault" }),
+    );
+    await user.click(
+      within(screen.getByRole("dialog", { name: "Switch vault" })).getByRole(
+        "button",
+        { name: "Forget" },
+      ),
+    );
+    expect(mockedForgetVault).toHaveBeenCalledWith(rememberedVault.id);
+  });
+
+  it("moves a saved note to the vault Trash", async () => {
+    const user = userEvent.setup();
+    const vaultId = "01JZQ7K8P4A6F2M9V3C5T7X1BY";
+    const file = {
+      id: "01JZQ91T3AA6F2M9V3C5T7X1BZ",
+      name: "Leadership.md",
+      parent: "Notes",
+      relativePath: "Notes/Leadership.md",
+    };
+    const trashEntry = {
+      id: "01JZQC4G61A6F2M9V3C5T7X1CA",
+      name: file.name,
+      originalPath: file.relativePath,
+      trashedAt: Date.UTC(2026, 6, 17, 9),
+    };
+    mockedSelectVault.mockResolvedValue({
+      files: [file],
+      name: "My Vault",
+      vaultId,
+      warnings: noWarnings,
+    });
+    mockedReadVaultFile.mockResolvedValue({
+      content: "# Leadership",
+      relativePath: file.relativePath,
+      sizeBytes: 12,
+    });
+    mockedMoveVaultFileToTrash.mockResolvedValue({
+      entry: trashEntry,
+      snapshot: {
+        files: [],
+        name: "My Vault",
+        vaultId,
+        warnings: noWarnings,
+      },
+    });
+    render(<App />);
+
+    await user.click(screen.getByRole("button", { name: "Open vault" }));
+    await user.click(screen.getByRole("button", { name: file.name }));
+    await user.click(
+      await screen.findByRole("button", {
+        name: `Move ${file.name} to Trash`,
+      }),
+    );
+
+    expect(mockedMoveVaultFileToTrash).toHaveBeenCalledWith(file.relativePath);
+    expect(screen.getByText(`${file.name} moved to Trash.`)).toBeVisible();
+    expect(screen.queryByRole("button", { name: file.name })).toBeNull();
+    expect(screen.getByRole("button", { name: "Trash (1)" })).toBeVisible();
+  });
+
+  it("restores a trashed note to its original path", async () => {
+    const user = userEvent.setup();
+    const vaultId = "01JZQ7K8P4A6F2M9V3C5T7X1BY";
+    const trashEntry = {
+      id: "01JZQC4G61A6F2M9V3C5T7X1CA",
+      name: "Leadership.md",
+      originalPath: "Notes/Leadership.md",
+      trashedAt: Date.UTC(2026, 6, 17, 9),
+    };
+    const restoredFile = {
+      id: "01JZQ91T3AA6F2M9V3C5T7X1BZ",
+      name: trashEntry.name,
+      parent: "Notes",
+      relativePath: trashEntry.originalPath,
+    };
+    mockedSelectVault.mockResolvedValue({
+      files: [],
+      name: "My Vault",
+      vaultId,
+      warnings: noWarnings,
+    });
+    mockedListVaultTrash.mockResolvedValue([trashEntry]);
+    mockedRestoreVaultFileFromTrash.mockResolvedValue({
+      entry: trashEntry,
+      snapshot: {
+        files: [restoredFile],
+        name: "My Vault",
+        vaultId,
+        warnings: noWarnings,
+      },
+    });
+    render(<App />);
+
+    await user.click(screen.getByRole("button", { name: "Open vault" }));
+    await user.click(await screen.findByRole("button", { name: "Trash (1)" }));
+    const trash = screen.getByRole("dialog", { name: "Trash" });
+    await user.click(within(trash).getByRole("button", { name: "Restore" }));
+
+    expect(mockedRestoreVaultFileFromTrash).toHaveBeenCalledWith(trashEntry.id);
+    expect(
+      screen.getByText(
+        `${trashEntry.name} restored to ${trashEntry.originalPath}.`,
+      ),
+    ).toBeVisible();
+    expect(
+      screen.getByRole("button", { name: restoredFile.name }),
+    ).toBeVisible();
   });
 
   it("filters notes by filename or alias", async () => {

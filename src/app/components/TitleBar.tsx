@@ -48,7 +48,9 @@ export function TitleBar({
         <span className="wordmark">Anchored</span>
         <span aria-hidden="true" className="title-bar__rule" />
         <button
-          aria-label={vaultSelected ? `Open vault: ${vaultName}` : "Open vault"}
+          aria-label={
+            vaultSelected ? `Switch vault: ${vaultName}` : "Open vault"
+          }
           className="vault-selector"
           disabled={selectingVault}
           type="button"

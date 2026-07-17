@@ -47,6 +47,15 @@ Git commit. The format follows [Keep a Changelog], and releases follow
   identity, link, rename, save, conflict, and error outcomes locally for 28
   days. Active conflicts remain until resolved; other records can be deleted
   individually or cleared together.
+- Notification history and its badge are now isolated by stable vault identity,
+  including after a moved vault is selected again. Older unscoped records are
+  retained separately as General history.
+- Opened vaults are remembered locally for quick switching and can be forgotten
+  without changing their files. Unavailable vaults remain visible instead of
+  being silently removed.
+- Saved notes can be moved into a vault-local hidden Trash and restored to their
+  original path without changing their bytes or rewriting links. Restore stops
+  safely when another file already occupies the destination.
 - Quick Open (`Command-P`) ranks recent notes and alias matches without stale
   file entries. Full-vault search (`Command-Shift-F`) finds Unicode Markdown
   content with line snippets through a bounded background scan, while

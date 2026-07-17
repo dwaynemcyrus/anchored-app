@@ -15,13 +15,7 @@ const MAX_SCOPE_LENGTH = 128;
 type NotificationStorage = Pick<Storage, "getItem" | "setItem">;
 
 export type NotificationKind =
-  | "conflict"
-  | "error"
-  | "identity"
-  | "link"
-  | "rename"
-  | "trash"
-  | "vault";
+  "conflict" | "error" | "identity" | "link" | "rename" | "trash" | "vault";
 
 export type NotificationHistoryEntry = {
   count: number;
@@ -139,10 +133,7 @@ function parseStoredEntries(
   const parsed: unknown = JSON.parse(raw);
   if (!parsed || typeof parsed !== "object") return null;
   const payload = parsed as { entries?: unknown; version?: unknown };
-  if (
-    payload.version !== expectedVersion ||
-    !Array.isArray(payload.entries)
-  ) {
+  if (payload.version !== expectedVersion || !Array.isArray(payload.entries)) {
     return null;
   }
 

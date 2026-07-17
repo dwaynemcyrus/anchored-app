@@ -26,7 +26,9 @@ type EditorSurfaceProps = {
   onRenameDocument: () => void;
   onSaveDocument: () => void;
   onSaveDocumentAs: () => void;
+  onTrashDocument: () => void;
   renaming: boolean;
+  trashing: boolean;
 };
 
 export function EditorSurface({
@@ -46,7 +48,9 @@ export function EditorSurface({
   onRenameDocument,
   onSaveDocument,
   onSaveDocumentAs,
+  onTrashDocument,
   renaming,
+  trashing,
 }: EditorSurfaceProps) {
   if (!document) {
     return (
@@ -114,17 +118,33 @@ export function EditorSurface({
             <button
               aria-label={`Save ${document.name} as`}
               className="editor-surface__action"
-              disabled={renaming}
+              disabled={renaming || trashing}
               type="button"
               onClick={onSaveDocumentAs}
             >
               Save as
             </button>
           ) : null}
+          {document.relativePath && document.id.startsWith("vault-id:") ? (
+            <button
+              aria-label={`Move ${document.name} to Trash`}
+              className="editor-surface__action"
+              disabled={
+                renaming ||
+                trashing ||
+                document.saveState !== "saved" ||
+                loadState.status === "loading"
+              }
+              type="button"
+              onClick={onTrashDocument}
+            >
+              {trashing ? "Moving…" : "Trash"}
+            </button>
+          ) : null}
           <button
             aria-label={`Close ${document.name}`}
             className="editor-surface__action"
-            disabled={renaming}
+            disabled={renaming || trashing}
             type="button"
             onClick={onCloseDocument}
           >

@@ -17,7 +17,10 @@ type FileRailProps = {
   folders: string[];
   query: string;
   searchInputRef: RefObject<HTMLInputElement | null>;
+  trashCount: number;
+  vaultSelected: boolean;
   onCreateNote: () => void;
+  onOpenTrash: () => void;
   onQueryChange: (query: string) => void;
   onSelectDocument: (documentId: string) => void;
   onToggleFolder: (folder: string) => void;
@@ -30,7 +33,10 @@ export function FileRail({
   folders,
   query,
   searchInputRef,
+  trashCount,
+  vaultSelected,
   onCreateNote,
+  onOpenTrash,
   onQueryChange,
   onSelectDocument,
   onToggleFolder,
@@ -128,6 +134,13 @@ export function FileRail({
           <p className="file-tree__empty">No matching notes.</p>
         ) : null}
       </nav>
+      {vaultSelected ? (
+        <footer className="file-rail__footer">
+          <button type="button" onClick={onOpenTrash}>
+            Trash{trashCount > 0 ? ` (${trashCount})` : ""}
+          </button>
+        </footer>
+      ) : null}
     </aside>
   );
 }
