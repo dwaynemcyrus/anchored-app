@@ -19,8 +19,10 @@ type EditorSurfaceProps = {
   vaultSelected: boolean;
   wikilinkCandidates: WikilinkCandidate[];
   onCloseDocument: () => void;
+  onCreateVault: () => void;
   onDocumentChange: (content: string) => void;
   onOpenLinkedDocument: (documentId: string) => void;
+  onOpenVault: () => void;
   onOpenWikilink: (target: string) => void;
   onRetryDocument: () => void;
   onRenameDocument: () => void;
@@ -41,8 +43,10 @@ export function EditorSurface({
   vaultSelected,
   wikilinkCandidates,
   onCloseDocument,
+  onCreateVault,
   onDocumentChange,
   onOpenLinkedDocument,
+  onOpenVault,
   onOpenWikilink,
   onRetryDocument,
   onRenameDocument,
@@ -73,6 +77,16 @@ export function EditorSurface({
                 ? "Choose a note from the file explorer."
                 : "Choose another vault to continue."}
           </p>
+          {!vaultSelected ? (
+            <div className="document__empty-actions">
+              <button type="button" onClick={onOpenVault}>
+                Open a vault
+              </button>
+              <button type="button" onClick={onCreateVault}>
+                Create a vault
+              </button>
+            </div>
+          ) : null}
         </section>
       </main>
     );

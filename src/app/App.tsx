@@ -8,6 +8,7 @@ import {
 } from "react";
 
 import { EditorSurface } from "./components/EditorSurface";
+import { CreateVaultDialog } from "./components/CreateVaultDialog";
 import { FileRail } from "./components/FileRail";
 import { IdentityMigrationPanel } from "./components/IdentityMigrationPanel";
 import { NotificationCenter } from "./components/NotificationCenter";
@@ -52,6 +53,7 @@ import {
 } from "./notificationHistory";
 import {
   applyIdentityMigration,
+  createVault,
   createUntitledVaultFile,
   createVaultFile,
   forgetVault,
@@ -163,6 +165,11 @@ export function App() {
   const [vaultId, setVaultId] = useState("");
   const [folderOrder, setFolderOrder] = useState<string[]>([]);
   const [selectingVault, setSelectingVault] = useState(false);
+  const [creatingVault, setCreatingVault] = useState(false);
+  const [createVaultVisible, setCreateVaultVisible] = useState(false);
+  const [createVaultError, setCreateVaultError] = useState<
+    string | undefined
+  >();
   const [vaultSelected, setVaultSelected] = useState(false);
   const [vaultSwitcherVisible, setVaultSwitcherVisible] = useState(false);
   const [rememberedVaults, setRememberedVaults] = useState<RememberedVault[]>(
@@ -1325,6 +1332,33 @@ export function App() {
     }
   }
 
+  async function createNewVault(name: string) {
+    if (vaultSelected && hasUnfinishedEdits()) {
+      addVaultNotice(
+        "Save or close all draft changes before switching vaults.",
+      );
+      return;
+    }
+    setCreatingVault(true);
+    setCreateVaultError(undefined);
+
+    try {
+      const snapshot = await createVault({ name });
+      if (!snapshot) {
+        setCreateVaultVisible(false);
+        return;
+      }
+      activateVaultSnapshot(snapshot);
+      setCreateVaultVisible(false);
+      setVaultSwitcherVisible(false);
+      await Promise.all([refreshRememberedVaults(), refreshTrashEntries()]);
+    } catch (error) {
+      setCreateVaultError(readErrorMessage(error));
+    } finally {
+      setCreatingVault(false);
+    }
+  }
+
   async function openKnownVault(rememberedVaultId: string) {
     if (hasUnfinishedEdits()) {
       addVaultNotice(
@@ -1430,8 +1464,13 @@ export function App() {
           vaultSelected={vaultSelected}
           wikilinkCandidates={wikilinkCandidates}
           onCloseDocument={closeDocument}
+          onCreateVault={() => {
+            setCreateVaultError(undefined);
+            setCreateVaultVisible(true);
+          }}
           onDocumentChange={updateDocumentContent}
           onOpenLinkedDocument={(documentId) => void selectDocument(documentId)}
+          onOpenVault={() => void openVault()}
           onOpenWikilink={openWikilink}
           onRetryDocument={() => {
             if (activeDocument) void selectDocument(activeDocument.id);
@@ -1552,6 +1591,11 @@ export function App() {
           openingVaultId={openingRememberedVaultId}
           vaults={rememberedVaults}
           onClose={() => setVaultSwitcherVisible(false)}
+          onCreateVault={() => {
+            setCreateVaultError(undefined);
+            setVaultSwitcherVisible(false);
+            setCreateVaultVisible(true);
+          }}
           onForget={(rememberedVaultId) =>
             void forgetKnownVault(rememberedVaultId)
           }
@@ -1559,6 +1603,19 @@ export function App() {
           onOpenRemembered={(rememberedVaultId) =>
             void openKnownVault(rememberedVaultId)
           }
+        />
+      ) : null}
+      {createVaultVisible ? (
+        <CreateVaultDialog
+          creating={creatingVault}
+          error={createVaultError}
+          onClose={() => {
+            if (!creatingVault) {
+              setCreateVaultError(undefined);
+              setCreateVaultVisible(false);
+            }
+          }}
+          onCreate={(name) => void createNewVault(name)}
         />
       ) : null}
       {trashVisible ? (

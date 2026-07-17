@@ -465,7 +465,7 @@ and preserves link integrity across filename changes.
       the expected interaction state and no console warnings or errors.
     - Commit: current implementation chunk
 
-16. [ ] **Chunk: Create vaults at user-selected locations**
+16. [x] **Chunk: Create vaults at user-selected locations**
     - Issues: [#8](https://github.com/dwaynemcyrus/anchored-app/issues/8)
     - Files: native vault commands and tests, typed frontend bridge, vault
       selector UI, app composition, `CHANGELOG.md`, and `PLANS.md`
@@ -481,6 +481,15 @@ and preserves link integrity across filename changes.
       refuse reserved or occupied destinations, create only one directory
       inside the chosen parent, and revert the focused chunk without touching
       existing vault Markdown.
+    - Verification result: New native coverage validates vault-name safety,
+      occupied destinations, and successful folder creation. The frontend bridge
+      and app tests cover dialog launch from the no-vault screen, naming, and
+      immediate activation of the created vault. Frontend formatting, lint,
+      type-checking, tests, production build, Rust formatting, Clippy, and
+      Rust tests pass. Rendered QA on Friday, July 17, 2026 confirmed the
+      no-vault screen opens the create-vault dialog at `http://127.0.0.1:1420/`
+      with no relevant console warnings or errors.
+    - Commit: current implementation chunk
 
 17. [ ] **Chunk: Add safe reload continuity**
     - Issues: [#13](https://github.com/dwaynemcyrus/anchored-app/issues/13)

@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
   applyIdentityMigration,
+  createVault,
   createVaultFile,
   forgetVault,
   listRememberedVaults,
@@ -63,6 +64,9 @@ const createRequest = {
   content: "# New note\n",
   suggestedName: "New note.md",
 };
+const createVaultRequest = {
+  name: "Second Brain",
+};
 
 describe("vault bridge", () => {
   beforeEach(() => mockedInvoke.mockReset());
@@ -72,6 +76,16 @@ describe("vault bridge", () => {
 
     await expect(selectVault()).resolves.toEqual(snapshot);
     expect(mockedInvoke).toHaveBeenCalledWith("select_vault");
+  });
+
+  it("creates a vault through the Rust-owned parent-folder dialog", async () => {
+    mockedInvoke.mockResolvedValue(snapshot);
+
+    await expect(createVault(createVaultRequest)).resolves.toEqual(snapshot);
+    expect(mockedInvoke).toHaveBeenCalledWith(
+      "create_vault",
+      createVaultRequest,
+    );
   });
 
   it("lists, opens, and forgets remembered vaults without frontend paths", async () => {

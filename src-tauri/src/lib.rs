@@ -10,6 +10,7 @@ pub fn run() {
         .manage(vault::VaultState::default())
         .invoke_handler(tauri::generate_handler![
             vault::select_vault,
+            vault::create_vault,
             vault::list_remembered_vaults,
             vault::open_remembered_vault,
             vault::forget_vault,

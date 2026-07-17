@@ -282,7 +282,7 @@ impl VaultError {
     pub(crate) fn file_exists() -> Self {
         Self {
             code: "vaultFileExists",
-            message: "A Markdown file already exists at that location. Choose a different name."
+            message: "A file or folder already exists at that location. Choose a different name."
                 .to_owned(),
         }
     }
@@ -319,6 +319,27 @@ pub async fn select_vault(
         .into_path()
         .map_err(|error| VaultError::invalid(format!("Unsupported vault path: {error}")))?;
     let root = canonical_vault_root(&selected_path)?;
+    activate_vault(&app, &state, root).map(Some)
+}
+
+#[tauri::command]
+pub async fn create_vault(
+    app: AppHandle,
+    state: State<'_, VaultState>,
+    name: String,
+) -> Result<Option<VaultSnapshot>, VaultError> {
+    let selected = app
+        .dialog()
+        .file()
+        .set_title("Choose where to create this vault")
+        .blocking_pick_folder();
+    let Some(selected) = selected else {
+        return Ok(None);
+    };
+    let parent = selected
+        .into_path()
+        .map_err(|error| VaultError::invalid(format!("Unsupported vault path: {error}")))?;
+    let root = create_named_vault(&parent, &name)?;
     activate_vault(&app, &state, root).map(Some)
 }
 
@@ -675,6 +696,55 @@ fn canonical_vault_root(path: &Path) -> Result<PathBuf, VaultError> {
     }
 
     Ok(root)
+}
+
+fn validate_new_vault_name(name: &str) -> Result<&str, VaultError> {
+    let trimmed = name.trim();
+    if trimmed.is_empty() {
+        return Err(VaultError::invalid(
+            "Enter a vault name before creating a vault.",
+        ));
+    }
+    if trimmed.starts_with('.') {
+        return Err(VaultError::invalid("Vault names cannot start with a dot."));
+    }
+
+    let path = Path::new(trimmed);
+    let mut components = path.components();
+    let Some(Component::Normal(component)) = components.next() else {
+        return Err(VaultError::invalid(
+            "Vault names must be a single folder name.",
+        ));
+    };
+    if components.next().is_some() || is_internal_component(component) {
+        return Err(VaultError::invalid(
+            "Vault names must be a single folder name.",
+        ));
+    }
+
+    Ok(trimmed)
+}
+
+fn create_named_vault(parent: &Path, name: &str) -> Result<PathBuf, VaultError> {
+    let parent = canonical_vault_root(parent)?;
+    let name = validate_new_vault_name(name)?;
+    let destination = parent.join(name);
+
+    match fs::symlink_metadata(&destination) {
+        Ok(_) => return Err(VaultError::file_exists()),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+        Err(error) => {
+            return Err(VaultError::io(
+                "The new vault destination could not be inspected",
+                error,
+            ))
+        }
+    }
+
+    fs::create_dir(&destination)
+        .map_err(|error| VaultError::io("The new vault folder could not be created", error))?;
+    sync_directory(&parent)?;
+    canonical_vault_root(&destination)
 }
 
 fn scan_vault(root: &Path) -> Result<VaultSnapshot, VaultError> {
@@ -2076,18 +2146,23 @@ fn write_new_atomically(
 }
 
 #[cfg(unix)]
+fn sync_directory(directory: &Path) -> Result<(), VaultError> {
+    fs::File::open(directory)
+        .and_then(|directory| directory.sync_all())
+        .map_err(|error| VaultError::io("The filesystem change could not be finalized", error))
+}
+
+#[cfg(not(unix))]
+fn sync_directory(_directory: &Path) -> Result<(), VaultError> {
+    Ok(())
+}
+
+#[cfg(unix)]
 fn sync_parent_directory(destination: &Path) -> Result<(), VaultError> {
     let parent = destination.parent().ok_or_else(|| {
         VaultError::invalid_file("The Markdown file does not have a writable parent directory.")
     })?;
-    fs::File::open(parent)
-        .and_then(|directory| directory.sync_all())
-        .map_err(|error| {
-            VaultError::io(
-                "The Markdown file replacement could not be finalized",
-                error,
-            )
-        })
+    sync_directory(parent)
 }
 
 #[cfg(not(unix))]
@@ -2110,12 +2185,13 @@ mod tests {
 
     use super::{
         apply_identity_migration_plan, build_identity_migration_preview, canonical_vault_root,
-        create_markdown_file, create_untitled_markdown_file, enrich_vault_metadata,
-        inspect_note_identity, read_markdown_file, reconcile_vault_identities,
-        recover_rename_transaction, rename_markdown_file, resolve_new_vault_markdown_file,
-        save_markdown_file, scan_vault, search_markdown_files, write_rename_journal,
-        NoteIdentityStatus, RenameJournal, RenameJournalEntry, RenameJournalPhase, RenameOutcome,
-        MAX_MARKDOWN_FILE_BYTES, MAX_SEARCH_RESULTS, RENAME_JOURNAL_NAME,
+        create_markdown_file, create_named_vault, create_untitled_markdown_file,
+        enrich_vault_metadata, inspect_note_identity, read_markdown_file,
+        reconcile_vault_identities, recover_rename_transaction, rename_markdown_file,
+        resolve_new_vault_markdown_file, save_markdown_file, scan_vault, search_markdown_files,
+        validate_new_vault_name, write_rename_journal, NoteIdentityStatus, RenameJournal,
+        RenameJournalEntry, RenameJournalPhase, RenameOutcome, MAX_MARKDOWN_FILE_BYTES,
+        MAX_SEARCH_RESULTS, RENAME_JOURNAL_NAME,
     };
 
     #[test]
@@ -2411,6 +2487,43 @@ mod tests {
         let error = canonical_vault_root(&file).expect_err("reject file root");
 
         assert_eq!(error.code, "invalidVault");
+    }
+
+    #[test]
+    fn validates_new_vault_names() {
+        assert_eq!(
+            validate_new_vault_name("Writing Vault").expect("accept simple name"),
+            "Writing Vault"
+        );
+        assert!(validate_new_vault_name("").is_err());
+        assert!(validate_new_vault_name("Notes/Child").is_err());
+        assert!(validate_new_vault_name(".hidden").is_err());
+        assert!(validate_new_vault_name(".anchored").is_err());
+    }
+
+    #[test]
+    fn creates_a_new_named_vault_folder() {
+        let parent = tempdir().expect("create parent folder");
+
+        let created =
+            create_named_vault(parent.path(), "Second Brain").expect("create named vault");
+
+        assert_eq!(
+            created.file_name().and_then(|name| name.to_str()),
+            Some("Second Brain")
+        );
+        assert!(created.is_dir());
+    }
+
+    #[test]
+    fn refuses_to_create_a_named_vault_over_an_existing_path() {
+        let parent = tempdir().expect("create parent folder");
+        fs::write(parent.path().join("Taken"), "occupied").expect("write occupied file");
+
+        let error =
+            create_named_vault(parent.path(), "Taken").expect_err("reject occupied destination");
+
+        assert_eq!(error.code, "vaultFileExists");
     }
 
     #[test]

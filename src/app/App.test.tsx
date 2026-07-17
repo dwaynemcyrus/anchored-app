@@ -11,6 +11,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
   applyIdentityMigration,
+  createVault,
   createUntitledVaultFile,
   createVaultFile,
   forgetVault,
@@ -31,6 +32,7 @@ import { App } from "./App";
 
 vi.mock("../lib/tauri/vault", () => ({
   applyIdentityMigration: vi.fn(),
+  createVault: vi.fn(),
   createUntitledVaultFile: vi.fn(),
   createVaultFile: vi.fn(),
   forgetVault: vi.fn(),
@@ -50,6 +52,7 @@ vi.mock("../lib/tauri/vault", () => ({
 
 const mockedSelectVault = vi.mocked(selectVault);
 const mockedApplyIdentityMigration = vi.mocked(applyIdentityMigration);
+const mockedCreateVault = vi.mocked(createVault);
 const mockedCreateUntitledVaultFile = vi.mocked(createUntitledVaultFile);
 const mockedCreateVaultFile = vi.mocked(createVaultFile);
 const mockedForgetVault = vi.mocked(forgetVault);
@@ -80,6 +83,7 @@ describe("App", () => {
   beforeEach(() => {
     window.localStorage.clear();
     mockedApplyIdentityMigration.mockReset();
+    mockedCreateVault.mockReset();
     mockedCreateUntitledVaultFile.mockReset();
     mockedCreateVaultFile.mockReset();
     mockedForgetVault.mockReset();
@@ -111,6 +115,12 @@ describe("App", () => {
     ).toBeInTheDocument();
     expect(
       screen.getByRole("button", { name: "Open vault" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Open a vault" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Create a vault" }),
     ).toBeInTheDocument();
     expect(
       screen.getAllByRole("button", {
@@ -248,6 +258,34 @@ describe("App", () => {
       ),
     );
     expect(mockedForgetVault).toHaveBeenCalledWith(rememberedVault.id);
+  });
+
+  it("creates and opens a new vault from the no-vault state", async () => {
+    const user = userEvent.setup();
+    mockedCreateVault.mockResolvedValue({
+      files: [],
+      name: "Second Brain",
+      vaultId: "01JZQ7K8P4A6F2M9V3C5T7X1BY",
+      warnings: noWarnings,
+    });
+    render(<App />);
+
+    await user.click(screen.getByRole("button", { name: "Create a vault" }));
+    const dialog = screen.getByRole("dialog", { name: "Create vault" });
+    await user.type(
+      within(dialog).getByRole("textbox", { name: "Vault name" }),
+      "Second Brain",
+    );
+    await user.click(
+      within(dialog).getByRole("button", { name: "Choose location…" }),
+    );
+
+    expect(mockedCreateVault).toHaveBeenCalledWith({ name: "Second Brain" });
+    expect(
+      await screen.findByRole("button", {
+        name: "Switch vault: Second Brain",
+      }),
+    ).toBeVisible();
   });
 
   it("moves a saved note to the vault Trash", async () => {

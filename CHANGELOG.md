@@ -6,6 +6,13 @@ Git commit. The format follows [Keep a Changelog], and releases follow
 
 ## [Unreleased]
 
+### Added
+
+- New vaults can now be created from the no-vault screen or vault switcher.
+  Anchored asks for a vault name, lets the user choose a parent folder
+  natively, creates the new vault safely, remembers it, and opens it
+  immediately.
+
 ## [0.1.0-alpha] - 2026-07-17
 
 ### Added

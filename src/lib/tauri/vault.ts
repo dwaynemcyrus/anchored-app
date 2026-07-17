@@ -71,6 +71,10 @@ export type CreateVaultFileRequest = {
   suggestedName: string;
 };
 
+export type CreateVaultRequest = {
+  name: string;
+};
+
 export type RenameVaultFileResult = {
   relativePath: string;
   updatedFiles: number;
@@ -97,6 +101,12 @@ export type IdentityMigrationResult = {
 
 export function selectVault(): Promise<VaultSnapshot | null> {
   return invoke<VaultSnapshot | null>("select_vault");
+}
+
+export function createVault(
+  request: CreateVaultRequest,
+): Promise<VaultSnapshot | null> {
+  return invoke<VaultSnapshot | null>("create_vault", request);
 }
 
 export function listRememberedVaults(): Promise<RememberedVault[]> {
