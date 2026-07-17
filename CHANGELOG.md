@@ -52,6 +52,8 @@ Git commit. The format follows [Keep a Changelog], and releases follow
 
 - Startup now shows an explicit no-vault state instead of presenting static
   demonstration notes as though they were editable vault files.
+- Development launches now replace only this project's stale interface server
+  on port 1420 and identify unrelated port owners with an actionable error.
 - Opening the native Rename dialog no longer blocks Anchored's main interface
   thread.
 - The editor shell no longer becomes a blank window when WebKit denies access

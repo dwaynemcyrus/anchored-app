@@ -1,165 +1,81 @@
-# Codex Project Templates
+# Anchored
 
-A small system for defining and building a coding project with Codex.
+Anchored is a minimal local-first Markdown editor for macOS. It opens a folder
+as a vault, edits the Markdown files directly, and maintains Obsidian-style
+wikilinks, aliases, backlinks, and permanent note identities.
 
-You do not need to make every technical decision yourself. Start with the
-overview interview, approve the result, and let Codex prepare the technical
-contract and build plan.
+Anchored is still under development. Use a backed-up or disposable vault until
+the release candidate and seven-day stability observation are complete.
 
-## The project documents
+## Run the development app
 
-| File | Purpose | Who maintains it |
-|---|---|---|
-| `OVERVIEW.md` | What to build and why | Human and Codex together |
-| `PROJECT.md` | Technical contract | Codex, reviewed by the human |
-| `AGENTS.md` | How Codex must work | Template owner |
-| `PLANS.md` | Plan for large or risky work | Codex |
-| `CHANGELOG.md` | Notable unreleased and released changes | Codex |
-
-Optional guides add specialized frontend, data, or deployment rules.
-This `README.md` is the setup guide; it does not replace the new project's
-own README once implementation begins.
-
-## Step 1 — Add the templates
-
-Put these files at the root of the new project:
-
-```text
-AGENTS.md
-OVERVIEW.md
-PROJECT.md
-PLANS.md
-CHANGELOG.md
-```
-
-Copy the optional guides into the project like this:
-
-```text
-docs/
-└── ai/
-    ├── frontend.md
-    ├── data.md
-    └── deployment.md
-```
-
-It is fine to copy all three. Codex will list only relevant guides as
-active in `PROJECT.md`.
-
-## Step 2 — Prepare Git
-
-For a brand-new project, run:
+Install dependencies once:
 
 ```sh
-git init -b main
-git add AGENTS.md OVERVIEW.md PROJECT.md PLANS.md CHANGELOG.md docs/ai
-git commit -m "chore: add project templates"
-git switch -c feat/initial-build
+npm ci
 ```
 
-If the project already uses Git, keep its current history. Create or switch
-to a relevant task branch before asking Codex to edit files.
+Then launch the native macOS app:
 
-## Step 3 — Build the overview with AI
+```sh
+npm run tauri dev
+```
 
-Choose the starting point that matches what you have.
+The launch preflight uses port `1420`. If a stale Anchored interface server is
+holding that port, it is stopped automatically. If another application owns
+the port, the terminal identifies that process so it can be closed safely.
 
-### If you are starting with an idea
+Only run one `npm run tauri dev` command at a time. Close the Anchored window
+and stop its terminal with Control-C when testing is finished.
 
-Open Codex in the project folder and send:
+## Smoke-test vault
+
+A reusable disposable vault is included at:
 
 ```text
-Read OVERVIEW.md and help me complete it.
-Ask no more than three focused questions at a time.
-Explain choices in plain language and recommend sensible defaults.
-Do not invent answers or begin implementation.
+/Users/cyrus/Code/anchored-app-macos/fixtures/smoke-vault
 ```
 
-Codex will interview you and update `OVERVIEW.md`.
+After Anchored opens:
 
-### If you already have a brief or overview
+1. Choose **Open vault**.
+2. Select `fixtures/smoke-vault`.
+3. Open any note in the file explorer. The exact Markdown becomes editable.
+4. Follow the complete checklist in
+   [`fixtures/SMOKE_TEST.md`](fixtures/SMOKE_TEST.md).
 
-Put the document in the project, then send:
+The fixture contains aliases, body and front-matter wikilinks, unresolved
+placeholders, duplicate filenames in different folders, Unicode search text,
+and an empty Markdown file.
 
-```text
-Read [PATH TO DOCUMENT] completely and preserve it as the source brief.
-Use it to complete OVERVIEW.md.
-Ask no more than three focused questions at a time for missing information.
-Mark unsupported assumptions and decisions. Do not begin implementation.
+## Retrieval shortcuts
+
+| Action | Shortcut |
+|---|---|
+| Quick Open by filename or alias | Command-P |
+| Search Markdown across the vault | Command-Shift-F |
+| Find inside the active note | Command-F |
+| Save the active note | Command-S |
+| Save As | Command-Shift-S |
+| Create a note | Command-N |
+
+## Quality checks
+
+```sh
+npm run format:check
+npm run lint
+npm run typecheck
+npm test
+npm run build
+cargo fmt --manifest-path src-tauri/Cargo.toml --check
+cargo test --manifest-path src-tauri/Cargo.toml
+cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
 ```
 
-Review the finished overview. Resolve important `[NEEDS DECISION]` items,
-then tell Codex that the overview is approved.
+## Project documents
 
-## Step 4 — Generate the project setup
-
-Send this after approving the overview:
-
-```text
-The overview is approved.
-Initialize the project from OVERVIEW.md.
-Complete PROJECT.md, select the active optional guides, and create a plan
-in PLANS.md when required. Report any blocking decisions. If none remain,
-begin the first verified implementation chunk and continue automatically.
-```
-
-Codex will:
-
-1. Read the approved overview and any referenced source documents.
-2. Inspect the repository and existing tools.
-3. Complete `PROJECT.md` without guessing missing facts.
-4. Activate only the relevant optional guides.
-5. Create or update `PLANS.md` when the build is large or risky.
-6. Commit the approved setup documents in focused chunks.
-7. Build automatically in small, tested, regularly committed chunks.
-
-## Step 5 — Review progress
-
-You do not need to approve every ordinary code change. Review the focused
-commits regularly and answer only decisions that materially affect scope,
-security, data, cost, or production systems.
-
-Before release, confirm:
-
-- [ ] The delivered user journey matches `OVERVIEW.md`.
-- [ ] Acceptance criteria in `PROJECT.md` are met.
-- [ ] Required checks pass.
-- [ ] Changelog entries accurately describe the release.
-- [ ] Secrets and production configuration are handled safely.
-- [ ] Deployment and rollback steps are understood.
-
-## Keep the documents current
-
-- Update `OVERVIEW.md` when product intent or scope changes.
-- Update `PROJECT.md` when architecture, commands, or constraints change.
-- Use `PLANS.md` only for active large or risky work.
-- Keep optional rules in `docs/ai/`; list only active guides in
-  `PROJECT.md`.
-- Do not place one project's product or stack rules in `AGENTS.md`.
-
-## Changelog and versions
-
-The root `CHANGELOG.md` follows Keep a Changelog and Semantic Versioning.
-Add notable user-visible behavior, APIs, schema or data changes, security,
-configuration, dependency, deprecation, removal, and operational changes to
-`[Unreleased]` after each related verified chunk. Update it in the same commit
-as that work.
-
-The changelog summarizes outcomes that matter to users, integrations, and
-operators; it does not duplicate every Git commit. Formatting, routine tests,
-minor documentation cleanup, and internal refactors normally stay out unless
-their effects are material.
-
-When the human explicitly approves a release, move the relevant
-`[Unreleased]` entries into a dated version section and leave a fresh
-`[Unreleased]` section. Codex may select an appropriate patch or minor version
-only during that approved release. Moving to `1.0.0`, and every later major
-version increase, requires explicit human approval.
-
-## Git rules Codex will follow
-
-- Work happens on task branches, not the default branch.
-- Each small, verified, coherent chunk receives a commit.
-- Commit subjects are at most 44 characters.
-- Commit body lines are at most 63 characters.
-- Unrelated changes are never included in a commit.
-- Pushes, merges, releases, and branch deletion require instruction.
+- [`OVERVIEW.md`](OVERVIEW.md) — approved product intent
+- [`PROJECT.md`](PROJECT.md) — technical contract and commands
+- [`PLANS.md`](PLANS.md) — staged implementation and verification plan
+- [`CHANGELOG.md`](CHANGELOG.md) — notable unreleased changes
+- [`AGENTS.md`](AGENTS.md) — contribution and verification rules
