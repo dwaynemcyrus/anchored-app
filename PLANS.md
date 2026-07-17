@@ -253,6 +253,39 @@ and preserves link integrity across filename changes.
       `45875e5 feat(app): persist notification history`, and
       `009bb3e feat(app): add notification center`.
 
+11D. [ ] **Chunk: Scope vault continuity and trash**
+    - Files: native vault identity, registry, trash commands and tests; typed
+      frontend bridge; notification persistence; vault switcher and Trash UI;
+      app composition, styles, tests, `CHANGELOG.md`, `PROJECT.md`, `PLANS.md`
+    - Change: Create `.anchored/vault.json` with an opaque vault ID, keep
+      canonical remembered-vault paths only in native app data, scope local
+      notifications by vault ID, and expose remembered vaults through the
+      existing selector. Move saved notes into `.anchored/trash/` without link
+      rewrites, exclude the entire internal directory from normal indexing,
+      and provide safe restore to the original location without permanent
+      deletion.
+    - Verify: Initial and repeated registration, moved and unavailable vaults,
+      malformed metadata and registry, duplicate names, hidden-folder scan and
+      path refusal, trash rollback, restore conflicts, missing original
+      folders, symlinks, unfinished edits, notification isolation and v1
+      migration, keyboard focus, Escape, empty/error/success states, quick
+      switching, desktop and narrow layouts, and disposable-vault native QA.
+    - Risk/rollback: Trash and restore move authored files. Use same-filesystem
+      renames, atomic metadata replacement, rollback on metadata failure,
+      destination no-overwrite checks, symlink refusal, and synthetic vaults
+      first. Reverting the feature leaves `.anchored` data intact and ordinary
+      Markdown untouched; manually restoring files remains possible from the
+      hidden trash directory and index.
+    - Approved decisions: Use `.anchored/trash/`; exclude trashed notes from
+      files, search, links, aliases, and backlinks; preserve note bytes and
+      links; include Restore but no permanent delete; stop safely on restore
+      name conflicts; show remembered vaults with quick switch and Forget;
+      keep registry paths native-only; use vault identity for notification
+      scope across a moved vault after it is selected again.
+    - Expected changelog: Add vault-specific notification history, remembered
+      vault switching, and reversible soft deletion. Version remains `0.1.0`
+      until an explicit release request.
+
 12. [ ] **Chunk: Package release candidate**
     - Files: Tauri bundle configuration, icons/assets, README, release checklist
     - Change: Produce a macOS 12-compatible local package and document install,
@@ -296,6 +329,11 @@ Every future large plan must identify:
 
 ## Progress notes
 
+- 2026-07-17: Dwayne approved Chunk 11D. Anchored will own one hidden
+  `.anchored` directory per vault for stable vault identity and reversible
+  trash, while remembered absolute paths remain private to native app data.
+  Trashed notes keep exact bytes and existing links but leave the active graph
+  until restored; no permanent delete is included.
 - 2026-07-17: Chunk 11C adds an optional local notification history behind a
   top-bar bell. Meaningful events are timestamped, deduplicated, capped at 250,
   and retained for 28 days; active conflicts persist until automatic or manual
