@@ -1,8 +1,9 @@
 [package]
 name = "anchored"
-version = "0.1.0"
+version = "0.1.0-alpha"
 description = "A local-first Markdown editor"
 authors = ["Dwayne Cyrus"]
+license = "MIT"
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html

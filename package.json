@@ -1,7 +1,8 @@
 {
   "name": "anchored",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.1.0-alpha",
+  "license": "MIT",
   "type": "module",
   "scripts": {
     "dev": "vite",

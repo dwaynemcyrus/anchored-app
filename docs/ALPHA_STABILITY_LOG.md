@@ -6,8 +6,8 @@ that has an independently verified backup.
 
 ## Candidate
 
-- Version: `0.1.0`
-- Package: `Anchored_0.1.0_x64.dmg`
+- Version: `0.1.0-alpha`
+- Package: `Anchored_0.1.0-alpha_x64.dmg`
 - Signing: private ad-hoc signature; not notarized
 - Minimum system: macOS 12 Monterey
 - Observation start: not yet recorded

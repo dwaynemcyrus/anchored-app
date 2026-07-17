@@ -6,6 +6,8 @@ Git commit. The format follows [Keep a Changelog], and releases follow
 
 ## [Unreleased]
 
+## [0.1.0-alpha] - 2026-07-17
+
 ### Added
 
 - A keyboard-first macOS editor shell with note navigation, local search,
@@ -73,6 +75,8 @@ Git commit. The format follows [Keep a Changelog], and releases follow
   explicit event and window permissions required by the interface.
 - New-note controls remain unavailable until a vault is selected, preventing
   drafts that have no valid save boundary.
+- Anchored's source is now available under the MIT License, with a fully
+  fictional checked-in test vault replacing the previous private smoke data.
 
 ### Fixed
 

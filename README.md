@@ -4,7 +4,8 @@ Anchored is a minimal local-first Markdown editor for macOS. It opens a folder
 as a vault, edits the Markdown files directly, and maintains Obsidian-style
 wikilinks, aliases, backlinks, and permanent note identities.
 
-Anchored `0.1.0` is available as a private Intel Mac alpha for in-house testing.
+Anchored `0.1.0-alpha` is available as a private Intel Mac alpha for in-house
+testing.
 Use a backed-up or disposable vault until the seven-day stability observation
 is complete. This package is not yet intended for public website downloads.
 
@@ -24,7 +25,7 @@ The command creates the DMG and a SHA-256 checksum in:
 src-tauri/target/release/bundle/dmg/
 ```
 
-Open `Anchored_0.1.0_x64.dmg`, drag **Anchored** into **Applications**, eject
+Open `Anchored_0.1.0-alpha_x64.dmg`, drag **Anchored** into **Applications**, eject
 the disk image, and open Anchored from Applications. No terminal is required
 after installation. A copy built locally on this Mac should open normally.
 If macOS blocks an ad-hoc-signed copy after it has been transferred or
@@ -56,25 +57,28 @@ the port, the terminal identifies that process so it can be closed safely.
 Only run one `npm run tauri dev` command at a time. Close the Anchored window
 and stop its terminal with Control-C when testing is finished.
 
-## Smoke-test vault
+## Synthetic test vault
 
-A reusable disposable vault is included at:
+A reusable fictional vault is included at:
 
 ```text
-/Users/cyrus/Code/anchored-app-macos/fixtures/smoke-vault
+fixtures/test-vault
 ```
 
 After Anchored opens:
 
 1. Choose **Open vault**.
-2. Select `fixtures/smoke-vault`.
+2. Select `fixtures/test-vault`.
 3. Open any note in the file explorer. The exact Markdown becomes editable.
-4. Follow the complete checklist in
-   [`fixtures/SMOKE_TEST.md`](fixtures/SMOKE_TEST.md).
+4. Use only as disposable test data; it contains no personal writing.
 
-The fixture contains aliases, body and front-matter wikilinks, unresolved
-placeholders, duplicate filenames in different folders, Unicode search text,
-and an empty Markdown file.
+The fixture contains fictional aliases, body and front-matter wikilinks,
+unresolved placeholders, duplicate filenames in different folders, and an empty
+Markdown file.
+
+## License
+
+Anchored is open source under the [MIT License](LICENSE).
 
 ## Retrieval shortcuts
 

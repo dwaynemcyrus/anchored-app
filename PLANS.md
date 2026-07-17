@@ -212,7 +212,7 @@ and preserves link integrity across filename changes.
       64 MiB total-content budget. Results report skipped or limited scans.
     - Native verification: Dwayne confirmed editing, Quick Open, full-vault
       search, note-local Find, aliases, and keyboard and pointer flows work in
-      `fixtures/smoke-vault` on 2026-07-17.
+      a disposable synthetic vault on 2026-07-17.
     - Commits: `bb99fd4 feat(search): rank recent notes`,
       `df6500f feat(search): add quick open`,
       `e75d641 feat(search): scan vault content`,
@@ -439,7 +439,7 @@ Every future large plan must identify:
 
 ## Progress notes
 
-- 2026-07-17: The private `0.1.0` Intel alpha is installed in Applications and
+- 2026-07-17: The private `0.1.0-alpha` Intel alpha is installed in Applications and
   passed native package QA with screen and accessibility inspection. The final
   DMG, app, and checksum verify; the no-vault shell, seven-note disposable
   vault, notification dismissal, Markdown editing/autosave, clean quit,
@@ -447,6 +447,10 @@ Every future large plan must identify:
   frontend tests, 59 Rust tests, formatting, lint, type-checking, strict
   Clippy, and production builds pass. Chunk 13's real seven-day observation is
   now the only unfinished acceptance phase.
+- 2026-07-17: Prepared the `v0.1.0-alpha` source release with aligned desktop,
+  npm, Rust, lockfile, and documentation versions. The public repository uses
+  the MIT License and retains only a wholly fictional test vault; no personal
+  smoke-vault content is part of the release.
 - 2026-07-17: Completed the pre-package release review and published the
   verified feature reference and comprehensive public-testing checklist. All
   configured frontend and native gates and the optimized application build
@@ -482,8 +486,9 @@ Every future large plan must identify:
   caused the generic `beforeDevCommand` error, and hard-coded startup samples
   appeared to be notes despite having no editable vault source. Anchored now
   starts in an explicit no-vault state, its launch hook safely replaces only a
-  stale server from this project, and `fixtures/smoke-vault` provides six
-  validated Markdown files for repeatable retrieval and editing tests.
+  stale server from this project, and the fictional `fixtures/test-vault`
+  provides six validated Markdown files for repeatable retrieval and editing
+  tests.
 
 - 2026-07-16: Overview approved; Tauri 2 and filename-triggered reference
   updates confirmed as product requirements.

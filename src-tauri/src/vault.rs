@@ -2135,11 +2135,12 @@ mod tests {
     }
 
     #[test]
-    fn indexes_the_checked_in_smoke_vault() {
+    fn indexes_the_checked_in_synthetic_test_vault() {
         let root =
-            std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../fixtures/smoke-vault");
-        let mut snapshot = scan_vault(&root).expect("scan checked-in smoke vault");
-        enrich_vault_metadata(&root, &mut snapshot.files).expect("index smoke vault metadata");
+            std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../fixtures/test-vault");
+        let mut snapshot = scan_vault(&root).expect("scan checked-in synthetic test vault");
+        enrich_vault_metadata(&root, &mut snapshot.files)
+            .expect("index synthetic test vault metadata");
 
         assert!(snapshot.files.len() >= 6);
         assert!(
@@ -2150,15 +2151,20 @@ mod tests {
                 .count()
                 >= 5
         );
-        let leadership = snapshot
+        let harbor = snapshot
             .files
             .iter()
-            .find(|file| file.relative_path == "Notes/Leadership.md")
-            .expect("find leadership fixture");
-        assert_eq!(leadership.aliases, vec!["Leading Well", "Calm Leadership"]);
+            .find(|file| file.relative_path == "Notes/Harbor.md")
+            .expect("find Harbor fixture");
+        assert_eq!(harbor.aliases, vec!["Safe Harbor", "North Star"]);
         assert_eq!(
-            leadership.outgoing_links,
-            vec!["Daily Practice", "Reading List", "Future Idea"]
+            harbor.outgoing_links,
+            vec![
+                "Writing/Field Notes",
+                "Field Notes",
+                "Reading Shelf",
+                "Future Note",
+            ]
         );
     }
 

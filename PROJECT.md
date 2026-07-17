@@ -21,6 +21,7 @@ Product scope remains governed by `OVERVIEW.md`.
   across filename changes.
 - **Stage:** MVP
 - **Owner:** Dwayne Cyrus
+- **License:** MIT
 
 ## Users and outcomes
 
@@ -220,7 +221,7 @@ These scripts must exist in `package.json` after the scaffold chunk.
 
 ## Versioning and changelog
 
-- **Current version:** `0.1.0`
+- **Current version:** `0.1.0-alpha`
 - **Authoritative version source:** `src-tauri/tauri.conf.json`; the root npm
   manifest and lockfile plus the Rust manifest and lockfile mirror the app
   version and must remain consistent during a release.
@@ -279,5 +280,6 @@ These scripts must exist in `package.json` after the scaffold chunk.
 | 2026-07-16 | Use Tauri configuration as the app version source | The desktop bundle configuration defines the application version; npm and Rust manifests mirror it |
 | 2026-07-17 | Use stable vault IDs and native-only remembered paths | Notification history follows a moved vault without exposing absolute paths to the interface |
 | 2026-07-17 | Use `.anchored/trash/` for reversible deletion | Same-vault moves preserve exact note bytes, stay out of active indexes, and permit conflict-safe restore without permanent deletion |
-| 2026-07-17 | Package `0.1.0` as a private ad-hoc-signed Intel alpha | Supports local testing on Dwayne's 2015 MacBook Pro without implying public Gatekeeper or notarization readiness |
+| 2026-07-17 | Package `0.1.0-alpha` as a private ad-hoc-signed Intel alpha | Supports local testing on Dwayne's 2015 MacBook Pro without implying public Gatekeeper or notarization readiness |
 | 2026-07-17 | Defer public website, Apple Silicon, and Linux packages | These delivery targets require separate prerequisites and verification and are outside the current private-alpha scope |
+| 2026-07-17 | Release the source under MIT | Keeps Anchored permissive for use, modification, and redistribution while preserving copyright notice requirements |

@@ -1,6 +1,6 @@
 # Anchored feature reference
 
-This document records what Anchored `0.1.0` currently implements. It is a
+This document records what Anchored `0.1.0-alpha` currently implements. It is a
 pre-release reference for testers, not a promise of full Obsidian parity.
 The inventory was checked against the application source, automated tests, and
 rendered interface on 2026-07-17.
