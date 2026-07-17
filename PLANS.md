@@ -211,13 +211,16 @@ and preserves link integrity across filename changes.
       200-character query limit, 100-result limit, 10 MiB per-note limit, and
       64 MiB total-content budget. Results report skipped or limited scans.
     - Remaining verification: Native keyboard and pointer smoke test at desktop
-      and narrow window sizes.
+      and narrow window sizes using `fixtures/smoke-vault`.
     - Commits: `bb99fd4 feat(search): rank recent notes`,
       `df6500f feat(search): add quick open`,
       `e75d641 feat(search): scan vault content`,
       `9331135 feat(search): add vault search UI`,
       `2bb0682 feat(search): add note-local find`, and
-      `7df3875 test(search): cover retrieval states`
+      `7df3875 test(search): cover retrieval states`. Native-QA corrections:
+      `9f7daa3 fix(app): remove static sample notes`,
+      `5670240 test(vault): add retrieval smoke vault`, and
+      `09d1d16 fix(dev): recover stale app server`.
 
 12. [ ] **Chunk: Package release candidate**
     - Files: Tauri bundle configuration, icons/assets, README, release checklist
@@ -266,6 +269,12 @@ Every future large plan must identify:
   smoke test. Quick Open, bounded background vault-content search, file-local
   Find, stale activity cleanup, Unicode matching, focus, keyboard, empty/error,
   and a 1,000-file performance fixture pass automated verification.
+- 2026-07-17: Native QA exposed two non-product failures: a stale Vite process
+  caused the generic `beforeDevCommand` error, and hard-coded startup samples
+  appeared to be notes despite having no editable vault source. Anchored now
+  starts in an explicit no-vault state, its launch hook safely replaces only a
+  stale server from this project, and `fixtures/smoke-vault` provides six
+  validated Markdown files for repeatable retrieval and editing tests.
 
 - 2026-07-16: Overview approved; Tauri 2 and filename-triggered reference
   updates confirmed as product requirements.
