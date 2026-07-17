@@ -60,7 +60,13 @@ export function FileRail({
             onChange={(event) => onQueryChange(event.target.value)}
           />
         </label>
-        <IconButton label="New note" onClick={onCreateNote}>
+        <IconButton
+          disabled={!vaultSelected}
+          label={
+            vaultSelected ? "New note" : "Open a vault before creating a note"
+          }
+          onClick={onCreateNote}
+        >
           <NewFileIcon />
         </IconButton>
       </div>

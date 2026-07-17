@@ -8,6 +8,7 @@ import {
 import { IconButton } from "./IconButton";
 
 type TitleBarProps = {
+  canCreateNote: boolean;
   saveState?: "saved" | "unsaved" | "saving" | "conflict" | "error";
   selectingVault: boolean;
   sidebarOpen: boolean;
@@ -22,6 +23,7 @@ type TitleBarProps = {
 };
 
 export function TitleBar({
+  canCreateNote,
   saveState,
   selectingVault,
   sidebarOpen,
@@ -103,7 +105,13 @@ export function TitleBar({
         <IconButton label="Search vault" onClick={onOpenSearch}>
           <SearchIcon />
         </IconButton>
-        <IconButton label="New note" onClick={onCreateNote}>
+        <IconButton
+          disabled={!canCreateNote}
+          label={
+            canCreateNote ? "New note" : "Open a vault before creating a note"
+          }
+          onClick={onCreateNote}
+        >
           <NewFileIcon />
         </IconButton>
       </div>

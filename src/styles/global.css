@@ -224,6 +224,13 @@ input:focus-visible,
   color: var(--color-text);
 }
 
+.icon-button:disabled,
+.icon-button:disabled:hover {
+  background: transparent;
+  color: var(--color-text-subtle);
+  cursor: default;
+}
+
 .sidebar-toggle {
   display: none;
 }

@@ -94,6 +94,16 @@ describe("App", () => {
     expect(
       screen.getByRole("button", { name: "Open vault" }),
     ).toBeInTheDocument();
+    expect(
+      screen.getAllByRole("button", {
+        name: "Open a vault before creating a note",
+      }),
+    ).toHaveLength(2);
+    expect(
+      screen.getAllByRole("button", {
+        name: "Open a vault before creating a note",
+      })[0],
+    ).toBeDisabled();
     expect(screen.queryByText("Saved")).not.toBeInTheDocument();
   });
 
@@ -519,8 +529,14 @@ describe("App", () => {
 
   it("creates a local unsaved note", async () => {
     const user = userEvent.setup();
+    mockedSelectVault.mockResolvedValue({
+      files: [],
+      name: "My Vault",
+      warnings: noWarnings,
+    });
     render(<App />);
 
+    await user.click(screen.getByRole("button", { name: "Open vault" }));
     await user.click(screen.getAllByRole("button", { name: "New note" })[0]);
 
     const editor = await screen.findByRole("textbox", {
@@ -549,8 +565,14 @@ describe("App", () => {
 
   it("finds text within the active Markdown note with Command-F", async () => {
     const user = userEvent.setup();
+    mockedSelectVault.mockResolvedValue({
+      files: [],
+      name: "My Vault",
+      warnings: noWarnings,
+    });
     render(<App />);
 
+    await user.click(screen.getByRole("button", { name: "Open vault" }));
     await user.click(screen.getAllByRole("button", { name: "New note" })[0]);
     const editor = await screen.findByRole("textbox", {
       name: "Untitled.md Markdown editor",

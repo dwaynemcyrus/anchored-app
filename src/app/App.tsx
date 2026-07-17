@@ -337,6 +337,10 @@ export function App() {
   }, []);
 
   const createNote = useCallback(() => {
+    if (!vaultSelected) {
+      addVaultNotice("Open a vault before creating a note.");
+      return;
+    }
     const nextDocument = createUntitledDocument(documentsRef.current);
 
     loadRequestRef.current += 1;
@@ -356,7 +360,7 @@ export function App() {
     setDocumentActivity((current) =>
       markDocumentActive(current, nextDocument.id, Date.now()),
     );
-  }, []);
+  }, [addVaultNotice, vaultSelected]);
 
   const saveDocumentAs = useCallback(
     async (documentId: string) => {
@@ -1231,6 +1235,7 @@ export function App() {
   return (
     <div className="app-shell">
       <TitleBar
+        canCreateNote={vaultSelected}
         notificationCount={visibleNotificationHistory.length}
         saveState={activeDocument ? saveState : undefined}
         selectingVault={selectingVault}
