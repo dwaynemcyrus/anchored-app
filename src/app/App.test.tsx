@@ -98,6 +98,65 @@ describe("App", () => {
     ).not.toBeInTheDocument();
   });
 
+  it("quick-opens notes by filename or alias with the keyboard", async () => {
+    const user = userEvent.setup();
+    mockedSelectVault.mockResolvedValue({
+      files: [
+        {
+          aliases: ["Leading Well"],
+          id: "01JZQ7K8P4A6F2M9V3C5T7X1BY",
+          name: "Leadership.md",
+          parent: "Notes",
+          relativePath: "Notes/Leadership.md",
+        },
+        {
+          id: "01JZQ91T3AA6F2M9V3C5T7X1BZ",
+          name: "Reading.md",
+          parent: "Writing",
+          relativePath: "Writing/Reading.md",
+        },
+      ],
+      name: "My Vault",
+      warnings: noWarnings,
+    });
+    mockedReadVaultFile.mockResolvedValue({
+      content: "# Leadership",
+      relativePath: "Notes/Leadership.md",
+      sizeBytes: 12,
+    });
+    render(<App />);
+
+    await user.click(
+      screen.getByRole("button", { name: "Open vault: Personal" }),
+    );
+    await user.keyboard("{Meta>}p{/Meta}");
+
+    const dialog = screen.getByRole("dialog", { name: "Quick Open" });
+    const input = within(dialog).getByRole("combobox", {
+      name: "Find a note",
+    });
+    expect(input).toHaveFocus();
+    expect(
+      within(dialog).getByRole("listbox", { name: "Notes" }),
+    ).toHaveTextContent("Leadership");
+
+    await user.type(input, "Leading");
+    expect(within(dialog).getByRole("option")).toHaveTextContent(
+      "Alias: Leading Well",
+    );
+    await user.keyboard("{Enter}");
+
+    expect(
+      screen.queryByRole("dialog", { name: "Quick Open" }),
+    ).not.toBeInTheDocument();
+    expect(mockedReadVaultFile).toHaveBeenCalledWith("Notes/Leadership.md");
+    expect(
+      await screen.findByRole("textbox", {
+        name: "Leadership.md Markdown editor",
+      }),
+    ).toHaveTextContent("# Leadership");
+  });
+
   it("shows resolved backlinks and opens their source note", async () => {
     const user = userEvent.setup();
     render(<App />);

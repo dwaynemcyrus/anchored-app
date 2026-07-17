@@ -10,6 +10,7 @@ import {
 import { EditorSurface } from "./components/EditorSurface";
 import { FileRail } from "./components/FileRail";
 import { IdentityMigrationPanel } from "./components/IdentityMigrationPanel";
+import { QuickOpenPalette } from "./components/QuickOpenPalette";
 import { StatusBar } from "./components/StatusBar";
 import { TitleBar } from "./components/TitleBar";
 import {
@@ -29,9 +30,10 @@ import {
 import {
   loadDocumentActivity,
   markDocumentActive,
-  registerFirstSeenDocuments,
+  reconcileDocumentActivity,
   saveDocumentActivity,
 } from "./recentDocuments";
+import { rankQuickOpenResults } from "./retrieval";
 import {
   applyIdentityMigration,
   createVaultFile,
@@ -104,6 +106,8 @@ export function App() {
     () => new Set(["Notes"]),
   );
   const [query, setQuery] = useState("");
+  const [quickOpenQuery, setQuickOpenQuery] = useState("");
+  const [quickOpenVisible, setQuickOpenVisible] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [vaultName, setVaultName] = useState("Personal");
   const [folderOrder, setFolderOrder] = useState(initialFolders);
@@ -153,6 +157,16 @@ export function App() {
   const wikilinkCandidates = useMemo(
     () => buildWikilinkCandidates(deferredDocuments, documentActivity),
     [deferredDocuments, documentActivity],
+  );
+  const quickOpenResults = useMemo(
+    () =>
+      rankQuickOpenResults(
+        wikilinkCandidates,
+        deferredDocuments,
+        quickOpenQuery,
+        activeDocumentId,
+      ),
+    [activeDocumentId, deferredDocuments, quickOpenQuery, wikilinkCandidates],
   );
 
   const addVaultNotice = useCallback((text: string, identityAction = false) => {
@@ -374,7 +388,7 @@ export function App() {
       documentsRef.current = nextDocuments;
       setDocuments(nextDocuments);
       setDocumentActivity((current) =>
-        registerFirstSeenDocuments(current, nextDocuments, Date.now()),
+        reconcileDocumentActivity(current, nextDocuments, Date.now()),
       );
       setFolderOrder(nextFolders);
       setExpandedFolders((currentFolders) => {
@@ -462,6 +476,12 @@ export function App() {
       if (commandKey && event.key.toLowerCase() === "n") {
         event.preventDefault();
         createNote();
+      }
+
+      if (commandKey && event.key.toLowerCase() === "p") {
+        event.preventDefault();
+        setQuickOpenQuery("");
+        setQuickOpenVisible(true);
       }
 
       if (
@@ -620,7 +640,7 @@ export function App() {
       documentsRef.current = nextDocuments;
       setDocuments(nextDocuments);
       setDocumentActivity((current) =>
-        registerFirstSeenDocuments(current, nextDocuments, Date.now()),
+        reconcileDocumentActivity(current, nextDocuments, Date.now()),
       );
       setFolderOrder(nextFolders);
       setExpandedFolders((currentFolders) => {
@@ -736,7 +756,7 @@ export function App() {
       setNotesNeedingIdentity(snapshot.warnings.needsIdentity);
       setDocuments(nextDocuments);
       setDocumentActivity((current) =>
-        registerFirstSeenDocuments(current, nextDocuments, Date.now()),
+        reconcileDocumentActivity(current, nextDocuments, Date.now()),
       );
       setFolderOrder(nextFolders);
       setExpandedFolders(new Set(nextFolders));
@@ -887,6 +907,18 @@ export function App() {
             </div>
           ) : null}
         </div>
+      ) : null}
+      {quickOpenVisible ? (
+        <QuickOpenPalette
+          query={quickOpenQuery}
+          results={quickOpenResults}
+          onClose={() => setQuickOpenVisible(false)}
+          onOpen={(documentId) => {
+            setQuickOpenVisible(false);
+            void selectDocument(documentId);
+          }}
+          onQueryChange={setQuickOpenQuery}
+        />
       ) : null}
       {migrationPreview ? (
         <IdentityMigrationPanel
