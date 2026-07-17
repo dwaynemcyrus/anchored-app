@@ -253,7 +253,7 @@ and preserves link integrity across filename changes.
       `45875e5 feat(app): persist notification history`, and
       `009bb3e feat(app): add notification center`.
 
-11D. [ ] **Chunk: Scope vault continuity and trash**
+11D. [x] **Chunk: Scope vault continuity and trash**
     - Files: native vault identity, registry, trash commands and tests; typed
       frontend bridge; notification persistence; vault switcher and Trash UI;
       app composition, styles, tests, `CHANGELOG.md`, `PROJECT.md`, `PLANS.md`
@@ -291,7 +291,7 @@ and preserves link integrity across filename changes.
       switching, Forget, Trash/restore flows, focus, Escape, loading, empty,
       and error states pass automated checks. Rendered checks pass at 1280×720
       and 400×800 without console warnings or overflow. The debug native build
-      passes; disposable-vault manual confirmation remains before completion.
+      and final disposable-vault UI test pass.
     - Commits: `1edf260 docs(plan): add vault continuity`,
       `85cbaf6 feat(vault): remember vault identity`,
       `a3c2f14 feat(vault): add reversible trash`,
@@ -341,6 +341,9 @@ Every future large plan must identify:
 
 ## Progress notes
 
+- 2026-07-17: Dwayne confirmed all three Chunk 11D native checkpoints pass:
+  vault switching and scoped history, reversible Trash and restore, and a
+  conflict-safe restore refusal. Chunk 11D is complete.
 - 2026-07-17: Chunk 11D implementation and automated verification completed.
   Anchored now keeps a stable hidden vault identity, native-only remembered
   paths, vault-scoped notifications, quick switching with Forget, and exact-
