@@ -1,6 +1,7 @@
-import { useEffect, useRef } from "react";
+import { useRef } from "react";
 
 import type { TrashEntry } from "../../lib/tauri/vault";
+import { useModalDialog } from "./useModalDialog";
 
 type TrashPanelProps = {
   entries: TrashEntry[];
@@ -27,25 +28,20 @@ export function TrashPanel({
   onRestore,
 }: TrashPanelProps) {
   const closeButtonRef = useRef<HTMLButtonElement>(null);
-  const previousFocusRef = useRef<HTMLElement | null>(null);
-
-  useEffect(() => {
-    previousFocusRef.current = document.activeElement as HTMLElement | null;
-    closeButtonRef.current?.focus();
-    return () => previousFocusRef.current?.focus();
-  }, []);
+  const { dialogRef, onDialogKeyDown } = useModalDialog<HTMLElement>({
+    initialFocusRef: closeButtonRef,
+    onClose,
+  });
 
   return (
     <aside
+      ref={dialogRef}
       aria-label="Trash"
+      aria-modal="true"
       className="continuity-panel"
       role="dialog"
-      onKeyDown={(event) => {
-        if (event.key === "Escape") {
-          event.preventDefault();
-          onClose();
-        }
-      }}
+      tabIndex={-1}
+      onKeyDown={onDialogKeyDown}
     >
       <header className="continuity-panel__header">
         <div>

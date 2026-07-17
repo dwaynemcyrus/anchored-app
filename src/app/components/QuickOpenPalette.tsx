@@ -1,6 +1,7 @@
-import { useEffect, useId, useRef, useState } from "react";
+import { useId, useRef, useState } from "react";
 
 import type { QuickOpenResult } from "../retrieval";
+import { useModalDialog } from "./useModalDialog";
 
 type QuickOpenPaletteProps = {
   query: string;
@@ -19,18 +20,16 @@ export function QuickOpenPalette({
 }: QuickOpenPaletteProps) {
   const [selectedIndex, setSelectedIndex] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
-  const previousFocusRef = useRef<HTMLElement | null>(null);
   const listboxId = useId();
   const safeSelectedIndex = Math.min(
     selectedIndex,
     Math.max(0, results.length - 1),
   );
 
-  useEffect(() => {
-    previousFocusRef.current = document.activeElement as HTMLElement | null;
-    inputRef.current?.focus();
-    return () => previousFocusRef.current?.focus();
-  }, []);
+  const { dialogRef, onDialogKeyDown } = useModalDialog<HTMLElement>({
+    initialFocusRef: inputRef,
+    onClose,
+  });
 
   function updateQuery(nextQuery: string) {
     setSelectedIndex(0);
@@ -46,10 +45,13 @@ export function QuickOpenPalette({
       }}
     >
       <section
+        ref={dialogRef}
         aria-label="Quick Open"
         aria-modal="true"
         className="retrieval-palette"
         role="dialog"
+        tabIndex={-1}
+        onKeyDown={onDialogKeyDown}
       >
         <label className="retrieval-palette__search">
           <span className="visually-hidden">Find a note</span>
@@ -71,10 +73,7 @@ export function QuickOpenPalette({
             value={query}
             onChange={(event) => updateQuery(event.target.value)}
             onKeyDown={(event) => {
-              if (event.key === "Escape") {
-                event.preventDefault();
-                onClose();
-              } else if (event.key === "ArrowDown" && results.length > 0) {
+              if (event.key === "ArrowDown" && results.length > 0) {
                 event.preventDefault();
                 setSelectedIndex((current) => (current + 1) % results.length);
               } else if (event.key === "ArrowUp" && results.length > 0) {

@@ -1,10 +1,11 @@
-import { useEffect, useRef } from "react";
+import { useRef } from "react";
 
 import {
   NOTIFICATION_RETENTION_DAYS,
   type NotificationHistoryEntry,
   type NotificationKind,
 } from "../notificationHistory";
+import { useModalDialog } from "./useModalDialog";
 
 type NotificationCenterProps = {
   entries: NotificationHistoryEntry[];
@@ -43,26 +44,21 @@ export function NotificationCenter({
   onResolve,
 }: NotificationCenterProps) {
   const closeButtonRef = useRef<HTMLButtonElement>(null);
-  const previousFocusRef = useRef<HTMLElement | null>(null);
   const canClear = entries.some((entry) => !activeEntry(entry));
-
-  useEffect(() => {
-    previousFocusRef.current = document.activeElement as HTMLElement | null;
-    closeButtonRef.current?.focus();
-    return () => previousFocusRef.current?.focus();
-  }, []);
+  const { dialogRef, onDialogKeyDown } = useModalDialog<HTMLElement>({
+    initialFocusRef: closeButtonRef,
+    onClose,
+  });
 
   return (
     <aside
+      ref={dialogRef}
       aria-label="Notification history"
+      aria-modal="true"
       className="notification-center"
       role="dialog"
-      onKeyDown={(event) => {
-        if (event.key === "Escape") {
-          event.preventDefault();
-          onClose();
-        }
-      }}
+      tabIndex={-1}
+      onKeyDown={onDialogKeyDown}
     >
       <header className="notification-center__header">
         <div>

@@ -1,4 +1,7 @@
+import { useRef } from "react";
+
 import type { IdentityMigrationPreview } from "../../lib/tauri/vault";
+import { useModalDialog } from "./useModalDialog";
 
 type IdentityMigrationPanelProps = {
   error?: string;
@@ -23,12 +26,21 @@ export function IdentityMigrationPanel({
   onClose,
 }: IdentityMigrationPanelProps) {
   const visibleEligible = preview.eligibleFiles.slice(0, 100);
+  const closeButtonRef = useRef<HTMLButtonElement>(null);
+  const { dialogRef, onDialogKeyDown } = useModalDialog<HTMLElement>({
+    initialFocusRef: closeButtonRef,
+    onClose,
+  });
 
   return (
     <section
+      ref={dialogRef}
       aria-labelledby="identity-migration-title"
+      aria-modal="true"
       className="identity-migration"
       role="dialog"
+      tabIndex={-1}
+      onKeyDown={onDialogKeyDown}
     >
       <div className="identity-migration__header">
         <div>
@@ -38,7 +50,7 @@ export function IdentityMigrationPanel({
             Markdown content will otherwise remain unchanged.
           </p>
         </div>
-        <button type="button" onClick={onClose}>
+        <button ref={closeButtonRef} type="button" onClick={onClose}>
           Close
         </button>
       </div>

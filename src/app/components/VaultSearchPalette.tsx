@@ -1,6 +1,7 @@
-import { useEffect, useId, useRef, useState } from "react";
+import { useId, useRef, useState } from "react";
 
 import type { VaultSearchResult } from "../../lib/tauri/vault";
+import { useModalDialog } from "./useModalDialog";
 
 export type VaultSearchState =
   | { status: "idle" }
@@ -27,7 +28,6 @@ export function VaultSearchPalette({
 }: VaultSearchPaletteProps) {
   const [selectedIndex, setSelectedIndex] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
-  const previousFocusRef = useRef<HTMLElement | null>(null);
   const listboxId = useId();
   const matches =
     searchState.status === "success" ? searchState.result.matches : [];
@@ -36,11 +36,10 @@ export function VaultSearchPalette({
     Math.max(0, matches.length - 1),
   );
 
-  useEffect(() => {
-    previousFocusRef.current = document.activeElement as HTMLElement | null;
-    inputRef.current?.focus();
-    return () => previousFocusRef.current?.focus();
-  }, []);
+  const { dialogRef, onDialogKeyDown } = useModalDialog<HTMLElement>({
+    initialFocusRef: inputRef,
+    onClose,
+  });
 
   function updateQuery(nextQuery: string) {
     setSelectedIndex(0);
@@ -56,10 +55,13 @@ export function VaultSearchPalette({
       }}
     >
       <section
+        ref={dialogRef}
         aria-label="Search vault"
         aria-modal="true"
         className="retrieval-palette"
         role="dialog"
+        tabIndex={-1}
+        onKeyDown={onDialogKeyDown}
       >
         <label className="retrieval-palette__search">
           <span className="visually-hidden">Search Markdown content</span>
@@ -82,10 +84,7 @@ export function VaultSearchPalette({
             value={query}
             onChange={(event) => updateQuery(event.target.value)}
             onKeyDown={(event) => {
-              if (event.key === "Escape") {
-                event.preventDefault();
-                onClose();
-              } else if (event.key === "ArrowDown" && matches.length > 0) {
+              if (event.key === "ArrowDown" && matches.length > 0) {
                 event.preventDefault();
                 setSelectedIndex((current) => (current + 1) % matches.length);
               } else if (event.key === "ArrowUp" && matches.length > 0) {
