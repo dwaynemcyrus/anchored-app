@@ -4,6 +4,7 @@ import type { AnchoredDocument } from "./documents";
 import {
   loadDocumentActivity,
   markDocumentActive,
+  reconcileDocumentActivity,
   registerFirstSeenDocuments,
   saveDocumentActivity,
 } from "./recentDocuments";
@@ -94,6 +95,29 @@ describe("recent document activity", () => {
       firstSeenAt: 10,
       lastActiveAt: 30,
     });
+  });
+
+  it("drops stale activity while registering newly discovered notes", () => {
+    const activity = new Map([
+      ["vault-id:kept", { firstSeenAt: 10, lastActiveAt: 20 }],
+      ["vault-id:missing", { firstSeenAt: 5, lastActiveAt: 30 }],
+    ]);
+
+    expect(
+      Array.from(
+        reconcileDocumentActivity(
+          activity,
+          [
+            note("vault-id:kept", "Writing/Kept.md"),
+            note("vault-id:new", "Notes/New.md"),
+          ],
+          40,
+        ),
+      ),
+    ).toEqual([
+      ["vault-id:kept", { firstSeenAt: 10, lastActiveAt: 20 }],
+      ["vault-id:new", { firstSeenAt: 40, lastActiveAt: 0 }],
+    ]);
   });
 
   it("persists only bounded stable identifiers without filenames or paths", () => {

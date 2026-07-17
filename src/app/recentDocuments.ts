@@ -118,6 +118,25 @@ export function registerFirstSeenDocuments(
   return next;
 }
 
+export function reconcileDocumentActivity(
+  current: ReadonlyMap<string, DocumentActivity>,
+  documents: AnchoredDocument[],
+  now: number,
+): Map<string, DocumentActivity> {
+  const currentDocumentIds = new Set(
+    documents
+      .filter((document) => document.relativePath)
+      .map((document) => document.id),
+  );
+  const retained = new Map(
+    Array.from(current).filter(([documentId]) =>
+      currentDocumentIds.has(documentId),
+    ),
+  );
+
+  return registerFirstSeenDocuments(retained, documents, now);
+}
+
 export function markDocumentActive(
   current: ReadonlyMap<string, DocumentActivity>,
   documentId: string,
