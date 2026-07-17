@@ -80,6 +80,13 @@ Git commit. The format follows [Keep a Changelog], and releases follow
 
 ### Fixed
 
+- New notes, including blank notes, now save automatically within two seconds
+  using collision-safe numbered Untitled filenames. The native macOS close
+  control is no longer intercepted or blocked by an unsaved-note prompt.
+- Routine vault file-count notices no longer interrupt writing; the current
+  Markdown-file count appears in the status bar instead.
+- Minor in-app notices now dismiss themselves after 12 seconds, while errors,
+  conflicts, and action-required notices remain visible.
 - Startup now shows an explicit no-vault state instead of presenting static
   demonstration notes as though they were editable vault files.
 - Development launches now replace only this project's stale interface server

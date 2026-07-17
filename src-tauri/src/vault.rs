@@ -530,6 +530,41 @@ pub async fn create_vault_file(
 }
 
 #[tauri::command]
+pub async fn create_untitled_vault_file(
+    state: State<'_, VaultState>,
+    content: String,
+) -> Result<VaultDocument, VaultError> {
+    let root = state
+        .root
+        .read()
+        .map_err(|_| VaultError::state("The selected vault state could not be read."))?
+        .clone()
+        .ok_or_else(|| VaultError::state("Select a vault before creating a Markdown file."))?;
+
+    create_untitled_markdown_file(&root, &content)
+}
+
+fn create_untitled_markdown_file(root: &Path, content: &str) -> Result<VaultDocument, VaultError> {
+    for count in 1..=10_000 {
+        let name = if count == 1 {
+            "Untitled.md".to_owned()
+        } else {
+            format!("Untitled {count}.md")
+        };
+        let destination = root.join(name);
+        match create_markdown_file(root, &destination, content) {
+            Ok(document) => return Ok(document),
+            Err(error) if error.code == "vaultFileExists" => continue,
+            Err(error) => return Err(error),
+        }
+    }
+
+    Err(VaultError::state(
+        "Anchored could not find an available Untitled filename in this vault.",
+    ))
+}
+
+#[tauri::command]
 pub async fn rename_vault_file(
     app: AppHandle,
     state: State<'_, VaultState>,
@@ -2075,12 +2110,12 @@ mod tests {
 
     use super::{
         apply_identity_migration_plan, build_identity_migration_preview, canonical_vault_root,
-        create_markdown_file, enrich_vault_metadata, inspect_note_identity, read_markdown_file,
-        reconcile_vault_identities, recover_rename_transaction, rename_markdown_file,
-        resolve_new_vault_markdown_file, save_markdown_file, scan_vault, search_markdown_files,
-        write_rename_journal, NoteIdentityStatus, RenameJournal, RenameJournalEntry,
-        RenameJournalPhase, RenameOutcome, MAX_MARKDOWN_FILE_BYTES, MAX_SEARCH_RESULTS,
-        RENAME_JOURNAL_NAME,
+        create_markdown_file, create_untitled_markdown_file, enrich_vault_metadata,
+        inspect_note_identity, read_markdown_file, reconcile_vault_identities,
+        recover_rename_transaction, rename_markdown_file, resolve_new_vault_markdown_file,
+        save_markdown_file, scan_vault, search_markdown_files, write_rename_journal,
+        NoteIdentityStatus, RenameJournal, RenameJournalEntry, RenameJournalPhase, RenameOutcome,
+        MAX_MARKDOWN_FILE_BYTES, MAX_SEARCH_RESULTS, RENAME_JOURNAL_NAME,
     };
 
     #[test]
@@ -2481,6 +2516,30 @@ mod tests {
                 .file_name()
                 .to_string_lossy()
                 .contains(".tmp")));
+    }
+
+    #[test]
+    fn creates_a_numbered_untitled_file_without_replacing_existing_notes() {
+        let vault = tempdir().expect("create fixture vault");
+        fs::write(vault.path().join("Untitled.md"), "# First\n").expect("write first note");
+        fs::write(vault.path().join("Untitled 2.md"), "# Second\n").expect("write second note");
+
+        let document =
+            create_untitled_markdown_file(vault.path(), "").expect("create numbered untitled note");
+
+        assert_eq!(document.relative_path, "Untitled 3.md");
+        assert!(matches!(
+            inspect_note_identity(&document.content),
+            NoteIdentityStatus::Present(_)
+        ));
+        assert_eq!(
+            fs::read_to_string(vault.path().join("Untitled.md")).expect("read first note"),
+            "# First\n"
+        );
+        assert_eq!(
+            fs::read_to_string(vault.path().join("Untitled 2.md")).expect("read second note"),
+            "# Second\n"
+        );
     }
 
     #[test]

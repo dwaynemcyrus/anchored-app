@@ -21,6 +21,7 @@ pub fn run() {
             vault::read_vault_file,
             vault::save_vault_file,
             vault::create_vault_file,
+            vault::create_untitled_vault_file,
             vault::rename_vault_file,
             vault::preview_identity_migration,
             vault::apply_identity_migration

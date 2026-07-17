@@ -155,6 +155,12 @@ export function createVaultFile(
   return invoke<VaultDocument | null>("create_vault_file", request);
 }
 
+export function createUntitledVaultFile(
+  content: string,
+): Promise<VaultDocument> {
+  return invoke<VaultDocument>("create_untitled_vault_file", { content });
+}
+
 export function renameVaultFile(
   relativePath: string,
 ): Promise<RenameVaultFileResult | null> {

@@ -12,7 +12,6 @@ import { FileRail } from "./components/FileRail";
 import { IdentityMigrationPanel } from "./components/IdentityMigrationPanel";
 import { NotificationCenter } from "./components/NotificationCenter";
 import { QuickOpenPalette } from "./components/QuickOpenPalette";
-import { QuitConfirmation } from "./components/QuitConfirmation";
 import { StatusBar } from "./components/StatusBar";
 import { TitleBar } from "./components/TitleBar";
 import { TrashPanel } from "./components/TrashPanel";
@@ -40,7 +39,6 @@ import {
   saveDocumentActivity,
 } from "./recentDocuments";
 import { rankQuickOpenResults } from "./retrieval";
-import { useCloseProtection } from "./closeProtection";
 import {
   clearResolvedNotifications,
   GENERAL_NOTIFICATION_SCOPE,
@@ -54,6 +52,7 @@ import {
 } from "./notificationHistory";
 import {
   applyIdentityMigration,
+  createUntitledVaultFile,
   createVaultFile,
   forgetVault,
   listRememberedVaults,
@@ -75,6 +74,7 @@ import {
 } from "../lib/tauri/vault";
 
 const ACTIVITY_REFRESH_INTERVAL_MS = 60_000;
+const MINOR_NOTICE_DURATION_MS = 12_000;
 
 type DocumentLoadState =
   | { status: "idle" }
@@ -84,12 +84,14 @@ type DocumentLoadState =
 type VaultNotice = {
   id: number;
   identityAction: boolean;
+  persistent: boolean;
   text: string;
 };
 
 type VaultNoticeOptions = {
   history?: Omit<NewNotificationHistoryEntry, "id" | "message" | "scopeId">;
   identityAction?: boolean;
+  persistent?: boolean;
 };
 
 function readErrorMessage(error: unknown): string {
@@ -106,15 +108,17 @@ function readErrorMessage(error: unknown): string {
 }
 
 function vaultSummaryMessage(snapshot: VaultSnapshot): string {
-  const notices = [`${snapshot.files.length} Markdown files found.`];
+  const notices: string[] = [];
   if (snapshot.warnings.addedIdentities > 0) {
+    const count = snapshot.warnings.addedIdentities;
     notices.push(
-      `${snapshot.warnings.addedIdentities} new note identities added.`,
+      `${count} new note identit${count === 1 ? "y was" : "ies were"} added.`,
     );
   }
   if (snapshot.warnings.needsIdentity > 0) {
+    const count = snapshot.warnings.needsIdentity;
     notices.push(
-      `${snapshot.warnings.needsIdentity} existing notes need identities.`,
+      `${count} existing note${count === 1 ? " needs" : "s need"} identities.`,
     );
   }
   if (snapshot.warnings.identityConflicts > 0) {
@@ -184,7 +188,6 @@ export function App() {
   const [vaultNotices, setVaultNotices] = useState<VaultNotice[]>([]);
   const [notificationHistoryVisible, setNotificationHistoryVisible] =
     useState(false);
-  const [quitConfirmationVisible, setQuitConfirmationVisible] = useState(false);
   const [notificationHistory, setNotificationHistory] = useState(() => {
     try {
       return loadNotificationHistory(window.localStorage, Date.now());
@@ -217,6 +220,7 @@ export function App() {
   const searchRequestRef = useRef(0);
   const rescanInFlightRef = useRef(false);
   const vaultNoticeIdRef = useRef(0);
+  const vaultNoticeTimeoutsRef = useRef<Map<number, number>>(new Map());
   const notificationIdRef = useRef(0);
   const documentsRef = useRef(documents);
   const vaultIdRef = useRef("");
@@ -254,10 +258,6 @@ export function App() {
     () => notificationHistoryForScope(notificationHistory, notificationScopeId),
     [notificationHistory, notificationScopeId],
   );
-  const unfinishedDocumentCount = documents.filter(
-    documentHasUnfinishedEdits,
-  ).length;
-
   const addHistoryEntry = useCallback(
     (
       message: string,
@@ -298,6 +298,7 @@ export function App() {
       const notice = {
         id: vaultNoticeIdRef.current,
         identityAction: options.identityAction ?? false,
+        persistent: options.persistent ?? options.identityAction ?? false,
         text,
       };
       setVaultNotices((currentNotices) => {
@@ -313,20 +314,47 @@ export function App() {
     [addHistoryEntry],
   );
 
+  useEffect(() => {
+    const activeNoticeIds = new Set(vaultNotices.map((notice) => notice.id));
+
+    vaultNoticeTimeoutsRef.current.forEach((timeout, noticeId) => {
+      if (!activeNoticeIds.has(noticeId)) {
+        window.clearTimeout(timeout);
+        vaultNoticeTimeoutsRef.current.delete(noticeId);
+      }
+    });
+
+    vaultNotices.forEach((notice) => {
+      if (notice.persistent || vaultNoticeTimeoutsRef.current.has(notice.id)) {
+        return;
+      }
+
+      const timeout = window.setTimeout(() => {
+        vaultNoticeTimeoutsRef.current.delete(notice.id);
+        setVaultNotices((currentNotices) =>
+          currentNotices.filter(
+            (currentNotice) => currentNotice.id !== notice.id,
+          ),
+        );
+      }, MINOR_NOTICE_DURATION_MS);
+      vaultNoticeTimeoutsRef.current.set(notice.id, timeout);
+    });
+  }, [vaultNotices]);
+
+  useEffect(
+    () => () => {
+      vaultNoticeTimeoutsRef.current.forEach((timeout) =>
+        window.clearTimeout(timeout),
+      );
+      vaultNoticeTimeoutsRef.current.clear();
+    },
+    [],
+  );
+
   const hasUnfinishedEdits = useCallback(
     () => documentsRef.current.some(documentHasUnfinishedEdits),
     [],
   );
-
-  const discardEditsAndClose = useCloseProtection({
-    hasUnfinishedEdits: unfinishedDocumentCount > 0,
-    onCloseBlocked: () => setQuitConfirmationVisible(true),
-    onError: () =>
-      addVaultNotice(
-        "Anchored could not install its quit protection. Save every note before closing the app.",
-        { history: { kind: "error" } },
-      ),
-  });
 
   const refreshRememberedVaults = useCallback(async () => {
     setRememberedVaultsLoading(true);
@@ -354,15 +382,99 @@ export function App() {
     }
   }, []);
 
+  const saveUntitledDocument = useCallback(
+    async (documentId: string) => {
+      const document = documentsRef.current.find(
+        (candidate) => candidate.id === documentId,
+      );
+      if (
+        !document ||
+        document.relativePath ||
+        document.sourceText === undefined ||
+        document.saveState === "saving"
+      ) {
+        return;
+      }
+
+      const contentAtSave = document.sourceText;
+      setDocuments((currentDocuments) =>
+        currentDocuments.map((current) =>
+          current.id === documentId
+            ? { ...current, saveMessage: undefined, saveState: "saving" }
+            : current,
+        ),
+      );
+
+      try {
+        const savedDocument = await createUntitledVaultFile(contentAtSave);
+        const pathParts = savedDocument.relativePath.split("/");
+        const name = pathParts.pop() ?? document.name;
+        const folder = pathParts.join("/") || vaultName;
+        const currentDocument = documentsRef.current.find(
+          (candidate) => candidate.id === documentId,
+        );
+        const hasNewerEdit = currentDocument?.sourceText !== contentAtSave;
+
+        setDocuments((currentDocuments) =>
+          currentDocuments.map((current) =>
+            current.id === documentId
+              ? {
+                  ...current,
+                  folder,
+                  name,
+                  relativePath: savedDocument.relativePath,
+                  saveMessage: undefined,
+                  saveState: hasNewerEdit ? "unsaved" : "saved",
+                  savedSourceText: savedDocument.content,
+                  sizeBytes: savedDocument.sizeBytes,
+                  sourceText: hasNewerEdit
+                    ? current.sourceText
+                    : savedDocument.content,
+                }
+              : current,
+          ),
+        );
+        setExpandedFolders((currentFolders) =>
+          new Set(currentFolders).add(folder),
+        );
+        setFolderOrder((currentFolders) =>
+          currentFolders.includes(folder)
+            ? currentFolders
+            : [...currentFolders, folder],
+        );
+        resolveHistorySource(document.id);
+      } catch (error) {
+        setDocuments((currentDocuments) =>
+          currentDocuments.map((current) =>
+            current.id === documentId
+              ? {
+                  ...current,
+                  saveMessage: readErrorMessage(error),
+                  saveState: "error",
+                }
+              : current,
+          ),
+        );
+        addHistoryEntry(`${document.name} could not be saved.`, {
+          kind: "error",
+          sourceId: document.id,
+        });
+      }
+    },
+    [addHistoryEntry, resolveHistorySource, vaultName],
+  );
+
   const createNote = useCallback(() => {
     if (!vaultSelected) {
       addVaultNotice("Open a vault before creating a note.");
       return;
     }
     const nextDocument = createUntitledDocument(documentsRef.current);
+    const nextDocuments = [...documentsRef.current, nextDocument];
 
     loadRequestRef.current += 1;
-    setDocuments((currentDocuments) => [...currentDocuments, nextDocument]);
+    documentsRef.current = nextDocuments;
+    setDocuments(nextDocuments);
     setActiveDocumentId(nextDocument.id);
     setExpandedFolders((currentFolders) =>
       new Set(currentFolders).add(nextDocument.folder),
@@ -378,7 +490,8 @@ export function App() {
     setDocumentActivity((current) =>
       markDocumentActive(current, nextDocument.id, Date.now()),
     );
-  }, [addVaultNotice, vaultSelected]);
+    void saveUntitledDocument(nextDocument.id);
+  }, [addVaultNotice, saveUntitledDocument, vaultSelected]);
 
   const saveDocumentAs = useCallback(
     async (documentId: string) => {
@@ -646,10 +759,12 @@ export function App() {
       setTrashVisible(false);
       setNotificationHistoryVisible(false);
       recordSnapshotEvents(snapshot);
-      addVaultNotice(vaultSummaryMessage(snapshot), {
-        history: { kind: "vault" },
-        identityAction: snapshot.warnings.needsIdentity > 0,
-      });
+      const summary = vaultSummaryMessage(snapshot);
+      if (summary) {
+        addVaultNotice(summary, {
+          identityAction: snapshot.warnings.needsIdentity > 0,
+        });
+      }
     },
     [addVaultNotice, recordSnapshotEvents],
   );
@@ -680,9 +795,12 @@ export function App() {
       });
       setNotesNeedingIdentity(snapshot.warnings.needsIdentity);
       recordSnapshotEvents(snapshot);
-      addVaultNotice(vaultSummaryMessage(snapshot), {
-        identityAction: snapshot.warnings.needsIdentity > 0,
-      });
+      const summary = vaultSummaryMessage(snapshot);
+      if (summary) {
+        addVaultNotice(summary, {
+          identityAction: snapshot.warnings.needsIdentity > 0,
+        });
+      }
     },
     [addVaultNotice, recordSnapshotEvents],
   );
@@ -701,7 +819,7 @@ export function App() {
       if (!snapshot) return;
       adoptVaultSnapshot(snapshot);
     } catch (error) {
-      addVaultNotice(readErrorMessage(error));
+      addVaultNotice(readErrorMessage(error), { persistent: true });
       addHistoryEntry("Vault refresh could not be completed.", {
         kind: "error",
       });
@@ -719,7 +837,7 @@ export function App() {
     } catch (error) {
       const message = readErrorMessage(error);
       setMigrationError(message);
-      addVaultNotice(message);
+      addVaultNotice(message, { persistent: true });
       addHistoryEntry("Identity migration could not be reviewed.", {
         kind: "error",
       });
@@ -751,12 +869,6 @@ export function App() {
       setMigrationStatus("ready");
     }
   }
-
-  useEffect(() => {
-    if (unfinishedDocumentCount === 0) {
-      setQuitConfirmationVisible(false);
-    }
-  }, [unfinishedDocumentCount]);
 
   useEffect(() => {
     try {
@@ -953,7 +1065,7 @@ export function App() {
           );
         }
       } catch (error) {
-        addVaultNotice(readErrorMessage(error));
+        addVaultNotice(readErrorMessage(error), { persistent: true });
         addHistoryEntry("A vault search result could not be reopened.", {
           kind: "error",
         });
@@ -964,6 +1076,7 @@ export function App() {
     if (!document) {
       addVaultNotice("That search result is no longer in the vault.", {
         history: { kind: "error" },
+        persistent: true,
       });
       return;
     }
@@ -1044,6 +1157,7 @@ export function App() {
         renameCompleted
           ? `The note was renamed, but Anchored could not refresh it: ${readErrorMessage(error)}`
           : readErrorMessage(error),
+        { persistent: true },
       );
       addHistoryEntry(
         renameCompleted
@@ -1086,7 +1200,7 @@ export function App() {
         history: { kind: "trash" },
       });
     } catch (error) {
-      addVaultNotice(readErrorMessage(error));
+      addVaultNotice(readErrorMessage(error), { persistent: true });
       addHistoryEntry(`${document.name} could not be moved to Trash.`, {
         kind: "error",
       });
@@ -1204,7 +1318,7 @@ export function App() {
     } catch {
       addVaultNotice(
         "Vault selection is available in the Anchored desktop app.",
-        { history: { kind: "error" } },
+        { history: { kind: "error" }, persistent: true },
       );
     } finally {
       setSelectingVault(false);
@@ -1492,14 +1606,15 @@ export function App() {
           }}
         />
       ) : null}
-      {quitConfirmationVisible ? (
-        <QuitConfirmation
-          unfinishedCount={unfinishedDocumentCount}
-          onCancel={() => setQuitConfirmationVisible(false)}
-          onDiscard={() => void discardEditsAndClose()}
-        />
-      ) : null}
-      <StatusBar document={activeDocument} vaultName={vaultName} />
+      <StatusBar
+        document={activeDocument}
+        vaultFileCount={
+          vaultSelected
+            ? documents.filter((document) => document.relativePath).length
+            : undefined
+        }
+        vaultName={vaultName}
+      />
     </div>
   );
 }

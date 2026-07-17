@@ -1,9 +1,17 @@
-import { render, screen, waitFor, within } from "@testing-library/react";
+import {
+  act,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
   applyIdentityMigration,
+  createUntitledVaultFile,
   createVaultFile,
   forgetVault,
   listRememberedVaults,
@@ -23,6 +31,7 @@ import { App } from "./App";
 
 vi.mock("../lib/tauri/vault", () => ({
   applyIdentityMigration: vi.fn(),
+  createUntitledVaultFile: vi.fn(),
   createVaultFile: vi.fn(),
   forgetVault: vi.fn(),
   listRememberedVaults: vi.fn(),
@@ -41,6 +50,7 @@ vi.mock("../lib/tauri/vault", () => ({
 
 const mockedSelectVault = vi.mocked(selectVault);
 const mockedApplyIdentityMigration = vi.mocked(applyIdentityMigration);
+const mockedCreateUntitledVaultFile = vi.mocked(createUntitledVaultFile);
 const mockedCreateVaultFile = vi.mocked(createVaultFile);
 const mockedForgetVault = vi.mocked(forgetVault);
 const mockedListRememberedVaults = vi.mocked(listRememberedVaults);
@@ -63,9 +73,14 @@ const noWarnings = {
 };
 
 describe("App", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   beforeEach(() => {
     window.localStorage.clear();
     mockedApplyIdentityMigration.mockReset();
+    mockedCreateUntitledVaultFile.mockReset();
     mockedCreateVaultFile.mockReset();
     mockedForgetVault.mockReset();
     mockedListRememberedVaults.mockReset();
@@ -80,6 +95,9 @@ describe("App", () => {
     mockedSaveVaultFile.mockReset();
     mockedSearchVault.mockReset();
     mockedRestoreVaultFileFromTrash.mockReset();
+    mockedCreateUntitledVaultFile.mockImplementation(
+      () => new Promise(() => {}),
+    );
     mockedListRememberedVaults.mockResolvedValue([]);
     mockedListVaultTrash.mockResolvedValue([]);
   });
@@ -122,7 +140,7 @@ describe("App", () => {
     }
   });
 
-  it("keeps a timestamped vault event in dismissible notification history", async () => {
+  it("shows the vault file count without creating a notification", async () => {
     const user = userEvent.setup();
     mockedSelectVault.mockResolvedValue({
       files: [],
@@ -132,23 +150,61 @@ describe("App", () => {
     render(<App />);
 
     await user.click(screen.getByRole("button", { name: "Open vault" }));
+    expect(screen.getByText("0 Markdown files")).toBeVisible();
     await user.click(
-      screen.getByRole("button", { name: "Open notification history (1)" }),
+      screen.getByRole("button", { name: "Open notification history" }),
     );
 
     const history = screen.getByRole("dialog", {
       name: "Notification history",
     });
-    expect(within(history).getByText("0 Markdown files found.")).toBeVisible();
-    expect(within(history).getByText("Vault")).toBeVisible();
-    expect(within(history).getByRole("time")).toHaveAttribute("dateTime");
-
-    await user.click(
-      within(history).getByRole("button", {
-        name: "Delete notification: 0 Markdown files found.",
-      }),
-    );
     expect(within(history).getByText("No notifications yet.")).toBeVisible();
+  });
+
+  it("auto-dismisses minor notices after 12 seconds", async () => {
+    vi.useFakeTimers();
+    mockedSelectVault.mockResolvedValue({
+      files: [],
+      name: "My Vault",
+      warnings: { ...noWarnings, addedIdentities: 1 },
+    });
+    render(<App />);
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Open vault" }));
+      await Promise.resolve();
+    });
+    expect(screen.getByText("1 new note identity was added.")).toBeVisible();
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(12_000);
+    });
+
+    expect(
+      screen.queryByText("1 new note identity was added."),
+    ).not.toBeInTheDocument();
+  });
+
+  it("keeps action-required notices visible after 12 seconds", async () => {
+    vi.useFakeTimers();
+    mockedSelectVault.mockResolvedValue({
+      files: [],
+      name: "My Vault",
+      warnings: { ...noWarnings, needsIdentity: 1 },
+    });
+    render(<App />);
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Open vault" }));
+      await Promise.resolve();
+    });
+    expect(screen.getByText("1 existing note needs identities.")).toBeVisible();
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(12_000);
+    });
+
+    expect(screen.getByText("1 existing note needs identities.")).toBeVisible();
   });
 
   it("opens and forgets a remembered vault from the switcher", async () => {
@@ -527,7 +583,7 @@ describe("App", () => {
     ).toHaveTextContent("# Leadership");
   });
 
-  it("creates a local unsaved note", async () => {
+  it("keeps newer local drafts available while their first saves run", async () => {
     const user = userEvent.setup();
     mockedSelectVault.mockResolvedValue({
       files: [],
@@ -543,7 +599,7 @@ describe("App", () => {
       name: "Untitled.md Markdown editor",
     });
     expect(editor).toHaveAttribute("aria-placeholder", "Start writing…");
-    expect(screen.getByText("Unsaved")).toBeInTheDocument();
+    expect(screen.getByText("Saving…")).toBeInTheDocument();
 
     await user.click(editor);
     await user.keyboard("# Draft");
@@ -561,6 +617,50 @@ describe("App", () => {
         name: "Untitled.md Markdown editor",
       }),
     ).toHaveTextContent("# Draft");
+  });
+
+  it("starts saving an empty new note immediately", async () => {
+    const identifiedContent = "---\nid: 01JZQ7K8P4A6F2M9V3C5T7X1BY\n---\n";
+    let finishCreatingNote:
+      | ((value: {
+          content: string;
+          relativePath: string;
+          sizeBytes: number;
+        }) => void)
+      | null = null;
+    mockedSelectVault.mockResolvedValue({
+      files: [],
+      name: "My Vault",
+      warnings: noWarnings,
+    });
+    mockedCreateUntitledVaultFile.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          finishCreatingNote = resolve;
+        }),
+    );
+    render(<App />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Open vault" }));
+    await act(async () => {
+      await Promise.resolve();
+    });
+    fireEvent.click(screen.getAllByRole("button", { name: "New note" })[0]);
+
+    expect(mockedCreateUntitledVaultFile).toHaveBeenCalledOnce();
+    expect(mockedCreateUntitledVaultFile).toHaveBeenCalledWith("");
+    expect(screen.getByText("Saving…")).toBeInTheDocument();
+
+    await act(async () => {
+      finishCreatingNote?.({
+        content: identifiedContent,
+        relativePath: "Untitled.md",
+        sizeBytes: identifiedContent.length,
+      });
+    });
+
+    expect(screen.getByText("Saved")).toBeInTheDocument();
+    expect(screen.getByText("1 Markdown file")).toBeInTheDocument();
   });
 
   it("finds text within the active Markdown note with Command-F", async () => {
@@ -740,15 +840,8 @@ describe("App", () => {
     expect(
       screen.queryByRole("button", { name: "Leadership.md" }),
     ).not.toBeInTheDocument();
-    expect(screen.getByText("1 Markdown files found.")).toBeInTheDocument();
-    await user.click(
-      screen.getByRole("button", {
-        name: "Dismiss notification: 1 Markdown files found.",
-      }),
-    );
-    expect(
-      screen.queryByText("1 Markdown files found."),
-    ).not.toBeInTheDocument();
+    expect(screen.getByText("1 Markdown file")).toBeInTheDocument();
+    expect(screen.queryByLabelText("Notifications")).not.toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "Own Note.md" }));
 
@@ -796,23 +889,19 @@ describe("App", () => {
     expect(
       await screen.findByRole("button", { name: "Finder Note.md" }),
     ).toBeInTheDocument();
+    expect(screen.getByText("1 Markdown file")).toBeInTheDocument();
     const notifications = screen.getByLabelText("Notifications");
     expect(
-      within(notifications).getByText("0 Markdown files found."),
+      within(notifications).getByText("1 new note identity was added."),
     ).toBeInTheDocument();
-    expect(
-      within(notifications).getByText(/1 new note identities added/),
-    ).toBeInTheDocument();
-    expect(within(notifications).getAllByText("Dismiss")).toHaveLength(2);
+    expect(within(notifications).getAllByText("Dismiss")).toHaveLength(1);
 
     await user.click(
       within(notifications).getByRole("button", {
-        name: "Dismiss notification: 1 Markdown files found. 1 new note identities added.",
+        name: "Dismiss notification: 1 new note identity was added.",
       }),
     );
-    expect(
-      within(notifications).getByText("0 Markdown files found."),
-    ).toBeInTheDocument();
+    expect(screen.queryByLabelText("Notifications")).not.toBeInTheDocument();
   });
 
   it("previews and explicitly applies existing-note identities", async () => {

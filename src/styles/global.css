@@ -1102,6 +1102,10 @@ input:focus-visible,
   text-overflow: ellipsis;
 }
 
+.status-bar__vault-count {
+  color: var(--color-text-subtle);
+}
+
 .retrieval-overlay {
   position: fixed;
   z-index: 10;
@@ -1120,59 +1124,6 @@ input:focus-visible,
   border-radius: 8px;
   background: #080808;
   box-shadow: 0 24px 80px rgb(0 0 0 / 70%);
-}
-
-.quit-confirmation-overlay {
-  z-index: 12;
-  align-items: center;
-  padding-top: 16px;
-}
-
-.quit-confirmation {
-  width: min(440px, 100%);
-  padding: 24px;
-  border: 1px solid var(--color-rule);
-  border-radius: 8px;
-  background: #080808;
-  box-shadow: 0 24px 80px rgb(0 0 0 / 80%);
-}
-
-.quit-confirmation h2,
-.quit-confirmation p {
-  margin: 0;
-}
-
-.quit-confirmation h2 {
-  font-size: 18px;
-}
-
-.quit-confirmation p {
-  margin-top: 12px;
-  color: var(--color-text-muted);
-  font-size: 13px;
-  line-height: 1.55;
-}
-
-.quit-confirmation__actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: 10px;
-  margin-top: 24px;
-}
-
-.quit-confirmation__actions button {
-  min-height: 34px;
-  padding: 0 12px;
-  border: 1px solid var(--color-rule);
-  border-radius: 4px;
-  background: transparent;
-  color: var(--color-text);
-  cursor: pointer;
-}
-
-.quit-confirmation__actions .quit-confirmation__discard {
-  border-color: var(--color-danger);
-  color: var(--color-danger);
 }
 
 .retrieval-palette__search {
