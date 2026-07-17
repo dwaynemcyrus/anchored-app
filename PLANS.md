@@ -362,32 +362,33 @@ and preserves link integrity across filename changes.
       retain a visible startup boundary, use environment-only secrets, fail a
       public release before building when prerequisites are absent, and revert
       this focused chunk without changing vault data.
-    - Decisions: Public packages use Developer ID Application signing,
-      hardened runtime, notarization, ticket stapling, and Gatekeeper checks.
-      Unsigned/ad-hoc output remains development-only and is never documented
-      as a public installation path. The app uses no hardened-runtime exception
-      entitlements unless a verified feature requires one.
-    - Assumption: `[ASSUMPTION]` Until Dwayne supplies final brand artwork, the
-      public-test icon will use a minimal black-and-white Anchored mark derived
-      from the approved interface direction and can be replaced without
-      changing application behavior.
-    - Blocking verification: `[NEEDS INPUT]` A paid Apple Developer membership,
-      installed Developer ID Application certificate, Team ID, and notarization
-      credentials are required to produce and verify the final public DMG.
+    - Decisions: The current package is a private, ad-hoc-signed Intel alpha
+      distributed only to Dwayne for in-house testing. It uses the hardened
+      runtime and no exception entitlements. Developer ID signing,
+      notarization, ticket stapling, website distribution, Apple Silicon or
+      universal packaging, and Linux packaging are deferred until explicitly
+      requested. The approved alpha icon is a minimal white `A` on black and
+      can be replaced without changing application behavior.
+    - External prerequisite: A paid Apple Developer membership, installed
+      Developer ID Application certificate, Team ID, and notarization
+      credentials will be required before a future public macOS download can
+      pass Gatekeeper without the private-alpha manual approval flow. This does
+      not block the private alpha.
     - Expected changelog: Add quit protection, vault-gated note creation,
       complete modal keyboard behavior, production CSP, branded bundle assets,
-      and notarized public distribution safeguards. Version remains `0.1.0`
-      until an explicit release request.
+      and private-alpha packaging safeguards. Version remains `0.1.0` until an
+      explicit release request.
 
-12. [ ] **Chunk: Package release candidate**
+12. [ ] **Chunk: Package private alpha candidate**
     - Files: Tauri bundle configuration, icons/assets, README, release checklist
-    - Change: Produce a macOS 12-compatible local package and document install,
-      backup, recovery, supported syntax, and known limitations.
+    - Change: Produce an ad-hoc-signed Intel macOS 12-compatible local package
+      and document install, first-launch approval, backup, recovery, supported
+      syntax, and known limitations.
     - Verify: Clean install, all quality gates, packaged main journey, keyboard,
       accessibility, baseline-machine checks, and disposable-vault smoke test.
-    - Risk/rollback: Platform or signing limitations; retain local unsigned
-      development packaging until signing authority is explicitly provided.
-    - Commit: `chore(release): package mvp candidate`
+    - Risk/rollback: Platform or signing limitations; retain the development
+      workflow and previous private alpha package as rollback options.
+    - Commit: `chore(release): package alpha candidate`
 
 13. [ ] **Chunk: Complete stability observation**
     - Files: `PLANS.md`, issue documentation if defects are found
