@@ -249,6 +249,9 @@ and preserves link integrity across filename changes.
       deduplication, bounds, blocked-storage, focus, Escape, empty, delete,
       clear, and integration tests pass. Rendered checks pass at 1280×720 and
       400×800 with no console warnings, clipping, or horizontal overflow.
+    - Commits: `eda76a5 docs(plan): add notification history`,
+      `45875e5 feat(app): persist notification history`, and
+      `009bb3e feat(app): add notification center`.
 
 12. [ ] **Chunk: Package release candidate**
     - Files: Tauri bundle configuration, icons/assets, README, release checklist
