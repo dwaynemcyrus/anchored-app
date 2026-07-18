@@ -10,6 +10,7 @@ type VaultSwitcherProps = {
   openingVaultId?: string;
   vaults: RememberedVault[];
   onClose: () => void;
+  onCreateVault: () => void;
   onForget: (vaultId: string) => void;
   onOpenAnother: () => void;
   onOpenRemembered: (vaultId: string) => void;
@@ -29,6 +30,7 @@ export function VaultSwitcher({
   openingVaultId,
   vaults,
   onClose,
+  onCreateVault,
   onForget,
   onOpenAnother,
   onOpenRemembered,
@@ -119,6 +121,13 @@ export function VaultSwitcher({
         ) : null}
       </div>
       <footer className="continuity-panel__footer">
+        <button
+          disabled={openingVaultId !== undefined}
+          type="button"
+          onClick={onCreateVault}
+        >
+          Create new vault…
+        </button>
         <button
           disabled={openingVaultId !== undefined}
           type="button"

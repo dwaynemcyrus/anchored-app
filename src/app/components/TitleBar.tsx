@@ -4,6 +4,7 @@ import {
   NewFileIcon,
   NotificationIcon,
   SearchIcon,
+  SettingsIcon,
 } from "./Icons";
 import { IconButton } from "./IconButton";
 
@@ -18,6 +19,7 @@ type TitleBarProps = {
   onCreateNote: () => void;
   onOpenNotifications: () => void;
   onOpenSearch: () => void;
+  onOpenSettings: () => void;
   onSelectVault: () => void;
   onToggleSidebar: () => void;
 };
@@ -33,6 +35,7 @@ export function TitleBar({
   onCreateNote,
   onOpenNotifications,
   onOpenSearch,
+  onOpenSettings,
   onSelectVault,
   onToggleSidebar,
 }: TitleBarProps) {
@@ -104,6 +107,9 @@ export function TitleBar({
         </span>
         <IconButton label="Search vault" onClick={onOpenSearch}>
           <SearchIcon />
+        </IconButton>
+        <IconButton label="Open settings" onClick={onOpenSettings}>
+          <SettingsIcon />
         </IconButton>
         <IconButton
           disabled={!canCreateNote}

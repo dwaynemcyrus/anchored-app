@@ -19,6 +19,7 @@ export type VaultWarnings = {
 
 export type VaultSnapshot = {
   files: VaultFile[];
+  folders?: string[];
   name: string;
   vaultId?: string;
   warnings: VaultWarnings;
@@ -71,6 +72,20 @@ export type CreateVaultFileRequest = {
   suggestedName: string;
 };
 
+export type CreateVaultRequest = {
+  name: string;
+};
+
+export type CreateVaultFolderRequest = {
+  name: string;
+  parentPath?: string;
+};
+
+export type RenameVaultFolderRequest = {
+  folderPath: string;
+  name: string;
+};
+
 export type RenameVaultFileResult = {
   relativePath: string;
   updatedFiles: number;
@@ -97,6 +112,28 @@ export type IdentityMigrationResult = {
 
 export function selectVault(): Promise<VaultSnapshot | null> {
   return invoke<VaultSnapshot | null>("select_vault");
+}
+
+export function createVault(
+  request: CreateVaultRequest,
+): Promise<VaultSnapshot | null> {
+  return invoke<VaultSnapshot | null>("create_vault", request);
+}
+
+export function createVaultFolder(
+  request: CreateVaultFolderRequest,
+): Promise<VaultSnapshot> {
+  return invoke<VaultSnapshot>("create_vault_folder", request);
+}
+
+export function renameVaultFolder(
+  request: RenameVaultFolderRequest,
+): Promise<VaultSnapshot> {
+  return invoke<VaultSnapshot>("rename_vault_folder", request);
+}
+
+export function deleteVaultFolder(folderPath: string): Promise<VaultSnapshot> {
+  return invoke<VaultSnapshot>("delete_vault_folder", { folderPath });
 }
 
 export function listRememberedVaults(): Promise<RememberedVault[]> {
@@ -153,6 +190,22 @@ export function createVaultFile(
   request: CreateVaultFileRequest,
 ): Promise<VaultDocument | null> {
   return invoke<VaultDocument | null>("create_vault_file", request);
+}
+
+export function createUntitledVaultFile(
+  content: string,
+): Promise<VaultDocument> {
+  return invoke<VaultDocument>("create_untitled_vault_file", { content });
+}
+
+export function moveVaultFileToFolder(
+  relativePath: string,
+  destinationFolder: string,
+): Promise<RenameVaultFileResult> {
+  return invoke<RenameVaultFileResult>("move_vault_file_to_folder", {
+    destinationFolder,
+    relativePath,
+  });
 }
 
 export function renameVaultFile(

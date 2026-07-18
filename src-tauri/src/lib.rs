@@ -10,6 +10,10 @@ pub fn run() {
         .manage(vault::VaultState::default())
         .invoke_handler(tauri::generate_handler![
             vault::select_vault,
+            vault::create_vault,
+            vault::create_vault_folder,
+            vault::rename_vault_folder,
+            vault::delete_vault_folder,
             vault::list_remembered_vaults,
             vault::open_remembered_vault,
             vault::forget_vault,
@@ -21,6 +25,8 @@ pub fn run() {
             vault::read_vault_file,
             vault::save_vault_file,
             vault::create_vault_file,
+            vault::create_untitled_vault_file,
+            vault::move_vault_file_to_folder,
             vault::rename_vault_file,
             vault::preview_identity_migration,
             vault::apply_identity_migration

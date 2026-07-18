@@ -8,11 +8,15 @@ import {
 } from "react";
 
 import { EditorSurface } from "./components/EditorSurface";
+import { CreateVaultDialog } from "./components/CreateVaultDialog";
+import { DeleteFolderDialog } from "./components/DeleteFolderDialog";
 import { FileRail } from "./components/FileRail";
+import { FolderDialog } from "./components/FolderDialog";
 import { IdentityMigrationPanel } from "./components/IdentityMigrationPanel";
+import { MoveNoteDialog } from "./components/MoveNoteDialog";
 import { NotificationCenter } from "./components/NotificationCenter";
 import { QuickOpenPalette } from "./components/QuickOpenPalette";
-import { QuitConfirmation } from "./components/QuitConfirmation";
+import { SettingsModal } from "./components/SettingsModal";
 import { StatusBar } from "./components/StatusBar";
 import { TitleBar } from "./components/TitleBar";
 import { TrashPanel } from "./components/TrashPanel";
@@ -24,6 +28,7 @@ import {
 import {
   createUntitledDocument,
   documentsFromVault,
+  folderPathsFromVault,
   mergeDocumentsFromVault,
   type AnchoredDocument,
   type DocumentSaveState,
@@ -40,7 +45,12 @@ import {
   saveDocumentActivity,
 } from "./recentDocuments";
 import { rankQuickOpenResults } from "./retrieval";
-import { useCloseProtection } from "./closeProtection";
+import {
+  clearSessionState,
+  loadSessionState,
+  saveSessionState,
+} from "./sessionState";
+import { reloadAnchoredWindow } from "./windowActions";
 import {
   clearResolvedNotifications,
   GENERAL_NOTIFICATION_SCOPE,
@@ -54,14 +64,20 @@ import {
 } from "./notificationHistory";
 import {
   applyIdentityMigration,
+  createVault,
+  createVaultFolder,
+  createUntitledVaultFile,
   createVaultFile,
+  deleteVaultFolder,
   forgetVault,
   listRememberedVaults,
   listVaultTrash,
+  moveVaultFileToFolder,
   moveVaultFileToTrash,
   openRememberedVault,
   previewIdentityMigration,
   readVaultFile,
+  renameVaultFolder,
   renameVaultFile,
   rescanVault,
   saveVaultFile,
@@ -75,6 +91,7 @@ import {
 } from "../lib/tauri/vault";
 
 const ACTIVITY_REFRESH_INTERVAL_MS = 60_000;
+const MINOR_NOTICE_DURATION_MS = 12_000;
 
 type DocumentLoadState =
   | { status: "idle" }
@@ -84,12 +101,14 @@ type DocumentLoadState =
 type VaultNotice = {
   id: number;
   identityAction: boolean;
+  persistent: boolean;
   text: string;
 };
 
 type VaultNoticeOptions = {
   history?: Omit<NewNotificationHistoryEntry, "id" | "message" | "scopeId">;
   identityAction?: boolean;
+  persistent?: boolean;
 };
 
 function readErrorMessage(error: unknown): string {
@@ -106,15 +125,17 @@ function readErrorMessage(error: unknown): string {
 }
 
 function vaultSummaryMessage(snapshot: VaultSnapshot): string {
-  const notices = [`${snapshot.files.length} Markdown files found.`];
+  const notices: string[] = [];
   if (snapshot.warnings.addedIdentities > 0) {
+    const count = snapshot.warnings.addedIdentities;
     notices.push(
-      `${snapshot.warnings.addedIdentities} new note identities added.`,
+      `${count} new note identit${count === 1 ? "y was" : "ies were"} added.`,
     );
   }
   if (snapshot.warnings.needsIdentity > 0) {
+    const count = snapshot.warnings.needsIdentity;
     notices.push(
-      `${snapshot.warnings.needsIdentity} existing notes need identities.`,
+      `${count} existing note${count === 1 ? " needs" : "s need"} identities.`,
     );
   }
   if (snapshot.warnings.identityConflicts > 0) {
@@ -139,6 +160,14 @@ function documentHasUnfinishedEdits(document: AnchoredDocument): boolean {
   );
 }
 
+function folderDisplayName(folderPath: string): string {
+  return folderPath || "Vault root";
+}
+
+function folderName(folderPath: string): string {
+  return folderPath.split("/").pop() ?? folderPath;
+}
+
 export function App() {
   const [documents, setDocuments] = useState<AnchoredDocument[]>([]);
   const [activeDocumentId, setActiveDocumentId] = useState("");
@@ -157,8 +186,39 @@ export function App() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [vaultName, setVaultName] = useState("");
   const [vaultId, setVaultId] = useState("");
-  const [folderOrder, setFolderOrder] = useState<string[]>([]);
+  const [folderPaths, setFolderPaths] = useState<string[]>([]);
+  const [settingsVisible, setSettingsVisible] = useState(false);
   const [selectingVault, setSelectingVault] = useState(false);
+  const [creatingFolder, setCreatingFolder] = useState(false);
+  const [creatingVault, setCreatingVault] = useState(false);
+  const [createFolderParentPath, setCreateFolderParentPath] = useState<
+    string | undefined
+  >();
+  const [createFolderVisible, setCreateFolderVisible] = useState(false);
+  const [createFolderError, setCreateFolderError] = useState<
+    string | undefined
+  >();
+  const [renamingFolderPath, setRenamingFolderPath] = useState<
+    string | undefined
+  >();
+  const [renameFolderVisible, setRenameFolderVisible] = useState(false);
+  const [renameFolderError, setRenameFolderError] = useState<
+    string | undefined
+  >();
+  const [renameFolderPending, setRenameFolderPending] = useState(false);
+  const [deletingFolderPath, setDeletingFolderPath] = useState<
+    string | undefined
+  >();
+  const [deleteFolderVisible, setDeleteFolderVisible] = useState(false);
+  const [deleteFolderError, setDeleteFolderError] = useState<
+    string | undefined
+  >();
+  const [deleteFolderPending, setDeleteFolderPending] = useState(false);
+  const [createVaultVisible, setCreateVaultVisible] = useState(false);
+  const [createVaultError, setCreateVaultError] = useState<
+    string | undefined
+  >();
+  const [reloadingApp, setReloadingApp] = useState(false);
   const [vaultSelected, setVaultSelected] = useState(false);
   const [vaultSwitcherVisible, setVaultSwitcherVisible] = useState(false);
   const [rememberedVaults, setRememberedVaults] = useState<RememberedVault[]>(
@@ -184,7 +244,6 @@ export function App() {
   const [vaultNotices, setVaultNotices] = useState<VaultNotice[]>([]);
   const [notificationHistoryVisible, setNotificationHistoryVisible] =
     useState(false);
-  const [quitConfirmationVisible, setQuitConfirmationVisible] = useState(false);
   const [notificationHistory, setNotificationHistory] = useState(() => {
     try {
       return loadNotificationHistory(window.localStorage, Date.now());
@@ -202,6 +261,11 @@ export function App() {
   const [documentLoad, setDocumentLoad] = useState<DocumentLoadState>({
     status: "idle",
   });
+  const [moveDocumentId, setMoveDocumentId] = useState<string | undefined>();
+  const [moveDocumentVisible, setMoveDocumentVisible] = useState(false);
+  const [movingDocumentId, setMovingDocumentId] = useState<
+    string | undefined
+  >();
   const [renamingDocumentId, setRenamingDocumentId] = useState<string | null>(
     null,
   );
@@ -217,14 +281,22 @@ export function App() {
   const searchRequestRef = useRef(0);
   const rescanInFlightRef = useRef(false);
   const vaultNoticeIdRef = useRef(0);
+  const vaultNoticeTimeoutsRef = useRef<Map<number, number>>(new Map());
   const notificationIdRef = useRef(0);
   const documentsRef = useRef(documents);
+  const pendingSessionRelativePathRef = useRef<string | undefined>(undefined);
+  const sessionRestoreStatusRef = useRef<"pending" | "restoring" | "done">(
+    "pending",
+  );
   const vaultIdRef = useRef("");
 
   documentsRef.current = documents;
 
   const activeDocument = documents.find(
     (document) => document.id === activeDocumentId,
+  );
+  const moveTargetDocument = documents.find(
+    (document) => document.id === moveDocumentId,
   );
   const saveState: DocumentSaveState = activeDocument?.saveState ?? "saved";
   const deferredDocuments = useDeferredValue(documents);
@@ -254,10 +326,6 @@ export function App() {
     () => notificationHistoryForScope(notificationHistory, notificationScopeId),
     [notificationHistory, notificationScopeId],
   );
-  const unfinishedDocumentCount = documents.filter(
-    documentHasUnfinishedEdits,
-  ).length;
-
   const addHistoryEntry = useCallback(
     (
       message: string,
@@ -298,6 +366,7 @@ export function App() {
       const notice = {
         id: vaultNoticeIdRef.current,
         identityAction: options.identityAction ?? false,
+        persistent: options.persistent ?? options.identityAction ?? false,
         text,
       };
       setVaultNotices((currentNotices) => {
@@ -313,20 +382,47 @@ export function App() {
     [addHistoryEntry],
   );
 
+  useEffect(() => {
+    const activeNoticeIds = new Set(vaultNotices.map((notice) => notice.id));
+
+    vaultNoticeTimeoutsRef.current.forEach((timeout, noticeId) => {
+      if (!activeNoticeIds.has(noticeId)) {
+        window.clearTimeout(timeout);
+        vaultNoticeTimeoutsRef.current.delete(noticeId);
+      }
+    });
+
+    vaultNotices.forEach((notice) => {
+      if (notice.persistent || vaultNoticeTimeoutsRef.current.has(notice.id)) {
+        return;
+      }
+
+      const timeout = window.setTimeout(() => {
+        vaultNoticeTimeoutsRef.current.delete(notice.id);
+        setVaultNotices((currentNotices) =>
+          currentNotices.filter(
+            (currentNotice) => currentNotice.id !== notice.id,
+          ),
+        );
+      }, MINOR_NOTICE_DURATION_MS);
+      vaultNoticeTimeoutsRef.current.set(notice.id, timeout);
+    });
+  }, [vaultNotices]);
+
+  useEffect(
+    () => () => {
+      vaultNoticeTimeoutsRef.current.forEach((timeout) =>
+        window.clearTimeout(timeout),
+      );
+      vaultNoticeTimeoutsRef.current.clear();
+    },
+    [],
+  );
+
   const hasUnfinishedEdits = useCallback(
     () => documentsRef.current.some(documentHasUnfinishedEdits),
     [],
   );
-
-  const discardEditsAndClose = useCloseProtection({
-    hasUnfinishedEdits: unfinishedDocumentCount > 0,
-    onCloseBlocked: () => setQuitConfirmationVisible(true),
-    onError: () =>
-      addVaultNotice(
-        "Anchored could not install its quit protection. Save every note before closing the app.",
-        { history: { kind: "error" } },
-      ),
-  });
 
   const refreshRememberedVaults = useCallback(async () => {
     setRememberedVaultsLoading(true);
@@ -354,23 +450,119 @@ export function App() {
     }
   }, []);
 
+  const saveUntitledDocument = useCallback(
+    async (documentId: string) => {
+      const document = documentsRef.current.find(
+        (candidate) => candidate.id === documentId,
+      );
+      if (
+        !document ||
+        document.relativePath ||
+        document.sourceText === undefined ||
+        document.saveState === "saving"
+      ) {
+        return;
+      }
+
+      const contentAtSave = document.sourceText;
+      setDocuments((currentDocuments) =>
+        currentDocuments.map((current) =>
+          current.id === documentId
+            ? { ...current, saveMessage: undefined, saveState: "saving" }
+            : current,
+        ),
+      );
+
+      try {
+        const savedDocument = await createUntitledVaultFile(contentAtSave);
+        const pathParts = savedDocument.relativePath.split("/");
+        const name = pathParts.pop() ?? document.name;
+        const folderPath = pathParts.join("/");
+        const folder = folderPath || vaultName;
+        const currentDocument = documentsRef.current.find(
+          (candidate) => candidate.id === documentId,
+        );
+        const hasNewerEdit = currentDocument?.sourceText !== contentAtSave;
+
+        setDocuments((currentDocuments) =>
+          currentDocuments.map((current) =>
+            current.id === documentId
+              ? {
+                  ...current,
+                  folder,
+                  folderPath,
+                  name,
+                  relativePath: savedDocument.relativePath,
+                  saveMessage: undefined,
+                  saveState: hasNewerEdit ? "unsaved" : "saved",
+                  savedSourceText: savedDocument.content,
+                  sizeBytes: savedDocument.sizeBytes,
+                  sourceText: hasNewerEdit
+                    ? current.sourceText
+                    : savedDocument.content,
+                }
+              : current,
+          ),
+        );
+        if (folderPath) {
+          setExpandedFolders((currentFolders) =>
+            new Set(currentFolders).add(folderPath),
+          );
+        }
+        setFolderPaths((currentFolders) =>
+          currentFolders.includes(folderPath)
+            ? currentFolders
+            : [...currentFolders, folderPath].filter(
+                (value, index, values) =>
+                  value.length > 0 && values.indexOf(value) === index,
+              ),
+        );
+        resolveHistorySource(document.id);
+      } catch (error) {
+        setDocuments((currentDocuments) =>
+          currentDocuments.map((current) =>
+            current.id === documentId
+              ? {
+                  ...current,
+                  saveMessage: readErrorMessage(error),
+                  saveState: "error",
+                }
+              : current,
+          ),
+        );
+        addHistoryEntry(`${document.name} could not be saved.`, {
+          kind: "error",
+          sourceId: document.id,
+        });
+      }
+    },
+    [addHistoryEntry, resolveHistorySource, vaultName],
+  );
+
   const createNote = useCallback(() => {
     if (!vaultSelected) {
       addVaultNotice("Open a vault before creating a note.");
       return;
     }
     const nextDocument = createUntitledDocument(documentsRef.current);
+    const nextDocuments = [...documentsRef.current, nextDocument];
 
     loadRequestRef.current += 1;
-    setDocuments((currentDocuments) => [...currentDocuments, nextDocument]);
+    documentsRef.current = nextDocuments;
+    setDocuments(nextDocuments);
     setActiveDocumentId(nextDocument.id);
-    setExpandedFolders((currentFolders) =>
-      new Set(currentFolders).add(nextDocument.folder),
-    );
-    setFolderOrder((currentFolders) =>
-      currentFolders.includes(nextDocument.folder)
+    if (nextDocument.folderPath) {
+      setExpandedFolders((currentFolders) =>
+        new Set(currentFolders).add(nextDocument.folderPath ?? ""),
+      );
+    }
+    setFolderPaths((currentFolders) =>
+      currentFolders.includes(nextDocument.folderPath ?? "")
         ? currentFolders
-        : [...currentFolders, nextDocument.folder],
+        : [...currentFolders, nextDocument.folderPath ?? ""].filter(
+            (value, index, values) =>
+              value.length > 0 && values.indexOf(value) === index,
+          ),
     );
     setQuery("");
     setDocumentLoad({ status: "idle" });
@@ -378,7 +570,8 @@ export function App() {
     setDocumentActivity((current) =>
       markDocumentActive(current, nextDocument.id, Date.now()),
     );
-  }, [addVaultNotice, vaultSelected]);
+    void saveUntitledDocument(nextDocument.id);
+  }, [addVaultNotice, saveUntitledDocument, vaultSelected]);
 
   const saveDocumentAs = useCallback(
     async (documentId: string) => {
@@ -421,7 +614,8 @@ export function App() {
 
         const pathParts = savedDocument.relativePath.split("/");
         const name = pathParts.pop() ?? document.name;
-        const folder = pathParts.join("/") || vaultName;
+        const folderPath = pathParts.join("/");
+        const folder = folderPath || vaultName;
         const currentDocument = documentsRef.current.find(
           (candidate) => candidate.id === documentId,
         );
@@ -433,6 +627,7 @@ export function App() {
               ? {
                   ...current,
                   folder,
+                  folderPath,
                   name,
                   relativePath: savedDocument.relativePath,
                   saveMessage: hasNewerEdit
@@ -448,13 +643,18 @@ export function App() {
               : current,
           ),
         );
-        setExpandedFolders((currentFolders) =>
-          new Set(currentFolders).add(folder),
-        );
-        setFolderOrder((currentFolders) =>
-          currentFolders.includes(folder)
+        if (folderPath) {
+          setExpandedFolders((currentFolders) =>
+            new Set(currentFolders).add(folderPath),
+          );
+        }
+        setFolderPaths((currentFolders) =>
+          currentFolders.includes(folderPath)
             ? currentFolders
-            : [...currentFolders, folder],
+            : [...currentFolders, folderPath].filter(
+                (value, index, values) =>
+                  value.length > 0 && values.indexOf(value) === index,
+              ),
         );
         if (hasNewerEdit) {
           addHistoryEntry(
@@ -617,9 +817,7 @@ export function App() {
   const activateVaultSnapshot = useCallback(
     (snapshot: VaultSnapshot) => {
       const nextDocuments = documentsFromVault(snapshot);
-      const nextFolders = Array.from(
-        new Set(nextDocuments.map((document) => document.folder)),
-      );
+      const nextFolders = folderPathsFromVault(snapshot);
 
       loadRequestRef.current += 1;
       vaultIdRef.current = snapshot.vaultId ?? "";
@@ -635,7 +833,7 @@ export function App() {
       setDocumentActivity((current) =>
         reconcileDocumentActivity(current, nextDocuments, Date.now()),
       );
-      setFolderOrder(nextFolders);
+      setFolderPaths(nextFolders);
       setExpandedFolders(new Set(nextFolders));
       setActiveDocumentId("");
       setQuery("");
@@ -646,10 +844,12 @@ export function App() {
       setTrashVisible(false);
       setNotificationHistoryVisible(false);
       recordSnapshotEvents(snapshot);
-      addVaultNotice(vaultSummaryMessage(snapshot), {
-        history: { kind: "vault" },
-        identityAction: snapshot.warnings.needsIdentity > 0,
-      });
+      const summary = vaultSummaryMessage(snapshot);
+      if (summary) {
+        addVaultNotice(summary, {
+          identityAction: snapshot.warnings.needsIdentity > 0,
+        });
+      }
     },
     [addVaultNotice, recordSnapshotEvents],
   );
@@ -664,15 +864,13 @@ export function App() {
         documentsRef.current,
         snapshot,
       );
-      const nextFolders = Array.from(
-        new Set(nextDocuments.map((document) => document.folder)),
-      );
+      const nextFolders = folderPathsFromVault(snapshot);
       documentsRef.current = nextDocuments;
       setDocuments(nextDocuments);
       setDocumentActivity((current) =>
         reconcileDocumentActivity(current, nextDocuments, Date.now()),
       );
-      setFolderOrder(nextFolders);
+      setFolderPaths(nextFolders);
       setExpandedFolders((currentFolders) => {
         const nextExpanded = new Set(currentFolders);
         nextFolders.forEach((folder) => nextExpanded.add(folder));
@@ -680,9 +878,12 @@ export function App() {
       });
       setNotesNeedingIdentity(snapshot.warnings.needsIdentity);
       recordSnapshotEvents(snapshot);
-      addVaultNotice(vaultSummaryMessage(snapshot), {
-        identityAction: snapshot.warnings.needsIdentity > 0,
-      });
+      const summary = vaultSummaryMessage(snapshot);
+      if (summary) {
+        addVaultNotice(summary, {
+          identityAction: snapshot.warnings.needsIdentity > 0,
+        });
+      }
     },
     [addVaultNotice, recordSnapshotEvents],
   );
@@ -701,7 +902,7 @@ export function App() {
       if (!snapshot) return;
       adoptVaultSnapshot(snapshot);
     } catch (error) {
-      addVaultNotice(readErrorMessage(error));
+      addVaultNotice(readErrorMessage(error), { persistent: true });
       addHistoryEntry("Vault refresh could not be completed.", {
         kind: "error",
       });
@@ -719,7 +920,7 @@ export function App() {
     } catch (error) {
       const message = readErrorMessage(error);
       setMigrationError(message);
-      addVaultNotice(message);
+      addVaultNotice(message, { persistent: true });
       addHistoryEntry("Identity migration could not be reviewed.", {
         kind: "error",
       });
@@ -753,12 +954,6 @@ export function App() {
   }
 
   useEffect(() => {
-    if (unfinishedDocumentCount === 0) {
-      setQuitConfirmationVisible(false);
-    }
-  }, [unfinishedDocumentCount]);
-
-  useEffect(() => {
     try {
       saveDocumentActivity(window.localStorage, documentActivity);
     } catch {
@@ -769,6 +964,45 @@ export function App() {
   useEffect(() => {
     void refreshRememberedVaults();
   }, [refreshRememberedVaults]);
+
+  useEffect(() => {
+    if (
+      sessionRestoreStatusRef.current !== "pending" ||
+      rememberedVaultsLoading
+    ) {
+      return;
+    }
+    sessionRestoreStatusRef.current = "restoring";
+
+    const session = loadSessionState(window.localStorage);
+    if (!session?.vaultId) {
+      sessionRestoreStatusRef.current = "done";
+      return;
+    }
+
+    pendingSessionRelativePathRef.current = session.activeRelativePath;
+    setOpeningRememberedVaultId(session.vaultId);
+    setRememberedVaultsError(undefined);
+
+    void openRememberedVault(session.vaultId)
+      .then(async (snapshot) => {
+        activateVaultSnapshot(snapshot);
+        await Promise.all([refreshRememberedVaults(), refreshTrashEntries()]);
+      })
+      .catch(() => {
+        pendingSessionRelativePathRef.current = undefined;
+        clearSessionState(window.localStorage);
+      })
+      .finally(() => {
+        sessionRestoreStatusRef.current = "done";
+        setOpeningRememberedVaultId(undefined);
+      });
+  }, [
+    activateVaultSnapshot,
+    refreshRememberedVaults,
+    refreshTrashEntries,
+    rememberedVaultsLoading,
+  ]);
 
   useEffect(() => {
     try {
@@ -863,6 +1097,22 @@ export function App() {
   }, [activeDocumentId, createNote, saveDocument, saveDocumentAs]);
 
   useEffect(() => {
+    if (sessionRestoreStatusRef.current !== "done" && !vaultSelected) {
+      return;
+    }
+
+    if (vaultSelected && vaultId) {
+      saveSessionState(window.localStorage, {
+        activeRelativePath: activeDocument?.relativePath,
+        vaultId,
+      });
+      return;
+    }
+
+    clearSessionState(window.localStorage);
+  }, [activeDocument?.relativePath, vaultId, vaultSelected]);
+
+  useEffect(() => {
     if (
       !activeDocument?.relativePath ||
       activeDocument.sourceText === undefined ||
@@ -885,7 +1135,7 @@ export function App() {
     return () => window.removeEventListener("focus", refreshVault);
   }, [refreshVault]);
 
-  async function selectDocument(documentId: string) {
+  const selectDocument = useCallback(async (documentId: string) => {
     const document = documentsRef.current.find(
       (candidate) => candidate.id === documentId,
     );
@@ -937,7 +1187,22 @@ export function App() {
         message: readErrorMessage(error),
       });
     }
-  }
+  }, []);
+
+  useEffect(() => {
+    const pendingRelativePath = pendingSessionRelativePathRef.current;
+    if (!pendingRelativePath || activeDocumentId || !vaultSelected) {
+      return;
+    }
+
+    const restoredDocument = documents.find(
+      (document) => document.relativePath === pendingRelativePath,
+    );
+    pendingSessionRelativePathRef.current = undefined;
+    if (restoredDocument) {
+      void selectDocument(restoredDocument.id);
+    }
+  }, [activeDocumentId, documents, selectDocument, vaultSelected]);
 
   async function openVaultSearchResult(relativePath: string) {
     let document = documentsRef.current.find(
@@ -953,7 +1218,7 @@ export function App() {
           );
         }
       } catch (error) {
-        addVaultNotice(readErrorMessage(error));
+        addVaultNotice(readErrorMessage(error), { persistent: true });
         addHistoryEntry("A vault search result could not be reopened.", {
           kind: "error",
         });
@@ -964,11 +1229,63 @@ export function App() {
     if (!document) {
       addVaultNotice("That search result is no longer in the vault.", {
         history: { kind: "error" },
+        persistent: true,
       });
       return;
     }
     setVaultSearchVisible(false);
     await selectDocument(document.id);
+  }
+
+  async function finishRelocatedDocument(
+    documentId: string,
+    outcome: {
+      relativePath: string;
+      updatedFiles: number;
+      updatedLinks: number;
+    },
+    message: string,
+  ) {
+    const [snapshot, openedDocument] = await Promise.all([
+      rescanVault(),
+      readVaultFile(outcome.relativePath),
+    ]);
+    if (!snapshot) {
+      throw new Error("The updated vault could not be refreshed.");
+    }
+    const localDrafts = documentsRef.current.filter(
+      (candidate) => !candidate.relativePath,
+    );
+    const nextDocuments = [
+      ...documentsFromVault(snapshot).map((candidate) =>
+        candidate.id === documentId
+          ? {
+              ...candidate,
+              savedSourceText: openedDocument.content,
+              sizeBytes: openedDocument.sizeBytes,
+              sourceText: openedDocument.content,
+            }
+          : candidate,
+      ),
+      ...localDrafts,
+    ];
+    const nextFolders = folderPathsFromVault(snapshot);
+    loadRequestRef.current += 1;
+    documentsRef.current = nextDocuments;
+    setDocuments(nextDocuments);
+    setDocumentActivity((current) =>
+      reconcileDocumentActivity(current, nextDocuments, Date.now()),
+    );
+    setFolderPaths(nextFolders);
+    setExpandedFolders((currentFolders) => {
+      const nextExpanded = new Set(currentFolders);
+      nextFolders.forEach((folder) => nextExpanded.add(folder));
+      return nextExpanded;
+    });
+    setNotesNeedingIdentity(snapshot.warnings.needsIdentity);
+    setActiveDocumentId(documentId);
+    setDocumentLoad({ status: "idle" });
+    addVaultNotice(message, { history: { kind: "rename" } });
   }
 
   async function renameDocument(documentId: string) {
@@ -989,48 +1306,6 @@ export function App() {
       const outcome = await renameVaultFile(document.relativePath);
       if (!outcome) return;
       renameCompleted = true;
-
-      const [snapshot, openedDocument] = await Promise.all([
-        rescanVault(),
-        readVaultFile(outcome.relativePath),
-      ]);
-      if (!snapshot) {
-        throw new Error("The renamed vault could not be refreshed.");
-      }
-      const localDrafts = documentsRef.current.filter(
-        (candidate) => !candidate.relativePath,
-      );
-      const nextDocuments = [
-        ...documentsFromVault(snapshot).map((candidate) =>
-          candidate.id === documentId
-            ? {
-                ...candidate,
-                savedSourceText: openedDocument.content,
-                sizeBytes: openedDocument.sizeBytes,
-                sourceText: openedDocument.content,
-              }
-            : candidate,
-        ),
-        ...localDrafts,
-      ];
-      const nextFolders = Array.from(
-        new Set(nextDocuments.map((candidate) => candidate.folder)),
-      );
-      loadRequestRef.current += 1;
-      documentsRef.current = nextDocuments;
-      setDocuments(nextDocuments);
-      setDocumentActivity((current) =>
-        reconcileDocumentActivity(current, nextDocuments, Date.now()),
-      );
-      setFolderOrder(nextFolders);
-      setExpandedFolders((currentFolders) => {
-        const nextExpanded = new Set(currentFolders);
-        nextFolders.forEach((folder) => nextExpanded.add(folder));
-        return nextExpanded;
-      });
-      setNotesNeedingIdentity(snapshot.warnings.needsIdentity);
-      setActiveDocumentId(documentId);
-      setDocumentLoad({ status: "idle" });
       const filename =
         outcome.relativePath.split("/").pop() ?? outcome.relativePath;
       const message = `${filename} renamed. ${outcome.updatedLinks} link${
@@ -1038,12 +1313,13 @@ export function App() {
       } updated across ${outcome.updatedFiles} note${
         outcome.updatedFiles === 1 ? "" : "s"
       }.`;
-      addVaultNotice(message, { history: { kind: "rename" } });
+      await finishRelocatedDocument(documentId, outcome, message);
     } catch (error) {
       addVaultNotice(
         renameCompleted
           ? `The note was renamed, but Anchored could not refresh it: ${readErrorMessage(error)}`
           : readErrorMessage(error),
+        { persistent: true },
       );
       addHistoryEntry(
         renameCompleted
@@ -1053,6 +1329,59 @@ export function App() {
       );
     } finally {
       setRenamingDocumentId(null);
+    }
+  }
+
+  async function moveDocumentToFolder(
+    documentId: string,
+    destinationFolderPath: string,
+  ) {
+    const document = documentsRef.current.find(
+      (candidate) => candidate.id === documentId,
+    );
+    if (!document?.relativePath || !document.id.startsWith("vault-id:")) {
+      return;
+    }
+    if ((document.folderPath ?? "") === destinationFolderPath) {
+      return;
+    }
+    if (hasUnfinishedEdits()) {
+      addVaultNotice("Save all open note changes before moving a note.");
+      return;
+    }
+
+    let moveCompleted = false;
+    setMovingDocumentId(documentId);
+    try {
+      const outcome = await moveVaultFileToFolder(
+        document.relativePath,
+        destinationFolderPath,
+      );
+      moveCompleted = true;
+      const destinationLabel = folderDisplayName(destinationFolderPath);
+      const message = `${document.name} moved to ${destinationLabel}. ${
+        outcome.updatedLinks
+      } link${outcome.updatedLinks === 1 ? "" : "s"} updated across ${
+        outcome.updatedFiles
+      } note${outcome.updatedFiles === 1 ? "" : "s"}.`;
+      await finishRelocatedDocument(documentId, outcome, message);
+      setMoveDocumentVisible(false);
+      setMoveDocumentId(undefined);
+    } catch (error) {
+      addVaultNotice(
+        moveCompleted
+          ? `The note was moved, but Anchored could not refresh it: ${readErrorMessage(error)}`
+          : readErrorMessage(error),
+        { persistent: true },
+      );
+      addHistoryEntry(
+        moveCompleted
+          ? "A moved note could not be refreshed."
+          : "A note move could not be completed safely.",
+        { kind: "error" },
+      );
+    } finally {
+      setMovingDocumentId(undefined);
     }
   }
 
@@ -1086,7 +1415,7 @@ export function App() {
         history: { kind: "trash" },
       });
     } catch (error) {
-      addVaultNotice(readErrorMessage(error));
+      addVaultNotice(readErrorMessage(error), { persistent: true });
       addHistoryEntry(`${document.name} could not be moved to Trash.`, {
         kind: "error",
       });
@@ -1204,10 +1533,212 @@ export function App() {
     } catch {
       addVaultNotice(
         "Vault selection is available in the Anchored desktop app.",
-        { history: { kind: "error" } },
+        { history: { kind: "error" }, persistent: true },
       );
     } finally {
       setSelectingVault(false);
+    }
+  }
+
+  async function createNewVault(name: string) {
+    if (vaultSelected && hasUnfinishedEdits()) {
+      addVaultNotice(
+        "Save or close all draft changes before switching vaults.",
+      );
+      return;
+    }
+    setCreatingVault(true);
+    setCreateVaultError(undefined);
+
+    try {
+      const snapshot = await createVault({ name });
+      if (!snapshot) {
+        setCreateVaultVisible(false);
+        return;
+      }
+      activateVaultSnapshot(snapshot);
+      setCreateVaultVisible(false);
+      setVaultSwitcherVisible(false);
+      await Promise.all([refreshRememberedVaults(), refreshTrashEntries()]);
+    } catch (error) {
+      setCreateVaultError(readErrorMessage(error));
+    } finally {
+      setCreatingVault(false);
+    }
+  }
+
+  async function createNewFolder(name: string) {
+    if (!vaultSelected) {
+      addVaultNotice("Open a vault before creating a folder.");
+      return;
+    }
+    setCreatingFolder(true);
+    setCreateFolderError(undefined);
+
+    try {
+      const snapshot = await createVaultFolder({
+        name,
+        parentPath: createFolderParentPath,
+      });
+      adoptVaultSnapshot(snapshot);
+      setCreateFolderVisible(false);
+      setCreateFolderParentPath(undefined);
+      addVaultNotice(`${name.trim()} created.`, {
+        history: { kind: "rename" },
+      });
+    } catch (error) {
+      setCreateFolderError(readErrorMessage(error));
+    } finally {
+      setCreatingFolder(false);
+    }
+  }
+
+  async function renameExistingFolder(name: string) {
+    if (!vaultSelected || !renamingFolderPath) {
+      addVaultNotice("Open a vault before renaming a folder.");
+      return;
+    }
+    if (hasUnfinishedEdits()) {
+      addVaultNotice("Save all open note changes before renaming a folder.");
+      return;
+    }
+
+    const originalFolderPath = renamingFolderPath;
+    setRenameFolderPending(true);
+    setRenameFolderError(undefined);
+    try {
+      const snapshot = await renameVaultFolder({
+        folderPath: originalFolderPath,
+        name,
+      });
+      const nextName = name.trim();
+      const parentPath = originalFolderPath.split("/").slice(0, -1).join("/");
+      const renamedFolderPath = parentPath
+        ? `${parentPath}/${nextName}`
+        : nextName;
+      adoptVaultSnapshot(snapshot);
+      setExpandedFolders((currentFolders) => {
+        const nextFolders = new Set(currentFolders);
+        return new Set(
+          Array.from(nextFolders, (folderPath) =>
+            folderPath === originalFolderPath
+              ? renamedFolderPath
+              : folderPath.startsWith(`${originalFolderPath}/`)
+                ? `${renamedFolderPath}${folderPath.slice(
+                    originalFolderPath.length,
+                  )}`
+                : folderPath,
+          ),
+        );
+      });
+      setRenameFolderVisible(false);
+      setRenamingFolderPath(undefined);
+      addVaultNotice(`${folderName(originalFolderPath)} renamed.`, {
+        history: { kind: "rename" },
+      });
+    } catch (error) {
+      setRenameFolderError(readErrorMessage(error));
+    } finally {
+      setRenameFolderPending(false);
+    }
+  }
+
+  async function deleteExistingFolder() {
+    if (!vaultSelected || !deletingFolderPath) {
+      addVaultNotice("Open a vault before deleting a folder.");
+      return;
+    }
+
+    const targetFolderPath = deletingFolderPath;
+    setDeleteFolderPending(true);
+    setDeleteFolderError(undefined);
+    try {
+      const snapshot = await deleteVaultFolder(targetFolderPath);
+      adoptVaultSnapshot(snapshot);
+      setExpandedFolders((currentFolders) => {
+        const nextFolders = new Set(currentFolders);
+        Array.from(nextFolders).forEach((folderPath) => {
+          if (
+            folderPath === targetFolderPath ||
+            folderPath.startsWith(`${targetFolderPath}/`)
+          ) {
+            nextFolders.delete(folderPath);
+          }
+        });
+        return nextFolders;
+      });
+      setDeleteFolderVisible(false);
+      setDeletingFolderPath(undefined);
+      addVaultNotice(`${folderName(targetFolderPath)} deleted.`, {
+        history: { kind: "rename" },
+      });
+    } catch (error) {
+      setDeleteFolderError(readErrorMessage(error));
+    } finally {
+      setDeleteFolderPending(false);
+    }
+  }
+
+  async function reloadApp() {
+    if (reloadingApp) return;
+    if (
+      documentsRef.current.some((document) => document.saveState === "saving")
+    ) {
+      addVaultNotice("Wait for the current save to finish before reloading.");
+      return;
+    }
+
+    const blockedDocuments = documentsRef.current.filter(
+      (document) =>
+        document.saveState === "conflict" ||
+        document.saveState === "error" ||
+        (!document.relativePath && document.sourceText !== undefined),
+    );
+    if (blockedDocuments.length > 0) {
+      addVaultNotice("Resolve note save problems before reloading Anchored.", {
+        persistent: true,
+      });
+      return;
+    }
+
+    const unsavedDocuments = documentsRef.current.filter(
+      (document) =>
+        document.relativePath &&
+        document.sourceText !== undefined &&
+        document.savedSourceText !== undefined &&
+        document.sourceText !== document.savedSourceText,
+    );
+
+    setReloadingApp(true);
+    try {
+      for (const document of unsavedDocuments) {
+        await saveDocument(document.id);
+      }
+      await new Promise<void>((resolve) => {
+        window.setTimeout(resolve, 0);
+      });
+
+      const remaining = documentsRef.current.filter(documentHasUnfinishedEdits);
+      if (remaining.length > 0) {
+        addVaultNotice(
+          "Anchored could not safely reload because some note changes still need attention.",
+          { persistent: true },
+        );
+        return;
+      }
+
+      if (vaultSelected && vaultId) {
+        saveSessionState(window.localStorage, {
+          activeRelativePath: activeDocument?.relativePath,
+          vaultId,
+        });
+      } else {
+        clearSessionState(window.localStorage);
+      }
+      reloadAnchoredWindow();
+    } finally {
+      setReloadingApp(false);
+      setSettingsVisible(false);
     }
   }
 
@@ -1272,6 +1803,7 @@ export function App() {
           setVaultSearchQuery("");
           setVaultSearchVisible(true);
         }}
+        onOpenSettings={() => setSettingsVisible(true)}
         onSelectVault={() => {
           if (!vaultSelected && rememberedVaults.length === 0) {
             void openVault();
@@ -1287,17 +1819,36 @@ export function App() {
           activeDocumentId={activeDocument?.id ?? ""}
           documents={documents}
           expandedFolders={expandedFolders}
-          folders={folderOrder}
+          folders={folderPaths}
           query={query}
           searchInputRef={searchInputRef}
           trashCount={trashEntries.length}
+          vaultName={vaultName}
           vaultSelected={vaultSelected}
           onCreateNote={createNote}
+          onCreateFolder={(parentPath) => {
+            setCreateFolderParentPath(parentPath);
+            setCreateFolderError(undefined);
+            setCreateFolderVisible(true);
+          }}
+          onDeleteFolder={(folderPath) => {
+            setDeletingFolderPath(folderPath);
+            setDeleteFolderError(undefined);
+            setDeleteFolderVisible(true);
+          }}
+          onMoveDocument={(documentId, destinationFolderPath) =>
+            void moveDocumentToFolder(documentId, destinationFolderPath)
+          }
           onOpenTrash={() => {
             setTrashVisible(true);
             void refreshTrashEntries();
           }}
           onQueryChange={setQuery}
+          onRenameFolder={(folderPath) => {
+            setRenamingFolderPath(folderPath);
+            setRenameFolderError(undefined);
+            setRenameFolderVisible(true);
+          }}
           onSelectDocument={selectDocument}
           onToggleFolder={toggleFolder}
         />
@@ -1316,8 +1867,22 @@ export function App() {
           vaultSelected={vaultSelected}
           wikilinkCandidates={wikilinkCandidates}
           onCloseDocument={closeDocument}
+          onCreateVault={() => {
+            setCreateVaultError(undefined);
+            setCreateVaultVisible(true);
+          }}
           onDocumentChange={updateDocumentContent}
           onOpenLinkedDocument={(documentId) => void selectDocument(documentId)}
+          onOpenMoveDocument={() => {
+            if (
+              activeDocument?.relativePath &&
+              activeDocument.id.startsWith("vault-id:")
+            ) {
+              setMoveDocumentId(activeDocument.id);
+              setMoveDocumentVisible(true);
+            }
+          }}
+          onOpenVault={() => void openVault()}
           onOpenWikilink={openWikilink}
           onRetryDocument={() => {
             if (activeDocument) void selectDocument(activeDocument.id);
@@ -1334,6 +1899,7 @@ export function App() {
           onTrashDocument={() => {
             if (activeDocument) void trashDocument(activeDocument.id);
           }}
+          moving={movingDocumentId === activeDocument?.id}
           renaming={renamingDocumentId === activeDocument?.id}
           trashing={trashingDocumentId === activeDocument?.id}
         />
@@ -1430,6 +1996,93 @@ export function App() {
           }
         />
       ) : null}
+      {settingsVisible ? (
+        <SettingsModal
+          reloading={reloadingApp}
+          onClose={() => {
+            if (!reloadingApp) {
+              setSettingsVisible(false);
+            }
+          }}
+          onReload={() => void reloadApp()}
+        />
+      ) : null}
+      {createFolderVisible ? (
+        <FolderDialog
+          actionLabel="Create folder"
+          creating={creatingFolder}
+          description={`Create a folder inside ${folderDisplayName(createFolderParentPath ?? "")}.`}
+          error={createFolderError}
+          nameLabel="Folder name"
+          placeholder="New folder"
+          title="Create folder"
+          onClose={() => {
+            if (!creatingFolder) {
+              setCreateFolderError(undefined);
+              setCreateFolderParentPath(undefined);
+              setCreateFolderVisible(false);
+            }
+          }}
+          onCreate={(name) => void createNewFolder(name)}
+        />
+      ) : null}
+      {renameFolderVisible && renamingFolderPath ? (
+        <FolderDialog
+          actionLabel="Rename folder"
+          creating={renameFolderPending}
+          description={`Rename ${folderName(renamingFolderPath)} inside ${folderDisplayName(
+            renamingFolderPath.split("/").slice(0, -1).join("/"),
+          )}.`}
+          error={renameFolderError}
+          initialName={folderName(renamingFolderPath)}
+          nameLabel="New folder name"
+          placeholder="Renamed folder"
+          title="Rename folder"
+          onClose={() => {
+            if (!renameFolderPending) {
+              setRenameFolderError(undefined);
+              setRenamingFolderPath(undefined);
+              setRenameFolderVisible(false);
+            }
+          }}
+          onCreate={(name) => void renameExistingFolder(name)}
+        />
+      ) : null}
+      {deleteFolderVisible && deletingFolderPath ? (
+        <DeleteFolderDialog
+          deleting={deleteFolderPending}
+          error={deleteFolderError}
+          folderName={folderName(deletingFolderPath)}
+          onClose={() => {
+            if (!deleteFolderPending) {
+              setDeleteFolderError(undefined);
+              setDeletingFolderPath(undefined);
+              setDeleteFolderVisible(false);
+            }
+          }}
+          onDelete={() => void deleteExistingFolder()}
+        />
+      ) : null}
+      {moveDocumentVisible && moveTargetDocument ? (
+        <MoveNoteDialog
+          currentFolderPath={moveTargetDocument.folderPath ?? ""}
+          documentName={moveTargetDocument.name}
+          folders={folderPaths}
+          moving={movingDocumentId === moveTargetDocument.id}
+          onClose={() => {
+            if (!movingDocumentId) {
+              setMoveDocumentVisible(false);
+              setMoveDocumentId(undefined);
+            }
+          }}
+          onMove={(destinationFolderPath) =>
+            void moveDocumentToFolder(
+              moveTargetDocument.id,
+              destinationFolderPath,
+            )
+          }
+        />
+      ) : null}
       {vaultSwitcherVisible ? (
         <VaultSwitcher
           currentVaultId={vaultId}
@@ -1438,6 +2091,11 @@ export function App() {
           openingVaultId={openingRememberedVaultId}
           vaults={rememberedVaults}
           onClose={() => setVaultSwitcherVisible(false)}
+          onCreateVault={() => {
+            setCreateVaultError(undefined);
+            setVaultSwitcherVisible(false);
+            setCreateVaultVisible(true);
+          }}
           onForget={(rememberedVaultId) =>
             void forgetKnownVault(rememberedVaultId)
           }
@@ -1445,6 +2103,19 @@ export function App() {
           onOpenRemembered={(rememberedVaultId) =>
             void openKnownVault(rememberedVaultId)
           }
+        />
+      ) : null}
+      {createVaultVisible ? (
+        <CreateVaultDialog
+          creating={creatingVault}
+          error={createVaultError}
+          onClose={() => {
+            if (!creatingVault) {
+              setCreateVaultError(undefined);
+              setCreateVaultVisible(false);
+            }
+          }}
+          onCreate={(name) => void createNewVault(name)}
         />
       ) : null}
       {trashVisible ? (
@@ -1492,14 +2163,15 @@ export function App() {
           }}
         />
       ) : null}
-      {quitConfirmationVisible ? (
-        <QuitConfirmation
-          unfinishedCount={unfinishedDocumentCount}
-          onCancel={() => setQuitConfirmationVisible(false)}
-          onDiscard={() => void discardEditsAndClose()}
-        />
-      ) : null}
-      <StatusBar document={activeDocument} vaultName={vaultName} />
+      <StatusBar
+        document={activeDocument}
+        vaultFileCount={
+          vaultSelected
+            ? documents.filter((document) => document.relativePath).length
+            : undefined
+        }
+        vaultName={vaultName}
+      />
     </div>
   );
 }

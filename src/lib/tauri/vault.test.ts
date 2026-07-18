@@ -3,14 +3,19 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
   applyIdentityMigration,
+  createVault,
+  createVaultFolder,
   createVaultFile,
+  deleteVaultFolder,
   forgetVault,
   listRememberedVaults,
   listVaultTrash,
+  moveVaultFileToFolder,
   moveVaultFileToTrash,
   openRememberedVault,
   previewIdentityMigration,
   readVaultFile,
+  renameVaultFolder,
   renameVaultFile,
   rescanVault,
   restoreVaultFileFromTrash,
@@ -63,6 +68,9 @@ const createRequest = {
   content: "# New note\n",
   suggestedName: "New note.md",
 };
+const createVaultRequest = {
+  name: "Second Brain",
+};
 
 describe("vault bridge", () => {
   beforeEach(() => mockedInvoke.mockReset());
@@ -72,6 +80,44 @@ describe("vault bridge", () => {
 
     await expect(selectVault()).resolves.toEqual(snapshot);
     expect(mockedInvoke).toHaveBeenCalledWith("select_vault");
+  });
+
+  it("creates a vault through the Rust-owned parent-folder dialog", async () => {
+    mockedInvoke.mockResolvedValue(snapshot);
+
+    await expect(createVault(createVaultRequest)).resolves.toEqual(snapshot);
+    expect(mockedInvoke).toHaveBeenCalledWith(
+      "create_vault",
+      createVaultRequest,
+    );
+  });
+
+  it("creates a folder through the retained Rust vault", async () => {
+    mockedInvoke.mockResolvedValue(snapshot);
+
+    await expect(
+      createVaultFolder({ name: "Projects", parentPath: "Notes" }),
+    ).resolves.toEqual(snapshot);
+    expect(mockedInvoke).toHaveBeenCalledWith("create_vault_folder", {
+      name: "Projects",
+      parentPath: "Notes",
+    });
+  });
+
+  it("renames and deletes folders through narrow native commands", async () => {
+    mockedInvoke.mockResolvedValue(snapshot);
+
+    await expect(
+      renameVaultFolder({ folderPath: "Notes", name: "Archive" }),
+    ).resolves.toEqual(snapshot);
+    await expect(deleteVaultFolder("Archive/Empty")).resolves.toEqual(snapshot);
+    expect(mockedInvoke).toHaveBeenNthCalledWith(1, "rename_vault_folder", {
+      folderPath: "Notes",
+      name: "Archive",
+    });
+    expect(mockedInvoke).toHaveBeenNthCalledWith(2, "delete_vault_folder", {
+      folderPath: "Archive/Empty",
+    });
   });
 
   it("lists, opens, and forgets remembered vaults without frontend paths", async () => {
@@ -215,6 +261,23 @@ describe("vault bridge", () => {
       result,
     );
     expect(mockedInvoke).toHaveBeenCalledWith("rename_vault_file", {
+      relativePath: "Notes/Leadership.md",
+    });
+  });
+
+  it("moves a Markdown file into another retained Rust folder", async () => {
+    const result = {
+      relativePath: "Archive/Leadership.md",
+      updatedFiles: 1,
+      updatedLinks: 2,
+    };
+    mockedInvoke.mockResolvedValue(result);
+
+    await expect(
+      moveVaultFileToFolder("Notes/Leadership.md", "Archive"),
+    ).resolves.toEqual(result);
+    expect(mockedInvoke).toHaveBeenCalledWith("move_vault_file_to_folder", {
+      destinationFolder: "Archive",
       relativePath: "Notes/Leadership.md",
     });
   });

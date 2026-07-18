@@ -1,17 +1,30 @@
-import { render, screen, waitFor, within } from "@testing-library/react";
+import {
+  act,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
   applyIdentityMigration,
+  createVault,
+  createVaultFolder,
+  createUntitledVaultFile,
   createVaultFile,
+  deleteVaultFolder,
   forgetVault,
   listRememberedVaults,
   listVaultTrash,
+  moveVaultFileToFolder,
   moveVaultFileToTrash,
   openRememberedVault,
   previewIdentityMigration,
   readVaultFile,
+  renameVaultFolder,
   renameVaultFile,
   rescanVault,
   saveVaultFile,
@@ -20,17 +33,25 @@ import {
   restoreVaultFileFromTrash,
 } from "../lib/tauri/vault";
 import { App } from "./App";
+import { saveSessionState } from "./sessionState";
+import { reloadAnchoredWindow } from "./windowActions";
 
 vi.mock("../lib/tauri/vault", () => ({
   applyIdentityMigration: vi.fn(),
+  createVault: vi.fn(),
+  createVaultFolder: vi.fn(),
+  createUntitledVaultFile: vi.fn(),
   createVaultFile: vi.fn(),
+  deleteVaultFolder: vi.fn(),
   forgetVault: vi.fn(),
   listRememberedVaults: vi.fn(),
   listVaultTrash: vi.fn(),
+  moveVaultFileToFolder: vi.fn(),
   moveVaultFileToTrash: vi.fn(),
   openRememberedVault: vi.fn(),
   previewIdentityMigration: vi.fn(),
   readVaultFile: vi.fn(),
+  renameVaultFolder: vi.fn(),
   renameVaultFile: vi.fn(),
   rescanVault: vi.fn(),
   saveVaultFile: vi.fn(),
@@ -39,21 +60,32 @@ vi.mock("../lib/tauri/vault", () => ({
   restoreVaultFileFromTrash: vi.fn(),
 }));
 
+vi.mock("./windowActions", () => ({
+  reloadAnchoredWindow: vi.fn(),
+}));
+
 const mockedSelectVault = vi.mocked(selectVault);
 const mockedApplyIdentityMigration = vi.mocked(applyIdentityMigration);
+const mockedCreateVault = vi.mocked(createVault);
+const mockedCreateVaultFolder = vi.mocked(createVaultFolder);
+const mockedCreateUntitledVaultFile = vi.mocked(createUntitledVaultFile);
 const mockedCreateVaultFile = vi.mocked(createVaultFile);
+const mockedDeleteVaultFolder = vi.mocked(deleteVaultFolder);
 const mockedForgetVault = vi.mocked(forgetVault);
 const mockedListRememberedVaults = vi.mocked(listRememberedVaults);
 const mockedListVaultTrash = vi.mocked(listVaultTrash);
+const mockedMoveVaultFileToFolder = vi.mocked(moveVaultFileToFolder);
 const mockedMoveVaultFileToTrash = vi.mocked(moveVaultFileToTrash);
 const mockedOpenRememberedVault = vi.mocked(openRememberedVault);
 const mockedPreviewIdentityMigration = vi.mocked(previewIdentityMigration);
 const mockedReadVaultFile = vi.mocked(readVaultFile);
+const mockedRenameVaultFolder = vi.mocked(renameVaultFolder);
 const mockedRenameVaultFile = vi.mocked(renameVaultFile);
 const mockedRescanVault = vi.mocked(rescanVault);
 const mockedSaveVaultFile = vi.mocked(saveVaultFile);
 const mockedSearchVault = vi.mocked(searchVault);
 const mockedRestoreVaultFileFromTrash = vi.mocked(restoreVaultFileFromTrash);
+const mockedReloadAnchoredWindow = vi.mocked(reloadAnchoredWindow);
 const noWarnings = {
   addedIdentities: 0,
   identityConflicts: 0,
@@ -63,23 +95,37 @@ const noWarnings = {
 };
 
 describe("App", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   beforeEach(() => {
     window.localStorage.clear();
     mockedApplyIdentityMigration.mockReset();
+    mockedCreateVault.mockReset();
+    mockedCreateVaultFolder.mockReset();
+    mockedCreateUntitledVaultFile.mockReset();
     mockedCreateVaultFile.mockReset();
+    mockedDeleteVaultFolder.mockReset();
     mockedForgetVault.mockReset();
     mockedListRememberedVaults.mockReset();
     mockedListVaultTrash.mockReset();
+    mockedMoveVaultFileToFolder.mockReset();
     mockedMoveVaultFileToTrash.mockReset();
     mockedOpenRememberedVault.mockReset();
     mockedPreviewIdentityMigration.mockReset();
     mockedSelectVault.mockReset();
     mockedReadVaultFile.mockReset();
+    mockedRenameVaultFolder.mockReset();
     mockedRenameVaultFile.mockReset();
     mockedRescanVault.mockReset();
     mockedSaveVaultFile.mockReset();
     mockedSearchVault.mockReset();
     mockedRestoreVaultFileFromTrash.mockReset();
+    mockedReloadAnchoredWindow.mockReset();
+    mockedCreateUntitledVaultFile.mockImplementation(
+      () => new Promise(() => {}),
+    );
     mockedListRememberedVaults.mockResolvedValue([]);
     mockedListVaultTrash.mockResolvedValue([]);
   });
@@ -93,6 +139,12 @@ describe("App", () => {
     ).toBeInTheDocument();
     expect(
       screen.getByRole("button", { name: "Open vault" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Open a vault" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Create a vault" }),
     ).toBeInTheDocument();
     expect(
       screen.getAllByRole("button", {
@@ -122,7 +174,55 @@ describe("App", () => {
     }
   });
 
-  it("keeps a timestamped vault event in dismissible notification history", async () => {
+  it("restores the current vault and note from saved session state", async () => {
+    const sessionVault = {
+      available: true,
+      id: "01JZQ7K8P4A6F2M9V3C5T7X1BY",
+      lastOpenedAt: Date.UTC(2026, 6, 17, 8),
+      name: "My Vault",
+    };
+    saveSessionState(window.localStorage, {
+      activeRelativePath: "Notes/Leadership.md",
+      vaultId: sessionVault.id,
+    });
+    mockedListRememberedVaults.mockResolvedValue([sessionVault]);
+    mockedOpenRememberedVault.mockResolvedValue({
+      files: [
+        {
+          id: "01JZQ91T3AA6F2M9V3C5T7X1BZ",
+          name: "Leadership.md",
+          parent: "Notes",
+          relativePath: "Notes/Leadership.md",
+        },
+      ],
+      name: sessionVault.name,
+      vaultId: sessionVault.id,
+      warnings: noWarnings,
+    });
+    mockedReadVaultFile.mockResolvedValue({
+      content: "# Leadership",
+      relativePath: "Notes/Leadership.md",
+      sizeBytes: 12,
+    });
+    render(<App />);
+
+    await waitFor(() =>
+      expect(mockedOpenRememberedVault).toHaveBeenCalledWith(sessionVault.id),
+    );
+    await waitFor(() =>
+      expect(mockedReadVaultFile).toHaveBeenCalledWith("Notes/Leadership.md"),
+    );
+    expect(
+      await screen.findByRole("button", {
+        name: "Switch vault: My Vault",
+      }),
+    ).toBeVisible();
+    expect(
+      screen.getByRole("button", { name: "Leadership.md" }),
+    ).toHaveAttribute("aria-current", "page");
+  });
+
+  it("shows the vault file count without creating a notification", async () => {
     const user = userEvent.setup();
     mockedSelectVault.mockResolvedValue({
       files: [],
@@ -132,23 +232,61 @@ describe("App", () => {
     render(<App />);
 
     await user.click(screen.getByRole("button", { name: "Open vault" }));
+    expect(screen.getByText("0 Markdown files")).toBeVisible();
     await user.click(
-      screen.getByRole("button", { name: "Open notification history (1)" }),
+      screen.getByRole("button", { name: "Open notification history" }),
     );
 
     const history = screen.getByRole("dialog", {
       name: "Notification history",
     });
-    expect(within(history).getByText("0 Markdown files found.")).toBeVisible();
-    expect(within(history).getByText("Vault")).toBeVisible();
-    expect(within(history).getByRole("time")).toHaveAttribute("dateTime");
-
-    await user.click(
-      within(history).getByRole("button", {
-        name: "Delete notification: 0 Markdown files found.",
-      }),
-    );
     expect(within(history).getByText("No notifications yet.")).toBeVisible();
+  });
+
+  it("auto-dismisses minor notices after 12 seconds", async () => {
+    vi.useFakeTimers();
+    mockedSelectVault.mockResolvedValue({
+      files: [],
+      name: "My Vault",
+      warnings: { ...noWarnings, addedIdentities: 1 },
+    });
+    render(<App />);
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Open vault" }));
+      await Promise.resolve();
+    });
+    expect(screen.getByText("1 new note identity was added.")).toBeVisible();
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(12_000);
+    });
+
+    expect(
+      screen.queryByText("1 new note identity was added."),
+    ).not.toBeInTheDocument();
+  });
+
+  it("keeps action-required notices visible after 12 seconds", async () => {
+    vi.useFakeTimers();
+    mockedSelectVault.mockResolvedValue({
+      files: [],
+      name: "My Vault",
+      warnings: { ...noWarnings, needsIdentity: 1 },
+    });
+    render(<App />);
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Open vault" }));
+      await Promise.resolve();
+    });
+    expect(screen.getByText("1 existing note needs identities.")).toBeVisible();
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(12_000);
+    });
+
+    expect(screen.getByText("1 existing note needs identities.")).toBeVisible();
   });
 
   it("opens and forgets a remembered vault from the switcher", async () => {
@@ -192,6 +330,302 @@ describe("App", () => {
       ),
     );
     expect(mockedForgetVault).toHaveBeenCalledWith(rememberedVault.id);
+  });
+
+  it("creates and opens a new vault from the no-vault state", async () => {
+    const user = userEvent.setup();
+    mockedCreateVault.mockResolvedValue({
+      files: [],
+      name: "Second Brain",
+      vaultId: "01JZQ7K8P4A6F2M9V3C5T7X1BY",
+      warnings: noWarnings,
+    });
+    render(<App />);
+
+    await user.click(screen.getByRole("button", { name: "Create a vault" }));
+    const dialog = screen.getByRole("dialog", { name: "Create vault" });
+    await user.type(
+      within(dialog).getByRole("textbox", { name: "Vault name" }),
+      "Second Brain",
+    );
+    await user.click(
+      within(dialog).getByRole("button", { name: "Choose location…" }),
+    );
+
+    expect(mockedCreateVault).toHaveBeenCalledWith({ name: "Second Brain" });
+    expect(
+      await screen.findByRole("button", {
+        name: "Switch vault: Second Brain",
+      }),
+    ).toBeVisible();
+  });
+
+  it("creates a root folder from the file rail", async () => {
+    const user = userEvent.setup();
+    mockedSelectVault.mockResolvedValue({
+      files: [],
+      folders: [],
+      name: "My Vault",
+      vaultId: "01JZQ7K8P4A6F2M9V3C5T7X1BY",
+      warnings: noWarnings,
+    });
+    mockedCreateVaultFolder.mockResolvedValue({
+      files: [],
+      folders: ["Projects"],
+      name: "My Vault",
+      vaultId: "01JZQ7K8P4A6F2M9V3C5T7X1BY",
+      warnings: noWarnings,
+    });
+    render(<App />);
+
+    await user.click(screen.getByRole("button", { name: "Open vault" }));
+    await user.click(
+      screen.getByRole("button", { name: "Create folder at vault root" }),
+    );
+    const dialog = screen.getByRole("dialog", { name: "Create folder" });
+    await user.type(
+      within(dialog).getByRole("textbox", { name: "Folder name" }),
+      "Projects",
+    );
+    await user.click(
+      within(dialog).getByRole("button", { name: "Create folder" }),
+    );
+
+    expect(mockedCreateVaultFolder).toHaveBeenCalledWith({
+      name: "Projects",
+      parentPath: undefined,
+    });
+    expect(
+      await screen.findByRole("button", { name: "Projects" }),
+    ).toBeVisible();
+  });
+
+  it("creates a subfolder from a folder row action", async () => {
+    const user = userEvent.setup();
+    mockedSelectVault.mockResolvedValue({
+      files: [],
+      folders: ["Projects"],
+      name: "My Vault",
+      vaultId: "01JZQ7K8P4A6F2M9V3C5T7X1BY",
+      warnings: noWarnings,
+    });
+    mockedCreateVaultFolder.mockResolvedValue({
+      files: [],
+      folders: ["Projects", "Projects/Inbox"],
+      name: "My Vault",
+      vaultId: "01JZQ7K8P4A6F2M9V3C5T7X1BY",
+      warnings: noWarnings,
+    });
+    render(<App />);
+
+    await user.click(screen.getByRole("button", { name: "Open vault" }));
+    await user.click(
+      screen.getByRole("button", { name: "Create subfolder inside Projects" }),
+    );
+    const dialog = screen.getByRole("dialog", { name: "Create folder" });
+    await user.type(
+      within(dialog).getByRole("textbox", { name: "Folder name" }),
+      "Inbox",
+    );
+    await user.click(
+      within(dialog).getByRole("button", { name: "Create folder" }),
+    );
+
+    expect(mockedCreateVaultFolder).toHaveBeenCalledWith({
+      name: "Inbox",
+      parentPath: "Projects",
+    });
+    expect(await screen.findByRole("button", { name: "Inbox" })).toBeVisible();
+  });
+
+  it("renames a folder from a folder row action", async () => {
+    const user = userEvent.setup();
+    mockedSelectVault.mockResolvedValue({
+      files: [],
+      folders: ["Projects", "Projects/Inbox"],
+      name: "My Vault",
+      vaultId: "01JZQ7K8P4A6F2M9V3C5T7X1BY",
+      warnings: noWarnings,
+    });
+    mockedRenameVaultFolder.mockResolvedValue({
+      files: [],
+      folders: ["Archive", "Archive/Inbox"],
+      name: "My Vault",
+      vaultId: "01JZQ7K8P4A6F2M9V3C5T7X1BY",
+      warnings: noWarnings,
+    });
+    render(<App />);
+
+    await user.click(screen.getByRole("button", { name: "Open vault" }));
+    await user.click(
+      screen.getByRole("button", { name: "Rename Projects folder" }),
+    );
+    const dialog = screen.getByRole("dialog", { name: "Rename folder" });
+    const input = within(dialog).getByRole("textbox", {
+      name: "New folder name",
+    });
+    await user.clear(input);
+    await user.type(input, "Archive");
+    await user.click(
+      within(dialog).getByRole("button", { name: "Rename folder" }),
+    );
+
+    expect(mockedRenameVaultFolder).toHaveBeenCalledWith({
+      folderPath: "Projects",
+      name: "Archive",
+    });
+    expect(
+      await screen.findByRole("button", { name: "Archive" }),
+    ).toBeVisible();
+  });
+
+  it("deletes an empty folder from a folder row action", async () => {
+    const user = userEvent.setup();
+    mockedSelectVault.mockResolvedValue({
+      files: [],
+      folders: ["Archive"],
+      name: "My Vault",
+      vaultId: "01JZQ7K8P4A6F2M9V3C5T7X1BY",
+      warnings: noWarnings,
+    });
+    mockedDeleteVaultFolder.mockResolvedValue({
+      files: [],
+      folders: [],
+      name: "My Vault",
+      vaultId: "01JZQ7K8P4A6F2M9V3C5T7X1BY",
+      warnings: noWarnings,
+    });
+    render(<App />);
+
+    await user.click(screen.getByRole("button", { name: "Open vault" }));
+    await user.click(
+      screen.getByRole("button", { name: "Delete Archive folder" }),
+    );
+    const dialog = screen.getByRole("dialog", { name: "Delete folder" });
+    await user.click(
+      within(dialog).getByRole("button", { name: "Delete folder" }),
+    );
+
+    expect(mockedDeleteVaultFolder).toHaveBeenCalledWith("Archive");
+    await waitFor(() =>
+      expect(
+        screen.queryByRole("button", { name: "Archive" }),
+      ).not.toBeInTheDocument(),
+    );
+  });
+
+  it("reloads from settings after saving the active note", async () => {
+    const user = userEvent.setup();
+    mockedSelectVault.mockResolvedValue({
+      files: [
+        {
+          id: "01JZQ7K8P4A6F2M9V3C5T7X1BY",
+          name: "Leadership.md",
+          parent: "Notes",
+          relativePath: "Notes/Leadership.md",
+        },
+      ],
+      name: "My Vault",
+      vaultId: "01JZQ7K8P4A6F2M9V3C5T7X1CA",
+      warnings: noWarnings,
+    });
+    mockedReadVaultFile.mockResolvedValue({
+      content: "# Leadership",
+      relativePath: "Notes/Leadership.md",
+      sizeBytes: 12,
+    });
+    mockedSaveVaultFile.mockImplementation(async (request) => ({
+      content: request.content,
+      relativePath: request.relativePath,
+      sizeBytes: request.content.length,
+    }));
+    render(<App />);
+
+    await user.click(screen.getByRole("button", { name: "Open vault" }));
+    await user.click(screen.getByRole("button", { name: "Leadership.md" }));
+    const editor = await screen.findByRole("textbox", {
+      name: "Leadership.md Markdown editor",
+    });
+    await user.click(editor);
+    await user.keyboard(" updated");
+    await user.click(screen.getByRole("button", { name: "Open settings" }));
+    const settings = screen.getByRole("dialog", { name: "Settings" });
+    await user.click(
+      within(settings).getByRole("button", { name: "Reload Anchored" }),
+    );
+
+    await waitFor(() => expect(mockedSaveVaultFile).toHaveBeenCalled());
+    await waitFor(() =>
+      expect(mockedReloadAnchoredWindow).toHaveBeenCalledTimes(1),
+    );
+  });
+
+  it("reloads from settings with no vault open", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+
+    await user.click(screen.getByRole("button", { name: "Open settings" }));
+    await user.click(
+      within(screen.getByRole("dialog", { name: "Settings" })).getByRole(
+        "button",
+        { name: "Reload Anchored" },
+      ),
+    );
+
+    await waitFor(() =>
+      expect(mockedReloadAnchoredWindow).toHaveBeenCalledTimes(1),
+    );
+  });
+
+  it("blocks reload from settings when a note has a save conflict", async () => {
+    const user = userEvent.setup();
+    mockedSelectVault.mockResolvedValue({
+      files: [
+        {
+          id: "01JZQ7K8P4A6F2M9V3C5T7X1BY",
+          name: "Leadership.md",
+          parent: "Notes",
+          relativePath: "Notes/Leadership.md",
+        },
+      ],
+      name: "My Vault",
+      vaultId: "01JZQ7K8P4A6F2M9V3C5T7X1CA",
+      warnings: noWarnings,
+    });
+    mockedReadVaultFile.mockResolvedValue({
+      content: "# Leadership",
+      relativePath: "Notes/Leadership.md",
+      sizeBytes: 12,
+    });
+    mockedSaveVaultFile.mockRejectedValue(
+      Object.assign(new Error("The file changed outside Anchored."), {
+        code: "vaultConflict",
+      }),
+    );
+    render(<App />);
+
+    await user.click(screen.getByRole("button", { name: "Open vault" }));
+    await user.click(screen.getByRole("button", { name: "Leadership.md" }));
+    const editor = await screen.findByRole("textbox", {
+      name: "Leadership.md Markdown editor",
+    });
+    await user.click(editor);
+    await user.keyboard(" updated");
+    await user.keyboard("{Meta>}s{/Meta}");
+
+    await screen.findByText("The file changed outside Anchored.");
+    await user.click(screen.getByRole("button", { name: "Open settings" }));
+    await user.click(
+      within(screen.getByRole("dialog", { name: "Settings" })).getByRole(
+        "button",
+        { name: "Reload Anchored" },
+      ),
+    );
+
+    expect(mockedReloadAnchoredWindow).not.toHaveBeenCalled();
+    expect(
+      screen.getByText("Resolve note save problems before reloading Anchored."),
+    ).toBeVisible();
   });
 
   it("moves a saved note to the vault Trash", async () => {
@@ -243,6 +677,154 @@ describe("App", () => {
     expect(screen.getByText(`${file.name} moved to Trash.`)).toBeVisible();
     expect(screen.queryByRole("button", { name: file.name })).toBeNull();
     expect(screen.getByRole("button", { name: "Trash (1)" })).toBeVisible();
+  });
+
+  it("drags a saved note into another folder", async () => {
+    const vaultId = "01JZQ7K8P4A6F2M9V3C5T7X1BY";
+    const original = {
+      content: "# Leadership",
+      relativePath: "Notes/Leadership.md",
+      sizeBytes: 12,
+    };
+    const moved = {
+      content: "# Leadership",
+      relativePath: "Archive/Leadership.md",
+      sizeBytes: 12,
+    };
+    mockedSelectVault.mockResolvedValue({
+      files: [
+        {
+          id: "01JZQ91T3AA6F2M9V3C5T7X1BZ",
+          name: "Leadership.md",
+          parent: "Notes",
+          relativePath: "Notes/Leadership.md",
+        },
+      ],
+      folders: ["Archive", "Notes"],
+      name: "My Vault",
+      vaultId,
+      warnings: noWarnings,
+    });
+    mockedReadVaultFile.mockImplementation(async (relativePath) =>
+      relativePath === moved.relativePath ? moved : original,
+    );
+    mockedMoveVaultFileToFolder.mockResolvedValue({
+      relativePath: moved.relativePath,
+      updatedFiles: 0,
+      updatedLinks: 0,
+    });
+    mockedRescanVault.mockResolvedValue({
+      files: [
+        {
+          id: "01JZQ91T3AA6F2M9V3C5T7X1BZ",
+          name: "Leadership.md",
+          parent: "Archive",
+          relativePath: moved.relativePath,
+        },
+      ],
+      folders: ["Archive", "Notes"],
+      name: "My Vault",
+      vaultId,
+      warnings: noWarnings,
+    });
+    render(<App />);
+
+    await userEvent.click(screen.getByRole("button", { name: "Open vault" }));
+    const note = await screen.findByRole("button", { name: "Leadership.md" });
+    const archiveFolder = screen.getByRole("button", { name: "Archive" });
+    fireEvent.dragStart(note, {
+      dataTransfer: {
+        effectAllowed: "move",
+        setData: vi.fn(),
+      },
+    });
+    fireEvent.dragOver(archiveFolder);
+    fireEvent.drop(archiveFolder);
+
+    await waitFor(() =>
+      expect(mockedMoveVaultFileToFolder).toHaveBeenCalledWith(
+        "Notes/Leadership.md",
+        "Archive",
+      ),
+    );
+    expect(
+      await screen.findByText(
+        "Leadership.md moved to Archive. 0 links updated across 0 notes.",
+      ),
+    ).toBeVisible();
+  });
+
+  it("moves a saved note through the move dialog", async () => {
+    const user = userEvent.setup();
+    const vaultId = "01JZQ7K8P4A6F2M9V3C5T7X1BY";
+    const original = {
+      content: "# Leadership",
+      relativePath: "Notes/Leadership.md",
+      sizeBytes: 12,
+    };
+    const moved = {
+      content: "# Leadership",
+      relativePath: "Archive/Leadership.md",
+      sizeBytes: 12,
+    };
+    mockedSelectVault.mockResolvedValue({
+      files: [
+        {
+          id: "01JZQ91T3AA6F2M9V3C5T7X1BZ",
+          name: "Leadership.md",
+          parent: "Notes",
+          relativePath: "Notes/Leadership.md",
+        },
+      ],
+      folders: ["Archive", "Notes"],
+      name: "My Vault",
+      vaultId,
+      warnings: noWarnings,
+    });
+    mockedReadVaultFile.mockImplementation(async (relativePath) =>
+      relativePath === moved.relativePath ? moved : original,
+    );
+    mockedMoveVaultFileToFolder.mockResolvedValue({
+      relativePath: moved.relativePath,
+      updatedFiles: 0,
+      updatedLinks: 0,
+    });
+    mockedRescanVault.mockResolvedValue({
+      files: [
+        {
+          id: "01JZQ91T3AA6F2M9V3C5T7X1BZ",
+          name: "Leadership.md",
+          parent: "Archive",
+          relativePath: moved.relativePath,
+        },
+      ],
+      folders: ["Archive", "Notes"],
+      name: "My Vault",
+      vaultId,
+      warnings: noWarnings,
+    });
+    render(<App />);
+
+    await user.click(screen.getByRole("button", { name: "Open vault" }));
+    await user.click(
+      await screen.findByRole("button", { name: "Leadership.md" }),
+    );
+    await user.click(
+      await screen.findByRole("button", { name: "Move Leadership.md" }),
+    );
+    const dialog = screen.getByRole("dialog", { name: "Move note" });
+    const archiveRow = within(dialog).getByText("Archive").closest("li");
+    expect(archiveRow).not.toBeNull();
+    await user.click(
+      within(archiveRow as HTMLElement).getByRole("button", { name: "Move" }),
+    );
+
+    await waitFor(() =>
+      expect(mockedMoveVaultFileToFolder).toHaveBeenCalledWith(
+        "Notes/Leadership.md",
+        "Archive",
+      ),
+    );
   });
 
   it("restores a trashed note to its original path", async () => {
@@ -527,7 +1109,7 @@ describe("App", () => {
     ).toHaveTextContent("# Leadership");
   });
 
-  it("creates a local unsaved note", async () => {
+  it("keeps newer local drafts available while their first saves run", async () => {
     const user = userEvent.setup();
     mockedSelectVault.mockResolvedValue({
       files: [],
@@ -543,7 +1125,7 @@ describe("App", () => {
       name: "Untitled.md Markdown editor",
     });
     expect(editor).toHaveAttribute("aria-placeholder", "Start writing…");
-    expect(screen.getByText("Unsaved")).toBeInTheDocument();
+    expect(screen.getByText("Saving…")).toBeInTheDocument();
 
     await user.click(editor);
     await user.keyboard("# Draft");
@@ -561,6 +1143,50 @@ describe("App", () => {
         name: "Untitled.md Markdown editor",
       }),
     ).toHaveTextContent("# Draft");
+  });
+
+  it("starts saving an empty new note immediately", async () => {
+    const identifiedContent = "---\nid: 01JZQ7K8P4A6F2M9V3C5T7X1BY\n---\n";
+    let finishCreatingNote:
+      | ((value: {
+          content: string;
+          relativePath: string;
+          sizeBytes: number;
+        }) => void)
+      | null = null;
+    mockedSelectVault.mockResolvedValue({
+      files: [],
+      name: "My Vault",
+      warnings: noWarnings,
+    });
+    mockedCreateUntitledVaultFile.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          finishCreatingNote = resolve;
+        }),
+    );
+    render(<App />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Open vault" }));
+    await act(async () => {
+      await Promise.resolve();
+    });
+    fireEvent.click(screen.getAllByRole("button", { name: "New note" })[0]);
+
+    expect(mockedCreateUntitledVaultFile).toHaveBeenCalledOnce();
+    expect(mockedCreateUntitledVaultFile).toHaveBeenCalledWith("");
+    expect(screen.getByText("Saving…")).toBeInTheDocument();
+
+    await act(async () => {
+      finishCreatingNote?.({
+        content: identifiedContent,
+        relativePath: "Untitled.md",
+        sizeBytes: identifiedContent.length,
+      });
+    });
+
+    expect(screen.getByText("Saved")).toBeInTheDocument();
+    expect(screen.getByText("1 Markdown file")).toBeInTheDocument();
   });
 
   it("finds text within the active Markdown note with Command-F", async () => {
@@ -740,15 +1366,8 @@ describe("App", () => {
     expect(
       screen.queryByRole("button", { name: "Leadership.md" }),
     ).not.toBeInTheDocument();
-    expect(screen.getByText("1 Markdown files found.")).toBeInTheDocument();
-    await user.click(
-      screen.getByRole("button", {
-        name: "Dismiss notification: 1 Markdown files found.",
-      }),
-    );
-    expect(
-      screen.queryByText("1 Markdown files found."),
-    ).not.toBeInTheDocument();
+    expect(screen.getByText("1 Markdown file")).toBeInTheDocument();
+    expect(screen.queryByLabelText("Notifications")).not.toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "Own Note.md" }));
 
@@ -796,23 +1415,19 @@ describe("App", () => {
     expect(
       await screen.findByRole("button", { name: "Finder Note.md" }),
     ).toBeInTheDocument();
+    expect(screen.getByText("1 Markdown file")).toBeInTheDocument();
     const notifications = screen.getByLabelText("Notifications");
     expect(
-      within(notifications).getByText("0 Markdown files found."),
+      within(notifications).getByText("1 new note identity was added."),
     ).toBeInTheDocument();
-    expect(
-      within(notifications).getByText(/1 new note identities added/),
-    ).toBeInTheDocument();
-    expect(within(notifications).getAllByText("Dismiss")).toHaveLength(2);
+    expect(within(notifications).getAllByText("Dismiss")).toHaveLength(1);
 
     await user.click(
       within(notifications).getByRole("button", {
-        name: "Dismiss notification: 1 Markdown files found. 1 new note identities added.",
+        name: "Dismiss notification: 1 new note identity was added.",
       }),
     );
-    expect(
-      within(notifications).getByText("0 Markdown files found."),
-    ).toBeInTheDocument();
+    expect(screen.queryByLabelText("Notifications")).not.toBeInTheDocument();
   });
 
   it("previews and explicitly applies existing-note identities", async () => {

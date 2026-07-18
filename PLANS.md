@@ -429,6 +429,146 @@ and preserves link integrity across filename changes.
       commit if the policy is rejected.
     - Commit: current documentation chunk
 
+15. [x] **Chunk: Fix close and notification regressions**
+    - Issues: [#1](https://github.com/dwaynemcyrus/anchored-app/issues/1),
+      [#3](https://github.com/dwaynemcyrus/anchored-app/issues/3), and
+      [#4](https://github.com/dwaynemcyrus/anchored-app/issues/4)
+    - Files: app composition and tests, status bar, notification UI/styles,
+      native untitled-file creation, `CHANGELOG.md`, and `PLANS.md`
+    - Change: Leave the native macOS red close control completely
+      unintercepted. Start saving every new note immediately, including a blank
+      note, at the vault root using collision-safe numbered Untitled filenames.
+      Remove the routine Markdown-file count from immediate and
+      history notifications, and show the live vault count quietly in the
+      status bar. Automatically dismiss non-critical, non-actionable notices
+      after 12 seconds while keeping errors, conflicts, and action-required
+      messages visible.
+    - Verify: Native red-close smoke test with no warning; tests for immediate
+      blank-note saving and minor-notice expiry; numbered-filename Rust test;
+      status-bar count updates after vault scans; notification history excludes
+      routine count events; keyboard and narrow-window checks; Prettier,
+      ESLint, TypeScript, Vitest, Vite build, Rust format, Clippy, and Rust
+      tests.
+    - Risk/rollback: A failed first save could leave a just-created draft only
+      in memory, and overly broad timers could hide actionable failures. Begin
+      the first save during note creation, never replace occupied filenames,
+      and preserve all critical notices. Revert the focused commit without
+      touching vault Markdown files.
+    - Assumption: The status bar is the appropriate quiet location for the
+      Markdown-file count; it should display the active vault's current count.
+    - Verification result: The final native macOS app exited cleanly when its
+      red close control was pressed, with no prompt. Immediate blank-note save,
+      collision-safe numbering, 12-second notice expiry, persistent actionable
+      notices, and status-bar counts pass automated coverage. All 81 frontend
+      and 60 Rust tests pass with formatting, lint, type-check, production
+      build, Rust formatting, and Clippy. Rendered QA passed at 1280×720 with
+      the expected interaction state and no console warnings or errors.
+    - Commit: current implementation chunk
+
+16. [x] **Chunk: Create vaults at user-selected locations**
+    - Issues: [#8](https://github.com/dwaynemcyrus/anchored-app/issues/8)
+    - Files: native vault commands and tests, typed frontend bridge, vault
+      selector UI, app composition, `CHANGELOG.md`, and `PLANS.md`
+    - Change: Add a native-owned create-vault flow that lets the user enter a
+      vault name, choose a parent folder, create the new vault directory
+      safely, initialize Anchored metadata, remember the vault, and open it
+      immediately without exposing arbitrary filesystem paths to the interface.
+    - Verify: Empty-name, duplicate-name, invalid-name, canceled-selection,
+      nested-parent, hidden-internal-path, remembered-vault registration, and
+      immediate-open tests; frontend and Rust quality gates; native disposable-
+      vault smoke test.
+    - Risk/rollback: Folder creation mutates the filesystem. Validate names,
+      refuse reserved or occupied destinations, create only one directory
+      inside the chosen parent, and revert the focused chunk without touching
+      existing vault Markdown.
+    - Verification result: New native coverage validates vault-name safety,
+      occupied destinations, and successful folder creation. The frontend bridge
+      and app tests cover dialog launch from the no-vault screen, naming, and
+      immediate activation of the created vault. Frontend formatting, lint,
+      type-checking, tests, production build, Rust formatting, Clippy, and
+      Rust tests pass. Rendered QA on Friday, July 17, 2026 confirmed the
+      no-vault screen opens the create-vault dialog at `http://127.0.0.1:1420/`
+      with no relevant console warnings or errors.
+    - Commit: current implementation chunk
+
+17. [x] **Chunk: Add safe reload continuity**
+    - Issues: [#13](https://github.com/dwaynemcyrus/anchored-app/issues/13)
+    - Files: startup boundary and app session state, new settings UI and tests,
+      typed frontend bridge if needed, `CHANGELOG.md`, and `PLANS.md`
+    - Change: Add a settings modal with a danger-scoped reload action that
+      saves pending note changes first, reloads Anchored, and restores the
+      current remembered vault plus the currently open note after startup. This
+      chunk does not introduce future tab-session scope before tabs exist.
+    - Verify: Saved and unsaved current-note reloads, blocked conflict/error
+      cases, no-vault reload, startup-boundary reload, restored active note,
+      keyboard/focus behavior, frontend quality gates, and rendered QA.
+    - Risk/rollback: A mistaken reload flow can interrupt writing or restore
+      stale state. Persist only the minimum current session state, save before
+      reload, and refuse automatic reload when save conflicts or failures need
+      human action.
+    - Verification result: Session-state parsing tests plus saved-note, no-vault,
+      conflict-block, and startup-restore app tests pass. Formatting, lint,
+      type-checking, the full 89-test frontend suite, and the production build
+      pass. Rendered QA on Saturday, July 18, 2026 confirmed the Settings modal
+      opens from the no-vault shell at `http://127.0.0.1:1421/`, the reload
+      action returns to the no-vault state, and the console stays free of
+      relevant warnings and errors.
+    - Commit: current implementation chunk
+
+18. [x] **Chunk: Add folder creation and note moves**
+    - Files: native folder and note-move commands and tests, typed frontend
+      bridge, file-rail and app state, targeted UI for folder creation and note
+      moves, `CHANGELOG.md`, and `PLANS.md`
+    - Change: Add safe creation of root folders and subfolders plus note moves
+      between folders inside the selected vault. Preserve permanent note IDs,
+      update affected links through the existing rename transaction path, and
+      refresh the visible folder tree without exposing arbitrary paths.
+    - Verify: Root and nested folder creation, invalid names, occupied
+      destinations, note moves across folders, unchanged-content collision
+      refusal, link-update coverage, keyboard flows, frontend and Rust quality
+      gates, and disposable-vault UI checks.
+    - Risk/rollback: Moving notes is a cross-file mutation. Reuse the existing
+      rename transaction safety model, refuse occupied destinations, and avoid
+      folder deletes or folder renames in this chunk.
+    - Verification result: Root-folder, subfolder, move-dialog, and drag-to-
+      folder app tests pass alongside the full 95-test frontend suite,
+      formatting, lint, type-checking, production build, Rust formatting,
+      strict Clippy, and all 67 Rust tests. Rendered smoke QA on Saturday,
+      July 18, 2026 at `http://127.0.0.1:1422/` confirmed the no-vault shell
+      renders without an overlay, the console stays free of relevant warnings
+      and errors, and the Create vault modal opens with the expected fields
+      and controls. Native folder creation and note-move execution remain
+      covered by the automated vault and app tests because plain browser mode
+      does not expose Tauri filesystem mutations.
+    - Commit: current implementation chunk
+
+19. [x] **Chunk: Add folder rename and empty delete**
+    - Files: native folder rename and delete commands and tests, typed frontend
+      bridge, file-rail folder actions, shared folder dialogs, app state,
+      `CHANGELOG.md`, and `PLANS.md`
+    - Change: Add folder rename from the file rail for vault folders that
+      contain only Markdown notes and subfolders, and allow direct deletion of
+      empty folders. Reuse the existing note-rename safety model for Markdown
+      path updates and refuse broader destructive folder removal.
+    - Verify: Root and nested folder rename coverage, link updates for moved
+      note paths, refusal for folders containing non-Markdown files, empty-
+      folder deletion, non-empty delete refusal, frontend and Rust quality
+      gates, and rendered UI smoke checks where the browser surface can reach
+      them.
+    - Risk/rollback: Folder rename spans many note paths, while folder delete
+      is destructive by definition. Keep rename limited to Markdown-only folder
+      trees, refuse non-empty delete requests, and avoid recursive content
+      deletion in this chunk.
+    - Verification result: Folder-rename and empty-delete app tests pass,
+      bridge tests pass, and Rust unit coverage now includes rename-safe nested
+      folder moves plus empty and non-empty delete behavior. Formatting, lint,
+      type-checking, the full frontend test suite, production build, Rust
+      formatting, strict Clippy, and all Rust tests pass on Saturday, July 18,
+      2026. Browser-only rendered validation remains limited by the native
+      vault boundary, so the folder-action execution path is proven primarily
+      through automated app and Rust tests.
+    - Commit: current implementation chunk
+
 ## Requirements for future large plans
 
 Every future large plan must identify:

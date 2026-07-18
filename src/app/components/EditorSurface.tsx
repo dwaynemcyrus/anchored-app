@@ -19,14 +19,18 @@ type EditorSurfaceProps = {
   vaultSelected: boolean;
   wikilinkCandidates: WikilinkCandidate[];
   onCloseDocument: () => void;
+  onCreateVault: () => void;
   onDocumentChange: (content: string) => void;
   onOpenLinkedDocument: (documentId: string) => void;
+  onOpenVault: () => void;
+  onOpenMoveDocument: () => void;
   onOpenWikilink: (target: string) => void;
   onRetryDocument: () => void;
   onRenameDocument: () => void;
   onSaveDocument: () => void;
   onSaveDocumentAs: () => void;
   onTrashDocument: () => void;
+  moving: boolean;
   renaming: boolean;
   trashing: boolean;
 };
@@ -41,14 +45,18 @@ export function EditorSurface({
   vaultSelected,
   wikilinkCandidates,
   onCloseDocument,
+  onCreateVault,
   onDocumentChange,
   onOpenLinkedDocument,
+  onOpenMoveDocument,
+  onOpenVault,
   onOpenWikilink,
   onRetryDocument,
   onRenameDocument,
   onSaveDocument,
   onSaveDocumentAs,
   onTrashDocument,
+  moving,
   renaming,
   trashing,
 }: EditorSurfaceProps) {
@@ -73,6 +81,16 @@ export function EditorSurface({
                 ? "Choose a note from the file explorer."
                 : "Choose another vault to continue."}
           </p>
+          {!vaultSelected ? (
+            <div className="document__empty-actions">
+              <button type="button" onClick={onOpenVault}>
+                Open a vault
+              </button>
+              <button type="button" onClick={onCreateVault}>
+                Create a vault
+              </button>
+            </div>
+          ) : null}
         </section>
       </main>
     );
@@ -101,9 +119,27 @@ export function EditorSurface({
         <div className="editor-surface__actions">
           {document.relativePath && document.id.startsWith("vault-id:") ? (
             <button
+              aria-label={`Move ${document.name}`}
+              className="editor-surface__action"
+              disabled={
+                moving ||
+                renaming ||
+                trashing ||
+                document.saveState !== "saved" ||
+                loadState.status === "loading"
+              }
+              type="button"
+              onClick={onOpenMoveDocument}
+            >
+              {moving ? "Moving…" : "Move"}
+            </button>
+          ) : null}
+          {document.relativePath && document.id.startsWith("vault-id:") ? (
+            <button
               aria-label={`Rename ${document.name}`}
               className="editor-surface__action"
               disabled={
+                moving ||
                 renaming ||
                 document.saveState !== "saved" ||
                 loadState.status === "loading"
@@ -118,7 +154,7 @@ export function EditorSurface({
             <button
               aria-label={`Save ${document.name} as`}
               className="editor-surface__action"
-              disabled={renaming || trashing}
+              disabled={moving || renaming || trashing}
               type="button"
               onClick={onSaveDocumentAs}
             >
@@ -130,6 +166,7 @@ export function EditorSurface({
               aria-label={`Move ${document.name} to Trash`}
               className="editor-surface__action"
               disabled={
+                moving ||
                 renaming ||
                 trashing ||
                 document.saveState !== "saved" ||
@@ -144,7 +181,7 @@ export function EditorSurface({
           <button
             aria-label={`Close ${document.name}`}
             className="editor-surface__action"
-            disabled={renaming || trashing}
+            disabled={moving || renaming || trashing}
             type="button"
             onClick={onCloseDocument}
           >
