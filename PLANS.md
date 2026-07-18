@@ -132,7 +132,8 @@ and preserves link integrity across filename changes.
      `23ede3b feat(files): create notes safely`,
      `2795bb8 feat(editor): add safe save as`, and
      `b780238 fix(editor): preserve draft identity`, and
-     `3ffc334 feat(editor): style markdown source`
+     `3ffc334 feat(editor): style markdown source`, and
+     `a53660e fix(editor): cover markdown syntax`
 
 9. [x] **Chunk: Add portable metadata**
    - Files: front-matter parser, stable-ID service, fixtures, tests, docs
@@ -1051,6 +1052,12 @@ Every future large plan must identify:
 - 2026-07-17: Dwayne confirmed Anchored reloads to the normal native interface
   after the WebKit compatibility fix. Chunk 10B is complete; the shared bounded
   candidate and activity contracts are ready for Quick Open in chunk 11.
+- 2026-07-18: The source editor now always applies CodeMirror Markdown syntax
+  highlighting, with GFM enabled for the supported inline and block surface.
+  Front matter is parsed separately and receives custom styling for YAML keys,
+  values, list markers, comments, and delimiters. Typography settings expose
+  persisted 12px, 14px, and 16px source-editor sizes. Frontend and Rust tests,
+  quality gates, and the optimized macOS app bundle pass.
 
 ## Completion
 
