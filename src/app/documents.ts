@@ -8,6 +8,7 @@ export type AnchoredDocument = {
   name: string;
   outgoingLinks: string[];
   folder: string;
+  folderPath?: string;
   title: string;
   aliases: string[];
   tags: string[];
@@ -35,7 +36,8 @@ export function createUntitledDocument(
     id: `draft-${crypto.randomUUID()}`,
     name: `${title}.md`,
     outgoingLinks: [],
-    folder: "Notes",
+    folder: "Vault root",
+    folderPath: "",
     title,
     aliases: [],
     tags: [],
@@ -53,6 +55,7 @@ export function documentsFromVault(
     name: file.name,
     outgoingLinks: file.outgoingLinks ?? [],
     folder: file.parent || snapshot.name,
+    folderPath: file.parent,
     title: file.name.replace(/\.md$/i, ""),
     aliases: file.aliases ?? [],
     tags: [],
@@ -86,6 +89,7 @@ export function mergeDocumentsFromVault(
           ...current,
           aliases: document.aliases,
           folder: document.folder,
+          folderPath: document.folderPath,
           id: document.id,
           name: document.name,
           outgoingLinks: document.outgoingLinks,
@@ -104,4 +108,13 @@ export function mergeDocumentsFromVault(
   );
 
   return [...scannedDocuments, ...localOrDirtyMissingDocuments];
+}
+
+export function folderPathsFromVault(snapshot: VaultSnapshot): string[] {
+  const paths = snapshot.folders ?? snapshot.files.map((file) => file.parent);
+  return Array.from(
+    new Set(paths.filter((path) => path.trim().length > 0)),
+  ).sort((left, right) =>
+    left.localeCompare(right, undefined, { sensitivity: "base" }),
+  );
 }

@@ -515,7 +515,7 @@ and preserves link integrity across filename changes.
       relevant warnings and errors.
     - Commit: current implementation chunk
 
-18. [ ] **Chunk: Add folder creation and note moves**
+18. [x] **Chunk: Add folder creation and note moves**
     - Files: native folder and note-move commands and tests, typed frontend
       bridge, file-rail and app state, targeted UI for folder creation and note
       moves, `CHANGELOG.md`, and `PLANS.md`
@@ -530,6 +530,17 @@ and preserves link integrity across filename changes.
     - Risk/rollback: Moving notes is a cross-file mutation. Reuse the existing
       rename transaction safety model, refuse occupied destinations, and avoid
       folder deletes or folder renames in this chunk.
+    - Verification result: Root-folder, subfolder, move-dialog, and drag-to-
+      folder app tests pass alongside the full 95-test frontend suite,
+      formatting, lint, type-checking, production build, Rust formatting,
+      strict Clippy, and all 67 Rust tests. Rendered smoke QA on Saturday,
+      July 18, 2026 at `http://127.0.0.1:1422/` confirmed the no-vault shell
+      renders without an overlay, the console stays free of relevant warnings
+      and errors, and the Create vault modal opens with the expected fields
+      and controls. Native folder creation and note-move execution remain
+      covered by the automated vault and app tests because plain browser mode
+      does not expose Tauri filesystem mutations.
+    - Commit: current implementation chunk
 
 ## Requirements for future large plans
 

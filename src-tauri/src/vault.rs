@@ -68,6 +68,7 @@ pub struct VaultWarnings {
 #[serde(rename_all = "camelCase")]
 pub struct VaultSnapshot {
     pub files: Vec<VaultFile>,
+    pub folders: Vec<String>,
     pub name: String,
     pub vault_id: String,
     pub warnings: VaultWarnings,
@@ -344,6 +345,23 @@ pub async fn create_vault(
 }
 
 #[tauri::command]
+pub async fn create_vault_folder(
+    app: AppHandle,
+    state: State<'_, VaultState>,
+    name: String,
+    parent_path: Option<String>,
+) -> Result<VaultSnapshot, VaultError> {
+    let _rename_guard = state
+        .rename_transaction
+        .lock()
+        .map_err(|_| VaultError::state("The folder creation lock could not be acquired."))?;
+    let root = selected_vault_root(&state, "creating a folder")?;
+    recover_rename_transaction(&root)?;
+    create_folder(&root, parent_path.as_deref(), &name)?;
+    build_vault_snapshot(&app, &root)
+}
+
+#[tauri::command]
 pub async fn list_remembered_vaults(app: AppHandle) -> Result<Vec<RememberedVault>, VaultError> {
     load_remembered_vaults(&registry_path(&app)?)
 }
@@ -565,6 +583,21 @@ pub async fn create_untitled_vault_file(
     create_untitled_markdown_file(&root, &content)
 }
 
+#[tauri::command]
+pub async fn move_vault_file_to_folder(
+    state: State<'_, VaultState>,
+    relative_path: String,
+    destination_folder: String,
+) -> Result<RenameOutcome, VaultError> {
+    let _rename_guard = state
+        .rename_transaction
+        .lock()
+        .map_err(|_| VaultError::state("The note move lock could not be acquired."))?;
+    let root = selected_vault_root(&state, "moving a Markdown file")?;
+    recover_rename_transaction(&root)?;
+    move_markdown_file_to_folder(&root, &relative_path, &destination_folder)
+}
+
 fn create_untitled_markdown_file(root: &Path, content: &str) -> Result<VaultDocument, VaultError> {
     for count in 1..=10_000 {
         let name = if count == 1 {
@@ -583,6 +616,19 @@ fn create_untitled_markdown_file(root: &Path, content: &str) -> Result<VaultDocu
     Err(VaultError::state(
         "Anchored could not find an available Untitled filename in this vault.",
     ))
+}
+
+fn move_markdown_file_to_folder(
+    root: &Path,
+    relative_path: &str,
+    destination_folder: &str,
+) -> Result<RenameOutcome, VaultError> {
+    let destination_directory = resolve_vault_directory(root, destination_folder)?;
+    let file_name = Path::new(relative_path).file_name().ok_or_else(|| {
+        VaultError::invalid_file("Only relative Markdown file paths can be moved.")
+    })?;
+    let destination = destination_directory.join(file_name);
+    rename_markdown_file(root, relative_path, &destination, None)
 }
 
 #[tauri::command]
@@ -747,9 +793,113 @@ fn create_named_vault(parent: &Path, name: &str) -> Result<PathBuf, VaultError> 
     canonical_vault_root(&destination)
 }
 
+fn validate_folder_name(name: &str) -> Result<&str, VaultError> {
+    let trimmed = name.trim();
+    if trimmed.is_empty() {
+        return Err(VaultError::invalid(
+            "Enter a folder name before creating a folder.",
+        ));
+    }
+    if trimmed.starts_with('.') {
+        return Err(VaultError::invalid("Folder names cannot start with a dot."));
+    }
+
+    let path = Path::new(trimmed);
+    let mut components = path.components();
+    let Some(Component::Normal(component)) = components.next() else {
+        return Err(VaultError::invalid(
+            "Folder names must be a single folder name.",
+        ));
+    };
+    if components.next().is_some() || is_internal_component(component) {
+        return Err(VaultError::invalid(
+            "Folder names must be a single folder name.",
+        ));
+    }
+
+    Ok(trimmed)
+}
+
+fn resolve_vault_directory(root: &Path, relative_path: &str) -> Result<PathBuf, VaultError> {
+    let root = canonical_vault_root(root)?;
+    if relative_path.trim().is_empty() {
+        return Ok(root);
+    }
+
+    let requested = Path::new(relative_path);
+    if is_internal_relative_path(requested) {
+        return Err(VaultError::invalid_file(
+            "The hidden .anchored directory is reserved for Anchored data.",
+        ));
+    }
+
+    let mut candidate = root.clone();
+    for component in requested.components() {
+        let Component::Normal(segment) = component else {
+            return Err(VaultError::invalid_file(
+                "Only relative vault folder paths can be used here.",
+            ));
+        };
+
+        candidate.push(segment);
+        let metadata = fs::symlink_metadata(&candidate)
+            .map_err(|error| VaultError::io("The folder could not be inspected", error))?;
+        if metadata.file_type().is_symlink() {
+            return Err(VaultError::invalid_file(
+                "Symlinked folders cannot be used here.",
+            ));
+        }
+    }
+
+    let canonical_directory = fs::canonicalize(&candidate)
+        .map_err(|error| VaultError::io("The folder could not be opened", error))?;
+    if !canonical_directory.starts_with(&root) {
+        return Err(VaultError::invalid_file(
+            "The folder resolved outside the selected vault.",
+        ));
+    }
+
+    let metadata = fs::metadata(&canonical_directory)
+        .map_err(|error| VaultError::io("The folder could not be inspected", error))?;
+    if !metadata.is_dir() {
+        return Err(VaultError::invalid_file(
+            "The selected path is not a folder.",
+        ));
+    }
+    Ok(canonical_directory)
+}
+
+fn create_folder(
+    root: &Path,
+    parent_path: Option<&str>,
+    name: &str,
+) -> Result<PathBuf, VaultError> {
+    let root = canonical_vault_root(root)?;
+    let parent = resolve_vault_directory(&root, parent_path.unwrap_or_default())?;
+    let name = validate_folder_name(name)?;
+    let destination = parent.join(name);
+
+    match fs::symlink_metadata(&destination) {
+        Ok(_) => return Err(VaultError::file_exists()),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+        Err(error) => {
+            return Err(VaultError::io(
+                "The new folder destination could not be inspected",
+                error,
+            ))
+        }
+    }
+
+    fs::create_dir(&destination)
+        .map_err(|error| VaultError::io("The new folder could not be created", error))?;
+    sync_directory(&parent)?;
+    Ok(destination)
+}
+
 fn scan_vault(root: &Path) -> Result<VaultSnapshot, VaultError> {
     let root = canonical_vault_root(root)?;
     let mut files = Vec::new();
+    let mut folders = Vec::new();
     let mut stack = vec![(root.clone(), 0_usize)];
     let mut visited_entries = 0_usize;
     let mut skipped_non_utf8_paths = 0_usize;
@@ -788,6 +938,11 @@ fn scan_vault(root: &Path) -> Result<VaultSnapshot, VaultError> {
             }
 
             if file_type.is_dir() {
+                if let Ok(relative) = entry.path().strip_prefix(&root) {
+                    if let Some(relative_path) = relative.to_str() {
+                        folders.push(relative_path.to_owned());
+                    }
+                }
                 stack.push((entry.path(), depth + 1));
                 continue;
             }
@@ -834,6 +989,7 @@ fn scan_vault(root: &Path) -> Result<VaultSnapshot, VaultError> {
             .to_lowercase()
             .cmp(&right.relative_path.to_lowercase())
     });
+    folders.sort_by_key(|path| path.to_lowercase());
 
     let name = root
         .file_name()
@@ -843,6 +999,7 @@ fn scan_vault(root: &Path) -> Result<VaultSnapshot, VaultError> {
 
     Ok(VaultSnapshot {
         files,
+        folders,
         name,
         vault_id: String::new(),
         warnings: VaultWarnings {
@@ -2185,13 +2342,13 @@ mod tests {
 
     use super::{
         apply_identity_migration_plan, build_identity_migration_preview, canonical_vault_root,
-        create_markdown_file, create_named_vault, create_untitled_markdown_file,
-        enrich_vault_metadata, inspect_note_identity, read_markdown_file,
-        reconcile_vault_identities, recover_rename_transaction, rename_markdown_file,
-        resolve_new_vault_markdown_file, save_markdown_file, scan_vault, search_markdown_files,
-        validate_new_vault_name, write_rename_journal, NoteIdentityStatus, RenameJournal,
-        RenameJournalEntry, RenameJournalPhase, RenameOutcome, MAX_MARKDOWN_FILE_BYTES,
-        MAX_SEARCH_RESULTS, RENAME_JOURNAL_NAME,
+        create_folder, create_markdown_file, create_named_vault, create_untitled_markdown_file,
+        enrich_vault_metadata, inspect_note_identity, move_markdown_file_to_folder,
+        read_markdown_file, reconcile_vault_identities, recover_rename_transaction,
+        rename_markdown_file, resolve_new_vault_markdown_file, save_markdown_file, scan_vault,
+        search_markdown_files, validate_folder_name, validate_new_vault_name, write_rename_journal,
+        NoteIdentityStatus, RenameJournal, RenameJournalEntry, RenameJournalPhase, RenameOutcome,
+        MAX_MARKDOWN_FILE_BYTES, MAX_SEARCH_RESULTS, RENAME_JOURNAL_NAME,
     };
 
     #[test]
@@ -2215,6 +2372,7 @@ mod tests {
             .collect::<Vec<_>>();
 
         assert_eq!(paths, vec!["Notes/Alpha.MD", "Zulu.md"]);
+        assert_eq!(snapshot.folders, vec!["Notes"]);
         assert_eq!(
             snapshot.files[0].id.as_deref(),
             Some("01JZQ7K8P4A6F2M9V3C5T7X1BY")
@@ -2502,6 +2660,18 @@ mod tests {
     }
 
     #[test]
+    fn validates_new_folder_names() {
+        assert_eq!(
+            validate_folder_name("Projects").expect("accept simple name"),
+            "Projects"
+        );
+        assert!(validate_folder_name("").is_err());
+        assert!(validate_folder_name("Notes/Child").is_err());
+        assert!(validate_folder_name(".hidden").is_err());
+        assert!(validate_folder_name(".anchored").is_err());
+    }
+
+    #[test]
     fn creates_a_new_named_vault_folder() {
         let parent = tempdir().expect("create parent folder");
 
@@ -2522,6 +2692,32 @@ mod tests {
 
         let error =
             create_named_vault(parent.path(), "Taken").expect_err("reject occupied destination");
+
+        assert_eq!(error.code, "vaultFileExists");
+    }
+
+    #[test]
+    fn creates_root_and_nested_folders_inside_the_selected_vault() {
+        let vault = tempdir().expect("create fixture vault");
+
+        let root_folder =
+            create_folder(vault.path(), None, "Projects").expect("create root folder");
+        let nested_folder =
+            create_folder(vault.path(), Some("Projects"), "Inbox").expect("create nested folder");
+        let snapshot = scan_vault(vault.path()).expect("scan folder fixture");
+
+        assert!(root_folder.is_dir());
+        assert!(nested_folder.is_dir());
+        assert_eq!(snapshot.folders, vec!["Projects", "Projects/Inbox"]);
+    }
+
+    #[test]
+    fn refuses_to_create_a_folder_over_an_existing_path() {
+        let vault = tempdir().expect("create fixture vault");
+        fs::write(vault.path().join("Projects"), "occupied").expect("write occupied path");
+
+        let error =
+            create_folder(vault.path(), None, "Projects").expect_err("reject occupied destination");
 
         assert_eq!(error.code, "vaultFileExists");
     }
@@ -2775,6 +2971,41 @@ mod tests {
                 "related: \"[[New Name|Legacy]]\"\n---\n",
                 "[[New Name]] [[New Name#Part|Shown]]\n",
             )
+        );
+    }
+
+    #[test]
+    fn moves_a_note_into_a_folder_and_updates_path_links() {
+        let vault = tempdir().expect("create fixture vault");
+        fs::create_dir(vault.path().join("Notes")).expect("create Notes folder");
+        fs::create_dir(vault.path().join("Archive")).expect("create Archive folder");
+        fs::write(
+            vault.path().join("Notes/Field.md"),
+            "---\nid: 01JZQ7K8P4A6F2M9V3C5T7X1BY\n---\n# Field\n",
+        )
+        .expect("write target note");
+        fs::write(
+            vault.path().join("Reference.md"),
+            "---\nid: 01JZQ91T3AA6F2M9V3C5T7X1BZ\n---\n[[Notes/Field]]\n",
+        )
+        .expect("write reference note");
+
+        let outcome = move_markdown_file_to_folder(vault.path(), "Notes/Field.md", "Archive")
+            .expect("move note");
+
+        assert_eq!(
+            outcome,
+            RenameOutcome {
+                relative_path: "Archive/Field.md".to_owned(),
+                updated_files: 1,
+                updated_links: 1,
+            }
+        );
+        assert!(!vault.path().join("Notes/Field.md").exists());
+        assert!(vault.path().join("Archive/Field.md").exists());
+        assert_eq!(
+            fs::read_to_string(vault.path().join("Reference.md")).expect("read reference note"),
+            "---\nid: 01JZQ91T3AA6F2M9V3C5T7X1BZ\n---\n[[Archive/Field]]\n"
         );
     }
 

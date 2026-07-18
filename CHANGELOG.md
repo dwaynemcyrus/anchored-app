@@ -12,6 +12,10 @@ Git commit. The format follows [Keep a Changelog], and releases follow
   Anchored asks for a vault name, lets the user choose a parent folder
   natively, creates the new vault safely, remembers it, and opens it
   immediately.
+- Vault folders can now be created safely at the root or inside other vault
+  folders. Saved notes can also be moved between vault folders from the editor
+  or by dragging them onto a folder in the file rail, and existing rename-safe
+  link updates still apply to those moves.
 - A new Settings modal now includes a danger-scoped reload action. Anchored
   saves the current note first, reloads the window safely, and restores the
   remembered vault plus the previously open note on startup when both are

@@ -12,11 +12,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   applyIdentityMigration,
   createVault,
+  createVaultFolder,
   createUntitledVaultFile,
   createVaultFile,
   forgetVault,
   listRememberedVaults,
   listVaultTrash,
+  moveVaultFileToFolder,
   moveVaultFileToTrash,
   openRememberedVault,
   previewIdentityMigration,
@@ -35,11 +37,13 @@ import { reloadAnchoredWindow } from "./windowActions";
 vi.mock("../lib/tauri/vault", () => ({
   applyIdentityMigration: vi.fn(),
   createVault: vi.fn(),
+  createVaultFolder: vi.fn(),
   createUntitledVaultFile: vi.fn(),
   createVaultFile: vi.fn(),
   forgetVault: vi.fn(),
   listRememberedVaults: vi.fn(),
   listVaultTrash: vi.fn(),
+  moveVaultFileToFolder: vi.fn(),
   moveVaultFileToTrash: vi.fn(),
   openRememberedVault: vi.fn(),
   previewIdentityMigration: vi.fn(),
@@ -59,11 +63,13 @@ vi.mock("./windowActions", () => ({
 const mockedSelectVault = vi.mocked(selectVault);
 const mockedApplyIdentityMigration = vi.mocked(applyIdentityMigration);
 const mockedCreateVault = vi.mocked(createVault);
+const mockedCreateVaultFolder = vi.mocked(createVaultFolder);
 const mockedCreateUntitledVaultFile = vi.mocked(createUntitledVaultFile);
 const mockedCreateVaultFile = vi.mocked(createVaultFile);
 const mockedForgetVault = vi.mocked(forgetVault);
 const mockedListRememberedVaults = vi.mocked(listRememberedVaults);
 const mockedListVaultTrash = vi.mocked(listVaultTrash);
+const mockedMoveVaultFileToFolder = vi.mocked(moveVaultFileToFolder);
 const mockedMoveVaultFileToTrash = vi.mocked(moveVaultFileToTrash);
 const mockedOpenRememberedVault = vi.mocked(openRememberedVault);
 const mockedPreviewIdentityMigration = vi.mocked(previewIdentityMigration);
@@ -91,11 +97,13 @@ describe("App", () => {
     window.localStorage.clear();
     mockedApplyIdentityMigration.mockReset();
     mockedCreateVault.mockReset();
+    mockedCreateVaultFolder.mockReset();
     mockedCreateUntitledVaultFile.mockReset();
     mockedCreateVaultFile.mockReset();
     mockedForgetVault.mockReset();
     mockedListRememberedVaults.mockReset();
     mockedListVaultTrash.mockReset();
+    mockedMoveVaultFileToFolder.mockReset();
     mockedMoveVaultFileToTrash.mockReset();
     mockedOpenRememberedVault.mockReset();
     mockedPreviewIdentityMigration.mockReset();
@@ -344,6 +352,84 @@ describe("App", () => {
     ).toBeVisible();
   });
 
+  it("creates a root folder from the file rail", async () => {
+    const user = userEvent.setup();
+    mockedSelectVault.mockResolvedValue({
+      files: [],
+      folders: [],
+      name: "My Vault",
+      vaultId: "01JZQ7K8P4A6F2M9V3C5T7X1BY",
+      warnings: noWarnings,
+    });
+    mockedCreateVaultFolder.mockResolvedValue({
+      files: [],
+      folders: ["Projects"],
+      name: "My Vault",
+      vaultId: "01JZQ7K8P4A6F2M9V3C5T7X1BY",
+      warnings: noWarnings,
+    });
+    render(<App />);
+
+    await user.click(screen.getByRole("button", { name: "Open vault" }));
+    await user.click(
+      screen.getByRole("button", { name: "Create folder at vault root" }),
+    );
+    const dialog = screen.getByRole("dialog", { name: "Create folder" });
+    await user.type(
+      within(dialog).getByRole("textbox", { name: "Folder name" }),
+      "Projects",
+    );
+    await user.click(
+      within(dialog).getByRole("button", { name: "Create folder" }),
+    );
+
+    expect(mockedCreateVaultFolder).toHaveBeenCalledWith({
+      name: "Projects",
+      parentPath: undefined,
+    });
+    expect(
+      await screen.findByRole("button", { name: "Projects" }),
+    ).toBeVisible();
+  });
+
+  it("creates a subfolder from a folder row action", async () => {
+    const user = userEvent.setup();
+    mockedSelectVault.mockResolvedValue({
+      files: [],
+      folders: ["Projects"],
+      name: "My Vault",
+      vaultId: "01JZQ7K8P4A6F2M9V3C5T7X1BY",
+      warnings: noWarnings,
+    });
+    mockedCreateVaultFolder.mockResolvedValue({
+      files: [],
+      folders: ["Projects", "Projects/Inbox"],
+      name: "My Vault",
+      vaultId: "01JZQ7K8P4A6F2M9V3C5T7X1BY",
+      warnings: noWarnings,
+    });
+    render(<App />);
+
+    await user.click(screen.getByRole("button", { name: "Open vault" }));
+    await user.click(
+      screen.getByRole("button", { name: "Create subfolder inside Projects" }),
+    );
+    const dialog = screen.getByRole("dialog", { name: "Create folder" });
+    await user.type(
+      within(dialog).getByRole("textbox", { name: "Folder name" }),
+      "Inbox",
+    );
+    await user.click(
+      within(dialog).getByRole("button", { name: "Create folder" }),
+    );
+
+    expect(mockedCreateVaultFolder).toHaveBeenCalledWith({
+      name: "Inbox",
+      parentPath: "Projects",
+    });
+    expect(await screen.findByRole("button", { name: "Inbox" })).toBeVisible();
+  });
+
   it("reloads from settings after saving the active note", async () => {
     const user = userEvent.setup();
     mockedSelectVault.mockResolvedValue({
@@ -507,6 +593,154 @@ describe("App", () => {
     expect(screen.getByText(`${file.name} moved to Trash.`)).toBeVisible();
     expect(screen.queryByRole("button", { name: file.name })).toBeNull();
     expect(screen.getByRole("button", { name: "Trash (1)" })).toBeVisible();
+  });
+
+  it("drags a saved note into another folder", async () => {
+    const vaultId = "01JZQ7K8P4A6F2M9V3C5T7X1BY";
+    const original = {
+      content: "# Leadership",
+      relativePath: "Notes/Leadership.md",
+      sizeBytes: 12,
+    };
+    const moved = {
+      content: "# Leadership",
+      relativePath: "Archive/Leadership.md",
+      sizeBytes: 12,
+    };
+    mockedSelectVault.mockResolvedValue({
+      files: [
+        {
+          id: "01JZQ91T3AA6F2M9V3C5T7X1BZ",
+          name: "Leadership.md",
+          parent: "Notes",
+          relativePath: "Notes/Leadership.md",
+        },
+      ],
+      folders: ["Archive", "Notes"],
+      name: "My Vault",
+      vaultId,
+      warnings: noWarnings,
+    });
+    mockedReadVaultFile.mockImplementation(async (relativePath) =>
+      relativePath === moved.relativePath ? moved : original,
+    );
+    mockedMoveVaultFileToFolder.mockResolvedValue({
+      relativePath: moved.relativePath,
+      updatedFiles: 0,
+      updatedLinks: 0,
+    });
+    mockedRescanVault.mockResolvedValue({
+      files: [
+        {
+          id: "01JZQ91T3AA6F2M9V3C5T7X1BZ",
+          name: "Leadership.md",
+          parent: "Archive",
+          relativePath: moved.relativePath,
+        },
+      ],
+      folders: ["Archive", "Notes"],
+      name: "My Vault",
+      vaultId,
+      warnings: noWarnings,
+    });
+    render(<App />);
+
+    await userEvent.click(screen.getByRole("button", { name: "Open vault" }));
+    const note = await screen.findByRole("button", { name: "Leadership.md" });
+    const archiveFolder = screen.getByRole("button", { name: "Archive" });
+    fireEvent.dragStart(note, {
+      dataTransfer: {
+        effectAllowed: "move",
+        setData: vi.fn(),
+      },
+    });
+    fireEvent.dragOver(archiveFolder);
+    fireEvent.drop(archiveFolder);
+
+    await waitFor(() =>
+      expect(mockedMoveVaultFileToFolder).toHaveBeenCalledWith(
+        "Notes/Leadership.md",
+        "Archive",
+      ),
+    );
+    expect(
+      await screen.findByText(
+        "Leadership.md moved to Archive. 0 links updated across 0 notes.",
+      ),
+    ).toBeVisible();
+  });
+
+  it("moves a saved note through the move dialog", async () => {
+    const user = userEvent.setup();
+    const vaultId = "01JZQ7K8P4A6F2M9V3C5T7X1BY";
+    const original = {
+      content: "# Leadership",
+      relativePath: "Notes/Leadership.md",
+      sizeBytes: 12,
+    };
+    const moved = {
+      content: "# Leadership",
+      relativePath: "Archive/Leadership.md",
+      sizeBytes: 12,
+    };
+    mockedSelectVault.mockResolvedValue({
+      files: [
+        {
+          id: "01JZQ91T3AA6F2M9V3C5T7X1BZ",
+          name: "Leadership.md",
+          parent: "Notes",
+          relativePath: "Notes/Leadership.md",
+        },
+      ],
+      folders: ["Archive", "Notes"],
+      name: "My Vault",
+      vaultId,
+      warnings: noWarnings,
+    });
+    mockedReadVaultFile.mockImplementation(async (relativePath) =>
+      relativePath === moved.relativePath ? moved : original,
+    );
+    mockedMoveVaultFileToFolder.mockResolvedValue({
+      relativePath: moved.relativePath,
+      updatedFiles: 0,
+      updatedLinks: 0,
+    });
+    mockedRescanVault.mockResolvedValue({
+      files: [
+        {
+          id: "01JZQ91T3AA6F2M9V3C5T7X1BZ",
+          name: "Leadership.md",
+          parent: "Archive",
+          relativePath: moved.relativePath,
+        },
+      ],
+      folders: ["Archive", "Notes"],
+      name: "My Vault",
+      vaultId,
+      warnings: noWarnings,
+    });
+    render(<App />);
+
+    await user.click(screen.getByRole("button", { name: "Open vault" }));
+    await user.click(
+      await screen.findByRole("button", { name: "Leadership.md" }),
+    );
+    await user.click(
+      await screen.findByRole("button", { name: "Move Leadership.md" }),
+    );
+    const dialog = screen.getByRole("dialog", { name: "Move note" });
+    const archiveRow = within(dialog).getByText("Archive").closest("li");
+    expect(archiveRow).not.toBeNull();
+    await user.click(
+      within(archiveRow as HTMLElement).getByRole("button", { name: "Move" }),
+    );
+
+    await waitFor(() =>
+      expect(mockedMoveVaultFileToFolder).toHaveBeenCalledWith(
+        "Notes/Leadership.md",
+        "Archive",
+      ),
+    );
   });
 
   it("restores a trashed note to its original path", async () => {

@@ -104,6 +104,25 @@ export function NewFileIcon(props: IconProps) {
   );
 }
 
+export function NewFolderIcon(props: IconProps) {
+  return (
+    <IconFrame {...props}>
+      <path
+        d="M3.75 7h6l1.5 2h9v9.25H3.75z"
+        stroke="currentColor"
+        strokeLinejoin="round"
+        strokeWidth="1.5"
+      />
+      <path
+        d="M12 12.25h4M14 10.25v4"
+        stroke="currentColor"
+        strokeLinecap="round"
+        strokeWidth="1.5"
+      />
+    </IconFrame>
+  );
+}
+
 export function SearchIcon(props: IconProps) {
   return (
     <IconFrame {...props}>

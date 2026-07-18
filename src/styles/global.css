@@ -276,7 +276,7 @@ input:focus-visible,
   display: grid;
   align-items: center;
   gap: 6px;
-  grid-template-columns: minmax(0, 1fr) 32px;
+  grid-template-columns: minmax(0, 1fr) 32px 32px;
   padding: 12px;
 }
 
@@ -331,8 +331,17 @@ input:focus-visible,
   display: flex;
   min-height: 42px;
   align-items: center;
+  justify-content: space-between;
   padding: 0 14px;
   border-top: 1px solid var(--color-rule);
+}
+
+.file-rail__scope {
+  color: var(--color-text-subtle);
+  font-family: "SFMono-Regular", Consolas, monospace;
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
 }
 
 .file-rail__footer button {
@@ -358,7 +367,8 @@ input:focus-visible,
   width: 100%;
   height: 40px;
   align-items: center;
-  gap: 8px;
+  justify-content: space-between;
+  gap: 12px;
   padding: 0 12px;
   overflow: hidden;
   color: var(--color-text-muted);
@@ -366,13 +376,15 @@ input:focus-visible,
   text-align: left;
 }
 
-.tree-row span {
+.tree-row span,
+.tree-row__button span {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.tree-row svg {
+.tree-row svg,
+.tree-row__button svg {
   flex: 0 0 17px;
   width: 17px;
   height: 17px;
@@ -383,9 +395,34 @@ input:focus-visible,
   background: var(--color-row-hover);
 }
 
+.tree-row__button {
+  display: flex;
+  min-width: 0;
+  flex: 1 1 auto;
+  align-items: center;
+  gap: 8px;
+  padding: 0;
+  background: transparent;
+  color: inherit;
+}
+
+.tree-row__action {
+  flex: 0 0 auto;
+}
+
+.tree-row__action svg {
+  width: 15px;
+  height: 15px;
+}
+
 .tree-row--folder {
   color: var(--color-text);
   font-weight: 500;
+}
+
+.tree-row--folder.is-drop-target {
+  background: var(--color-row-active);
+  box-shadow: inset 0 0 0 1px var(--color-focus);
 }
 
 .tree-row--folder .chevron-icon {
