@@ -54,6 +54,10 @@ import {
   type MarkdownSettings,
 } from "./markdown/types";
 import {
+  hasNonUnixLineEndings,
+  normalizeMarkdownLineEndings,
+} from "./markdown/source";
+import {
   clearSessionState,
   loadSessionState,
   saveSessionState,
@@ -495,7 +499,8 @@ export function App() {
         return;
       }
 
-      const contentAtSave = document.sourceText;
+      const sourceAtSave = document.sourceText;
+      const contentAtSave = normalizeMarkdownLineEndings(sourceAtSave);
       setDocuments((currentDocuments) =>
         currentDocuments.map((current) =>
           current.id === documentId
@@ -513,7 +518,7 @@ export function App() {
         const currentDocument = documentsRef.current.find(
           (candidate) => candidate.id === documentId,
         );
-        const hasNewerEdit = currentDocument?.sourceText !== contentAtSave;
+        const hasNewerEdit = currentDocument?.sourceText !== sourceAtSave;
 
         setDocuments((currentDocuments) =>
           currentDocuments.map((current) =>
@@ -524,7 +529,9 @@ export function App() {
                   folderPath,
                   name,
                   relativePath: savedDocument.relativePath,
-                  saveMessage: undefined,
+                  saveMessage: hasNonUnixLineEndings(sourceAtSave)
+                    ? "Saved with Unix (LF) line endings."
+                    : undefined,
                   saveState: hasNewerEdit ? "unsaved" : "saved",
                   savedSourceText: savedDocument.content,
                   sizeBytes: savedDocument.sizeBytes,
@@ -611,7 +618,8 @@ export function App() {
       );
       if (!document || document.sourceText === undefined) return;
 
-      const contentAtSave = document.sourceText;
+      const sourceAtSave = document.sourceText;
+      const contentAtSave = normalizeMarkdownLineEndings(sourceAtSave);
       setDocuments((currentDocuments) =>
         currentDocuments.map((current) =>
           current.id === documentId
@@ -650,7 +658,7 @@ export function App() {
         const currentDocument = documentsRef.current.find(
           (candidate) => candidate.id === documentId,
         );
-        const hasNewerEdit = currentDocument?.sourceText !== contentAtSave;
+        const hasNewerEdit = currentDocument?.sourceText !== sourceAtSave;
 
         setDocuments((currentDocuments) =>
           currentDocuments.map((current) =>
@@ -663,7 +671,9 @@ export function App() {
                   relativePath: savedDocument.relativePath,
                   saveMessage: hasNewerEdit
                     ? "The file was created with a permanent identity. Newer local edits were kept and need to be reconciled before saving."
-                    : undefined,
+                    : hasNonUnixLineEndings(sourceAtSave)
+                      ? "Saved with Unix (LF) line endings."
+                      : undefined,
                   saveState: hasNewerEdit ? "conflict" : "saved",
                   savedSourceText: savedDocument.content,
                   sizeBytes: savedDocument.sizeBytes,
@@ -732,7 +742,12 @@ export function App() {
         await saveDocumentAs(documentId);
         return;
       }
-      if (document.sourceText === document.savedSourceText) {
+      const sourceAtSave = document.sourceText;
+      const contentAtSave = normalizeMarkdownLineEndings(sourceAtSave);
+      if (
+        document.sourceText === document.savedSourceText &&
+        contentAtSave === document.sourceText
+      ) {
         setDocuments((currentDocuments) =>
           currentDocuments.map((current) =>
             current.id === documentId
@@ -744,7 +759,6 @@ export function App() {
         return;
       }
 
-      const contentAtSave = document.sourceText;
       setDocuments((currentDocuments) =>
         currentDocuments.map((current) =>
           current.id === documentId
@@ -762,17 +776,26 @@ export function App() {
         const currentDocument = documentsRef.current.find(
           (candidate) => candidate.id === documentId,
         );
-        const hasNewerEdit = currentDocument?.sourceText !== contentAtSave;
+        const hasNewerEdit = currentDocument?.sourceText !== sourceAtSave;
 
         setDocuments((currentDocuments) =>
           currentDocuments.map((current) =>
             current.id === documentId
               ? {
                   ...current,
-                  saveMessage: undefined,
+                  saveMessage: hasNewerEdit
+                    ? undefined
+                    : hasNonUnixLineEndings(
+                          document.savedSourceText ?? sourceAtSave,
+                        )
+                      ? "Saved with Unix (LF) line endings."
+                      : undefined,
                   saveState: hasNewerEdit ? "unsaved" : "saved",
                   savedSourceText: savedDocument.content,
                   sizeBytes: savedDocument.sizeBytes,
+                  sourceText: hasNewerEdit
+                    ? current.sourceText
+                    : savedDocument.content,
                 }
               : current,
           ),

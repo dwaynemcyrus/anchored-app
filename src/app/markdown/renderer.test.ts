@@ -13,6 +13,7 @@ describe("Anchored Markdown renderer", () => {
       "# Leadership {#leadership}",
       "",
       "A bare URL https://example.com, ==important==, :warning:, H~2~O, and x^2^.",
+      "~~obsolete~~ and \\`inline code\\`.",
       "",
       "| Name | Age |",
       "| :--- | ---: |",
@@ -55,6 +56,7 @@ describe("Anchored Markdown renderer", () => {
     expect(rendered.html).toContain(">Leadership</h1>");
     expect(rendered.html).toContain('href="https://example.com"');
     expect(rendered.html).toContain("<mark>important</mark>");
+    expect(rendered.html).toContain("<s>obsolete</s>");
     expect(rendered.html).toContain("⚠️");
     expect(rendered.html).toContain("<sub>2</sub>");
     expect(rendered.html).toContain("<sup>2</sup>");
@@ -65,6 +67,17 @@ describe("Anchored Markdown renderer", () => {
     expect(rendered.html).toContain('class="language-rust"');
     expect(rendered.html).toContain("markdown-mermaid");
     expect(rendered.html).toContain('type="checkbox"');
+  });
+
+  it("keeps heading IDs unique and preserves unknown admonition text", () => {
+    const rendered = renderMarkdown(
+      "# One {#same}\n# Two {#same}\n\n> [!CUSTOM]\n> Keep this portable.",
+    );
+
+    expect(rendered.html).toContain('<h1 id="same"');
+    expect(rendered.html).toContain('<h1 id="same-2"');
+    expect(rendered.html).not.toContain("markdown-admonition");
+    expect(rendered.html).toContain("[!CUSTOM]");
   });
 
   it("keeps bare URL linking configurable while preserving explicit links", () => {
@@ -88,6 +101,30 @@ describe("Anchored Markdown renderer", () => {
     expect(rendered.html).not.toContain('class="language-rust"');
     expect(rendered.html).toContain("~~~rust");
     expect(rendered.html).toContain("fn main() {}");
+  });
+
+  it("disables every optional render-only transform without changing source", () => {
+    const source = 'https://example.com "quotes" -- … :warning: ==mark==';
+    const rendered = renderMarkdown(source, {
+      autoLinkUrls: false,
+      emoji: false,
+      mermaid: false,
+      smartTypography: false,
+      syntaxHighlighting: false,
+    });
+
+    expect(rendered.body).toBe(source);
+    expect(rendered.html).not.toContain('href="https://example.com"');
+    expect(rendered.html).toContain(":warning:");
+    expect(
+      renderMarkdown("```rust\nfn main() {}\n```", {
+        autoLinkUrls: true,
+        emoji: true,
+        mermaid: true,
+        smartTypography: true,
+        syntaxHighlighting: false,
+      }).html,
+    ).not.toContain("hljs-");
   });
 
   it("escapes raw HTML and unsafe links", () => {

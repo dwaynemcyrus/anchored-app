@@ -682,7 +682,7 @@ and preserves link integrity across filename changes.
     - Expected changelog: Document portable Markdown compatibility and any
       visible LF-normalization notice. Version remains `0.1.0-alpha`.
 
-20D. [ ] **Chunk: Build the safe rendered Markdown surface**
+20D. [x] **Chunk: Build the safe rendered Markdown surface**
     - Files: `src/app/markdown/renderer.ts`, renderer adapters and tests,
       `src/app/components/MarkdownPreview.tsx`, `src/styles/global.css`,
       lazy-loaded rendering dependencies, and app composition
@@ -711,8 +711,11 @@ and preserves link integrity across filename changes.
       the existing source editor if Preview fails.
     - Expected changelog: Add an on-demand rendered Markdown view with the
       documented syntax support. Version remains `0.1.0-alpha`.
+    - Verification result: Added lazy Preview rendering with sanitized HTML,
+      KaTeX math, highlight.js code output, strict Mermaid fallback, stable
+      wikilink navigation, and coverage for the rendered app flow.
 
-20E. [ ] **Chunk: Extend CodeMirror editing and keyboard behavior**
+20E. [x] **Chunk: Extend CodeMirror editing and keyboard behavior**
     - Files: `src/app/components/MarkdownEditor.tsx`, CodeMirror extension
       modules under `src/app/markdown/`, editor styles, settings controls,
       and editor/app tests
@@ -733,8 +736,11 @@ and preserves link integrity across filename changes.
       retain plain CodeMirror highlighting as the safe fallback.
     - Expected changelog: Add syntax-aware editing affordances and Preview
       keyboard access. Version remains `0.1.0-alpha`.
+    - Verification result: Added viewport-bounded CodeMirror decorations for
+      supported source constructs and `Command-Shift-P` Preview navigation;
+      source text remains the CodeMirror document.
 
-20F. [ ] **Chunk: Add Markdown settings and persistence**
+20F. [x] **Chunk: Add Markdown settings and persistence**
     - Files: `src/app/components/SettingsModal.tsx`, versioned settings state
       module and tests, `src/app/App.tsx`, renderer/editor composition, styles,
       `CHANGELOG.md`, and `PLANS.md`
@@ -752,6 +758,9 @@ and preserves link integrity across filename changes.
       optional, and independently recoverable.
     - Expected changelog: Add configurable automatic URL linking and smart
       typography plus Version 1 optional rendering features.
+    - Verification result: Added versioned, storage-safe settings with five
+      accessible toggles, immediate Preview refresh, malformed/blocked storage
+      fallback, and no source mutation.
 
 20G. [ ] **Chunk: Reconcile links, IDs, and document navigation**
     - Files: `src/app/links.ts`, `src/app/documents.ts`, link candidate and

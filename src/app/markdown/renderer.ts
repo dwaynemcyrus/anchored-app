@@ -236,6 +236,11 @@ function admonitionPlugin(md: MarkdownIt): void {
           type,
         },
       };
+      const closing = state.tokens[closeIndex];
+      closing.meta = {
+        ...(closing.meta ?? {}),
+        admonition: opening.meta.admonition,
+      };
       if (!remainder) {
         const inlineIndex = state.tokens.indexOf(inline);
         const paragraphOpen = state.tokens[inlineIndex - 1];
@@ -324,12 +329,7 @@ function createMarkdownIt(settings: MarkdownSettings): MarkdownIt {
     return `<aside class="markdown-admonition markdown-admonition--${admonition.type}" data-admonition-type="${admonition.type}"><p class="markdown-admonition__title">${md.utils.escapeHtml(admonition.title)}</p>`;
   };
   md.renderer.rules.blockquote_close = (tokens, index, options, env, slf) => {
-    if (tokens[index - 1]?.type === "blockquote_open") return "</aside>";
-    const opening = tokens
-      .slice(0, index)
-      .reverse()
-      .find((token) => token.type === "blockquote_open");
-    if (opening?.meta?.admonition) return "</aside>";
+    if (tokens[index].meta?.admonition) return "</aside>";
     return defaultBlockquoteClose
       ? defaultBlockquoteClose(tokens, index, options, env, slf)
       : slf.renderToken(tokens, index, options);
@@ -342,11 +342,10 @@ function createMarkdownIt(settings: MarkdownSettings): MarkdownIt {
     const renderEnvironment = env as MarkdownEnvironment | undefined;
     const ids = renderEnvironment?.headingIds ?? new Set<string>();
     if (renderEnvironment) renderEnvironment.headingIds = ids;
-    let id = explicitId ?? slugifyHeading(text);
-    if (!explicitId) {
-      let suffix = 2;
-      while (ids.has(id)) id = `${slugifyHeading(text)}-${suffix++}`;
-    }
+    const baseId = explicitId ?? slugifyHeading(text);
+    let id = baseId;
+    let suffix = 2;
+    while (ids.has(id)) id = `${baseId}-${suffix++}`;
     ids.add(id);
     token.attrSet("id", id);
     return slf.renderToken(tokens, index, options);
