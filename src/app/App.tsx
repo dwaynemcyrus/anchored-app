@@ -13,6 +13,7 @@ import { FileRail } from "./components/FileRail";
 import { IdentityMigrationPanel } from "./components/IdentityMigrationPanel";
 import { NotificationCenter } from "./components/NotificationCenter";
 import { QuickOpenPalette } from "./components/QuickOpenPalette";
+import { SettingsModal } from "./components/SettingsModal";
 import { StatusBar } from "./components/StatusBar";
 import { TitleBar } from "./components/TitleBar";
 import { TrashPanel } from "./components/TrashPanel";
@@ -40,6 +41,12 @@ import {
   saveDocumentActivity,
 } from "./recentDocuments";
 import { rankQuickOpenResults } from "./retrieval";
+import {
+  clearSessionState,
+  loadSessionState,
+  saveSessionState,
+} from "./sessionState";
+import { reloadAnchoredWindow } from "./windowActions";
 import {
   clearResolvedNotifications,
   GENERAL_NOTIFICATION_SCOPE,
@@ -164,12 +171,14 @@ export function App() {
   const [vaultName, setVaultName] = useState("");
   const [vaultId, setVaultId] = useState("");
   const [folderOrder, setFolderOrder] = useState<string[]>([]);
+  const [settingsVisible, setSettingsVisible] = useState(false);
   const [selectingVault, setSelectingVault] = useState(false);
   const [creatingVault, setCreatingVault] = useState(false);
   const [createVaultVisible, setCreateVaultVisible] = useState(false);
   const [createVaultError, setCreateVaultError] = useState<
     string | undefined
   >();
+  const [reloadingApp, setReloadingApp] = useState(false);
   const [vaultSelected, setVaultSelected] = useState(false);
   const [vaultSwitcherVisible, setVaultSwitcherVisible] = useState(false);
   const [rememberedVaults, setRememberedVaults] = useState<RememberedVault[]>(
@@ -230,6 +239,10 @@ export function App() {
   const vaultNoticeTimeoutsRef = useRef<Map<number, number>>(new Map());
   const notificationIdRef = useRef(0);
   const documentsRef = useRef(documents);
+  const pendingSessionRelativePathRef = useRef<string | undefined>(undefined);
+  const sessionRestoreStatusRef = useRef<"pending" | "restoring" | "done">(
+    "pending",
+  );
   const vaultIdRef = useRef("");
 
   documentsRef.current = documents;
@@ -890,6 +903,45 @@ export function App() {
   }, [refreshRememberedVaults]);
 
   useEffect(() => {
+    if (
+      sessionRestoreStatusRef.current !== "pending" ||
+      rememberedVaultsLoading
+    ) {
+      return;
+    }
+    sessionRestoreStatusRef.current = "restoring";
+
+    const session = loadSessionState(window.localStorage);
+    if (!session?.vaultId) {
+      sessionRestoreStatusRef.current = "done";
+      return;
+    }
+
+    pendingSessionRelativePathRef.current = session.activeRelativePath;
+    setOpeningRememberedVaultId(session.vaultId);
+    setRememberedVaultsError(undefined);
+
+    void openRememberedVault(session.vaultId)
+      .then(async (snapshot) => {
+        activateVaultSnapshot(snapshot);
+        await Promise.all([refreshRememberedVaults(), refreshTrashEntries()]);
+      })
+      .catch(() => {
+        pendingSessionRelativePathRef.current = undefined;
+        clearSessionState(window.localStorage);
+      })
+      .finally(() => {
+        sessionRestoreStatusRef.current = "done";
+        setOpeningRememberedVaultId(undefined);
+      });
+  }, [
+    activateVaultSnapshot,
+    refreshRememberedVaults,
+    refreshTrashEntries,
+    rememberedVaultsLoading,
+  ]);
+
+  useEffect(() => {
     try {
       saveNotificationHistory(
         window.localStorage,
@@ -982,6 +1034,22 @@ export function App() {
   }, [activeDocumentId, createNote, saveDocument, saveDocumentAs]);
 
   useEffect(() => {
+    if (sessionRestoreStatusRef.current !== "done" && !vaultSelected) {
+      return;
+    }
+
+    if (vaultSelected && vaultId) {
+      saveSessionState(window.localStorage, {
+        activeRelativePath: activeDocument?.relativePath,
+        vaultId,
+      });
+      return;
+    }
+
+    clearSessionState(window.localStorage);
+  }, [activeDocument?.relativePath, vaultId, vaultSelected]);
+
+  useEffect(() => {
     if (
       !activeDocument?.relativePath ||
       activeDocument.sourceText === undefined ||
@@ -1004,7 +1072,7 @@ export function App() {
     return () => window.removeEventListener("focus", refreshVault);
   }, [refreshVault]);
 
-  async function selectDocument(documentId: string) {
+  const selectDocument = useCallback(async (documentId: string) => {
     const document = documentsRef.current.find(
       (candidate) => candidate.id === documentId,
     );
@@ -1056,7 +1124,22 @@ export function App() {
         message: readErrorMessage(error),
       });
     }
-  }
+  }, []);
+
+  useEffect(() => {
+    const pendingRelativePath = pendingSessionRelativePathRef.current;
+    if (!pendingRelativePath || activeDocumentId || !vaultSelected) {
+      return;
+    }
+
+    const restoredDocument = documents.find(
+      (document) => document.relativePath === pendingRelativePath,
+    );
+    pendingSessionRelativePathRef.current = undefined;
+    if (restoredDocument) {
+      void selectDocument(restoredDocument.id);
+    }
+  }, [activeDocumentId, documents, selectDocument, vaultSelected]);
 
   async function openVaultSearchResult(relativePath: string) {
     let document = documentsRef.current.find(
@@ -1359,6 +1442,69 @@ export function App() {
     }
   }
 
+  async function reloadApp() {
+    if (reloadingApp) return;
+    if (
+      documentsRef.current.some((document) => document.saveState === "saving")
+    ) {
+      addVaultNotice("Wait for the current save to finish before reloading.");
+      return;
+    }
+
+    const blockedDocuments = documentsRef.current.filter(
+      (document) =>
+        document.saveState === "conflict" ||
+        document.saveState === "error" ||
+        (!document.relativePath && document.sourceText !== undefined),
+    );
+    if (blockedDocuments.length > 0) {
+      addVaultNotice("Resolve note save problems before reloading Anchored.", {
+        persistent: true,
+      });
+      return;
+    }
+
+    const unsavedDocuments = documentsRef.current.filter(
+      (document) =>
+        document.relativePath &&
+        document.sourceText !== undefined &&
+        document.savedSourceText !== undefined &&
+        document.sourceText !== document.savedSourceText,
+    );
+
+    setReloadingApp(true);
+    try {
+      for (const document of unsavedDocuments) {
+        await saveDocument(document.id);
+      }
+      await new Promise<void>((resolve) => {
+        window.setTimeout(resolve, 0);
+      });
+
+      const remaining = documentsRef.current.filter(documentHasUnfinishedEdits);
+      if (remaining.length > 0) {
+        addVaultNotice(
+          "Anchored could not safely reload because some note changes still need attention.",
+          { persistent: true },
+        );
+        return;
+      }
+
+      if (vaultSelected && vaultId) {
+        saveSessionState(window.localStorage, {
+          activeRelativePath: activeDocument?.relativePath,
+          vaultId,
+        });
+      } else {
+        clearSessionState(window.localStorage);
+      }
+      reloadAnchoredWindow();
+    } finally {
+      setReloadingApp(false);
+      setSettingsVisible(false);
+    }
+  }
+
   async function openKnownVault(rememberedVaultId: string) {
     if (hasUnfinishedEdits()) {
       addVaultNotice(
@@ -1420,6 +1566,7 @@ export function App() {
           setVaultSearchQuery("");
           setVaultSearchVisible(true);
         }}
+        onOpenSettings={() => setSettingsVisible(true)}
         onSelectVault={() => {
           if (!vaultSelected && rememberedVaults.length === 0) {
             void openVault();
@@ -1581,6 +1728,17 @@ export function App() {
               ),
             )
           }
+        />
+      ) : null}
+      {settingsVisible ? (
+        <SettingsModal
+          reloading={reloadingApp}
+          onClose={() => {
+            if (!reloadingApp) {
+              setSettingsVisible(false);
+            }
+          }}
+          onReload={() => void reloadApp()}
         />
       ) : null}
       {vaultSwitcherVisible ? (

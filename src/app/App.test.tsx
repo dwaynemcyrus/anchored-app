@@ -29,6 +29,8 @@ import {
   restoreVaultFileFromTrash,
 } from "../lib/tauri/vault";
 import { App } from "./App";
+import { saveSessionState } from "./sessionState";
+import { reloadAnchoredWindow } from "./windowActions";
 
 vi.mock("../lib/tauri/vault", () => ({
   applyIdentityMigration: vi.fn(),
@@ -50,6 +52,10 @@ vi.mock("../lib/tauri/vault", () => ({
   restoreVaultFileFromTrash: vi.fn(),
 }));
 
+vi.mock("./windowActions", () => ({
+  reloadAnchoredWindow: vi.fn(),
+}));
+
 const mockedSelectVault = vi.mocked(selectVault);
 const mockedApplyIdentityMigration = vi.mocked(applyIdentityMigration);
 const mockedCreateVault = vi.mocked(createVault);
@@ -67,6 +73,7 @@ const mockedRescanVault = vi.mocked(rescanVault);
 const mockedSaveVaultFile = vi.mocked(saveVaultFile);
 const mockedSearchVault = vi.mocked(searchVault);
 const mockedRestoreVaultFileFromTrash = vi.mocked(restoreVaultFileFromTrash);
+const mockedReloadAnchoredWindow = vi.mocked(reloadAnchoredWindow);
 const noWarnings = {
   addedIdentities: 0,
   identityConflicts: 0,
@@ -99,6 +106,7 @@ describe("App", () => {
     mockedSaveVaultFile.mockReset();
     mockedSearchVault.mockReset();
     mockedRestoreVaultFileFromTrash.mockReset();
+    mockedReloadAnchoredWindow.mockReset();
     mockedCreateUntitledVaultFile.mockImplementation(
       () => new Promise(() => {}),
     );
@@ -148,6 +156,54 @@ describe("App", () => {
     } finally {
       storageSpy.mockRestore();
     }
+  });
+
+  it("restores the current vault and note from saved session state", async () => {
+    const sessionVault = {
+      available: true,
+      id: "01JZQ7K8P4A6F2M9V3C5T7X1BY",
+      lastOpenedAt: Date.UTC(2026, 6, 17, 8),
+      name: "My Vault",
+    };
+    saveSessionState(window.localStorage, {
+      activeRelativePath: "Notes/Leadership.md",
+      vaultId: sessionVault.id,
+    });
+    mockedListRememberedVaults.mockResolvedValue([sessionVault]);
+    mockedOpenRememberedVault.mockResolvedValue({
+      files: [
+        {
+          id: "01JZQ91T3AA6F2M9V3C5T7X1BZ",
+          name: "Leadership.md",
+          parent: "Notes",
+          relativePath: "Notes/Leadership.md",
+        },
+      ],
+      name: sessionVault.name,
+      vaultId: sessionVault.id,
+      warnings: noWarnings,
+    });
+    mockedReadVaultFile.mockResolvedValue({
+      content: "# Leadership",
+      relativePath: "Notes/Leadership.md",
+      sizeBytes: 12,
+    });
+    render(<App />);
+
+    await waitFor(() =>
+      expect(mockedOpenRememberedVault).toHaveBeenCalledWith(sessionVault.id),
+    );
+    await waitFor(() =>
+      expect(mockedReadVaultFile).toHaveBeenCalledWith("Notes/Leadership.md"),
+    );
+    expect(
+      await screen.findByRole("button", {
+        name: "Switch vault: My Vault",
+      }),
+    ).toBeVisible();
+    expect(
+      screen.getByRole("button", { name: "Leadership.md" }),
+    ).toHaveAttribute("aria-current", "page");
   });
 
   it("shows the vault file count without creating a notification", async () => {
@@ -285,6 +341,120 @@ describe("App", () => {
       await screen.findByRole("button", {
         name: "Switch vault: Second Brain",
       }),
+    ).toBeVisible();
+  });
+
+  it("reloads from settings after saving the active note", async () => {
+    const user = userEvent.setup();
+    mockedSelectVault.mockResolvedValue({
+      files: [
+        {
+          id: "01JZQ7K8P4A6F2M9V3C5T7X1BY",
+          name: "Leadership.md",
+          parent: "Notes",
+          relativePath: "Notes/Leadership.md",
+        },
+      ],
+      name: "My Vault",
+      vaultId: "01JZQ7K8P4A6F2M9V3C5T7X1CA",
+      warnings: noWarnings,
+    });
+    mockedReadVaultFile.mockResolvedValue({
+      content: "# Leadership",
+      relativePath: "Notes/Leadership.md",
+      sizeBytes: 12,
+    });
+    mockedSaveVaultFile.mockImplementation(async (request) => ({
+      content: request.content,
+      relativePath: request.relativePath,
+      sizeBytes: request.content.length,
+    }));
+    render(<App />);
+
+    await user.click(screen.getByRole("button", { name: "Open vault" }));
+    await user.click(screen.getByRole("button", { name: "Leadership.md" }));
+    const editor = await screen.findByRole("textbox", {
+      name: "Leadership.md Markdown editor",
+    });
+    await user.click(editor);
+    await user.keyboard(" updated");
+    await user.click(screen.getByRole("button", { name: "Open settings" }));
+    const settings = screen.getByRole("dialog", { name: "Settings" });
+    await user.click(
+      within(settings).getByRole("button", { name: "Reload Anchored" }),
+    );
+
+    await waitFor(() => expect(mockedSaveVaultFile).toHaveBeenCalled());
+    await waitFor(() =>
+      expect(mockedReloadAnchoredWindow).toHaveBeenCalledTimes(1),
+    );
+  });
+
+  it("reloads from settings with no vault open", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+
+    await user.click(screen.getByRole("button", { name: "Open settings" }));
+    await user.click(
+      within(screen.getByRole("dialog", { name: "Settings" })).getByRole(
+        "button",
+        { name: "Reload Anchored" },
+      ),
+    );
+
+    await waitFor(() =>
+      expect(mockedReloadAnchoredWindow).toHaveBeenCalledTimes(1),
+    );
+  });
+
+  it("blocks reload from settings when a note has a save conflict", async () => {
+    const user = userEvent.setup();
+    mockedSelectVault.mockResolvedValue({
+      files: [
+        {
+          id: "01JZQ7K8P4A6F2M9V3C5T7X1BY",
+          name: "Leadership.md",
+          parent: "Notes",
+          relativePath: "Notes/Leadership.md",
+        },
+      ],
+      name: "My Vault",
+      vaultId: "01JZQ7K8P4A6F2M9V3C5T7X1CA",
+      warnings: noWarnings,
+    });
+    mockedReadVaultFile.mockResolvedValue({
+      content: "# Leadership",
+      relativePath: "Notes/Leadership.md",
+      sizeBytes: 12,
+    });
+    mockedSaveVaultFile.mockRejectedValue(
+      Object.assign(new Error("The file changed outside Anchored."), {
+        code: "vaultConflict",
+      }),
+    );
+    render(<App />);
+
+    await user.click(screen.getByRole("button", { name: "Open vault" }));
+    await user.click(screen.getByRole("button", { name: "Leadership.md" }));
+    const editor = await screen.findByRole("textbox", {
+      name: "Leadership.md Markdown editor",
+    });
+    await user.click(editor);
+    await user.keyboard(" updated");
+    await user.keyboard("{Meta>}s{/Meta}");
+
+    await screen.findByText("The file changed outside Anchored.");
+    await user.click(screen.getByRole("button", { name: "Open settings" }));
+    await user.click(
+      within(screen.getByRole("dialog", { name: "Settings" })).getByRole(
+        "button",
+        { name: "Reload Anchored" },
+      ),
+    );
+
+    expect(mockedReloadAnchoredWindow).not.toHaveBeenCalled();
+    expect(
+      screen.getByText("Resolve note save problems before reloading Anchored."),
     ).toBeVisible();
   });
 

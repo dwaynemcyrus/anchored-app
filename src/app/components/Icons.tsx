@@ -142,3 +142,17 @@ export function NotificationIcon(props: IconProps) {
     </IconFrame>
   );
 }
+
+export function SettingsIcon(props: IconProps) {
+  return (
+    <IconFrame {...props}>
+      <circle cx="12" cy="12" r="2.5" stroke="currentColor" strokeWidth="1.5" />
+      <path
+        d="M12 4.5v2M12 17.5v2M19.5 12h-2M6.5 12h-2M17.3 6.7l-1.4 1.4M8.1 15.9l-1.4 1.4M17.3 17.3l-1.4-1.4M8.1 8.1 6.7 6.7"
+        stroke="currentColor"
+        strokeLinecap="round"
+        strokeWidth="1.5"
+      />
+    </IconFrame>
+  );
+}

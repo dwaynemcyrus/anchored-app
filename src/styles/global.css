@@ -1093,6 +1093,30 @@ input:focus-visible,
   color: var(--color-text) !important;
 }
 
+.continuity-panel__danger {
+  color: var(--color-danger) !important;
+}
+
+.settings-section {
+  padding: 18px;
+}
+
+.settings-section h3,
+.settings-section p {
+  margin: 0;
+}
+
+.settings-section h3 {
+  font-size: 13px;
+}
+
+.settings-section p {
+  margin-top: 8px;
+  color: var(--color-text-muted);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
 .identity-migration {
   position: fixed;
   z-index: 6;

@@ -12,6 +12,10 @@ Git commit. The format follows [Keep a Changelog], and releases follow
   Anchored asks for a vault name, lets the user choose a parent folder
   natively, creates the new vault safely, remembers it, and opens it
   immediately.
+- A new Settings modal now includes a danger-scoped reload action. Anchored
+  saves the current note first, reloads the window safely, and restores the
+  remembered vault plus the previously open note on startup when both are
+  still available.
 
 ## [0.1.0-alpha] - 2026-07-17
 

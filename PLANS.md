@@ -491,7 +491,7 @@ and preserves link integrity across filename changes.
       with no relevant console warnings or errors.
     - Commit: current implementation chunk
 
-17. [ ] **Chunk: Add safe reload continuity**
+17. [x] **Chunk: Add safe reload continuity**
     - Issues: [#13](https://github.com/dwaynemcyrus/anchored-app/issues/13)
     - Files: startup boundary and app session state, new settings UI and tests,
       typed frontend bridge if needed, `CHANGELOG.md`, and `PLANS.md`
@@ -506,6 +506,14 @@ and preserves link integrity across filename changes.
       stale state. Persist only the minimum current session state, save before
       reload, and refuse automatic reload when save conflicts or failures need
       human action.
+    - Verification result: Session-state parsing tests plus saved-note, no-vault,
+      conflict-block, and startup-restore app tests pass. Formatting, lint,
+      type-checking, the full 89-test frontend suite, and the production build
+      pass. Rendered QA on Friday, July 17, 2026 confirmed the Settings modal
+      opens from the no-vault shell at `http://127.0.0.1:1421/`, the reload
+      action returns to the no-vault state, and the console stays free of
+      relevant warnings and errors.
+    - Commit: current implementation chunk
 
 18. [ ] **Chunk: Add folder creation and note moves**
     - Files: native folder and note-move commands and tests, typed frontend
