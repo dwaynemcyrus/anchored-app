@@ -29,7 +29,6 @@
     "katex": "^0.18.0",
     "markdown-it": "^14.3.0",
     "markdown-it-anchor": "^9.2.1",
-    "markdown-it-container": "^4.0.0",
     "markdown-it-deflist": "^3.0.1",
     "markdown-it-emoji": "^3.0.0",
     "markdown-it-footnote": "^4.0.0",
