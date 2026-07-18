@@ -1,17 +1,21 @@
 import { describe, expect, it } from "vitest";
 
-import { findMarkdownDecorationRanges } from "./editorDecorations";
+import {
+  findFrontMatterDecorationRanges,
+  findMarkdownDecorationRanges,
+} from "./editorDecorations";
 
 describe("Markdown editor decorations", () => {
   it("finds source constructs without changing their ranges", () => {
     const source =
-      "> [!NOTE]\n[[Leadership|the note]] ==important== :warning: H~2~O x^2^ {#intro} [x]\n```rust\n$E=mc^2$";
+      "> [!NOTE]\n[[Leadership|the note]] [^1] ==important== :warning: H~2~O x^2^ {#intro} [x]\n```rust\n$E=mc^2$";
     const ranges = findMarkdownDecorationRanges(source);
 
     expect(ranges.map((range) => range.className)).toEqual(
       expect.arrayContaining([
         "cm-anchored-admonition",
         "cm-anchored-wikilink",
+        "cm-anchored-footnote",
         "cm-anchored-mark",
         "cm-anchored-emoji",
         "cm-anchored-heading-id",
@@ -30,5 +34,28 @@ describe("Markdown editor decorations", () => {
     const ranges = findMarkdownDecorationRanges(source, 0, 8);
     expect(ranges).toHaveLength(1);
     expect(source.slice(ranges[0].from, ranges[0].to)).toBe("[[One]]");
+  });
+
+  it("styles YAML front matter keys, values, comments, and delimiters", () => {
+    const source =
+      "---\nid: 01JZQ7K8P4A6F2M9V3C5T7X1BY\ntags:\n  - writing\n# metadata\n---\n# Heading";
+    const ranges = findFrontMatterDecorationRanges(source);
+
+    expect(ranges.map((range) => range.className)).toEqual(
+      expect.arrayContaining([
+        "cm-anchored-frontmatter-delimiter",
+        "cm-anchored-frontmatter-key",
+        "cm-anchored-frontmatter-value",
+        "cm-anchored-frontmatter-list-marker",
+        "cm-anchored-frontmatter-comment",
+      ]),
+    );
+    expect(
+      ranges.some(
+        (range) =>
+          range.className === "cm-anchored-frontmatter-value" &&
+          source.slice(range.from, range.to).includes("01JZQ7K8P4"),
+      ),
+    ).toBe(true);
   });
 });

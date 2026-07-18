@@ -4,7 +4,7 @@ import {
   type CompletionContext,
   type CompletionResult,
 } from "@codemirror/autocomplete";
-import { Compartment, EditorState } from "@codemirror/state";
+import { EditorState } from "@codemirror/state";
 import {
   highlightSelectionMatches,
   openSearchPanel,
@@ -17,7 +17,10 @@ import {
   rankWikilinkCandidates,
   type WikilinkCandidate,
 } from "../linkCandidates";
-import { markdownEditorDecorations } from "../markdown/editorDecorations";
+import {
+  frontMatterEditorDecorations,
+  markdownEditorDecorations,
+} from "../markdown/editorDecorations";
 import {
   anchoredMarkdownLanguage,
   anchoredMarkdownSyntaxHighlighting,
@@ -31,7 +34,6 @@ type MarkdownEditorProps = {
   editorFontSize: EditorFontSize;
   findRequest: number;
   label: string;
-  syntaxHighlighting: boolean;
   value: string;
   wikilinkCandidates: WikilinkCandidate[];
   onChange: (content: string) => void;
@@ -51,7 +53,6 @@ export default function MarkdownEditor({
   editorFontSize,
   findRequest,
   label,
-  syntaxHighlighting,
   value,
   wikilinkCandidates,
   onChange,
@@ -70,8 +71,6 @@ export default function MarkdownEditor({
   const onSaveAsRef = useRef(onSaveAs);
   const wikilinkCandidatesRef = useRef(wikilinkCandidates);
   const syncingValueRef = useRef(false);
-  const syntaxHighlightingRef = useRef(syntaxHighlighting);
-  const syntaxHighlightingCompartmentRef = useRef(new Compartment());
 
   valueRef.current = value;
   onChangeRef.current = onChange;
@@ -80,7 +79,6 @@ export default function MarkdownEditor({
   onSaveRef.current = onSave;
   onSaveAsRef.current = onSaveAs;
   wikilinkCandidatesRef.current = wikilinkCandidates;
-  syntaxHighlightingRef.current = syntaxHighlighting;
 
   useEffect(() => {
     const host = hostRef.current;
@@ -130,11 +128,9 @@ export default function MarkdownEditor({
         extensions: [
           history(),
           anchoredMarkdownLanguage,
-          syntaxHighlightingCompartmentRef.current.of([
-            ...(syntaxHighlightingRef.current
-              ? [anchoredMarkdownSyntaxHighlighting, markdownEditorDecorations]
-              : []),
-          ]),
+          anchoredMarkdownSyntaxHighlighting,
+          markdownEditorDecorations,
+          frontMatterEditorDecorations,
           highlightSelectionMatches(),
           EditorView.lineWrapping,
           EditorView.contentAttributes.of({ "aria-label": label }),
@@ -223,19 +219,6 @@ export default function MarkdownEditor({
       view.destroy();
     };
   }, [autoFocus, documentId, label]);
-
-  useEffect(() => {
-    const view = editorRef.current;
-    if (!view) return;
-
-    view.dispatch({
-      effects: syntaxHighlightingCompartmentRef.current.reconfigure([
-        ...(syntaxHighlighting
-          ? [anchoredMarkdownSyntaxHighlighting, markdownEditorDecorations]
-          : []),
-      ]),
-    });
-  }, [syntaxHighlighting]);
 
   useEffect(() => {
     const view = editorRef.current;

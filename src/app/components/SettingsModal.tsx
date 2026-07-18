@@ -55,11 +55,8 @@ export function SettingsModal({
       </header>
       <div className="continuity-panel__body">
         <section className="settings-section">
-          <h3>Markdown</h3>
-          <p>
-            Rendering options never rewrite the Markdown source. Preview is
-            explicit so typing stays fast and source-first.
-          </p>
+          <h3>Typography</h3>
+          <p>Adjust the source editor for comfortable long-form writing.</p>
           <label className="settings-select">
             <span>Editor text size</span>
             <select
@@ -79,6 +76,13 @@ export function SettingsModal({
               ))}
             </select>
           </label>
+        </section>
+        <section className="settings-section">
+          <h3>Markdown</h3>
+          <p>
+            Rendering options never rewrite the Markdown source. Preview is
+            explicit so typing stays fast and source-first.
+          </p>
           <label className="settings-toggle">
             <input
               checked={markdownSettings.autoLinkUrls}
@@ -116,7 +120,7 @@ export function SettingsModal({
                 })
               }
             />
-            <span>Highlight Markdown and YAML syntax</span>
+            <span>Highlight fenced code blocks in Preview</span>
           </label>
           <label className="settings-toggle">
             <input

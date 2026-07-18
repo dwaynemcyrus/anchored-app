@@ -636,6 +636,32 @@ input:focus-visible,
   color: var(--color-focus);
 }
 
+.markdown-editor .cm-anchored-footnote {
+  color: #b59cff;
+}
+
+.markdown-editor .cm-anchored-frontmatter-delimiter {
+  color: #8d8d8d;
+}
+
+.markdown-editor .cm-anchored-frontmatter-key {
+  color: #d7a85b;
+  font-weight: 600;
+}
+
+.markdown-editor .cm-anchored-frontmatter-value {
+  color: #b9d69c;
+}
+
+.markdown-editor .cm-anchored-frontmatter-list-marker {
+  color: #d7a85b;
+}
+
+.markdown-editor .cm-anchored-frontmatter-comment {
+  color: #777777;
+  font-style: italic;
+}
+
 .markdown-editor .cm-anchored-heading-id,
 .markdown-editor .cm-anchored-admonition,
 .markdown-editor .cm-anchored-fence {

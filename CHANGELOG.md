@@ -39,6 +39,12 @@ Git commit. The format follows [Keep a Changelog], and releases follow
 - The source editor now defaults to a compact 14px type size, with persisted
   12px, 14px, and 16px choices in Settings. Markdown and YAML front matter
   now use separate CodeMirror language parsing and dark-theme syntax styles.
+- Source syntax highlighting now covers the full supported inline surface,
+  including GFM emphasis and strikethrough, links, URLs, inline code,
+  subscript, superscript, emoji, footnotes, and Anchored inline constructs.
+- Block Markdown now has explicit coverage for headings, quotes, lists,
+  separators, fenced code, and front-matter delimiters. YAML keys, values,
+  list markers, and comments receive dedicated source-editor styling.
 
 ### Fixed
 

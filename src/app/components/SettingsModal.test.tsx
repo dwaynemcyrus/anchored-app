@@ -44,5 +44,6 @@ describe("SettingsModal Markdown options", () => {
       editorFontSize: 12,
     });
     expect(dialog).toHaveTextContent("Rendering options never rewrite");
+    expect(dialog).toHaveTextContent("Typography");
   });
 });
