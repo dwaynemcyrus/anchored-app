@@ -509,7 +509,7 @@ and preserves link integrity across filename changes.
     - Verification result: Session-state parsing tests plus saved-note, no-vault,
       conflict-block, and startup-restore app tests pass. Formatting, lint,
       type-checking, the full 89-test frontend suite, and the production build
-      pass. Rendered QA on Friday, July 17, 2026 confirmed the Settings modal
+      pass. Rendered QA on Saturday, July 18, 2026 confirmed the Settings modal
       opens from the no-vault shell at `http://127.0.0.1:1421/`, the reload
       action returns to the no-vault state, and the console stays free of
       relevant warnings and errors.
