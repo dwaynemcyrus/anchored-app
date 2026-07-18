@@ -3,21 +3,31 @@ import { FormEvent, useRef, useState } from "react";
 import { useModalDialog } from "./useModalDialog";
 
 type FolderDialogProps = {
+  actionLabel: string;
   creating: boolean;
+  description: string;
   error?: string;
-  parentLabel: string;
+  initialName?: string;
+  nameLabel: string;
+  placeholder: string;
+  title: string;
   onClose: () => void;
   onCreate: (name: string) => void;
 };
 
 export function FolderDialog({
+  actionLabel,
   creating,
+  description,
   error,
-  parentLabel,
+  initialName = "",
+  nameLabel,
+  placeholder,
+  title,
   onClose,
   onCreate,
 }: FolderDialogProps) {
-  const [name, setName] = useState("");
+  const [name, setName] = useState(initialName);
   const nameInputRef = useRef<HTMLInputElement>(null);
   const { dialogRef, onDialogKeyDown } = useModalDialog<HTMLElement>({
     initialFocusRef: nameInputRef,
@@ -32,7 +42,7 @@ export function FolderDialog({
   return (
     <aside
       ref={dialogRef}
-      aria-label="Create folder"
+      aria-label={title}
       aria-modal="true"
       className="continuity-panel continuity-panel--compact"
       role="dialog"
@@ -42,11 +52,11 @@ export function FolderDialog({
       <form className="continuity-form" onSubmit={submit}>
         <header className="continuity-panel__header">
           <div>
-            <h2>Create folder</h2>
-            <p>Create a folder inside {parentLabel}.</p>
+            <h2>{title}</h2>
+            <p>{description}</p>
           </div>
           <button
-            aria-label="Close create folder dialog"
+            aria-label={`Close ${title.toLocaleLowerCase()} dialog`}
             disabled={creating}
             type="button"
             onClick={onClose}
@@ -56,13 +66,13 @@ export function FolderDialog({
         </header>
         <div className="continuity-panel__body">
           <label className="continuity-field">
-            <span>Folder name</span>
+            <span>{nameLabel}</span>
             <input
               ref={nameInputRef}
               autoComplete="off"
               disabled={creating}
               name="folder-name"
-              placeholder="New folder"
+              placeholder={placeholder}
               type="text"
               value={name}
               onChange={(event) => setName(event.target.value)}
@@ -79,7 +89,7 @@ export function FolderDialog({
             Cancel
           </button>
           <button className="continuity-panel__primary" disabled={creating}>
-            {creating ? "Creating…" : "Create folder"}
+            {creating ? `${actionLabel}…` : actionLabel}
           </button>
         </footer>
       </form>

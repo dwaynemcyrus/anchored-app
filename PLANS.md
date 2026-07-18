@@ -542,6 +542,33 @@ and preserves link integrity across filename changes.
       does not expose Tauri filesystem mutations.
     - Commit: current implementation chunk
 
+19. [x] **Chunk: Add folder rename and empty delete**
+    - Files: native folder rename and delete commands and tests, typed frontend
+      bridge, file-rail folder actions, shared folder dialogs, app state,
+      `CHANGELOG.md`, and `PLANS.md`
+    - Change: Add folder rename from the file rail for vault folders that
+      contain only Markdown notes and subfolders, and allow direct deletion of
+      empty folders. Reuse the existing note-rename safety model for Markdown
+      path updates and refuse broader destructive folder removal.
+    - Verify: Root and nested folder rename coverage, link updates for moved
+      note paths, refusal for folders containing non-Markdown files, empty-
+      folder deletion, non-empty delete refusal, frontend and Rust quality
+      gates, and rendered UI smoke checks where the browser surface can reach
+      them.
+    - Risk/rollback: Folder rename spans many note paths, while folder delete
+      is destructive by definition. Keep rename limited to Markdown-only folder
+      trees, refuse non-empty delete requests, and avoid recursive content
+      deletion in this chunk.
+    - Verification result: Folder-rename and empty-delete app tests pass,
+      bridge tests pass, and Rust unit coverage now includes rename-safe nested
+      folder moves plus empty and non-empty delete behavior. Formatting, lint,
+      type-checking, the full frontend test suite, production build, Rust
+      formatting, strict Clippy, and all Rust tests pass on Saturday, July 18,
+      2026. Browser-only rendered validation remains limited by the native
+      vault boundary, so the folder-action execution path is proven primarily
+      through automated app and Rust tests.
+    - Commit: current implementation chunk
+
 ## Requirements for future large plans
 
 Every future large plan must identify:

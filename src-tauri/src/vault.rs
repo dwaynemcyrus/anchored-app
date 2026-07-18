@@ -362,6 +362,39 @@ pub async fn create_vault_folder(
 }
 
 #[tauri::command]
+pub async fn rename_vault_folder(
+    app: AppHandle,
+    state: State<'_, VaultState>,
+    folder_path: String,
+    name: String,
+) -> Result<VaultSnapshot, VaultError> {
+    let _rename_guard = state
+        .rename_transaction
+        .lock()
+        .map_err(|_| VaultError::state("The folder rename lock could not be acquired."))?;
+    let root = selected_vault_root(&state, "renaming a folder")?;
+    recover_rename_transaction(&root)?;
+    rename_folder(&root, &folder_path, &name)?;
+    build_vault_snapshot(&app, &root)
+}
+
+#[tauri::command]
+pub async fn delete_vault_folder(
+    app: AppHandle,
+    state: State<'_, VaultState>,
+    folder_path: String,
+) -> Result<VaultSnapshot, VaultError> {
+    let _rename_guard = state
+        .rename_transaction
+        .lock()
+        .map_err(|_| VaultError::state("The folder delete lock could not be acquired."))?;
+    let root = selected_vault_root(&state, "deleting a folder")?;
+    recover_rename_transaction(&root)?;
+    delete_empty_folder(&root, &folder_path)?;
+    build_vault_snapshot(&app, &root)
+}
+
+#[tauri::command]
 pub async fn list_remembered_vaults(app: AppHandle) -> Result<Vec<RememberedVault>, VaultError> {
     load_remembered_vaults(&registry_path(&app)?)
 }
@@ -797,7 +830,7 @@ fn validate_folder_name(name: &str) -> Result<&str, VaultError> {
     let trimmed = name.trim();
     if trimmed.is_empty() {
         return Err(VaultError::invalid(
-            "Enter a folder name before creating a folder.",
+            "Enter a folder name before continuing.",
         ));
     }
     if trimmed.starts_with('.') {
@@ -894,6 +927,214 @@ fn create_folder(
         .map_err(|error| VaultError::io("The new folder could not be created", error))?;
     sync_directory(&parent)?;
     Ok(destination)
+}
+
+fn selected_folder_relative_path(root: &Path, folder_path: &str) -> Result<String, VaultError> {
+    let root = canonical_vault_root(root)?;
+    let directory = resolve_vault_directory(&root, folder_path)?;
+    let relative = directory
+        .strip_prefix(&root)
+        .map_err(|_| VaultError::invalid_file("The selected folder is outside the vault."))?;
+    let relative_path = relative
+        .to_str()
+        .ok_or_else(|| VaultError::invalid_file("The folder path is not valid UTF-8."))?;
+    if relative_path.is_empty() {
+        return Err(VaultError::invalid_file(
+            "The vault root cannot be renamed or deleted.",
+        ));
+    }
+    Ok(relative_path.to_owned())
+}
+
+fn folder_destination_relative_path(
+    current_relative_path: &str,
+    name: &str,
+) -> Result<String, VaultError> {
+    let next_name = validate_folder_name(name)?;
+    let current_path = Path::new(current_relative_path);
+    let current_name = current_path
+        .file_name()
+        .and_then(|segment| segment.to_str())
+        .ok_or_else(|| VaultError::invalid_file("The selected folder could not be renamed."))?;
+    let parent = current_path
+        .parent()
+        .and_then(Path::to_str)
+        .unwrap_or_default();
+    let destination = if parent.is_empty() {
+        next_name.to_owned()
+    } else {
+        format!("{parent}/{next_name}")
+    };
+    if destination == current_relative_path || current_name == next_name {
+        return Err(VaultError::rename_conflict(
+            "Choose a different folder name.",
+        ));
+    }
+    Ok(destination)
+}
+
+fn folder_path_with_suffix(
+    from_root: &str,
+    to_root: &str,
+    current_path: &str,
+) -> Result<String, VaultError> {
+    let suffix = current_path.strip_prefix(from_root).ok_or_else(|| {
+        VaultError::invalid_file("The folder entry is outside the selected folder.")
+    })?;
+    Ok(format!("{to_root}{suffix}"))
+}
+
+fn validate_folder_tree_for_rename(directory: &Path) -> Result<(), VaultError> {
+    let mut stack = vec![directory.to_path_buf()];
+    while let Some(current) = stack.pop() {
+        let mut entries = fs::read_dir(&current)
+            .map_err(|error| VaultError::io("A folder entry could not be read", error))?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|error| VaultError::io("A folder entry could not be read", error))?;
+        entries.sort_by_key(|entry| entry.file_name());
+
+        for entry in entries {
+            let file_type = entry
+                .file_type()
+                .map_err(|error| VaultError::io("A folder entry could not be inspected", error))?;
+            if file_type.is_symlink() {
+                return Err(VaultError::invalid_file(
+                    "Folders with symlinked entries cannot be renamed safely.",
+                ));
+            }
+            if file_type.is_dir() {
+                stack.push(entry.path());
+                continue;
+            }
+            if !file_type.is_file() || !is_markdown(&entry.path()) {
+                return Err(VaultError::invalid_file(
+                    "Only folders containing Markdown notes and subfolders can be renamed safely right now.",
+                ));
+            }
+        }
+    }
+    Ok(())
+}
+
+fn rename_folder(root: &Path, folder_path: &str, name: &str) -> Result<(), VaultError> {
+    let root = canonical_vault_root(root)?;
+    let current_relative_path = selected_folder_relative_path(&root, folder_path)?;
+    let current_directory = resolve_vault_directory(&root, &current_relative_path)?;
+    validate_folder_tree_for_rename(&current_directory)?;
+    let destination_relative_path = folder_destination_relative_path(&current_relative_path, name)?;
+    let destination_directory = root.join(&destination_relative_path);
+
+    match fs::symlink_metadata(&destination_directory) {
+        Ok(_) => return Err(VaultError::file_exists()),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+        Err(error) => {
+            return Err(VaultError::io(
+                "The folder rename destination could not be inspected",
+                error,
+            ))
+        }
+    }
+
+    let mut snapshot = scan_vault(&root)?;
+    enrich_vault_metadata(&root, &mut snapshot.files)?;
+    let folder_prefix = format!("{current_relative_path}/");
+    let moved_files = snapshot
+        .files
+        .iter()
+        .filter(|file| file.relative_path.starts_with(&folder_prefix))
+        .map(|file| file.relative_path.clone())
+        .collect::<Vec<_>>();
+
+    if moved_files.is_empty() {
+        let parent = current_directory.parent().ok_or_else(|| {
+            VaultError::invalid_file("The selected folder does not have a writable parent.")
+        })?;
+        fs::rename(&current_directory, &destination_directory)
+            .map_err(|error| VaultError::io("The folder could not be renamed", error))?;
+        sync_directory(parent)?;
+        return Ok(());
+    }
+
+    let moved_note_paths = moved_files.iter().cloned().collect::<HashSet<_>>();
+    for file in &snapshot.files {
+        if moved_note_paths.contains(&file.relative_path) && file.id.is_none() {
+            return Err(VaultError::identity_conflict(
+                "Every note in this folder needs a unique permanent identity before the folder can be renamed safely.",
+            ));
+        }
+    }
+
+    fs::create_dir(&destination_directory)
+        .map_err(|error| VaultError::io("The renamed folder could not be created", error))?;
+
+    let descendant_folders = snapshot
+        .folders
+        .iter()
+        .filter(|folder| {
+            folder.as_str() == current_relative_path || folder.starts_with(&folder_prefix)
+        })
+        .cloned()
+        .collect::<Vec<_>>();
+
+    for folder in descendant_folders
+        .iter()
+        .filter(|folder| folder.as_str() != current_relative_path)
+    {
+        let destination_relative =
+            folder_path_with_suffix(&current_relative_path, &destination_relative_path, folder)?;
+        fs::create_dir(root.join(destination_relative))
+            .map_err(|error| VaultError::io("A renamed subfolder could not be created", error))?;
+    }
+
+    let mut renamed_count = 0_usize;
+    for relative_path in &moved_files {
+        let destination_relative = folder_path_with_suffix(
+            &current_relative_path,
+            &destination_relative_path,
+            relative_path,
+        )?;
+        let destination = root.join(destination_relative);
+        rename_markdown_file(&root, relative_path, &destination, None)?;
+        renamed_count += 1;
+    }
+
+    if renamed_count > 0 {
+        let mut folders_to_remove = descendant_folders;
+        folders_to_remove.sort_by_key(|folder| std::cmp::Reverse(folder.len()));
+        for folder in folders_to_remove {
+            let directory = root.join(folder);
+            if directory.exists() {
+                fs::remove_dir(&directory).map_err(|error| {
+                    VaultError::io("An emptied folder could not be removed", error)
+                })?;
+            }
+        }
+        let source_parent = current_directory.parent().ok_or_else(|| {
+            VaultError::invalid_file("The selected folder does not have a writable parent.")
+        })?;
+        sync_directory(source_parent)?;
+    }
+
+    Ok(())
+}
+
+fn delete_empty_folder(root: &Path, folder_path: &str) -> Result<(), VaultError> {
+    let root = canonical_vault_root(root)?;
+    let relative_path = selected_folder_relative_path(&root, folder_path)?;
+    let directory = resolve_vault_directory(&root, &relative_path)?;
+    let parent = directory.parent().ok_or_else(|| {
+        VaultError::invalid_file("The selected folder does not have a writable parent.")
+    })?;
+    let mut entries = fs::read_dir(&directory)
+        .map_err(|error| VaultError::io("The folder could not be read", error))?;
+    if entries.next().is_some() {
+        return Err(VaultError::invalid_file(
+            "Only empty folders can be deleted safely right now.",
+        ));
+    }
+    fs::remove_dir(&directory)
+        .map_err(|error| VaultError::io("The folder could not be deleted", error))?;
+    sync_directory(parent)
 }
 
 fn scan_vault(root: &Path) -> Result<VaultSnapshot, VaultError> {
@@ -2343,11 +2584,12 @@ mod tests {
     use super::{
         apply_identity_migration_plan, build_identity_migration_preview, canonical_vault_root,
         create_folder, create_markdown_file, create_named_vault, create_untitled_markdown_file,
-        enrich_vault_metadata, inspect_note_identity, move_markdown_file_to_folder,
-        read_markdown_file, reconcile_vault_identities, recover_rename_transaction,
-        rename_markdown_file, resolve_new_vault_markdown_file, save_markdown_file, scan_vault,
-        search_markdown_files, validate_folder_name, validate_new_vault_name, write_rename_journal,
-        NoteIdentityStatus, RenameJournal, RenameJournalEntry, RenameJournalPhase, RenameOutcome,
+        delete_empty_folder, enrich_vault_metadata, inspect_note_identity,
+        move_markdown_file_to_folder, read_markdown_file, reconcile_vault_identities,
+        recover_rename_transaction, rename_folder, rename_markdown_file,
+        resolve_new_vault_markdown_file, save_markdown_file, scan_vault, search_markdown_files,
+        validate_folder_name, validate_new_vault_name, write_rename_journal, NoteIdentityStatus,
+        RenameJournal, RenameJournalEntry, RenameJournalPhase, RenameOutcome,
         MAX_MARKDOWN_FILE_BYTES, MAX_SEARCH_RESULTS, RENAME_JOURNAL_NAME,
     };
 
@@ -2720,6 +2962,73 @@ mod tests {
             create_folder(vault.path(), None, "Projects").expect_err("reject occupied destination");
 
         assert_eq!(error.code, "vaultFileExists");
+    }
+
+    #[test]
+    fn renames_a_folder_and_updates_nested_note_links() {
+        let vault = tempdir().expect("create fixture vault");
+        fs::create_dir(vault.path().join("Notes")).expect("create Notes folder");
+        fs::create_dir(vault.path().join("Notes/Inbox")).expect("create Inbox folder");
+        fs::write(
+            vault.path().join("Notes/Inbox/Field.md"),
+            "---\nid: 01JZQ7K8P4A6F2M9V3C5T7X1BY\n---\n# Field\n",
+        )
+        .expect("write nested target note");
+        fs::write(
+            vault.path().join("Reference.md"),
+            "---\nid: 01JZQ91T3AA6F2M9V3C5T7X1BZ\n---\n[[Notes/Inbox/Field]]\n",
+        )
+        .expect("write reference note");
+
+        rename_folder(vault.path(), "Notes", "Archive").expect("rename folder");
+        let snapshot = scan_vault(vault.path()).expect("scan renamed folder");
+
+        assert_eq!(snapshot.folders, vec!["Archive", "Archive/Inbox"]);
+        assert!(vault.path().join("Archive/Inbox/Field.md").exists());
+        assert!(!vault.path().join("Notes").exists());
+        assert_eq!(
+            fs::read_to_string(vault.path().join("Reference.md")).expect("read reference note"),
+            "---\nid: 01JZQ91T3AA6F2M9V3C5T7X1BZ\n---\n[[Archive/Inbox/Field]]\n"
+        );
+    }
+
+    #[test]
+    fn refuses_to_rename_a_folder_with_non_markdown_files() {
+        let vault = tempdir().expect("create fixture vault");
+        fs::create_dir(vault.path().join("Notes")).expect("create Notes folder");
+        fs::write(vault.path().join("Notes/image.png"), "png").expect("write attachment");
+
+        let error =
+            rename_folder(vault.path(), "Notes", "Archive").expect_err("reject attachment folder");
+
+        assert_eq!(error.code, "invalidVaultFile");
+        assert!(vault.path().join("Notes").exists());
+        assert!(!vault.path().join("Archive").exists());
+    }
+
+    #[test]
+    fn deletes_an_empty_folder() {
+        let vault = tempdir().expect("create fixture vault");
+        fs::create_dir(vault.path().join("Empty")).expect("create empty folder");
+
+        delete_empty_folder(vault.path(), "Empty").expect("delete empty folder");
+        let snapshot = scan_vault(vault.path()).expect("scan empty vault");
+
+        assert!(snapshot.folders.is_empty());
+        assert!(!vault.path().join("Empty").exists());
+    }
+
+    #[test]
+    fn refuses_to_delete_a_nonempty_folder() {
+        let vault = tempdir().expect("create fixture vault");
+        fs::create_dir(vault.path().join("Notes")).expect("create Notes folder");
+        fs::write(vault.path().join("Notes/Field.md"), "# Field\n").expect("write note");
+
+        let error =
+            delete_empty_folder(vault.path(), "Notes").expect_err("reject nonempty folder delete");
+
+        assert_eq!(error.code, "invalidVaultFile");
+        assert!(vault.path().join("Notes").exists());
     }
 
     #[test]

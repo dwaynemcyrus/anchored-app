@@ -16,6 +16,9 @@ Git commit. The format follows [Keep a Changelog], and releases follow
   folders. Saved notes can also be moved between vault folders from the editor
   or by dragging them onto a folder in the file rail, and existing rename-safe
   link updates still apply to those moves.
+- Vault folders can now be renamed from the file rail when they contain only
+  Markdown notes and subfolders. Anchored updates supported note links for the
+  moved paths, and empty folders can now be deleted directly from the rail.
 - A new Settings modal now includes a danger-scoped reload action. Anchored
   saves the current note first, reloads the window safely, and restores the
   remembered vault plus the previously open note on startup when both are

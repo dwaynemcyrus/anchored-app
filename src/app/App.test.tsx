@@ -15,6 +15,7 @@ import {
   createVaultFolder,
   createUntitledVaultFile,
   createVaultFile,
+  deleteVaultFolder,
   forgetVault,
   listRememberedVaults,
   listVaultTrash,
@@ -23,6 +24,7 @@ import {
   openRememberedVault,
   previewIdentityMigration,
   readVaultFile,
+  renameVaultFolder,
   renameVaultFile,
   rescanVault,
   saveVaultFile,
@@ -40,6 +42,7 @@ vi.mock("../lib/tauri/vault", () => ({
   createVaultFolder: vi.fn(),
   createUntitledVaultFile: vi.fn(),
   createVaultFile: vi.fn(),
+  deleteVaultFolder: vi.fn(),
   forgetVault: vi.fn(),
   listRememberedVaults: vi.fn(),
   listVaultTrash: vi.fn(),
@@ -48,6 +51,7 @@ vi.mock("../lib/tauri/vault", () => ({
   openRememberedVault: vi.fn(),
   previewIdentityMigration: vi.fn(),
   readVaultFile: vi.fn(),
+  renameVaultFolder: vi.fn(),
   renameVaultFile: vi.fn(),
   rescanVault: vi.fn(),
   saveVaultFile: vi.fn(),
@@ -66,6 +70,7 @@ const mockedCreateVault = vi.mocked(createVault);
 const mockedCreateVaultFolder = vi.mocked(createVaultFolder);
 const mockedCreateUntitledVaultFile = vi.mocked(createUntitledVaultFile);
 const mockedCreateVaultFile = vi.mocked(createVaultFile);
+const mockedDeleteVaultFolder = vi.mocked(deleteVaultFolder);
 const mockedForgetVault = vi.mocked(forgetVault);
 const mockedListRememberedVaults = vi.mocked(listRememberedVaults);
 const mockedListVaultTrash = vi.mocked(listVaultTrash);
@@ -74,6 +79,7 @@ const mockedMoveVaultFileToTrash = vi.mocked(moveVaultFileToTrash);
 const mockedOpenRememberedVault = vi.mocked(openRememberedVault);
 const mockedPreviewIdentityMigration = vi.mocked(previewIdentityMigration);
 const mockedReadVaultFile = vi.mocked(readVaultFile);
+const mockedRenameVaultFolder = vi.mocked(renameVaultFolder);
 const mockedRenameVaultFile = vi.mocked(renameVaultFile);
 const mockedRescanVault = vi.mocked(rescanVault);
 const mockedSaveVaultFile = vi.mocked(saveVaultFile);
@@ -100,6 +106,7 @@ describe("App", () => {
     mockedCreateVaultFolder.mockReset();
     mockedCreateUntitledVaultFile.mockReset();
     mockedCreateVaultFile.mockReset();
+    mockedDeleteVaultFolder.mockReset();
     mockedForgetVault.mockReset();
     mockedListRememberedVaults.mockReset();
     mockedListVaultTrash.mockReset();
@@ -109,6 +116,7 @@ describe("App", () => {
     mockedPreviewIdentityMigration.mockReset();
     mockedSelectVault.mockReset();
     mockedReadVaultFile.mockReset();
+    mockedRenameVaultFolder.mockReset();
     mockedRenameVaultFile.mockReset();
     mockedRescanVault.mockReset();
     mockedSaveVaultFile.mockReset();
@@ -428,6 +436,82 @@ describe("App", () => {
       parentPath: "Projects",
     });
     expect(await screen.findByRole("button", { name: "Inbox" })).toBeVisible();
+  });
+
+  it("renames a folder from a folder row action", async () => {
+    const user = userEvent.setup();
+    mockedSelectVault.mockResolvedValue({
+      files: [],
+      folders: ["Projects", "Projects/Inbox"],
+      name: "My Vault",
+      vaultId: "01JZQ7K8P4A6F2M9V3C5T7X1BY",
+      warnings: noWarnings,
+    });
+    mockedRenameVaultFolder.mockResolvedValue({
+      files: [],
+      folders: ["Archive", "Archive/Inbox"],
+      name: "My Vault",
+      vaultId: "01JZQ7K8P4A6F2M9V3C5T7X1BY",
+      warnings: noWarnings,
+    });
+    render(<App />);
+
+    await user.click(screen.getByRole("button", { name: "Open vault" }));
+    await user.click(
+      screen.getByRole("button", { name: "Rename Projects folder" }),
+    );
+    const dialog = screen.getByRole("dialog", { name: "Rename folder" });
+    const input = within(dialog).getByRole("textbox", {
+      name: "New folder name",
+    });
+    await user.clear(input);
+    await user.type(input, "Archive");
+    await user.click(
+      within(dialog).getByRole("button", { name: "Rename folder" }),
+    );
+
+    expect(mockedRenameVaultFolder).toHaveBeenCalledWith({
+      folderPath: "Projects",
+      name: "Archive",
+    });
+    expect(
+      await screen.findByRole("button", { name: "Archive" }),
+    ).toBeVisible();
+  });
+
+  it("deletes an empty folder from a folder row action", async () => {
+    const user = userEvent.setup();
+    mockedSelectVault.mockResolvedValue({
+      files: [],
+      folders: ["Archive"],
+      name: "My Vault",
+      vaultId: "01JZQ7K8P4A6F2M9V3C5T7X1BY",
+      warnings: noWarnings,
+    });
+    mockedDeleteVaultFolder.mockResolvedValue({
+      files: [],
+      folders: [],
+      name: "My Vault",
+      vaultId: "01JZQ7K8P4A6F2M9V3C5T7X1BY",
+      warnings: noWarnings,
+    });
+    render(<App />);
+
+    await user.click(screen.getByRole("button", { name: "Open vault" }));
+    await user.click(
+      screen.getByRole("button", { name: "Delete Archive folder" }),
+    );
+    const dialog = screen.getByRole("dialog", { name: "Delete folder" });
+    await user.click(
+      within(dialog).getByRole("button", { name: "Delete folder" }),
+    );
+
+    expect(mockedDeleteVaultFolder).toHaveBeenCalledWith("Archive");
+    await waitFor(() =>
+      expect(
+        screen.queryByRole("button", { name: "Archive" }),
+      ).not.toBeInTheDocument(),
+    );
   });
 
   it("reloads from settings after saving the active note", async () => {

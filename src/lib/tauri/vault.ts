@@ -81,6 +81,11 @@ export type CreateVaultFolderRequest = {
   parentPath?: string;
 };
 
+export type RenameVaultFolderRequest = {
+  folderPath: string;
+  name: string;
+};
+
 export type RenameVaultFileResult = {
   relativePath: string;
   updatedFiles: number;
@@ -119,6 +124,16 @@ export function createVaultFolder(
   request: CreateVaultFolderRequest,
 ): Promise<VaultSnapshot> {
   return invoke<VaultSnapshot>("create_vault_folder", request);
+}
+
+export function renameVaultFolder(
+  request: RenameVaultFolderRequest,
+): Promise<VaultSnapshot> {
+  return invoke<VaultSnapshot>("rename_vault_folder", request);
+}
+
+export function deleteVaultFolder(folderPath: string): Promise<VaultSnapshot> {
+  return invoke<VaultSnapshot>("delete_vault_folder", { folderPath });
 }
 
 export function listRememberedVaults(): Promise<RememberedVault[]> {

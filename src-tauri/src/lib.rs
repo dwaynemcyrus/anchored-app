@@ -12,6 +12,8 @@ pub fn run() {
             vault::select_vault,
             vault::create_vault,
             vault::create_vault_folder,
+            vault::rename_vault_folder,
+            vault::delete_vault_folder,
             vault::list_remembered_vaults,
             vault::open_remembered_vault,
             vault::forget_vault,

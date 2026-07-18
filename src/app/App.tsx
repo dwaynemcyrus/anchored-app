@@ -9,6 +9,7 @@ import {
 
 import { EditorSurface } from "./components/EditorSurface";
 import { CreateVaultDialog } from "./components/CreateVaultDialog";
+import { DeleteFolderDialog } from "./components/DeleteFolderDialog";
 import { FileRail } from "./components/FileRail";
 import { FolderDialog } from "./components/FolderDialog";
 import { IdentityMigrationPanel } from "./components/IdentityMigrationPanel";
@@ -67,6 +68,7 @@ import {
   createVaultFolder,
   createUntitledVaultFile,
   createVaultFile,
+  deleteVaultFolder,
   forgetVault,
   listRememberedVaults,
   listVaultTrash,
@@ -75,6 +77,7 @@ import {
   openRememberedVault,
   previewIdentityMigration,
   readVaultFile,
+  renameVaultFolder,
   renameVaultFile,
   rescanVault,
   saveVaultFile,
@@ -161,6 +164,10 @@ function folderDisplayName(folderPath: string): string {
   return folderPath || "Vault root";
 }
 
+function folderName(folderPath: string): string {
+  return folderPath.split("/").pop() ?? folderPath;
+}
+
 export function App() {
   const [documents, setDocuments] = useState<AnchoredDocument[]>([]);
   const [activeDocumentId, setActiveDocumentId] = useState("");
@@ -191,6 +198,22 @@ export function App() {
   const [createFolderError, setCreateFolderError] = useState<
     string | undefined
   >();
+  const [renamingFolderPath, setRenamingFolderPath] = useState<
+    string | undefined
+  >();
+  const [renameFolderVisible, setRenameFolderVisible] = useState(false);
+  const [renameFolderError, setRenameFolderError] = useState<
+    string | undefined
+  >();
+  const [renameFolderPending, setRenameFolderPending] = useState(false);
+  const [deletingFolderPath, setDeletingFolderPath] = useState<
+    string | undefined
+  >();
+  const [deleteFolderVisible, setDeleteFolderVisible] = useState(false);
+  const [deleteFolderError, setDeleteFolderError] = useState<
+    string | undefined
+  >();
+  const [deleteFolderPending, setDeleteFolderPending] = useState(false);
   const [createVaultVisible, setCreateVaultVisible] = useState(false);
   const [createVaultError, setCreateVaultError] = useState<
     string | undefined
@@ -1570,6 +1593,92 @@ export function App() {
     }
   }
 
+  async function renameExistingFolder(name: string) {
+    if (!vaultSelected || !renamingFolderPath) {
+      addVaultNotice("Open a vault before renaming a folder.");
+      return;
+    }
+    if (hasUnfinishedEdits()) {
+      addVaultNotice("Save all open note changes before renaming a folder.");
+      return;
+    }
+
+    const originalFolderPath = renamingFolderPath;
+    setRenameFolderPending(true);
+    setRenameFolderError(undefined);
+    try {
+      const snapshot = await renameVaultFolder({
+        folderPath: originalFolderPath,
+        name,
+      });
+      const nextName = name.trim();
+      const parentPath = originalFolderPath.split("/").slice(0, -1).join("/");
+      const renamedFolderPath = parentPath
+        ? `${parentPath}/${nextName}`
+        : nextName;
+      adoptVaultSnapshot(snapshot);
+      setExpandedFolders((currentFolders) => {
+        const nextFolders = new Set(currentFolders);
+        return new Set(
+          Array.from(nextFolders, (folderPath) =>
+            folderPath === originalFolderPath
+              ? renamedFolderPath
+              : folderPath.startsWith(`${originalFolderPath}/`)
+                ? `${renamedFolderPath}${folderPath.slice(
+                    originalFolderPath.length,
+                  )}`
+                : folderPath,
+          ),
+        );
+      });
+      setRenameFolderVisible(false);
+      setRenamingFolderPath(undefined);
+      addVaultNotice(`${folderName(originalFolderPath)} renamed.`, {
+        history: { kind: "rename" },
+      });
+    } catch (error) {
+      setRenameFolderError(readErrorMessage(error));
+    } finally {
+      setRenameFolderPending(false);
+    }
+  }
+
+  async function deleteExistingFolder() {
+    if (!vaultSelected || !deletingFolderPath) {
+      addVaultNotice("Open a vault before deleting a folder.");
+      return;
+    }
+
+    const targetFolderPath = deletingFolderPath;
+    setDeleteFolderPending(true);
+    setDeleteFolderError(undefined);
+    try {
+      const snapshot = await deleteVaultFolder(targetFolderPath);
+      adoptVaultSnapshot(snapshot);
+      setExpandedFolders((currentFolders) => {
+        const nextFolders = new Set(currentFolders);
+        Array.from(nextFolders).forEach((folderPath) => {
+          if (
+            folderPath === targetFolderPath ||
+            folderPath.startsWith(`${targetFolderPath}/`)
+          ) {
+            nextFolders.delete(folderPath);
+          }
+        });
+        return nextFolders;
+      });
+      setDeleteFolderVisible(false);
+      setDeletingFolderPath(undefined);
+      addVaultNotice(`${folderName(targetFolderPath)} deleted.`, {
+        history: { kind: "rename" },
+      });
+    } catch (error) {
+      setDeleteFolderError(readErrorMessage(error));
+    } finally {
+      setDeleteFolderPending(false);
+    }
+  }
+
   async function reloadApp() {
     if (reloadingApp) return;
     if (
@@ -1722,6 +1831,11 @@ export function App() {
             setCreateFolderError(undefined);
             setCreateFolderVisible(true);
           }}
+          onDeleteFolder={(folderPath) => {
+            setDeletingFolderPath(folderPath);
+            setDeleteFolderError(undefined);
+            setDeleteFolderVisible(true);
+          }}
           onMoveDocument={(documentId, destinationFolderPath) =>
             void moveDocumentToFolder(documentId, destinationFolderPath)
           }
@@ -1730,6 +1844,11 @@ export function App() {
             void refreshTrashEntries();
           }}
           onQueryChange={setQuery}
+          onRenameFolder={(folderPath) => {
+            setRenamingFolderPath(folderPath);
+            setRenameFolderError(undefined);
+            setRenameFolderVisible(true);
+          }}
           onSelectDocument={selectDocument}
           onToggleFolder={toggleFolder}
         />
@@ -1890,9 +2009,13 @@ export function App() {
       ) : null}
       {createFolderVisible ? (
         <FolderDialog
+          actionLabel="Create folder"
           creating={creatingFolder}
+          description={`Create a folder inside ${folderDisplayName(createFolderParentPath ?? "")}.`}
           error={createFolderError}
-          parentLabel={folderDisplayName(createFolderParentPath ?? "")}
+          nameLabel="Folder name"
+          placeholder="New folder"
+          title="Create folder"
           onClose={() => {
             if (!creatingFolder) {
               setCreateFolderError(undefined);
@@ -1901,6 +2024,43 @@ export function App() {
             }
           }}
           onCreate={(name) => void createNewFolder(name)}
+        />
+      ) : null}
+      {renameFolderVisible && renamingFolderPath ? (
+        <FolderDialog
+          actionLabel="Rename folder"
+          creating={renameFolderPending}
+          description={`Rename ${folderName(renamingFolderPath)} inside ${folderDisplayName(
+            renamingFolderPath.split("/").slice(0, -1).join("/"),
+          )}.`}
+          error={renameFolderError}
+          initialName={folderName(renamingFolderPath)}
+          nameLabel="New folder name"
+          placeholder="Renamed folder"
+          title="Rename folder"
+          onClose={() => {
+            if (!renameFolderPending) {
+              setRenameFolderError(undefined);
+              setRenamingFolderPath(undefined);
+              setRenameFolderVisible(false);
+            }
+          }}
+          onCreate={(name) => void renameExistingFolder(name)}
+        />
+      ) : null}
+      {deleteFolderVisible && deletingFolderPath ? (
+        <DeleteFolderDialog
+          deleting={deleteFolderPending}
+          error={deleteFolderError}
+          folderName={folderName(deletingFolderPath)}
+          onClose={() => {
+            if (!deleteFolderPending) {
+              setDeleteFolderError(undefined);
+              setDeletingFolderPath(undefined);
+              setDeleteFolderVisible(false);
+            }
+          }}
+          onDelete={() => void deleteExistingFolder()}
         />
       ) : null}
       {moveDocumentVisible && moveTargetDocument ? (

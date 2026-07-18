@@ -123,6 +123,39 @@ export function NewFolderIcon(props: IconProps) {
   );
 }
 
+export function RenameIcon(props: IconProps) {
+  return (
+    <IconFrame {...props}>
+      <path
+        d="m6.75 16.75 1.75-5.25L15.9 4.1a1.5 1.5 0 0 1 2.12 0l1.88 1.88a1.5 1.5 0 0 1 0 2.12l-7.4 7.4-5.75 1.25Z"
+        stroke="currentColor"
+        strokeLinejoin="round"
+        strokeWidth="1.5"
+      />
+      <path
+        d="m14.5 5.5 4 4"
+        stroke="currentColor"
+        strokeLinecap="round"
+        strokeWidth="1.5"
+      />
+    </IconFrame>
+  );
+}
+
+export function TrashIcon(props: IconProps) {
+  return (
+    <IconFrame {...props}>
+      <path
+        d="M5.75 7.5h12.5M9.25 7.5V5.75h5.5V7.5M8.25 10.25v7m3.75-7v7m3.75-7v7M7 7.5l.65 11.2a1.5 1.5 0 0 0 1.5 1.4h5.7a1.5 1.5 0 0 0 1.5-1.4L17 7.5"
+        stroke="currentColor"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth="1.5"
+      />
+    </IconFrame>
+  );
+}
+
 export function SearchIcon(props: IconProps) {
   return (
     <IconFrame {...props}>

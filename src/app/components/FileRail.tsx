@@ -7,7 +7,9 @@ import {
   FolderIcon,
   NewFileIcon,
   NewFolderIcon,
+  RenameIcon,
   SearchIcon,
+  TrashIcon,
 } from "./Icons";
 import { IconButton } from "./IconButton";
 
@@ -23,9 +25,11 @@ type FileRailProps = {
   vaultSelected: boolean;
   onCreateFolder: (parentPath?: string) => void;
   onCreateNote: () => void;
+  onDeleteFolder: (folderPath: string) => void;
   onMoveDocument: (documentId: string, destinationFolderPath: string) => void;
   onOpenTrash: () => void;
   onQueryChange: (query: string) => void;
+  onRenameFolder: (folderPath: string) => void;
   onSelectDocument: (documentId: string) => void;
   onToggleFolder: (folder: string) => void;
 };
@@ -69,9 +73,11 @@ export function FileRail({
   vaultSelected,
   onCreateFolder,
   onCreateNote,
+  onDeleteFolder,
   onMoveDocument,
   onOpenTrash,
   onQueryChange,
+  onRenameFolder,
   onSelectDocument,
   onToggleFolder,
 }: FileRailProps) {
@@ -259,13 +265,29 @@ export function FileRail({
                   <FolderIcon />
                   <span>{folderName(folder)}</span>
                 </button>
-                <IconButton
-                  className="tree-row__action"
-                  label={`Create subfolder inside ${folderName(folder)}`}
-                  onClick={() => onCreateFolder(folder)}
-                >
-                  <NewFolderIcon />
-                </IconButton>
+                <div className="tree-row__actions">
+                  <IconButton
+                    className="tree-row__action"
+                    label={`Rename ${folderName(folder)} folder`}
+                    onClick={() => onRenameFolder(folder)}
+                  >
+                    <RenameIcon />
+                  </IconButton>
+                  <IconButton
+                    className="tree-row__action"
+                    label={`Delete ${folderName(folder)} folder`}
+                    onClick={() => onDeleteFolder(folder)}
+                  >
+                    <TrashIcon />
+                  </IconButton>
+                  <IconButton
+                    className="tree-row__action"
+                    label={`Create subfolder inside ${folderName(folder)}`}
+                    onClick={() => onCreateFolder(folder)}
+                  >
+                    <NewFolderIcon />
+                  </IconButton>
+                </div>
               </div>
               {isExpanded ? (
                 <div role="group">

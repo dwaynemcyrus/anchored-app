@@ -6,6 +6,7 @@ import {
   createVault,
   createVaultFolder,
   createVaultFile,
+  deleteVaultFolder,
   forgetVault,
   listRememberedVaults,
   listVaultTrash,
@@ -14,6 +15,7 @@ import {
   openRememberedVault,
   previewIdentityMigration,
   readVaultFile,
+  renameVaultFolder,
   renameVaultFile,
   rescanVault,
   restoreVaultFileFromTrash,
@@ -99,6 +101,22 @@ describe("vault bridge", () => {
     expect(mockedInvoke).toHaveBeenCalledWith("create_vault_folder", {
       name: "Projects",
       parentPath: "Notes",
+    });
+  });
+
+  it("renames and deletes folders through narrow native commands", async () => {
+    mockedInvoke.mockResolvedValue(snapshot);
+
+    await expect(
+      renameVaultFolder({ folderPath: "Notes", name: "Archive" }),
+    ).resolves.toEqual(snapshot);
+    await expect(deleteVaultFolder("Archive/Empty")).resolves.toEqual(snapshot);
+    expect(mockedInvoke).toHaveBeenNthCalledWith(1, "rename_vault_folder", {
+      folderPath: "Notes",
+      name: "Archive",
+    });
+    expect(mockedInvoke).toHaveBeenNthCalledWith(2, "delete_vault_folder", {
+      folderPath: "Archive/Empty",
     });
   });
 

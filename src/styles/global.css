@@ -406,6 +406,13 @@ input:focus-visible,
   color: inherit;
 }
 
+.tree-row__actions {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 2px;
+}
+
 .tree-row__action {
   flex: 0 0 auto;
 }
