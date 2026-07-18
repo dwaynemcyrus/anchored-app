@@ -130,7 +130,8 @@ and preserves link integrity across filename changes.
    - Commits: `4141080 feat(files): save markdown atomically`,
      `afbb539 feat(editor): add markdown editing`,
      `23ede3b feat(files): create notes safely`,
-     `2795bb8 feat(editor): add safe save as`
+     `2795bb8 feat(editor): add safe save as`, and
+     `b780238 fix(editor): preserve draft identity`
 
 9. [x] **Chunk: Add portable metadata**
    - Files: front-matter parser, stable-ID service, fixtures, tests, docs
