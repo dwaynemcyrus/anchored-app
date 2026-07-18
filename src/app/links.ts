@@ -76,7 +76,7 @@ export function wikilinksInContent(content: string): WikilinkMatch[] {
       lineOffset += lineWithEnding.length;
       continue;
     }
-    const fenceMatch = line.match(/^ {0,3}(`{3,}|~{3,})/);
+    const fenceMatch = line.match(/^ {0,3}(`{3,})/);
     if (fenceMatch) {
       const marker = fenceMatch[1][0];
       const length = fenceMatch[1].length;
@@ -124,7 +124,7 @@ export function wikilinkCompletionAtOffset(
   for (const lineWithEnding of linesWithEndings(content.slice(bodyStart))) {
     const line = lineWithEnding.replace(/\r?\n$/, "");
     const lineEnd = lineOffset + line.length;
-    const fenceMatch = line.match(/^ {0,3}(`{3,}|~{3,})/);
+    const fenceMatch = line.match(/^ {0,3}(`{3,})/);
     const isFenceLine = Boolean(fenceMatch);
     if (fenceMatch) {
       const marker = fenceMatch[1][0];

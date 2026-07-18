@@ -8,6 +8,16 @@ Git commit. The format follows [Keep a Changelog], and releases follow
 
 ### Added
 
+- Anchored now supports the Markdown v1 rendering pipeline, including
+  CommonMark, GFM tables, footnotes, task lists, definition lists, math,
+  wikilinks, admonitions, heading IDs, subscript, superscript, highlighting,
+  emoji, Mermaid diagrams, and an explicit sanitized Preview view. URL
+  autolinking, smart typography, code highlighting, emoji, and Mermaid can be
+  configured in Settings without changing Markdown source.
+- Markdown source editing now decorates supported wikilinks, heading IDs,
+  admonitions, math, tasks, highlights, emoji, and fenced code markers while
+  keeping the underlying source unchanged. Intentional saves normalize CRLF
+  and legacy CR endings to LF and show a visible notice.
 - New vaults can now be created from the no-vault screen or vault switcher.
   Anchored asks for a vault name, lets the user choose a parent folder
   natively, creates the new vault safely, remembers it, and opens it
@@ -23,6 +33,12 @@ Git commit. The format follows [Keep a Changelog], and releases follow
   saves the current note first, reloads the window safely, and restores the
   remembered vault plus the previously open note on startup when both are
   still available.
+
+### Fixed
+
+- New notes now accept typing immediately while Anchored assigns their
+  permanent identity. The generated front matter is merged into the local
+  draft before autosave, preventing identity-conflict save failures.
 
 ## [0.1.0-alpha] - 2026-07-17
 

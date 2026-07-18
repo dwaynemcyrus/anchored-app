@@ -1,10 +1,12 @@
-import { lazy, Suspense } from "react";
+import { lazy, Suspense, useState } from "react";
 
 import type { AnchoredDocument } from "../documents";
 import type { WikilinkCandidate } from "../linkCandidates";
+import type { MarkdownSettings } from "../markdown/types";
 import { Backlinks } from "./Backlinks";
 
 const MarkdownEditor = lazy(() => import("./MarkdownEditor"));
+const MarkdownPreview = lazy(() => import("./MarkdownPreview"));
 
 type EditorSurfaceProps = {
   document?: AnchoredDocument;
@@ -31,6 +33,7 @@ type EditorSurfaceProps = {
   onSaveDocumentAs: () => void;
   onTrashDocument: () => void;
   moving: boolean;
+  markdownSettings: MarkdownSettings;
   renaming: boolean;
   trashing: boolean;
 };
@@ -57,9 +60,12 @@ export function EditorSurface({
   onSaveDocumentAs,
   onTrashDocument,
   moving,
+  markdownSettings,
   renaming,
   trashing,
 }: EditorSurfaceProps) {
+  const [previewVisible, setPreviewVisible] = useState(false);
+  const [focusEditorOnOpen, setFocusEditorOnOpen] = useState(false);
   if (!document) {
     return (
       <main className="editor-surface">
@@ -152,6 +158,20 @@ export function EditorSurface({
           ) : null}
           {document.sourceText !== undefined ? (
             <button
+              aria-pressed={previewVisible}
+              className="editor-surface__action"
+              type="button"
+              onClick={() => {
+                const nextVisible = !previewVisible;
+                setPreviewVisible(nextVisible);
+                setFocusEditorOnOpen(!nextVisible);
+              }}
+            >
+              {previewVisible ? "Edit source" : "Preview"}
+            </button>
+          ) : null}
+          {document.sourceText !== undefined ? (
+            <button
               aria-label={`Save ${document.name} as`}
               className="editor-surface__action"
               disabled={moving || renaming || trashing}
@@ -209,25 +229,44 @@ export function EditorSurface({
             </div>
           ) : null
         ) : document.sourceText !== undefined ? (
-          <Suspense
-            fallback={
-              <p className="document__empty" role="status">
-                Opening editor…
-              </p>
-            }
-          >
-            <MarkdownEditor
-              documentId={document.id}
-              findRequest={findRequest}
-              label={`${document.name} Markdown editor`}
-              value={document.sourceText}
-              wikilinkCandidates={wikilinkCandidates}
-              onChange={onDocumentChange}
-              onOpenWikilink={onOpenWikilink}
-              onSave={onSaveDocument}
-              onSaveAs={onSaveDocumentAs}
-            />
-          </Suspense>
+          previewVisible ? (
+            <Suspense
+              fallback={
+                <p className="document__empty" role="status">
+                  Opening Preview…
+                </p>
+              }
+            >
+              <MarkdownPreview
+                label={`${document.name} Markdown preview`}
+                onOpenWikilink={onOpenWikilink}
+                settings={markdownSettings}
+                source={document.sourceText}
+              />
+            </Suspense>
+          ) : (
+            <Suspense
+              fallback={
+                <p className="document__empty" role="status">
+                  Opening editor…
+                </p>
+              }
+            >
+              <MarkdownEditor
+                autoFocus={focusEditorOnOpen}
+                documentId={document.id}
+                findRequest={findRequest}
+                label={`${document.name} Markdown editor`}
+                value={document.sourceText}
+                wikilinkCandidates={wikilinkCandidates}
+                onChange={onDocumentChange}
+                onOpenWikilink={onOpenWikilink}
+                onPreview={() => setPreviewVisible(true)}
+                onSave={onSaveDocument}
+                onSaveAs={onSaveDocumentAs}
+              />
+            </Suspense>
+          )
         ) : (
           <>
             <pre className="front-matter">{frontMatter}</pre>

@@ -60,9 +60,26 @@ rendered interface on 2026-07-17.
   native window is closed or the app is quit. The user must save, discard, or
   cancel explicitly.
 - Keep new-note actions unavailable until a vault is selected.
+- Normalize CRLF and legacy CR source to Unix LF on an intentional save and
+  show a visible notice when that conversion occurs.
 
-Anchored currently edits Markdown source only. It does not provide rendered
-Markdown preview or rich-text editing.
+### Markdown rendering and Preview
+
+- Open an explicit, on-demand Preview without changing the editable source.
+- Render CommonMark and GFM tables, alignment, backtick code fences, syntax
+  highlighting, footnotes, strikethrough, task lists, and automatic URL links.
+- Render heading IDs, definition lists, subscript, superscript, highlights,
+  emoji shortcodes, LaTeX math, Mermaid diagrams, and the twelve standard
+  admonition types with custom titles.
+- Resolve rendered wikilinks through the existing stable-ID, filename, path,
+  and alias resolver. Ambiguous or missing targets remain unopened and are
+  reported through the normal vault notices.
+- Keep Preview render-only: it never serializes an AST back to disk, executes
+  code, loads remote diagram resources, or enables raw executable HTML.
+- Configure automatic URL linking, smart typography, syntax highlighting,
+  emoji, and Mermaid from Settings. All options default to enabled and are
+  stored outside user Markdown.
+- Return to source editing with the Preview button or `Command-Shift-P`.
 
 ## Permanent note identities
 
@@ -226,7 +243,8 @@ The following are not active features:
 - Standard Markdown-link navigation such as `[label](file.md)`.
 - Heading/block autocomplete or heading/block existence validation.
 - Automatic creation of a note from an unresolved wikilink.
-- Rich-text or live-preview editing.
+- Rich-text or live-preview editing while typing. Preview is explicit and
+  source-first.
 - Permanent deletion from Trash.
 - Accounts, sync, collaboration, mobile apps, publishing, AI, PDFs, or EPUBs.
 

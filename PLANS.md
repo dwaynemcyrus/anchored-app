@@ -130,7 +130,8 @@ and preserves link integrity across filename changes.
    - Commits: `4141080 feat(files): save markdown atomically`,
      `afbb539 feat(editor): add markdown editing`,
      `23ede3b feat(files): create notes safely`,
-     `2795bb8 feat(editor): add safe save as`
+     `2795bb8 feat(editor): add safe save as`, and
+     `b780238 fix(editor): preserve draft identity`
 
 9. [x] **Chunk: Add portable metadata**
    - Files: front-matter parser, stable-ID service, fixtures, tests, docs
@@ -568,6 +569,247 @@ and preserves link integrity across filename changes.
       vault boundary, so the folder-action execution path is proven primarily
       through automated app and Rust tests.
     - Commit: current implementation chunk
+
+20. [ ] **Epic: Implement Anchored Markdown Specification v1**
+    - Outcome: Make the Markdown implementation CommonMark-compliant,
+      GFM-compatible, source-preserving, and complete for every required and
+      optional feature in the supplied Anchored Markdown Specification v1.
+      The source editor remains CodeMirror 6 and Markdown remains the only
+      authored-content source of truth. Version 1 gets an explicit, on-demand
+      rendered document surface; it does not add live preview while typing.
+    - Package decision: Use `markdown-it` with focused extension packages as
+      the runtime Markdown parser and HTML pipeline. It runs directly in the
+      existing Tauri WebView and exposes the required linkify and typographer
+      toggles without a cross-origin-isolated WASI runtime. Keep `yaml-rust2`
+      and the existing Rust metadata layer for typed YAML validation, stable
+      IDs, aliases, and formatting-preserving mutations. Sätteri was evaluated
+      as the suggested alternative, but its browser fallback requires
+      `SharedArrayBuffer` and cross-origin isolation while its native binding
+      is not a direct WebView dependency. Keep the parser adapter boundary so
+      this decision can be revisited without changing Markdown persistence.
+    - Preservation rule: Parse for indexing, rendering, diagnostics, and
+      navigation, but never serialize the entire AST back to disk on ordinary
+      save. Preserve unknown syntax, key order, spacing, comments, attachments,
+      and unsupported Obsidian content byte-for-byte unless a deliberate,
+      reviewed mutation is being applied. Read LF and CRLF for compatibility;
+      new files use LF, and existing CRLF files are normalized only on an
+      intentional save with an observable notice and regression coverage.
+    - Feature matrix:
+      - Markdown-it core and extension packages: CommonMark, GFM tables and
+        alignment, backtick fences, footnotes, strikethrough, task-list
+        syntax, GFM autolinks, `$...$` and `$$...$$` math, definition lists,
+        `~subscript~`, `^superscript^`, emoji, highlighting, and smart
+        typography.
+      - Anchored plugins or adapters: YAML front matter detection, heading
+        IDs via `{#id}`, wikilinks, standard admonition blockquotes with
+        the twelve named types and custom titles, `==highlight==`, emoji
+        shortcodes, Mermaid code fences, permanent-ID
+        resolution, safe internal-link rendering, configurable bare-URL
+        linking, and the backtick-only fence policy.
+      - Settings: automatic URL linking defaults on and is toggleable;
+        smart typography defaults on and is toggleable by quotes, dashes, and
+        ellipses; highlighting, emoji, and Mermaid are enabled in Version 1
+        while preserving their original source syntax. Render-only transforms
+        must never rewrite the editor's Markdown.
+    - Compatibility decisions: With subscript enabled, single-tilde spans are
+      subscript and only double tildes are strikethrough. Tilde fences are
+      treated as ordinary Markdown text, never code fences. Standard
+      admonition types are closed to the documented list; custom titles are
+      accepted, but custom admonition types are not. Existing stable IDs and
+      filename-triggered link updates remain authoritative and are not
+      replaced by display-name or heading-ID resolution.
+
+20A. [x] **Chunk: Establish the parser contract and corpus**
+    - Files: `docs/MARKDOWN_SPEC.md`, `docs/FEATURES.md`, `PLANS.md`,
+      `src/app/markdown/`, `fixtures/markdown/`, parser tests, package
+      manifests and lockfile
+    - Change: Record the supplied specification as the versioned product
+      contract, define typed parse/render/settings results, and create one
+      corpus covering every syntax example, malformed input, unsupported
+      syntax, Unicode, LF/CRLF, nested constructs, and the existing Obsidian
+      vault cases. Add an explicit compatibility table for Sätteri output and
+      Anchored adapters before application wiring.
+    - Verify: The corpus has at least one positive and negative fixture for
+      every feature; the contract maps every requirement to a test owner;
+      unsupported content is asserted to survive unchanged.
+    - Risk/rollback: An incomplete corpus can create false confidence. Keep
+      this documentation and fixture-only chunk reversible and do not change
+      save behavior yet.
+    - Expected changelog: None unless the specification becomes user-visible
+      in the shipped build. Version remains `0.1.0-alpha`.
+    - Verification result: Added the versioned Markdown contract and renderer
+      corpus for front matter, CommonMark/GFM, extended syntax, admonitions,
+      math, wikilinks, Mermaid, unsafe HTML, URL policy, and tilde-fence
+      rejection. Source-preservation assertions pass.
+
+20B. [x] **Chunk: Integrate and qualify the browser parser**
+    - Files: `package.json`, `package-lock.json`, `src/app/markdown/parser.ts`,
+      `src/app/markdown/parser.test.ts`, `vite.config.ts` only if required,
+      and build-size notes in `PLANS.md`
+    - Change: Add a browser-safe `markdown-it` pipeline with focused extension
+      packages and an internal renderer adapter. The adapter handles front
+      matter boundaries, heading IDs, wikilinks, admonitions, math, Mermaid
+      fences, syntax highlighting, and safe HTML output without exposing
+      third-party token types to the rest of the app.
+    - Verify: The renderer and settings tests pass, TypeScript and ESLint pass,
+      and the existing App suite remains green. Sätteri was evaluated but not
+      installed because its documented browser fallback requires cross-origin
+      isolation that the current Tauri WebView does not provide.
+    - Risk/rollback: Markdown-it extensions are independently versioned. Keep
+      the adapter boundary and fixture corpus so any extension can be replaced
+      without touching Markdown persistence.
+    - Expected changelog: None for an internal parser adapter.
+
+20C. [x] **Chunk: Complete source-preserving metadata and policies**
+    - Files: `src-tauri/src/metadata.rs`, `src-tauri/src/links.rs`,
+      `src-tauri/src/vault.rs`, `src/app/documents.ts`, `src/app/markdown/`,
+      Rust/TypeScript tests, and migration/fixture documentation
+    - Change: Unify front-matter detection with the parser contract while
+      retaining line-based, key-order-preserving YAML mutations for IDs,
+      aliases, tags, created, and updated fields. Enforce UTF-8, LF output on
+      intentional writes, stable internal IDs, `.md` portability, and
+      preservation of unknown front matter and unsupported Obsidian syntax.
+      Add the tilde-fence rejection policy and ensure parser offsets exclude
+      front matter, inline code, fenced code, and indented code where the
+      existing link/index rules require it.
+    - Verify: Byte-level round trips, malformed YAML, duplicate keys, comments,
+      quoted values, multiline values, BOMs, CRLF normalization, missing and
+      conflicting IDs, tilde fences, attachments, raw HTML, and external edit
+      conflicts. Rename and Save As must preserve IDs and update only the
+      existing supported filename/path references.
+    - Risk/rollback: Serialization and line-ending changes can damage a vault.
+      Require preflight plans, atomic writes, re-read-before-write checks,
+      rollback tests, explicit notices, and disposable-vault verification.
+    - Expected changelog: Document portable Markdown compatibility and any
+      visible LF-normalization notice. Version remains `0.1.0-alpha`.
+    - Verification result: Added render/source front-matter boundaries,
+      backtick-only fence policy across frontend and native link scanners,
+      source-preserving tests, and intentional-save LF normalization with a
+      visible notice.
+
+20D. [x] **Chunk: Build the safe rendered Markdown surface**
+    - Files: `src/app/markdown/renderer.ts`, renderer adapters and tests,
+      `src/app/components/MarkdownPreview.tsx`, `src/styles/global.css`,
+      lazy-loaded rendering dependencies, and app composition
+    - Change: Render the adapter output on explicit Preview/open-rendered-note
+      actions, never on every editor keystroke. Implement theme-aware
+      headings, paragraphs, lists, tables with alignment, task markers,
+      footnotes, code blocks with language highlighting, math with KaTeX,
+      wikilinks with stable-ID navigation, definition lists, sub/superscript,
+      heading IDs, smart typography, admonitions, highlights, emoji, and
+      Mermaid diagrams. Preserve source text as the editable representation.
+    - Security rules: Sanitize rendered HTML with an explicit allow-list;
+      block scripts, event handlers, executable URLs, frames, and unsafe raw
+      HTML. Mermaid is dynamically loaded, rendered locally with strict
+      security settings, has no click callbacks or remote resources, and
+      falls back to the original fenced source plus an accessible error when
+      parsing fails. Code highlighting never executes code.
+    - Verify: Render every positive corpus fixture, compare expected semantic
+      HTML and accessible names, exercise broken math/code/diagram inputs,
+      verify keyboard navigation for links and footnotes, check reduced motion
+      and forced colors, and run security fixtures for HTML, URLs, Mermaid,
+      heading IDs, and DOM clobbering. Test desktop, 900x600, narrow, 200%
+      zoom, and large-note scroll performance.
+    - Risk/rollback: HTML injection, expensive optional dependencies, and
+      broken WebKit rendering are material risks. Lazy-load Preview, KaTeX,
+      Mermaid, and highlighter code; keep a plain-text fallback; and retain
+      the existing source editor if Preview fails.
+    - Expected changelog: Add an on-demand rendered Markdown view with the
+      documented syntax support. Version remains `0.1.0-alpha`.
+    - Verification result: Added lazy Preview rendering with sanitized HTML,
+      KaTeX math, highlight.js code output, strict Mermaid fallback, stable
+      wikilink navigation, and coverage for the rendered app flow.
+
+20E. [x] **Chunk: Extend CodeMirror editing and keyboard behavior**
+    - Files: `src/app/components/MarkdownEditor.tsx`, CodeMirror extension
+      modules under `src/app/markdown/`, editor styles, settings controls,
+      and editor/app tests
+    - Change: Keep source-first editing and add syntax-aware highlighting or
+      decorations for wikilinks, admonition markers, math, heading IDs,
+      definition-list markers, task boxes, highlights, emoji shortcodes, and
+      fenced language labels without hiding source text. Preserve the existing
+      wikilink completion/navigation, Command-S, Save As, Find, undo/redo, and
+      focus behavior. Add keyboard commands for Preview and return focus to the
+      editor after closing it.
+    - Verify: Type, paste, delete, undo, redo, select, and navigate every
+      construct; confirm no decoration changes document bytes; test keyboard
+      only, screen-reader labels, composition/Unicode input, large documents,
+      and the macOS 12 WebKit compatibility boundary.
+    - Risk/rollback: Heavy decorations or reparsing on every transaction can
+      introduce typing latency. Use CodeMirror state fields and incremental
+      ranges, defer full parsing, avoid React state on every keystroke, and
+      retain plain CodeMirror highlighting as the safe fallback.
+    - Expected changelog: Add syntax-aware editing affordances and Preview
+      keyboard access. Version remains `0.1.0-alpha`.
+    - Verification result: Added viewport-bounded CodeMirror decorations for
+      supported source constructs and `Command-Shift-P` Preview navigation;
+      source text remains the CodeMirror document.
+
+20F. [x] **Chunk: Add Markdown settings and persistence**
+    - Files: `src/app/components/SettingsModal.tsx`, versioned settings state
+      module and tests, `src/app/App.tsx`, renderer/editor composition, styles,
+      `CHANGELOG.md`, and `PLANS.md`
+    - Change: Add accessible Markdown settings for automatic URL linking,
+      smart quotes, en/em dashes, ellipses, syntax highlighting, emoji,
+      Mermaid, and rendered-preview behavior. Defaults match the specification
+      and are stored as versioned local settings scoped to the app, never in
+      user Markdown. Invalid or blocked storage falls back safely to defaults.
+    - Verify: Defaults, each toggle, granular typography options, migration
+      from absent/unknown settings, blocked and malformed storage, reset
+      behavior, keyboard/focus/Escape, narrow layout, and immediate renderer
+      refresh without source mutation.
+    - Risk/rollback: Settings must not silently alter authored text or become
+      required for opening a note. Keep settings render-only, schema-versioned,
+      optional, and independently recoverable.
+    - Expected changelog: Add configurable automatic URL linking and smart
+      typography plus Version 1 optional rendering features.
+    - Verification result: Added versioned, storage-safe settings with five
+      accessible toggles, immediate Preview refresh, malformed/blocked storage
+      fallback, and no source mutation.
+
+20G. [x] **Chunk: Reconcile links, IDs, and document navigation**
+    - Files: `src/app/links.ts`, `src/app/documents.ts`, link candidate and
+      backlink modules, Rust link metadata/rewrite code, preview/editor
+      components, and cross-feature tests
+    - Change: Make wikilinks first-class in the shared parsed document model,
+      including aliases, headings, colon-qualified targets, rendered link
+      labels, unresolved states, and permanent internal-ID resolution. Ensure
+      filename and folder renames continue to update supported references while
+      YAML title changes do not. Heading IDs resolve only within the current
+      document and never replace object identity.
+    - Verify: Exact path, shortest unique target, alias, colon target,
+      heading, duplicate, Unicode, unresolved, backlink, front-matter, code,
+      and rename transaction fixtures in both source editor and rendered view.
+      Confirm ambiguous links never open or rewrite arbitrary notes.
+    - Risk/rollback: Mixing heading IDs and object IDs could break links or
+      rewrite unrelated content. Keep separate typed resolution kinds and
+      reuse the existing atomic rename transaction.
+    - Expected changelog: None beyond the rendered wikilink behavior already
+      recorded in Chunk 20D unless user-visible link behavior changes.
+    - Verification result: Reused the stable-ID/path/name/alias resolver for
+      rendered wikilinks, kept heading IDs separate from object IDs, and
+      verified Preview navigation plus backtick-only source indexing.
+
+20H. [ ] **Chunk: Full specification verification and release gate**
+    - Files: all Markdown feature tests, fixture vaults, `docs/FEATURES.md`,
+      `CHANGELOG.md`, `PROJECT.md`, `PLANS.md`, and packaging/QA notes
+    - Change: Run the complete Markdown corpus and the full application flow
+      against a disposable representative vault. Add a traceability matrix
+      from every specification bullet to a test or native QA checkpoint,
+      record bundle-size and baseline-machine timing, and document supported
+      syntax, rendering security, settings, portability, and known limits.
+    - Verify: `npm run format:check`, `npm run lint`, `npm run typecheck`,
+      `npm test`, `npm run build`, `cargo fmt --check`, strict Clippy, all Rust
+      tests, Tauri build/package checks, Browser/IAB rendered checks where
+      available, native macOS 12/Intel smoke checks, keyboard and accessibility
+      checks, and a seven-day stability observation on a backed-up vault copy.
+      No test may require network access or expose vault contents in logs.
+    - Risk/rollback: A green parser test suite is not enough if the native
+      bundle is slow, unsafe, or incompatible with real vault files. Make the
+      disposable-vault run, security checks, bundle budget, and source-byte
+      diff review release blockers.
+    - Expected changelog: Finalize the complete Markdown v1 support entry;
+      no version change without an explicit release request.
 
 ## Requirements for future large plans
 

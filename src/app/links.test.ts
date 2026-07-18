@@ -67,6 +67,9 @@ describe("wikilinks", () => {
       "```md",
       "[[Fenced code]]",
       "```",
+      "~~~md",
+      "[[Tilde text]]",
+      "~~~",
       "    [[Indented code]]",
       "[[Real note|Shown label]]",
     ].join("\n");
@@ -74,6 +77,7 @@ describe("wikilinks", () => {
     expect(wikilinksInContent(content)).toMatchObject([
       { label: "Front matter", target: "Front matter" },
       { label: "Shown property", target: "List property" },
+      { label: "Tilde text", target: "Tilde text" },
       { label: "Shown label", target: "Real note" },
     ]);
     expect(

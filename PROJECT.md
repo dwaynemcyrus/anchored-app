@@ -85,6 +85,9 @@ Product scope remains governed by `OVERVIEW.md`.
 - **Desktop runtime:** Tauri 2
 - **Frontend:** React 19 with Vite 7
 - **Editor:** CodeMirror 6
+- **Markdown rendering:** `markdown-it` with focused GFM and extension
+  adapters, DOMPurify, KaTeX, highlight.js, and Mermaid loaded only for
+  explicit Preview rendering
 - **Package manager:** npm, using the committed lockfile
 - **Persistence:** Markdown and attachments in the selected vault; additive
   `.anchored` vault identity and reversible-trash metadata; native app-data JSON
@@ -143,8 +146,9 @@ These scripts must exist in `package.json` after the scaffold chunk.
 
 - **Entry points:** `src/main.tsx` for React and `src-tauri/src/lib.rs` for
   Tauri.
-- **Main modules:** app shell, vault/files, Markdown editor, link registry and
-  resolver, search, settings/recent files, and the typed Tauri bridge.
+- **Main modules:** app shell, vault/files, Markdown editor and Preview,
+  Markdown parser/settings adapters, link registry and resolver, search,
+  settings/recent files, and the typed Tauri bridge.
 - **Source of truth:** Files in the user-selected vault are authoritative for
   authored content. Anchored metadata must remain additive and portable.
 - **Trusted boundary:** React never receives unrestricted filesystem access.
@@ -281,5 +285,6 @@ These scripts must exist in `package.json` after the scaffold chunk.
 | 2026-07-17 | Use stable vault IDs and native-only remembered paths | Notification history follows a moved vault without exposing absolute paths to the interface |
 | 2026-07-17 | Use `.anchored/trash/` for reversible deletion | Same-vault moves preserve exact note bytes, stay out of active indexes, and permit conflict-safe restore without permanent deletion |
 | 2026-07-17 | Package `0.1.0-alpha` as a private ad-hoc-signed Intel alpha | Supports local testing on Dwayne's 2015 MacBook Pro without implying public Gatekeeper or notarization readiness |
+| 2026-07-18 | Use a browser-safe Markdown-it adapter for Preview | It supports the required syntax and render-only settings directly in the existing Tauri WebView while keeping source persistence independent of parser tokens |
 | 2026-07-17 | Defer public website, Apple Silicon, and Linux packages | These delivery targets require separate prerequisites and verification and are outside the current private-alpha scope |
 | 2026-07-17 | Release the source under MIT | Keeps Anchored permissive for use, modification, and redistribution while preserving copyright notice requirements |

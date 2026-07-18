@@ -632,6 +632,30 @@ input:focus-visible,
   background: #2c2c2c;
 }
 
+.markdown-editor .cm-anchored-wikilink {
+  color: var(--color-focus);
+}
+
+.markdown-editor .cm-anchored-heading-id,
+.markdown-editor .cm-anchored-admonition,
+.markdown-editor .cm-anchored-fence {
+  color: #d7a85b;
+}
+
+.markdown-editor .cm-anchored-math {
+  color: #b59cff;
+}
+
+.markdown-editor .cm-anchored-mark {
+  background: #5a4b12;
+  color: var(--color-text);
+}
+
+.markdown-editor .cm-anchored-emoji,
+.markdown-editor .cm-anchored-task {
+  color: #82c7a5;
+}
+
 .markdown-editor .cm-panels {
   border: 1px solid var(--color-rule);
   background: #080808;
@@ -717,6 +741,204 @@ input:focus-visible,
   font-style: normal;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.markdown-preview {
+  min-height: calc(100vh - 240px);
+  color: var(--color-text);
+}
+
+.markdown-preview h1,
+.markdown-preview h2,
+.markdown-preview h3,
+.markdown-preview h4,
+.markdown-preview h5,
+.markdown-preview h6 {
+  scroll-margin-top: 24px;
+  font-family: ui-serif, "New York", Charter, Georgia, serif;
+  font-weight: 500;
+  letter-spacing: -0.025em;
+  line-height: 1.15;
+}
+
+.markdown-preview h1 {
+  margin: 0 0 34px;
+  font-size: clamp(38px, 4.2vw, 52px);
+}
+
+.markdown-preview h2 {
+  margin: 52px 0 20px;
+  font-size: 32px;
+}
+
+.markdown-preview h3,
+.markdown-preview h4,
+.markdown-preview h5,
+.markdown-preview h6 {
+  margin: 34px 0 14px;
+  font-size: 24px;
+}
+
+.markdown-preview p,
+.markdown-preview li,
+.markdown-preview dd,
+.markdown-preview dt,
+.markdown-preview blockquote {
+  font-family: ui-serif, "New York", Charter, Georgia, serif;
+  font-size: 20px;
+  line-height: 1.65;
+}
+
+.markdown-preview p,
+.markdown-preview ul,
+.markdown-preview ol,
+.markdown-preview dl,
+.markdown-preview blockquote,
+.markdown-preview table,
+.markdown-preview pre,
+.markdown-preview .markdown-admonition,
+.markdown-preview .markdown-math,
+.markdown-preview .markdown-mermaid {
+  margin: 0 0 28px;
+}
+
+.markdown-preview a {
+  color: var(--color-text);
+  text-decoration-color: var(--color-focus);
+  text-underline-offset: 3px;
+}
+
+.markdown-preview .markdown-wikilink {
+  color: var(--color-focus);
+  cursor: pointer;
+}
+
+.markdown-preview ul,
+.markdown-preview ol {
+  padding-left: 28px;
+}
+
+.markdown-preview li + li {
+  margin-top: 5px;
+}
+
+.markdown-preview table {
+  width: 100%;
+  border-collapse: collapse;
+  font-family: "SFMono-Regular", Consolas, monospace;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.markdown-preview th,
+.markdown-preview td {
+  padding: 9px 12px;
+  border: 1px solid var(--color-rule);
+  text-align: left;
+}
+
+.markdown-preview th {
+  color: var(--color-text);
+  font-weight: 600;
+}
+
+.markdown-preview code,
+.markdown-preview pre {
+  font-family: "SFMono-Regular", Consolas, monospace;
+}
+
+.markdown-preview :not(pre) > code {
+  padding: 2px 4px;
+  border: 1px solid var(--color-rule);
+  border-radius: 3px;
+  background: #101010;
+  font-size: 0.82em;
+}
+
+.markdown-preview pre {
+  overflow: auto;
+  padding: 16px;
+  border: 1px solid var(--color-rule);
+  background: #080808;
+  color: #e5e5e5;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.markdown-preview .markdown-math {
+  overflow-x: auto;
+  padding: 8px 0;
+}
+
+.markdown-preview .markdown-admonition {
+  padding: 16px 20px;
+  border-left: 3px solid var(--color-focus);
+  background: #101010;
+}
+
+.markdown-preview .markdown-admonition__title {
+  margin: 0 0 10px;
+  color: var(--color-text);
+  font-family: "SFMono-Regular", Consolas, monospace;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.markdown-preview .markdown-admonition p:last-child {
+  margin-bottom: 0;
+}
+
+.markdown-preview .markdown-admonition--success {
+  border-left-color: var(--color-success);
+}
+
+.markdown-preview .markdown-admonition--warning,
+.markdown-preview .markdown-admonition--danger,
+.markdown-preview .markdown-admonition--failure {
+  border-left-color: var(--color-danger);
+}
+
+.markdown-preview mark {
+  padding: 0 2px;
+  background: #5a4b12;
+  color: var(--color-text);
+}
+
+.markdown-preview .markdown-mermaid {
+  overflow: auto;
+  padding: 20px;
+  border: 1px solid var(--color-rule);
+  background: #080808;
+  text-align: center;
+}
+
+.markdown-preview .markdown-mermaid pre {
+  margin: 0;
+  border: 0;
+  text-align: left;
+}
+
+.markdown-preview .markdown-mermaid svg {
+  max-width: 100%;
+  height: auto;
+}
+
+.settings-toggle {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin-top: 14px;
+  color: var(--color-text-muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.settings-toggle input {
+  flex: 0 0 auto;
+  margin-top: 2px;
+  accent-color: var(--color-focus);
 }
 
 .backlinks {

@@ -46,6 +46,19 @@ import {
 } from "./recentDocuments";
 import { rankQuickOpenResults } from "./retrieval";
 import {
+  loadMarkdownSettings,
+  saveMarkdownSettings,
+} from "./markdown/settings";
+import {
+  DEFAULT_MARKDOWN_SETTINGS,
+  type MarkdownSettings,
+} from "./markdown/types";
+import {
+  hasNonUnixLineEndings,
+  mergeCreatedMarkdownSource,
+  normalizeMarkdownLineEndings,
+} from "./markdown/source";
+import {
   clearSessionState,
   loadSessionState,
   saveSessionState,
@@ -168,6 +181,22 @@ function folderName(folderPath: string): string {
   return folderPath.split("/").pop() ?? folderPath;
 }
 
+function initialMarkdownSettings(): MarkdownSettings {
+  try {
+    return loadMarkdownSettings(window.localStorage);
+  } catch {
+    return { ...DEFAULT_MARKDOWN_SETTINGS };
+  }
+}
+
+function persistMarkdownSettings(settings: MarkdownSettings): void {
+  try {
+    saveMarkdownSettings(window.localStorage, settings);
+  } catch {
+    // Settings persistence is optional and must never block the editor.
+  }
+}
+
 export function App() {
   const [documents, setDocuments] = useState<AnchoredDocument[]>([]);
   const [activeDocumentId, setActiveDocumentId] = useState("");
@@ -188,6 +217,9 @@ export function App() {
   const [vaultId, setVaultId] = useState("");
   const [folderPaths, setFolderPaths] = useState<string[]>([]);
   const [settingsVisible, setSettingsVisible] = useState(false);
+  const [markdownSettings, setMarkdownSettings] = useState<MarkdownSettings>(
+    initialMarkdownSettings,
+  );
   const [selectingVault, setSelectingVault] = useState(false);
   const [creatingFolder, setCreatingFolder] = useState(false);
   const [creatingVault, setCreatingVault] = useState(false);
@@ -419,6 +451,10 @@ export function App() {
     [],
   );
 
+  useEffect(() => {
+    persistMarkdownSettings(markdownSettings);
+  }, [markdownSettings]);
+
   const hasUnfinishedEdits = useCallback(
     () => documentsRef.current.some(documentHasUnfinishedEdits),
     [],
@@ -464,7 +500,8 @@ export function App() {
         return;
       }
 
-      const contentAtSave = document.sourceText;
+      const sourceAtSave = document.sourceText;
+      const contentAtSave = normalizeMarkdownLineEndings(sourceAtSave);
       setDocuments((currentDocuments) =>
         currentDocuments.map((current) =>
           current.id === documentId
@@ -482,7 +519,7 @@ export function App() {
         const currentDocument = documentsRef.current.find(
           (candidate) => candidate.id === documentId,
         );
-        const hasNewerEdit = currentDocument?.sourceText !== contentAtSave;
+        const hasNewerEdit = currentDocument?.sourceText !== sourceAtSave;
 
         setDocuments((currentDocuments) =>
           currentDocuments.map((current) =>
@@ -493,12 +530,18 @@ export function App() {
                   folderPath,
                   name,
                   relativePath: savedDocument.relativePath,
-                  saveMessage: undefined,
+                  saveMessage: hasNonUnixLineEndings(sourceAtSave)
+                    ? "Saved with Unix (LF) line endings."
+                    : undefined,
                   saveState: hasNewerEdit ? "unsaved" : "saved",
                   savedSourceText: savedDocument.content,
                   sizeBytes: savedDocument.sizeBytes,
                   sourceText: hasNewerEdit
-                    ? current.sourceText
+                    ? mergeCreatedMarkdownSource(
+                        sourceAtSave,
+                        savedDocument.content,
+                        current.sourceText ?? sourceAtSave,
+                      )
                     : savedDocument.content,
                 }
               : current,
@@ -580,7 +623,8 @@ export function App() {
       );
       if (!document || document.sourceText === undefined) return;
 
-      const contentAtSave = document.sourceText;
+      const sourceAtSave = document.sourceText;
+      const contentAtSave = normalizeMarkdownLineEndings(sourceAtSave);
       setDocuments((currentDocuments) =>
         currentDocuments.map((current) =>
           current.id === documentId
@@ -619,7 +663,7 @@ export function App() {
         const currentDocument = documentsRef.current.find(
           (candidate) => candidate.id === documentId,
         );
-        const hasNewerEdit = currentDocument?.sourceText !== contentAtSave;
+        const hasNewerEdit = currentDocument?.sourceText !== sourceAtSave;
 
         setDocuments((currentDocuments) =>
           currentDocuments.map((current) =>
@@ -632,7 +676,9 @@ export function App() {
                   relativePath: savedDocument.relativePath,
                   saveMessage: hasNewerEdit
                     ? "The file was created with a permanent identity. Newer local edits were kept and need to be reconciled before saving."
-                    : undefined,
+                    : hasNonUnixLineEndings(sourceAtSave)
+                      ? "Saved with Unix (LF) line endings."
+                      : undefined,
                   saveState: hasNewerEdit ? "conflict" : "saved",
                   savedSourceText: savedDocument.content,
                   sizeBytes: savedDocument.sizeBytes,
@@ -701,7 +747,12 @@ export function App() {
         await saveDocumentAs(documentId);
         return;
       }
-      if (document.sourceText === document.savedSourceText) {
+      const sourceAtSave = document.sourceText;
+      const contentAtSave = normalizeMarkdownLineEndings(sourceAtSave);
+      if (
+        document.sourceText === document.savedSourceText &&
+        contentAtSave === document.sourceText
+      ) {
         setDocuments((currentDocuments) =>
           currentDocuments.map((current) =>
             current.id === documentId
@@ -713,7 +764,6 @@ export function App() {
         return;
       }
 
-      const contentAtSave = document.sourceText;
       setDocuments((currentDocuments) =>
         currentDocuments.map((current) =>
           current.id === documentId
@@ -731,17 +781,26 @@ export function App() {
         const currentDocument = documentsRef.current.find(
           (candidate) => candidate.id === documentId,
         );
-        const hasNewerEdit = currentDocument?.sourceText !== contentAtSave;
+        const hasNewerEdit = currentDocument?.sourceText !== sourceAtSave;
 
         setDocuments((currentDocuments) =>
           currentDocuments.map((current) =>
             current.id === documentId
               ? {
                   ...current,
-                  saveMessage: undefined,
+                  saveMessage: hasNewerEdit
+                    ? undefined
+                    : hasNonUnixLineEndings(
+                          document.savedSourceText ?? sourceAtSave,
+                        )
+                      ? "Saved with Unix (LF) line endings."
+                      : undefined,
                   saveState: hasNewerEdit ? "unsaved" : "saved",
                   savedSourceText: savedDocument.content,
                   sizeBytes: savedDocument.sizeBytes,
+                  sourceText: hasNewerEdit
+                    ? current.sourceText
+                    : savedDocument.content,
                 }
               : current,
           ),
@@ -1900,6 +1959,7 @@ export function App() {
             if (activeDocument) void trashDocument(activeDocument.id);
           }}
           moving={movingDocumentId === activeDocument?.id}
+          markdownSettings={markdownSettings}
           renaming={renamingDocumentId === activeDocument?.id}
           trashing={trashingDocumentId === activeDocument?.id}
         />
@@ -1998,12 +2058,14 @@ export function App() {
       ) : null}
       {settingsVisible ? (
         <SettingsModal
+          markdownSettings={markdownSettings}
           reloading={reloadingApp}
           onClose={() => {
             if (!reloadingApp) {
               setSettingsVisible(false);
             }
           }}
+          onMarkdownSettingsChange={setMarkdownSettings}
           onReload={() => void reloadApp()}
         />
       ) : null}

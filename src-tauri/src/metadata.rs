@@ -272,7 +272,7 @@ fn fence_marker(line: &str) -> Option<(u8, usize)> {
     }
     let remaining = &line.as_bytes()[indentation..];
     let marker = *remaining.first()?;
-    if marker != b'`' && marker != b'~' {
+    if marker != b'`' {
         return None;
     }
     let length = remaining.iter().take_while(|byte| **byte == marker).count();
@@ -628,11 +628,12 @@ mod tests {
         let content = concat!(
             "\\[[Escaped]] and `[[Inline code]]`\n",
             "```md\n[[Fenced code]]\n```\n",
+            "~~~md\n[[Tilde text]]\n~~~\n",
             "    [[Indented code]]\n",
             "[[Real note]]\n",
         );
 
-        assert_eq!(inspect_wikilinks(content), vec!["Real note"]);
+        assert_eq!(inspect_wikilinks(content), vec!["Tilde text", "Real note"]);
         assert!(inspect_wikilinks("---\ntags: [broken\n---\n[[Unsafe]]").is_empty());
     }
 

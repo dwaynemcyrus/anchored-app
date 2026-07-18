@@ -577,6 +577,60 @@ describe("App", () => {
     );
   });
 
+  it("opens an on-demand Markdown preview and follows rendered wikilinks", async () => {
+    const user = userEvent.setup();
+    const leadership = {
+      id: "01JZQ7K8P4A6F2M9V3C5T7X1BY",
+      name: "Leadership.md",
+      parent: "Notes",
+      relativePath: "Notes/Leadership.md",
+    };
+    const other = {
+      id: "01JZQ91T3AA6F2M9V3C5T7X1BZ",
+      name: "Other.md",
+      parent: "Notes",
+      relativePath: "Notes/Other.md",
+    };
+    mockedSelectVault.mockResolvedValue({
+      files: [leadership, other],
+      name: "My Vault",
+      warnings: noWarnings,
+    });
+    mockedReadVaultFile.mockImplementation(async (relativePath) => ({
+      content:
+        relativePath === leadership.relativePath ? "# [[Other]]" : "# Other",
+      relativePath,
+      sizeBytes: relativePath === leadership.relativePath ? 11 : 7,
+    }));
+    render(<App />);
+
+    await user.click(screen.getByRole("button", { name: "Open vault" }));
+    await user.click(screen.getByRole("button", { name: leadership.name }));
+    await screen.findByRole("textbox", {
+      name: "Leadership.md Markdown editor",
+    });
+    await user.click(screen.getByRole("button", { name: "Preview" }));
+
+    const preview = await screen.findByRole("article", {
+      name: "Leadership.md Markdown preview",
+    });
+    expect(preview).toHaveTextContent("Other");
+    await user.click(within(preview).getByRole("link", { name: "Other" }));
+
+    await waitFor(() =>
+      expect(mockedReadVaultFile).toHaveBeenCalledWith(other.relativePath),
+    );
+    expect(
+      await screen.findByRole("article", {
+        name: "Other.md Markdown preview",
+      }),
+    ).toHaveTextContent("Other");
+    await user.click(screen.getByRole("button", { name: "Edit source" }));
+    expect(
+      await screen.findByRole("textbox", { name: "Other.md Markdown editor" }),
+    ).toBeInTheDocument();
+  });
+
   it("blocks reload from settings when a note has a save conflict", async () => {
     const user = userEvent.setup();
     mockedSelectVault.mockResolvedValue({
@@ -1189,6 +1243,69 @@ describe("App", () => {
     expect(screen.getByText("1 Markdown file")).toBeInTheDocument();
   });
 
+  it("keeps typing safe while the first note identity is assigned", async () => {
+    const user = userEvent.setup();
+    const identifiedContent = "---\nid: 01JZQ7K8P4A6F2M9V3C5T7X1BY\n---\n";
+    let finishCreatingNote:
+      | ((value: {
+          content: string;
+          relativePath: string;
+          sizeBytes: number;
+        }) => void)
+      | null = null;
+    mockedSelectVault.mockResolvedValue({
+      files: [],
+      name: "My Vault",
+      warnings: noWarnings,
+    });
+    mockedCreateUntitledVaultFile.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          finishCreatingNote = resolve;
+        }),
+    );
+    mockedSaveVaultFile.mockImplementation(async (request) => {
+      if (!request.content.includes("id: 01JZQ7K8P4A6F2M9V3C5T7X1BY")) {
+        throw {
+          code: "identityConflict",
+          message:
+            "This save would remove or change the note's permanent identity.",
+        };
+      }
+      return {
+        content: request.content,
+        relativePath: request.relativePath,
+        sizeBytes: request.content.length,
+      };
+    });
+    render(<App />);
+
+    await user.click(screen.getByRole("button", { name: "Open vault" }));
+    await user.click(screen.getAllByRole("button", { name: "New note" })[0]);
+    const editor = await screen.findByRole("textbox", {
+      name: "Untitled.md Markdown editor",
+    });
+    await user.click(editor);
+    await user.keyboard("# Draft");
+
+    await act(async () => {
+      finishCreatingNote?.({
+        content: identifiedContent,
+        relativePath: "Untitled.md",
+        sizeBytes: identifiedContent.length,
+      });
+    });
+
+    await waitFor(() => expect(editor).toHaveTextContent("01JZQ7K8P4"));
+    await waitFor(() => expect(mockedSaveVaultFile).toHaveBeenCalled());
+    expect(mockedSaveVaultFile.mock.calls[0][0].content).toContain("# Draft");
+    expect(
+      screen.queryByText(
+        "This save would remove or change the note's permanent identity.",
+      ),
+    ).not.toBeInTheDocument();
+  });
+
   it("finds text within the active Markdown note with Command-F", async () => {
     const user = userEvent.setup();
     mockedSelectVault.mockResolvedValue({
@@ -1682,6 +1799,50 @@ describe("App", () => {
     });
     expect(mockedSaveVaultFile).toHaveBeenCalledTimes(1);
     expect(await screen.findByText("Saved")).toBeInTheDocument();
+  });
+
+  it("normalizes CRLF to LF on an intentional save", async () => {
+    const user = userEvent.setup();
+    mockedSelectVault.mockResolvedValue({
+      files: [
+        {
+          name: "Line Endings.md",
+          parent: "Notes",
+          relativePath: "Notes/Line Endings.md",
+        },
+      ],
+      name: "My Vault",
+      warnings: noWarnings,
+    });
+    mockedReadVaultFile.mockResolvedValue({
+      content: "# Before\r\n",
+      relativePath: "Notes/Line Endings.md",
+      sizeBytes: 10,
+    });
+    mockedSaveVaultFile.mockResolvedValue({
+      content: " updated# Before\n",
+      relativePath: "Notes/Line Endings.md",
+      sizeBytes: 18,
+    });
+    render(<App />);
+
+    await user.click(screen.getByRole("button", { name: "Open vault" }));
+    await user.click(screen.getByRole("button", { name: "Line Endings.md" }));
+    const editor = await screen.findByRole("textbox", {
+      name: "Line Endings.md Markdown editor",
+    });
+    await user.click(editor);
+    await user.keyboard(" updated");
+    await user.keyboard("{Meta>}s{/Meta}");
+
+    expect(mockedSaveVaultFile).toHaveBeenCalledWith({
+      content: " updated# Before\n",
+      expectedContent: "# Before\r\n",
+      relativePath: "Notes/Line Endings.md",
+    });
+    expect(
+      await screen.findByText("Saved with Unix (LF) line endings."),
+    ).toBeInTheDocument();
   });
 
   it("preserves local edits and shows a conflict when the file changed outside Anchored", async () => {
