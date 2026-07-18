@@ -18,6 +18,7 @@ import {
   rankWikilinkCandidates,
   type WikilinkCandidate,
 } from "../linkCandidates";
+import { markdownEditorDecorations } from "../markdown/editorDecorations";
 import { wikilinkAtOffset, wikilinkCompletionAtOffset } from "../links";
 
 type MarkdownEditorProps = {
@@ -107,6 +108,7 @@ export default function MarkdownEditor({
         extensions: [
           history(),
           markdown(),
+          markdownEditorDecorations,
           highlightSelectionMatches(),
           EditorView.lineWrapping,
           EditorView.contentAttributes.of({ "aria-label": label }),

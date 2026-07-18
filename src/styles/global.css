@@ -632,6 +632,30 @@ input:focus-visible,
   background: #2c2c2c;
 }
 
+.markdown-editor .cm-anchored-wikilink {
+  color: var(--color-focus);
+}
+
+.markdown-editor .cm-anchored-heading-id,
+.markdown-editor .cm-anchored-admonition,
+.markdown-editor .cm-anchored-fence {
+  color: #d7a85b;
+}
+
+.markdown-editor .cm-anchored-math {
+  color: #b59cff;
+}
+
+.markdown-editor .cm-anchored-mark {
+  background: #5a4b12;
+  color: var(--color-text);
+}
+
+.markdown-editor .cm-anchored-emoji,
+.markdown-editor .cm-anchored-task {
+  color: #82c7a5;
+}
+
 .markdown-editor .cm-panels {
   border: 1px solid var(--color-rule);
   background: #080808;
