@@ -4,28 +4,34 @@ import {
   type CompletionContext,
   type CompletionResult,
 } from "@codemirror/autocomplete";
-import { markdown } from "@codemirror/lang-markdown";
-import { EditorState } from "@codemirror/state";
+import { Compartment, EditorState } from "@codemirror/state";
 import {
   highlightSelectionMatches,
   openSearchPanel,
   searchKeymap,
 } from "@codemirror/search";
 import { EditorView, keymap, placeholder } from "@codemirror/view";
-import { useEffect, useRef } from "react";
+import { type CSSProperties, useEffect, useRef } from "react";
 
 import {
   rankWikilinkCandidates,
   type WikilinkCandidate,
 } from "../linkCandidates";
 import { markdownEditorDecorations } from "../markdown/editorDecorations";
+import {
+  anchoredMarkdownLanguage,
+  anchoredMarkdownSyntaxHighlighting,
+} from "../markdown/editorLanguage";
+import type { EditorFontSize } from "../markdown/types";
 import { wikilinkAtOffset, wikilinkCompletionAtOffset } from "../links";
 
 type MarkdownEditorProps = {
   autoFocus?: boolean;
   documentId: string;
+  editorFontSize: EditorFontSize;
   findRequest: number;
   label: string;
+  syntaxHighlighting: boolean;
   value: string;
   wikilinkCandidates: WikilinkCandidate[];
   onChange: (content: string) => void;
@@ -42,8 +48,10 @@ function hasPermanentIdentity(source: string): boolean {
 export default function MarkdownEditor({
   autoFocus = false,
   documentId,
+  editorFontSize,
   findRequest,
   label,
+  syntaxHighlighting,
   value,
   wikilinkCandidates,
   onChange,
@@ -62,6 +70,8 @@ export default function MarkdownEditor({
   const onSaveAsRef = useRef(onSaveAs);
   const wikilinkCandidatesRef = useRef(wikilinkCandidates);
   const syncingValueRef = useRef(false);
+  const syntaxHighlightingRef = useRef(syntaxHighlighting);
+  const syntaxHighlightingCompartmentRef = useRef(new Compartment());
 
   valueRef.current = value;
   onChangeRef.current = onChange;
@@ -70,6 +80,7 @@ export default function MarkdownEditor({
   onSaveRef.current = onSave;
   onSaveAsRef.current = onSaveAs;
   wikilinkCandidatesRef.current = wikilinkCandidates;
+  syntaxHighlightingRef.current = syntaxHighlighting;
 
   useEffect(() => {
     const host = hostRef.current;
@@ -118,8 +129,12 @@ export default function MarkdownEditor({
         doc: valueRef.current,
         extensions: [
           history(),
-          markdown(),
-          markdownEditorDecorations,
+          anchoredMarkdownLanguage,
+          syntaxHighlightingCompartmentRef.current.of([
+            ...(syntaxHighlightingRef.current
+              ? [anchoredMarkdownSyntaxHighlighting, markdownEditorDecorations]
+              : []),
+          ]),
           highlightSelectionMatches(),
           EditorView.lineWrapping,
           EditorView.contentAttributes.of({ "aria-label": label }),
@@ -213,6 +228,19 @@ export default function MarkdownEditor({
     const view = editorRef.current;
     if (!view) return;
 
+    view.dispatch({
+      effects: syntaxHighlightingCompartmentRef.current.reconfigure([
+        ...(syntaxHighlighting
+          ? [anchoredMarkdownSyntaxHighlighting, markdownEditorDecorations]
+          : []),
+      ]),
+    });
+  }, [syntaxHighlighting]);
+
+  useEffect(() => {
+    const view = editorRef.current;
+    if (!view) return;
+
     const current = view.state.doc.toString();
     if (
       current === value ||
@@ -259,5 +287,15 @@ export default function MarkdownEditor({
     }
   }, [findRequest]);
 
-  return <div className="markdown-editor" ref={hostRef} />;
+  return (
+    <div
+      className="markdown-editor"
+      ref={hostRef}
+      style={
+        {
+          "--anchored-editor-font-size": `${editorFontSize}px`,
+        } as CSSProperties
+      }
+    />
+  );
 }

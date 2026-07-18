@@ -36,6 +36,27 @@ describe("Markdown settings", () => {
     expect(loadMarkdownSettings(target)).toEqual(DEFAULT_MARKDOWN_SETTINGS);
   });
 
+  it("migrates version one settings to the default editor size", () => {
+    const target = storage();
+    target.setItem(
+      "anchored.markdown-settings.v1",
+      JSON.stringify({
+        version: 1,
+        autoLinkUrls: false,
+        emoji: true,
+        mermaid: false,
+        smartTypography: true,
+        syntaxHighlighting: true,
+      }),
+    );
+
+    expect(loadMarkdownSettings(target)).toEqual({
+      ...DEFAULT_MARKDOWN_SETTINGS,
+      autoLinkUrls: false,
+      mermaid: false,
+    });
+  });
+
   it("does not throw when storage is blocked", () => {
     const blocked = {
       getItem: () => {

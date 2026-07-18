@@ -255,8 +255,10 @@ export function EditorSurface({
               <MarkdownEditor
                 autoFocus={focusEditorOnOpen}
                 documentId={document.id}
+                editorFontSize={markdownSettings.editorFontSize}
                 findRequest={findRequest}
                 label={`${document.name} Markdown editor`}
+                syntaxHighlighting={markdownSettings.syntaxHighlighting}
                 value={document.sourceText}
                 wikilinkCandidates={wikilinkCandidates}
                 onChange={onDocumentChange}

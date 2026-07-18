@@ -1,6 +1,10 @@
 import { useRef } from "react";
 
-import type { MarkdownSettings } from "../markdown/types";
+import {
+  EDITOR_FONT_SIZES,
+  type EditorFontSize,
+  type MarkdownSettings,
+} from "../markdown/types";
 import { useModalDialog } from "./useModalDialog";
 
 type SettingsModalProps = {
@@ -56,6 +60,25 @@ export function SettingsModal({
             Rendering options never rewrite the Markdown source. Preview is
             explicit so typing stays fast and source-first.
           </p>
+          <label className="settings-select">
+            <span>Editor text size</span>
+            <select
+              aria-label="Editor text size"
+              value={markdownSettings.editorFontSize}
+              onChange={(event) =>
+                onMarkdownSettingsChange({
+                  ...markdownSettings,
+                  editorFontSize: Number(event.target.value) as EditorFontSize,
+                })
+              }
+            >
+              {EDITOR_FONT_SIZES.map((size) => (
+                <option key={size} value={size}>
+                  {size}px
+                </option>
+              ))}
+            </select>
+          </label>
           <label className="settings-toggle">
             <input
               checked={markdownSettings.autoLinkUrls}
@@ -93,7 +116,7 @@ export function SettingsModal({
                 })
               }
             />
-            <span>Highlight fenced code blocks</span>
+            <span>Highlight Markdown and YAML syntax</span>
           </label>
           <label className="settings-toggle">
             <input

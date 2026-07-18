@@ -26,11 +26,22 @@ describe("SettingsModal Markdown options", () => {
     expect(
       toggles.every((toggle) => (toggle as HTMLInputElement).checked),
     ).toBe(true);
+    expect(
+      screen.getByRole("combobox", { name: "Editor text size" }),
+    ).toHaveValue("14");
 
     await user.click(toggles[0]);
     expect(onMarkdownSettingsChange).toHaveBeenLastCalledWith({
       ...DEFAULT_MARKDOWN_SETTINGS,
       autoLinkUrls: false,
+    });
+    await user.selectOptions(
+      screen.getByRole("combobox", { name: "Editor text size" }),
+      "12",
+    );
+    expect(onMarkdownSettingsChange).toHaveBeenLastCalledWith({
+      ...DEFAULT_MARKDOWN_SETTINGS,
+      editorFontSize: 12,
     });
     expect(dialog).toHaveTextContent("Rendering options never rewrite");
   });

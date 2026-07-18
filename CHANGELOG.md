@@ -34,6 +34,12 @@ Git commit. The format follows [Keep a Changelog], and releases follow
   remembered vault plus the previously open note on startup when both are
   still available.
 
+### Changed
+
+- The source editor now defaults to a compact 14px type size, with persisted
+  12px, 14px, and 16px choices in Settings. Markdown and YAML front matter
+  now use separate CodeMirror language parsing and dark-theme syntax styles.
+
 ### Fixed
 
 - New notes now accept typing immediately while Anchored assigns their
