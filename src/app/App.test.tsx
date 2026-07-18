@@ -1243,6 +1243,69 @@ describe("App", () => {
     expect(screen.getByText("1 Markdown file")).toBeInTheDocument();
   });
 
+  it("keeps typing safe while the first note identity is assigned", async () => {
+    const user = userEvent.setup();
+    const identifiedContent = "---\nid: 01JZQ7K8P4A6F2M9V3C5T7X1BY\n---\n";
+    let finishCreatingNote:
+      | ((value: {
+          content: string;
+          relativePath: string;
+          sizeBytes: number;
+        }) => void)
+      | null = null;
+    mockedSelectVault.mockResolvedValue({
+      files: [],
+      name: "My Vault",
+      warnings: noWarnings,
+    });
+    mockedCreateUntitledVaultFile.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          finishCreatingNote = resolve;
+        }),
+    );
+    mockedSaveVaultFile.mockImplementation(async (request) => {
+      if (!request.content.includes("id: 01JZQ7K8P4A6F2M9V3C5T7X1BY")) {
+        throw {
+          code: "identityConflict",
+          message:
+            "This save would remove or change the note's permanent identity.",
+        };
+      }
+      return {
+        content: request.content,
+        relativePath: request.relativePath,
+        sizeBytes: request.content.length,
+      };
+    });
+    render(<App />);
+
+    await user.click(screen.getByRole("button", { name: "Open vault" }));
+    await user.click(screen.getAllByRole("button", { name: "New note" })[0]);
+    const editor = await screen.findByRole("textbox", {
+      name: "Untitled.md Markdown editor",
+    });
+    await user.click(editor);
+    await user.keyboard("# Draft");
+
+    await act(async () => {
+      finishCreatingNote?.({
+        content: identifiedContent,
+        relativePath: "Untitled.md",
+        sizeBytes: identifiedContent.length,
+      });
+    });
+
+    await waitFor(() => expect(editor).toHaveTextContent("01JZQ7K8P4"));
+    await waitFor(() => expect(mockedSaveVaultFile).toHaveBeenCalled());
+    expect(mockedSaveVaultFile.mock.calls[0][0].content).toContain("# Draft");
+    expect(
+      screen.queryByText(
+        "This save would remove or change the note's permanent identity.",
+      ),
+    ).not.toBeInTheDocument();
+  });
+
   it("finds text within the active Markdown note with Command-F", async () => {
     const user = userEvent.setup();
     mockedSelectVault.mockResolvedValue({

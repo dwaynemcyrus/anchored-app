@@ -55,6 +55,7 @@ import {
 } from "./markdown/types";
 import {
   hasNonUnixLineEndings,
+  mergeCreatedMarkdownSource,
   normalizeMarkdownLineEndings,
 } from "./markdown/source";
 import {
@@ -536,7 +537,11 @@ export function App() {
                   savedSourceText: savedDocument.content,
                   sizeBytes: savedDocument.sizeBytes,
                   sourceText: hasNewerEdit
-                    ? current.sourceText
+                    ? mergeCreatedMarkdownSource(
+                        sourceAtSave,
+                        savedDocument.content,
+                        current.sourceText ?? sourceAtSave,
+                      )
                     : savedDocument.content,
                 }
               : current,

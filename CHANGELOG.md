@@ -34,6 +34,12 @@ Git commit. The format follows [Keep a Changelog], and releases follow
   remembered vault plus the previously open note on startup when both are
   still available.
 
+### Fixed
+
+- New notes now accept typing immediately while Anchored assigns their
+  permanent identity. The generated front matter is merged into the local
+  draft before autosave, preventing identity-conflict save failures.
+
 ## [0.1.0-alpha] - 2026-07-17
 
 ### Added

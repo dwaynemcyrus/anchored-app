@@ -35,6 +35,10 @@ type MarkdownEditorProps = {
   onSaveAs: () => void;
 };
 
+function hasPermanentIdentity(source: string): boolean {
+  return /^\uFEFF?---\r?\n[\s\S]*?^id:\s*\S+/m.test(source);
+}
+
 export default function MarkdownEditor({
   autoFocus = false,
   documentId,
@@ -57,6 +61,7 @@ export default function MarkdownEditor({
   const onSaveRef = useRef(onSave);
   const onSaveAsRef = useRef(onSaveAs);
   const wikilinkCandidatesRef = useRef(wikilinkCandidates);
+  const syncingValueRef = useRef(false);
 
   valueRef.current = value;
   onChangeRef.current = onChange;
@@ -187,7 +192,9 @@ export default function MarkdownEditor({
           }),
           EditorView.updateListener.of((update) => {
             if (update.docChanged) {
-              onChangeRef.current(update.state.doc.toString());
+              if (!syncingValueRef.current) {
+                onChangeRef.current(update.state.doc.toString());
+              }
             }
           }),
         ],
@@ -201,6 +208,45 @@ export default function MarkdownEditor({
       view.destroy();
     };
   }, [autoFocus, documentId, label]);
+
+  useEffect(() => {
+    const view = editorRef.current;
+    if (!view) return;
+
+    const current = view.state.doc.toString();
+    if (
+      current === value ||
+      !hasPermanentIdentity(value) ||
+      hasPermanentIdentity(current)
+    ) {
+      return;
+    }
+
+    const currentSelection = view.state.selection;
+    const currentStart = value.endsWith(current)
+      ? value.length - current.length
+      : value.indexOf(current);
+    if (currentStart < 0) return;
+
+    const mapPosition = (position: number) =>
+      Math.max(
+        0,
+        Math.min(
+          value.length,
+          currentStart >= 0 ? currentStart + position : position,
+        ),
+      );
+
+    syncingValueRef.current = true;
+    view.dispatch({
+      changes: { from: 0, insert: value, to: view.state.doc.length },
+      selection: {
+        anchor: mapPosition(currentSelection.main.anchor),
+        head: mapPosition(currentSelection.main.head),
+      },
+    });
+    syncingValueRef.current = false;
+  }, [value]);
 
   useEffect(() => {
     if (findRequest > 0 && editorRef.current) {
