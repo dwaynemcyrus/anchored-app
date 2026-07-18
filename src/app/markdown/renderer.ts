@@ -368,7 +368,7 @@ export function renderMarkdown(
     frontMatter,
     html: DOMPurify.sanitize(html, {
       ADD_ATTR: ["data-admonition-type", "data-wikilink-target"],
-      ALLOW_DATA_ATTR: false,
+      ALLOW_DATA_ATTR: true,
       USE_PROFILES: { html: true },
     }),
   };

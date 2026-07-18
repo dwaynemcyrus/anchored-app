@@ -65,6 +65,7 @@ export function EditorSurface({
   trashing,
 }: EditorSurfaceProps) {
   const [previewVisible, setPreviewVisible] = useState(false);
+  const [focusEditorOnOpen, setFocusEditorOnOpen] = useState(false);
   if (!document) {
     return (
       <main className="editor-surface">
@@ -160,7 +161,11 @@ export function EditorSurface({
               aria-pressed={previewVisible}
               className="editor-surface__action"
               type="button"
-              onClick={() => setPreviewVisible((visible) => !visible)}
+              onClick={() => {
+                const nextVisible = !previewVisible;
+                setPreviewVisible(nextVisible);
+                setFocusEditorOnOpen(!nextVisible);
+              }}
             >
               {previewVisible ? "Edit source" : "Preview"}
             </button>
@@ -248,6 +253,7 @@ export function EditorSurface({
               }
             >
               <MarkdownEditor
+                autoFocus={focusEditorOnOpen}
                 documentId={document.id}
                 findRequest={findRequest}
                 label={`${document.name} Markdown editor`}
@@ -255,6 +261,7 @@ export function EditorSurface({
                 wikilinkCandidates={wikilinkCandidates}
                 onChange={onDocumentChange}
                 onOpenWikilink={onOpenWikilink}
+                onPreview={() => setPreviewVisible(true)}
                 onSave={onSaveDocument}
                 onSaveAs={onSaveDocumentAs}
               />

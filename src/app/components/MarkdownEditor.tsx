@@ -22,6 +22,7 @@ import { markdownEditorDecorations } from "../markdown/editorDecorations";
 import { wikilinkAtOffset, wikilinkCompletionAtOffset } from "../links";
 
 type MarkdownEditorProps = {
+  autoFocus?: boolean;
   documentId: string;
   findRequest: number;
   label: string;
@@ -29,11 +30,13 @@ type MarkdownEditorProps = {
   wikilinkCandidates: WikilinkCandidate[];
   onChange: (content: string) => void;
   onOpenWikilink: (target: string) => void;
+  onPreview: () => void;
   onSave: () => void;
   onSaveAs: () => void;
 };
 
 export default function MarkdownEditor({
+  autoFocus = false,
   documentId,
   findRequest,
   label,
@@ -41,6 +44,7 @@ export default function MarkdownEditor({
   wikilinkCandidates,
   onChange,
   onOpenWikilink,
+  onPreview,
   onSave,
   onSaveAs,
 }: MarkdownEditorProps) {
@@ -49,6 +53,7 @@ export default function MarkdownEditor({
   const valueRef = useRef(value);
   const onChangeRef = useRef(onChange);
   const onOpenWikilinkRef = useRef(onOpenWikilink);
+  const onPreviewRef = useRef(onPreview);
   const onSaveRef = useRef(onSave);
   const onSaveAsRef = useRef(onSaveAs);
   const wikilinkCandidatesRef = useRef(wikilinkCandidates);
@@ -56,6 +61,7 @@ export default function MarkdownEditor({
   valueRef.current = value;
   onChangeRef.current = onChange;
   onOpenWikilinkRef.current = onOpenWikilink;
+  onPreviewRef.current = onPreview;
   onSaveRef.current = onSave;
   onSaveAsRef.current = onSaveAs;
   wikilinkCandidatesRef.current = wikilinkCandidates;
@@ -125,6 +131,13 @@ export default function MarkdownEditor({
             ...historyKeymap,
             ...searchKeymap,
             {
+              key: "Mod-Shift-p",
+              run: () => {
+                onPreviewRef.current();
+                return true;
+              },
+            },
+            {
               key: "Shift-Mod-s",
               run: () => {
                 onSaveAsRef.current();
@@ -181,12 +194,13 @@ export default function MarkdownEditor({
       }),
     });
     editorRef.current = view;
+    if (autoFocus) view.focus();
 
     return () => {
       editorRef.current = null;
       view.destroy();
     };
-  }, [documentId, label]);
+  }, [autoFocus, documentId, label]);
 
   useEffect(() => {
     if (findRequest > 0 && editorRef.current) {
