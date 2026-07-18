@@ -1,16 +1,21 @@
 import { useRef } from "react";
 
+import type { MarkdownSettings } from "../markdown/types";
 import { useModalDialog } from "./useModalDialog";
 
 type SettingsModalProps = {
+  markdownSettings: MarkdownSettings;
   reloading: boolean;
   onClose: () => void;
+  onMarkdownSettingsChange: (settings: MarkdownSettings) => void;
   onReload: () => void;
 };
 
 export function SettingsModal({
+  markdownSettings,
   reloading,
   onClose,
+  onMarkdownSettingsChange,
   onReload,
 }: SettingsModalProps) {
   const closeButtonRef = useRef<HTMLButtonElement>(null);
@@ -45,6 +50,78 @@ export function SettingsModal({
         </button>
       </header>
       <div className="continuity-panel__body">
+        <section className="settings-section">
+          <h3>Markdown</h3>
+          <p>
+            Rendering options never rewrite the Markdown source. Preview is
+            explicit so typing stays fast and source-first.
+          </p>
+          <label className="settings-toggle">
+            <input
+              checked={markdownSettings.autoLinkUrls}
+              type="checkbox"
+              onChange={(event) =>
+                onMarkdownSettingsChange({
+                  ...markdownSettings,
+                  autoLinkUrls: event.target.checked,
+                })
+              }
+            />
+            <span>Automatically link bare URLs</span>
+          </label>
+          <label className="settings-toggle">
+            <input
+              checked={markdownSettings.smartTypography}
+              type="checkbox"
+              onChange={(event) =>
+                onMarkdownSettingsChange({
+                  ...markdownSettings,
+                  smartTypography: event.target.checked,
+                })
+              }
+            />
+            <span>Use smart quotes, dashes, and ellipses</span>
+          </label>
+          <label className="settings-toggle">
+            <input
+              checked={markdownSettings.syntaxHighlighting}
+              type="checkbox"
+              onChange={(event) =>
+                onMarkdownSettingsChange({
+                  ...markdownSettings,
+                  syntaxHighlighting: event.target.checked,
+                })
+              }
+            />
+            <span>Highlight fenced code blocks</span>
+          </label>
+          <label className="settings-toggle">
+            <input
+              checked={markdownSettings.emoji}
+              type="checkbox"
+              onChange={(event) =>
+                onMarkdownSettingsChange({
+                  ...markdownSettings,
+                  emoji: event.target.checked,
+                })
+              }
+            />
+            <span>Render emoji shortcodes</span>
+          </label>
+          <label className="settings-toggle">
+            <input
+              checked={markdownSettings.mermaid}
+              type="checkbox"
+              onChange={(event) =>
+                onMarkdownSettingsChange({
+                  ...markdownSettings,
+                  mermaid: event.target.checked,
+                })
+              }
+            />
+            <span>Render Mermaid diagrams in Preview</span>
+          </label>
+        </section>
         <section className="settings-section">
           <h3>Reload Anchored</h3>
           <p>

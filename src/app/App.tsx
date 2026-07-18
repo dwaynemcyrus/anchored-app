@@ -46,6 +46,14 @@ import {
 } from "./recentDocuments";
 import { rankQuickOpenResults } from "./retrieval";
 import {
+  loadMarkdownSettings,
+  saveMarkdownSettings,
+} from "./markdown/settings";
+import {
+  DEFAULT_MARKDOWN_SETTINGS,
+  type MarkdownSettings,
+} from "./markdown/types";
+import {
   clearSessionState,
   loadSessionState,
   saveSessionState,
@@ -168,6 +176,22 @@ function folderName(folderPath: string): string {
   return folderPath.split("/").pop() ?? folderPath;
 }
 
+function initialMarkdownSettings(): MarkdownSettings {
+  try {
+    return loadMarkdownSettings(window.localStorage);
+  } catch {
+    return { ...DEFAULT_MARKDOWN_SETTINGS };
+  }
+}
+
+function persistMarkdownSettings(settings: MarkdownSettings): void {
+  try {
+    saveMarkdownSettings(window.localStorage, settings);
+  } catch {
+    // Settings persistence is optional and must never block the editor.
+  }
+}
+
 export function App() {
   const [documents, setDocuments] = useState<AnchoredDocument[]>([]);
   const [activeDocumentId, setActiveDocumentId] = useState("");
@@ -188,6 +212,9 @@ export function App() {
   const [vaultId, setVaultId] = useState("");
   const [folderPaths, setFolderPaths] = useState<string[]>([]);
   const [settingsVisible, setSettingsVisible] = useState(false);
+  const [markdownSettings, setMarkdownSettings] = useState<MarkdownSettings>(
+    initialMarkdownSettings,
+  );
   const [selectingVault, setSelectingVault] = useState(false);
   const [creatingFolder, setCreatingFolder] = useState(false);
   const [creatingVault, setCreatingVault] = useState(false);
@@ -418,6 +445,10 @@ export function App() {
     },
     [],
   );
+
+  useEffect(() => {
+    persistMarkdownSettings(markdownSettings);
+  }, [markdownSettings]);
 
   const hasUnfinishedEdits = useCallback(
     () => documentsRef.current.some(documentHasUnfinishedEdits),
@@ -1900,6 +1931,7 @@ export function App() {
             if (activeDocument) void trashDocument(activeDocument.id);
           }}
           moving={movingDocumentId === activeDocument?.id}
+          markdownSettings={markdownSettings}
           renaming={renamingDocumentId === activeDocument?.id}
           trashing={trashingDocumentId === activeDocument?.id}
         />
@@ -1998,12 +2030,14 @@ export function App() {
       ) : null}
       {settingsVisible ? (
         <SettingsModal
+          markdownSettings={markdownSettings}
           reloading={reloadingApp}
           onClose={() => {
             if (!reloadingApp) {
               setSettingsVisible(false);
             }
           }}
+          onMarkdownSettingsChange={setMarkdownSettings}
           onReload={() => void reloadApp()}
         />
       ) : null}

@@ -8,6 +8,12 @@ Git commit. The format follows [Keep a Changelog], and releases follow
 
 ### Added
 
+- Anchored now supports the Markdown v1 rendering pipeline, including
+  CommonMark, GFM tables, footnotes, task lists, definition lists, math,
+  wikilinks, admonitions, heading IDs, subscript, superscript, highlighting,
+  emoji, Mermaid diagrams, and an explicit sanitized Preview view. URL
+  autolinking, smart typography, code highlighting, emoji, and Mermaid can be
+  configured in Settings without changing Markdown source.
 - New vaults can now be created from the no-vault screen or vault switcher.
   Anchored asks for a vault name, lets the user choose a parent folder
   natively, creates the new vault safely, remembers it, and opens it

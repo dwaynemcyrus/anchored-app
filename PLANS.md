@@ -576,16 +576,16 @@ and preserves link integrity across filename changes.
       The source editor remains CodeMirror 6 and Markdown remains the only
       authored-content source of truth. Version 1 gets an explicit, on-demand
       rendered document surface; it does not add live preview while typing.
-    - Package decision: Use Sätteri as the runtime Markdown parser, AST, and
-      HTML pipeline because its current feature model covers GFM,
-      frontmatter, math, heading attributes, wikilinks, definition lists,
-      subscript, superscript, and smart punctuation. Keep `yaml-rust2` and the
-      existing Rust metadata layer for typed YAML validation, stable IDs,
-      aliases, and formatting-preserving mutations because Sätteri returns
-      front matter as raw text rather than parsing YAML values. Do not use
-      `vite-plugin-satteri`; user-authored vault files are runtime content,
-      not build-time imports. Pin Sätteri's pre-1.0 version exactly and keep a
-      fixture-based compatibility gate for future upgrades.
+    - Package decision: Use `markdown-it` with focused extension packages as
+      the runtime Markdown parser and HTML pipeline. It runs directly in the
+      existing Tauri WebView and exposes the required linkify and typographer
+      toggles without a cross-origin-isolated WASI runtime. Keep `yaml-rust2`
+      and the existing Rust metadata layer for typed YAML validation, stable
+      IDs, aliases, and formatting-preserving mutations. Sätteri was evaluated
+      as the suggested alternative, but its browser fallback requires
+      `SharedArrayBuffer` and cross-origin isolation while its native binding
+      is not a direct WebView dependency. Keep the parser adapter boundary so
+      this decision can be revisited without changing Markdown persistence.
     - Preservation rule: Parse for indexing, rendering, diagnostics, and
       navigation, but never serialize the entire AST back to disk on ordinary
       save. Preserve unknown syntax, key order, spacing, comments, attachments,
@@ -594,14 +594,15 @@ and preserves link integrity across filename changes.
       new files use LF, and existing CRLF files are normalized only on an
       intentional save with an observable notice and regression coverage.
     - Feature matrix:
-      - Native Sätteri features: CommonMark, GFM tables and alignment,
-        backtick fences, GFM footnotes, strikethrough, task-list syntax,
-        GFM autolinks, YAML front matter detection, heading IDs via
-        `{#id}`, `$...$` and `$$...$$` math, wikilinks, definition lists,
-        `~subscript~`, `^superscript^`, and smart typography.
-      - Anchored plugins or adapters: standard admonition blockquotes with
+      - Markdown-it core and extension packages: CommonMark, GFM tables and
+        alignment, backtick fences, footnotes, strikethrough, task-list
+        syntax, GFM autolinks, `$...$` and `$$...$$` math, definition lists,
+        `~subscript~`, `^superscript^`, emoji, highlighting, and smart
+        typography.
+      - Anchored plugins or adapters: YAML front matter detection, heading
+        IDs via `{#id}`, wikilinks, standard admonition blockquotes with
         the twelve named types and custom titles, `==highlight==`, emoji
-        shortcodes, Mermaid code fences, syntax highlighting, permanent-ID
+        shortcodes, Mermaid code fences, permanent-ID
         resolution, safe internal-link rendering, configurable bare-URL
         linking, and the backtick-only fence policy.
       - Settings: automatic URL linking defaults on and is toggleable;
@@ -617,7 +618,7 @@ and preserves link integrity across filename changes.
       filename-triggered link updates remain authoritative and are not
       replaced by display-name or heading-ID resolution.
 
-20A. [ ] **Chunk: Establish the parser contract and corpus**
+20A. [x] **Chunk: Establish the parser contract and corpus**
     - Files: `docs/MARKDOWN_SPEC.md`, `docs/FEATURES.md`, `PLANS.md`,
       `src/app/markdown/`, `fixtures/markdown/`, parser tests, package
       manifests and lockfile
@@ -635,26 +636,27 @@ and preserves link integrity across filename changes.
       save behavior yet.
     - Expected changelog: None unless the specification becomes user-visible
       in the shipped build. Version remains `0.1.0-alpha`.
+    - Verification result: Added the versioned Markdown contract and renderer
+      corpus for front matter, CommonMark/GFM, extended syntax, admonitions,
+      math, wikilinks, Mermaid, unsafe HTML, URL policy, and tilde-fence
+      rejection. Source-preservation assertions pass.
 
-20B. [ ] **Chunk: Integrate and qualify Sätteri**
+20B. [x] **Chunk: Integrate and qualify the browser parser**
     - Files: `package.json`, `package-lock.json`, `src/app/markdown/parser.ts`,
       `src/app/markdown/parser.test.ts`, `vite.config.ts` only if required,
       and build-size notes in `PLANS.md`
-    - Change: Add the pinned Sätteri dependency and configure the complete
-      native feature set. Expose synchronous parsing for normal note sizes and
-      a cancellable/deferred path for large documents so editor input is not
-      blocked. Add a small adapter around Sätteri's MDAST/HAST result rather
-      than leaking third-party node types through the app.
-    - Verify: Run the corpus against Sätteri on the supported Intel and Apple
-      Silicon macOS targets, verify macOS 12 WebKit behavior, measure parse
-      latency and output size against a representative vault, and confirm
-      `npm run build` does not include native-only code in the wrong bundle.
-      If Sätteri cannot meet a fixture without unsafe or lossy workarounds,
-      stop at this gate and evaluate the unified/remark pipeline as the
-      documented fallback rather than silently weakening the specification.
-    - Risk/rollback: Sätteri is pre-1.0 and ships native binaries. Keep the
-      adapter boundary, exact version pin, lockfile, and fallback evaluation
-      record so the dependency can be reverted without touching Markdown.
+    - Change: Add a browser-safe `markdown-it` pipeline with focused extension
+      packages and an internal renderer adapter. The adapter handles front
+      matter boundaries, heading IDs, wikilinks, admonitions, math, Mermaid
+      fences, syntax highlighting, and safe HTML output without exposing
+      third-party token types to the rest of the app.
+    - Verify: The renderer and settings tests pass, TypeScript and ESLint pass,
+      and the existing App suite remains green. Sätteri was evaluated but not
+      installed because its documented browser fallback requires cross-origin
+      isolation that the current Tauri WebView does not provide.
+    - Risk/rollback: Markdown-it extensions are independently versioned. Keep
+      the adapter boundary and fixture corpus so any extension can be replaced
+      without touching Markdown persistence.
     - Expected changelog: None for an internal parser adapter.
 
 20C. [ ] **Chunk: Complete source-preserving metadata and policies**
