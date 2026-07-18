@@ -659,7 +659,7 @@ and preserves link integrity across filename changes.
       without touching Markdown persistence.
     - Expected changelog: None for an internal parser adapter.
 
-20C. [ ] **Chunk: Complete source-preserving metadata and policies**
+20C. [x] **Chunk: Complete source-preserving metadata and policies**
     - Files: `src-tauri/src/metadata.rs`, `src-tauri/src/links.rs`,
       `src-tauri/src/vault.rs`, `src/app/documents.ts`, `src/app/markdown/`,
       Rust/TypeScript tests, and migration/fixture documentation
@@ -681,6 +681,10 @@ and preserves link integrity across filename changes.
       rollback tests, explicit notices, and disposable-vault verification.
     - Expected changelog: Document portable Markdown compatibility and any
       visible LF-normalization notice. Version remains `0.1.0-alpha`.
+    - Verification result: Added render/source front-matter boundaries,
+      backtick-only fence policy across frontend and native link scanners,
+      source-preserving tests, and intentional-save LF normalization with a
+      visible notice.
 
 20D. [x] **Chunk: Build the safe rendered Markdown surface**
     - Files: `src/app/markdown/renderer.ts`, renderer adapters and tests,
@@ -762,7 +766,7 @@ and preserves link integrity across filename changes.
       accessible toggles, immediate Preview refresh, malformed/blocked storage
       fallback, and no source mutation.
 
-20G. [ ] **Chunk: Reconcile links, IDs, and document navigation**
+20G. [x] **Chunk: Reconcile links, IDs, and document navigation**
     - Files: `src/app/links.ts`, `src/app/documents.ts`, link candidate and
       backlink modules, Rust link metadata/rewrite code, preview/editor
       components, and cross-feature tests
@@ -781,6 +785,9 @@ and preserves link integrity across filename changes.
       reuse the existing atomic rename transaction.
     - Expected changelog: None beyond the rendered wikilink behavior already
       recorded in Chunk 20D unless user-visible link behavior changes.
+    - Verification result: Reused the stable-ID/path/name/alias resolver for
+      rendered wikilinks, kept heading IDs separate from object IDs, and
+      verified Preview navigation plus backtick-only source indexing.
 
 20H. [ ] **Chunk: Full specification verification and release gate**
     - Files: all Markdown feature tests, fixture vaults, `docs/FEATURES.md`,

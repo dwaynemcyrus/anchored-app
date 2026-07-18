@@ -14,6 +14,10 @@ Git commit. The format follows [Keep a Changelog], and releases follow
   emoji, Mermaid diagrams, and an explicit sanitized Preview view. URL
   autolinking, smart typography, code highlighting, emoji, and Mermaid can be
   configured in Settings without changing Markdown source.
+- Markdown source editing now decorates supported wikilinks, heading IDs,
+  admonitions, math, tasks, highlights, emoji, and fenced code markers while
+  keeping the underlying source unchanged. Intentional saves normalize CRLF
+  and legacy CR endings to LF and show a visible notice.
 - New vaults can now be created from the no-vault screen or vault switcher.
   Anchored asks for a vault name, lets the user choose a parent folder
   natively, creates the new vault safely, remembers it, and opens it
