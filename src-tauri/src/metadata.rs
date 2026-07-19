@@ -21,6 +21,24 @@ pub enum IdentityMutationError {
     UnsafeFrontMatter,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum LifecycleMutationError {
+    InvalidStatus,
+    InvalidTimestamp,
+    UnsafeFrontMatter,
+}
+
+impl fmt::Display for LifecycleMutationError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let message = match self {
+            Self::InvalidStatus => "the requested note status is not supported",
+            Self::InvalidTimestamp => "the lifecycle timestamp is not canonical UTC",
+            Self::UnsafeFrontMatter => "the note front matter cannot be changed safely",
+        };
+        formatter.write_str(message)
+    }
+}
+
 impl fmt::Display for IdentityMutationError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         let message = match self {
@@ -157,6 +175,187 @@ pub fn inspect_note_properties(content: &str) -> NoteProperties {
         note_type: unique_string_property(mapping, yaml, "type", false),
         status: unique_string_property(mapping, yaml, "status", true),
     }
+}
+
+pub fn stamp_note_created_at(
+    content: &str,
+    timestamp: &str,
+) -> Result<String, LifecycleMutationError> {
+    validate_lifecycle_timestamp(timestamp)?;
+    mutate_lifecycle_properties(content, &[("created_at", Some(timestamp))])
+}
+
+pub fn archive_note(content: &str, timestamp: &str) -> Result<String, LifecycleMutationError> {
+    validate_lifecycle_timestamp(timestamp)?;
+    mutate_lifecycle_properties(
+        content,
+        &[
+            ("status", Some("archived")),
+            ("archived_at", Some(timestamp)),
+        ],
+    )
+}
+
+pub fn restore_note(
+    content: &str,
+    destination_status: &str,
+) -> Result<String, LifecycleMutationError> {
+    if !matches!(destination_status, "inbox" | "active") {
+        return Err(LifecycleMutationError::InvalidStatus);
+    }
+    mutate_lifecycle_properties(
+        content,
+        &[("status", Some(destination_status)), ("archived_at", None)],
+    )
+}
+
+fn validate_lifecycle_timestamp(timestamp: &str) -> Result<(), LifecycleMutationError> {
+    let parsed = chrono::DateTime::parse_from_rfc3339(timestamp)
+        .map_err(|_| LifecycleMutationError::InvalidTimestamp)?;
+    if timestamp.len() != 20
+        || !timestamp.ends_with('Z')
+        || parsed.format("%Y-%m-%dT%H:%M:%SZ").to_string() != timestamp
+    {
+        return Err(LifecycleMutationError::InvalidTimestamp);
+    }
+    Ok(())
+}
+
+fn mutate_lifecycle_properties(
+    content: &str,
+    changes: &[(&str, Option<&str>)],
+) -> Result<String, LifecycleMutationError> {
+    let bounds = match front_matter_bounds(content) {
+        Ok(Some(bounds)) => bounds,
+        Ok(None) => return Ok(add_new_lifecycle_front_matter(content, changes)),
+        Err(()) => return Err(LifecycleMutationError::UnsafeFrontMatter),
+    };
+    let yaml = &content[bounds.body_start..bounds.body_end];
+    let documents =
+        YamlLoader::load_from_str(yaml).map_err(|_| LifecycleMutationError::UnsafeFrontMatter)?;
+    if documents
+        .first()
+        .is_some_and(|document| !matches!(document, Yaml::Hash(_) | Yaml::Null))
+    {
+        return Err(LifecycleMutationError::UnsafeFrontMatter);
+    }
+
+    let mut edits: Vec<(Range<usize>, String)> = Vec::new();
+    let mut missing_lines = String::new();
+    for (key, value) in changes {
+        if count_top_level_keys(yaml, key) > 1 {
+            return Err(LifecycleMutationError::UnsafeFrontMatter);
+        }
+        let existing = find_top_level_property_line(yaml, key);
+        match (existing, value) {
+            (Some(line), Some(value)) => {
+                let replacement = quoted_property_value(value, line.quote);
+                edits.push((
+                    (bounds.body_start + line.value.start)..(bounds.body_start + line.value.end),
+                    replacement,
+                ));
+            }
+            (Some(line), None) => edits.push((
+                (bounds.body_start + line.full.start)..(bounds.body_start + line.full.end),
+                String::new(),
+            )),
+            (None, Some(value)) => {
+                missing_lines.push_str(key);
+                missing_lines.push_str(": ");
+                missing_lines.push_str(value);
+                missing_lines.push_str(bounds.newline);
+            }
+            (None, None) => {}
+        }
+    }
+    if !missing_lines.is_empty() {
+        edits.push((bounds.opening_end..bounds.opening_end, missing_lines));
+    }
+    edits.sort_by_key(|edit| std::cmp::Reverse(edit.0.start));
+    let mut updated = content.to_owned();
+    for (range, replacement) in edits {
+        updated.replace_range(range, &replacement);
+    }
+    Ok(updated)
+}
+
+#[derive(Debug)]
+struct PropertyLine {
+    full: Range<usize>,
+    quote: Option<char>,
+    value: Range<usize>,
+}
+
+fn find_top_level_property_line(yaml: &str, expected: &str) -> Option<PropertyLine> {
+    let mut offset = 0;
+    for line in yaml.split_inclusive('\n') {
+        let line_without_ending = line.trim_end_matches(['\r', '\n']);
+        if !line_without_ending.starts_with(char::is_whitespace) {
+            if let Some((key, raw_value)) = line_without_ending.split_once(':') {
+                if matches_property_key(key.trim(), expected) {
+                    let raw_start = line_without_ending.len() - raw_value.len();
+                    let leading = raw_value.len() - raw_value.trim_start().len();
+                    let value_start = raw_start + leading;
+                    let value_text = &line_without_ending[value_start..];
+                    let value_end = value_start + property_value_length(value_text);
+                    let trimmed = line_without_ending[value_start..value_end].trim_end();
+                    let value_end = value_start + trimmed.len();
+                    let quote = trimmed.chars().next().filter(|quote| {
+                        (*quote == '\'' || *quote == '"') && trimmed.ends_with(*quote)
+                    });
+                    return Some(PropertyLine {
+                        full: offset..offset + line.len(),
+                        quote,
+                        value: offset + value_start..offset + value_end,
+                    });
+                }
+            }
+        }
+        offset += line.len();
+    }
+    None
+}
+
+fn matches_property_key(key: &str, expected: &str) -> bool {
+    key == expected || key == format!("'{expected}'") || key == format!("\"{expected}\"")
+}
+
+fn property_value_length(value: &str) -> usize {
+    let mut quote: Option<char> = None;
+    let mut escaped = false;
+    for (index, character) in value.char_indices() {
+        match quote {
+            Some('"') if escaped => escaped = false,
+            Some('"') if character == '\\' => escaped = true,
+            Some(active) if character == active => quote = None,
+            None if character == '\'' || character == '"' => quote = Some(character),
+            None if character == '#' => return index,
+            _ => {}
+        }
+    }
+    value.len()
+}
+
+fn quoted_property_value(value: &str, quote: Option<char>) -> String {
+    match quote {
+        Some('\'') => format!("'{}'", value.replace('\'', "''")),
+        Some('"') => format!("\"{}\"", value.replace('"', "\\\"")),
+        _ => value.to_owned(),
+    }
+}
+
+fn add_new_lifecycle_front_matter(content: &str, changes: &[(&str, Option<&str>)]) -> String {
+    let (bom, body) = content
+        .strip_prefix(UTF8_BOM)
+        .map_or(("", content), |body| (UTF8_BOM, body));
+    let newline = preferred_newline(body);
+    let separator = if body.is_empty() { "" } else { newline };
+    let properties = changes
+        .iter()
+        .filter_map(|(key, value)| value.map(|value| format!("{key}: {value}{newline}")))
+        .collect::<String>();
+
+    format!("{bom}---{newline}{properties}---{newline}{separator}{body}")
 }
 
 fn unique_string_property(
@@ -574,9 +773,10 @@ fn find_top_level_id_value(yaml: &str, id: &str) -> Option<std::ops::Range<usize
 #[cfg(test)]
 mod tests {
     use super::{
-        add_note_identity, assign_new_note_identity, generate_note_id, inspect_note_aliases,
-        inspect_note_identity, inspect_note_properties, inspect_wikilink_occurrences,
-        inspect_wikilinks, rewrite_wikilink_targets, IdentityMutationError, NoteIdentityStatus,
+        add_note_identity, archive_note, assign_new_note_identity, generate_note_id,
+        inspect_note_aliases, inspect_note_identity, inspect_note_properties,
+        inspect_wikilink_occurrences, inspect_wikilinks, restore_note, rewrite_wikilink_targets,
+        stamp_note_created_at, IdentityMutationError, LifecycleMutationError, NoteIdentityStatus,
     };
 
     const ID: &str = "01JZQ7K8P4A6F2M9V3C5T7X1BY";
@@ -620,6 +820,101 @@ mod tests {
         assert_eq!(
             inspect_note_properties("---\nstatus: one\nstatus: two\n---\n").status,
             None
+        );
+    }
+
+    #[test]
+    fn stamps_creation_time_without_changing_the_markdown_body() {
+        let original = "\u{feff}# Zürich\r\n\r\nBody\r\n";
+        let updated =
+            stamp_note_created_at(original, "2026-11-28T15:48:32Z").expect("stamp creation time");
+
+        assert_eq!(
+            updated,
+            concat!(
+                "\u{feff}---\r\n",
+                "created_at: 2026-11-28T15:48:32Z\r\n",
+                "---\r\n\r\n",
+                "# Zürich\r\n\r\nBody\r\n",
+            )
+        );
+        assert_eq!(
+            archive_note("---\n---\nBody\n", "2026-11-28T15:48:32Z")
+                .expect("archive with empty front matter"),
+            concat!(
+                "---\n",
+                "status: archived\n",
+                "archived_at: 2026-11-28T15:48:32Z\n",
+                "---\n",
+                "Body\n",
+            )
+        );
+    }
+
+    #[test]
+    fn preserves_front_matter_order_quotes_and_comments_during_lifecycle_changes() {
+        let original = concat!(
+            "---\n",
+            "title: 'Quoted title'\n",
+            "status: \"active\" # workflow\n",
+            "created_at: '2025-01-02T03:04:05Z'\n",
+            "# keep this comment\n",
+            "---\n",
+            "Body\n",
+        );
+        let created =
+            stamp_note_created_at(original, "2026-11-28T15:48:32Z").expect("replace creation time");
+        let archived = archive_note(&created, "2026-11-29T16:49:33Z").expect("archive note");
+
+        assert_eq!(
+            archived,
+            concat!(
+                "---\n",
+                "archived_at: 2026-11-29T16:49:33Z\n",
+                "title: 'Quoted title'\n",
+                "status: \"archived\" # workflow\n",
+                "created_at: '2026-11-28T15:48:32Z'\n",
+                "# keep this comment\n",
+                "---\n",
+                "Body\n",
+            )
+        );
+
+        let restored = restore_note(&archived, "inbox").expect("restore note");
+        assert_eq!(
+            restored,
+            concat!(
+                "---\n",
+                "title: 'Quoted title'\n",
+                "status: \"inbox\" # workflow\n",
+                "created_at: '2026-11-28T15:48:32Z'\n",
+                "# keep this comment\n",
+                "---\n",
+                "Body\n",
+            )
+        );
+    }
+
+    #[test]
+    fn refuses_ambiguous_lifecycle_metadata_and_invalid_values() {
+        let duplicate = "---\nstatus: active\nstatus: draft\n---\n";
+        let malformed = "---\ntags: [one\n---\n";
+
+        assert_eq!(
+            archive_note(duplicate, "2026-11-28T15:48:32Z"),
+            Err(LifecycleMutationError::UnsafeFrontMatter)
+        );
+        assert_eq!(
+            stamp_note_created_at(malformed, "2026-11-28T15:48:32Z"),
+            Err(LifecycleMutationError::UnsafeFrontMatter)
+        );
+        assert_eq!(
+            stamp_note_created_at("Body", "2026-11-28T15:48:32"),
+            Err(LifecycleMutationError::InvalidTimestamp)
+        );
+        assert_eq!(
+            restore_note("Body", "draft"),
+            Err(LifecycleMutationError::InvalidStatus)
         );
     }
 

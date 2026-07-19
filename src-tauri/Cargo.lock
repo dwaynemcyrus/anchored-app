@@ -48,6 +48,7 @@ dependencies = [
 name = "anchored"
 version = "0.1.0-alpha"
 dependencies = [
+ "chrono",
  "serde",
  "serde_json",
  "tauri",

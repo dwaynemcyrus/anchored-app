@@ -16,6 +16,10 @@ Git commit. The format follows [Keep a Changelog], and releases follow
   collections with live counts. Workbench puts Untyped first and sorts all
   actual types alphabetically; Assets can be grouped by file type or sorted
   alphabetically, while a persisted Files view preserves physical navigation.
+- Anchored-created notes now receive second-precision UTC `created_at`
+  metadata. Archiving writes `status: archived` and `archived_at`, opens the
+  note in sanitized read-only Preview, and offers explicit restore actions for
+  Inbox or Workbench.
 - Non-empty folder deletion now warns before proceeding and requires typing
   `delete folder`; confirmed folders move as one recoverable Trash entry.
 
@@ -72,6 +76,9 @@ Git commit. The format follows [Keep a Changelog], and releases follow
 
 ### Fixed
 
+- Native saves now independently refuse archived notes, and lifecycle changes
+  use expected-content checks plus atomic writes so external edits are never
+  overwritten.
 - Removed recurring identity warnings, migrations, generated note IDs, and
   identity-conflict save failures from normal vault use.
 - Markdown editing now preserves local typing, undo history, selections, and

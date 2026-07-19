@@ -10,6 +10,7 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
+  archiveVaultFile,
   createVault,
   createVaultFolder,
   createUntitledVaultFile,
@@ -29,12 +30,14 @@ import {
   searchVault,
   selectVault,
   restoreVaultFileFromTrash,
+  restoreArchivedVaultFile,
 } from "../lib/tauri/vault";
 import { App } from "./App";
 import { saveSessionState } from "./sessionState";
 import { reloadAnchoredWindow } from "./windowActions";
 
 vi.mock("../lib/tauri/vault", () => ({
+  archiveVaultFile: vi.fn(),
   createVault: vi.fn(),
   createVaultFolder: vi.fn(),
   createUntitledVaultFile: vi.fn(),
@@ -54,6 +57,7 @@ vi.mock("../lib/tauri/vault", () => ({
   searchVault: vi.fn(),
   selectVault: vi.fn(),
   restoreVaultFileFromTrash: vi.fn(),
+  restoreArchivedVaultFile: vi.fn(),
 }));
 
 vi.mock("./windowActions", () => ({
@@ -79,6 +83,8 @@ const mockedRescanVault = vi.mocked(rescanVault);
 const mockedSaveVaultFile = vi.mocked(saveVaultFile);
 const mockedSearchVault = vi.mocked(searchVault);
 const mockedRestoreVaultFileFromTrash = vi.mocked(restoreVaultFileFromTrash);
+const mockedArchiveVaultFile = vi.mocked(archiveVaultFile);
+const mockedRestoreArchivedVaultFile = vi.mocked(restoreArchivedVaultFile);
 const mockedReloadAnchoredWindow = vi.mocked(reloadAnchoredWindow);
 const noWarnings = {
   skippedNonUtf8Paths: 0,
@@ -111,6 +117,8 @@ describe("App", () => {
     mockedSaveVaultFile.mockReset();
     mockedSearchVault.mockReset();
     mockedRestoreVaultFileFromTrash.mockReset();
+    mockedArchiveVaultFile.mockReset();
+    mockedRestoreArchivedVaultFile.mockReset();
     mockedReloadAnchoredWindow.mockReset();
     mockedCreateUntitledVaultFile.mockImplementation(
       () => new Promise(() => {}),
@@ -374,6 +382,92 @@ describe("App", () => {
     expect(screen.getByRole("button", { name: "Unique.md" })).toHaveTextContent(
       "Markdown",
     );
+  });
+
+  it("archives notes into read-only Preview and restores them to Inbox", async () => {
+    const user = userEvent.setup();
+    const relativePath = "Notes/Working.md";
+    const source = "---\nstatus: active\n---\n# Working\n";
+    const archivedSource =
+      "---\narchived_at: 2026-07-19T10:00:00Z\n" +
+      "status: archived\n---\n# Working\n";
+    const restoredSource = "---\nstatus: inbox\n---\n# Working\n";
+    mockedSelectVault.mockResolvedValue({
+      files: [
+        {
+          name: "Working.md",
+          parent: "Notes",
+          relativePath,
+          status: "active",
+        },
+      ],
+      name: "My Vault",
+      warnings: noWarnings,
+    });
+    mockedReadVaultFile.mockResolvedValue({
+      content: source,
+      relativePath,
+      sizeBytes: source.length,
+      status: "active",
+    });
+    mockedArchiveVaultFile.mockResolvedValue({
+      archivedAt: "2026-07-19T10:00:00Z",
+      content: archivedSource,
+      relativePath,
+      sizeBytes: archivedSource.length,
+      status: "archived",
+    });
+    mockedRestoreArchivedVaultFile.mockResolvedValue({
+      content: restoredSource,
+      relativePath,
+      sizeBytes: restoredSource.length,
+      status: "inbox",
+    });
+    render(<App />);
+
+    await user.click(screen.getByRole("button", { name: "Open vault" }));
+    await user.click(screen.getByRole("button", { name: "Working.md" }));
+    expect(
+      await screen.findByRole("textbox", {
+        name: "Working.md Markdown editor",
+      }),
+    ).toBeVisible();
+
+    await user.click(
+      screen.getByRole("button", { name: "Archive Working.md" }),
+    );
+    expect(mockedArchiveVaultFile).toHaveBeenCalledWith({
+      expectedContent: source,
+      relativePath,
+    });
+    expect(
+      await screen.findByRole(
+        "article",
+        {
+          name: "Working.md Markdown preview",
+        },
+        { timeout: 3_000 },
+      ),
+    ).toBeVisible();
+    expect(
+      screen.queryByRole("textbox", { name: "Working.md Markdown editor" }),
+    ).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Restore to Inbox" }));
+    expect(mockedRestoreArchivedVaultFile).toHaveBeenCalledWith({
+      destinationStatus: "inbox",
+      expectedContent: archivedSource,
+      relativePath,
+    });
+    expect(
+      await screen.findByRole(
+        "textbox",
+        {
+          name: "Working.md Markdown editor",
+        },
+        { timeout: 3_000 },
+      ),
+    ).toBeVisible();
   });
 
   it("auto-dismisses minor notices after 12 seconds", async () => {

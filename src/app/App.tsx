@@ -80,6 +80,7 @@ import {
   type NewNotificationHistoryEntry,
 } from "./notificationHistory";
 import {
+  archiveVaultFile,
   createVault,
   createVaultFolder,
   createUntitledVaultFile,
@@ -101,8 +102,10 @@ import {
   selectVault,
   restoreVaultFileFromTrash,
   restoreVaultFolderFromTrash,
+  restoreArchivedVaultFile,
   type RememberedVault,
   type TrashEntry,
+  type VaultDocument,
   type VaultSnapshot,
 } from "../lib/tauri/vault";
 
@@ -260,6 +263,9 @@ export function App() {
     string | undefined
   >();
   const [trashingDocumentId, setTrashingDocumentId] = useState<
+    string | undefined
+  >();
+  const [transitioningDocumentId, setTransitioningDocumentId] = useState<
     string | undefined
   >();
   const [vaultNotices, setVaultNotices] = useState<VaultNotice[]>([]);
@@ -532,9 +538,12 @@ export function App() {
             current.id === documentId
               ? {
                   ...current,
+                  archivedAt: savedDocument.archivedAt,
+                  createdAt: savedDocument.createdAt,
                   folder,
                   folderPath,
                   name,
+                  noteType: savedDocument.noteType,
                   relativePath: savedDocument.relativePath,
                   saveMessage: hasNonUnixLineEndings(sourceAtSave)
                     ? "Saved with Unix (LF) line endings."
@@ -542,6 +551,7 @@ export function App() {
                   saveState: hasNewerEdit ? "unsaved" : "saved",
                   savedSourceText: savedDocument.content,
                   sizeBytes: savedDocument.sizeBytes,
+                  status: savedDocument.status,
                   sourceText: hasNewerEdit
                     ? mergeCreatedMarkdownSource(
                         sourceAtSave,
@@ -628,6 +638,10 @@ export function App() {
         (candidate) => candidate.id === documentId,
       );
       if (!document || document.sourceText === undefined) return;
+      if (document.status?.trim().toLocaleLowerCase() === "archived") {
+        addVaultNotice("Restore this archived note before saving a copy.");
+        return;
+      }
 
       const sourceAtSave = document.sourceText;
       const contentAtSave = normalizeMarkdownLineEndings(sourceAtSave);
@@ -676,9 +690,12 @@ export function App() {
             current.id === documentId
               ? {
                   ...current,
+                  archivedAt: savedDocument.archivedAt,
+                  createdAt: savedDocument.createdAt,
                   folder,
                   folderPath,
                   name,
+                  noteType: savedDocument.noteType,
                   relativePath: savedDocument.relativePath,
                   saveMessage: hasNewerEdit
                     ? "The file was created, but newer local edits still need to be reconciled before saving."
@@ -688,6 +705,7 @@ export function App() {
                   saveState: hasNewerEdit ? "conflict" : "saved",
                   savedSourceText: savedDocument.content,
                   sizeBytes: savedDocument.sizeBytes,
+                  status: savedDocument.status,
                   sourceText: hasNewerEdit
                     ? current.sourceText
                     : savedDocument.content,
@@ -738,7 +756,7 @@ export function App() {
         });
       }
     },
-    [addHistoryEntry, resolveHistorySource, vaultName],
+    [addHistoryEntry, addVaultNotice, resolveHistorySource, vaultName],
   );
 
   const saveDocument = useCallback(
@@ -747,6 +765,12 @@ export function App() {
         (candidate) => candidate.id === documentId,
       );
       if (!document || document.sourceText === undefined) {
+        return;
+      }
+      if (document.status?.trim().toLocaleLowerCase() === "archived") {
+        addVaultNotice(
+          "Archived notes are read-only. Restore this note first.",
+        );
         return;
       }
       if (!document.relativePath || document.savedSourceText === undefined) {
@@ -794,6 +818,9 @@ export function App() {
             current.id === documentId
               ? {
                   ...current,
+                  archivedAt: savedDocument.archivedAt,
+                  createdAt: savedDocument.createdAt,
+                  noteType: savedDocument.noteType,
                   saveMessage: hasNewerEdit
                     ? undefined
                     : hasNonUnixLineEndings(
@@ -804,6 +831,7 @@ export function App() {
                   saveState: hasNewerEdit ? "unsaved" : "saved",
                   savedSourceText: savedDocument.content,
                   sizeBytes: savedDocument.sizeBytes,
+                  status: savedDocument.status,
                   sourceText: hasNewerEdit
                     ? current.sourceText
                     : savedDocument.content,
@@ -840,7 +868,7 @@ export function App() {
         );
       }
     },
-    [addHistoryEntry, resolveHistorySource, saveDocumentAs],
+    [addHistoryEntry, addVaultNotice, resolveHistorySource, saveDocumentAs],
   );
 
   const recordSnapshotEvents = useCallback(
@@ -1178,11 +1206,15 @@ export function App() {
           currentDocument.id === documentId
             ? {
                 ...currentDocument,
+                archivedAt: openedDocument.archivedAt,
+                createdAt: openedDocument.createdAt,
+                noteType: openedDocument.noteType,
                 sizeBytes: openedDocument.sizeBytes,
                 saveMessage: undefined,
                 saveState: "saved",
                 savedSourceText: openedDocument.content,
                 sourceText: openedDocument.content,
+                status: openedDocument.status,
               }
             : currentDocument,
         ),
@@ -1393,6 +1425,102 @@ export function App() {
     }
   }
 
+  function applyLifecycleDocument(documentId: string, result: VaultDocument) {
+    setDocuments((currentDocuments) =>
+      currentDocuments.map((current) => {
+        if (current.id !== documentId) return current;
+        const wasLoaded = current.sourceText !== undefined;
+        return {
+          ...current,
+          archivedAt: result.archivedAt,
+          createdAt: result.createdAt,
+          noteType: result.noteType,
+          savedSourceText: wasLoaded ? result.content : undefined,
+          saveMessage: undefined,
+          saveState: "saved",
+          sizeBytes: result.sizeBytes,
+          sourceText: wasLoaded ? result.content : undefined,
+          status: result.status,
+        };
+      }),
+    );
+  }
+
+  async function lifecycleExpectedContent(document: AnchoredDocument) {
+    if (document.savedSourceText !== undefined) return document.savedSourceText;
+    if (!document.relativePath) {
+      throw new Error("This note must be saved before changing its lifecycle.");
+    }
+    return (await readVaultFile(document.relativePath)).content;
+  }
+
+  async function archiveDocument(documentId: string) {
+    const document = documentsRef.current.find(
+      (candidate) => candidate.id === documentId,
+    );
+    if (!document?.relativePath || document.isMarkdown === false) return;
+    if (
+      document.saveState !== "saved" ||
+      (document.sourceText !== undefined &&
+        document.sourceText !== document.savedSourceText)
+    ) {
+      addVaultNotice("Save this note before archiving it.");
+      return;
+    }
+
+    setTransitioningDocumentId(documentId);
+    try {
+      const result = await archiveVaultFile({
+        expectedContent: await lifecycleExpectedContent(document),
+        relativePath: document.relativePath,
+      });
+      applyLifecycleDocument(documentId, result);
+      addVaultNotice(`${document.name} moved to Archive.`, {
+        history: { kind: "vault" },
+      });
+    } catch (error) {
+      addVaultNotice(readErrorMessage(error), { persistent: true });
+      addHistoryEntry(`${document.name} could not be archived safely.`, {
+        kind: "error",
+      });
+    } finally {
+      setTransitioningDocumentId(undefined);
+    }
+  }
+
+  async function restoreArchivedDocument(
+    documentId: string,
+    destinationStatus: "active" | "inbox",
+  ) {
+    const document = documentsRef.current.find(
+      (candidate) => candidate.id === documentId,
+    );
+    if (!document?.relativePath || document.isMarkdown === false) return;
+
+    setTransitioningDocumentId(documentId);
+    try {
+      const result = await restoreArchivedVaultFile({
+        destinationStatus,
+        expectedContent: await lifecycleExpectedContent(document),
+        relativePath: document.relativePath,
+      });
+      applyLifecycleDocument(documentId, result);
+      addVaultNotice(
+        `${document.name} restored to ${
+          destinationStatus === "inbox" ? "Inbox" : "Workbench"
+        }.`,
+        { history: { kind: "vault" } },
+      );
+    } catch (error) {
+      addVaultNotice(readErrorMessage(error), { persistent: true });
+      addHistoryEntry(`${document.name} could not be restored safely.`, {
+        kind: "error",
+      });
+    } finally {
+      setTransitioningDocumentId(undefined);
+    }
+  }
+
   async function trashDocument(documentId: string) {
     const document = documentsRef.current.find(
       (candidate) => candidate.id === documentId,
@@ -1498,7 +1626,12 @@ export function App() {
   }
 
   function updateDocumentContent(content: string) {
-    if (!activeDocument) return;
+    if (
+      !activeDocument ||
+      activeDocument.status?.trim().toLocaleLowerCase() === "archived"
+    ) {
+      return;
+    }
 
     const now = Date.now();
     setDocumentActivity((current) => {
@@ -1854,6 +1987,7 @@ export function App() {
           trashCount={trashEntries.length}
           vaultName={vaultName}
           vaultSelected={vaultSelected}
+          onArchiveDocument={(documentId) => void archiveDocument(documentId)}
           onCreateNote={createNote}
           onCreateFolder={(parentPath) => {
             setCreateFolderParentPath(parentPath);
@@ -1883,6 +2017,9 @@ export function App() {
             setRenameFolderError(undefined);
             setRenameFolderVisible(true);
           }}
+          onRestoreDocument={(documentId, destinationStatus) =>
+            void restoreArchivedDocument(documentId, destinationStatus)
+          }
           onSelectDocument={selectDocument}
           onToggleFolder={toggleFolder}
           onTrashDocument={(documentId) => {
@@ -1907,6 +2044,10 @@ export function App() {
           vaultName={vaultName}
           vaultSelected={vaultSelected}
           wikilinkCandidates={wikilinkCandidates}
+          lifecycleChanging={transitioningDocumentId === activeDocument?.id}
+          onArchiveDocument={() => {
+            if (activeDocument) void archiveDocument(activeDocument.id);
+          }}
           onCloseDocument={closeDocument}
           onCreateVault={() => {
             setCreateVaultError(undefined);
@@ -1931,6 +2072,14 @@ export function App() {
           }}
           onRenameDocument={() => {
             if (activeDocument) void renameDocument(activeDocument.id);
+          }}
+          onRestoreDocument={(destinationStatus) => {
+            if (activeDocument) {
+              void restoreArchivedDocument(
+                activeDocument.id,
+                destinationStatus,
+              );
+            }
           }}
           onSaveDocument={() => {
             if (activeDocument) void saveDocument(activeDocument.id);

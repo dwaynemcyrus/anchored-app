@@ -26,6 +26,8 @@ pub fn run() {
             vault::search_vault,
             vault::read_vault_file,
             vault::save_vault_file,
+            vault::archive_vault_file,
+            vault::restore_archived_vault_file,
             vault::create_vault_file,
             vault::create_untitled_vault_file,
             vault::move_vault_file_to_folder,

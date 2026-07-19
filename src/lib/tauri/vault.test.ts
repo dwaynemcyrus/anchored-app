@@ -2,6 +2,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
+  archiveVaultFile,
   createVault,
   createVaultFolder,
   createVaultFile,
@@ -17,6 +18,7 @@ import {
   renameVaultFile,
   rescanVault,
   restoreVaultFileFromTrash,
+  restoreArchivedVaultFile,
   saveVaultFile,
   searchVault,
   selectVault,
@@ -226,6 +228,29 @@ describe("vault bridge", () => {
       content: saveRequest.content,
     });
     expect(mockedInvoke).toHaveBeenCalledWith("save_vault_file", saveRequest);
+  });
+
+  it("archives and restores through expected-revision lifecycle commands", async () => {
+    const request = {
+      expectedContent: document.content,
+      relativePath: document.relativePath,
+    };
+    mockedInvoke.mockResolvedValue(document);
+
+    await expect(archiveVaultFile(request)).resolves.toEqual(document);
+    await expect(
+      restoreArchivedVaultFile({ ...request, destinationStatus: "inbox" }),
+    ).resolves.toEqual(document);
+    expect(mockedInvoke).toHaveBeenNthCalledWith(
+      1,
+      "archive_vault_file",
+      request,
+    );
+    expect(mockedInvoke).toHaveBeenNthCalledWith(
+      2,
+      "restore_archived_vault_file",
+      { ...request, destinationStatus: "inbox" },
+    );
   });
 
   it("creates a Markdown file through the Rust-owned save dialog", async () => {

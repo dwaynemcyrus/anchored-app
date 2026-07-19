@@ -81,6 +81,7 @@ type FileRailProps = {
   trashCount: number;
   vaultName: string;
   vaultSelected: boolean;
+  onArchiveDocument: (documentId: string) => void;
   onCreateFolder: (parentPath?: string) => void;
   onCreateNote: () => void;
   onDeleteFolder: (folderPath: string) => void;
@@ -89,6 +90,10 @@ type FileRailProps = {
   onQueryChange: (query: string) => void;
   onRenameDocument: (documentId: string) => void;
   onRenameFolder: (folderPath: string) => void;
+  onRestoreDocument: (
+    documentId: string,
+    destinationStatus: "active" | "inbox",
+  ) => void;
   onSelectDocument: (documentId: string) => void;
   onToggleFolder: (folder: string) => void;
   onTrashDocument: (documentId: string) => void;
@@ -173,6 +178,7 @@ function documentIsDraggable(document: AnchoredDocument): boolean {
   return (
     Boolean(document.relativePath) &&
     document.isMarkdown !== false &&
+    document.status?.trim().toLocaleLowerCase() !== "archived" &&
     document.saveState === "saved"
   );
 }
@@ -467,21 +473,28 @@ const FileTreeRow = memo(function FileTreeRow({
 
 function ContextMenu({
   menu,
+  onArchiveDocument,
   onClose,
   onCreateFolder,
   onDeleteFolder,
   onOpen,
   onRenameDocument,
   onRenameFolder,
+  onRestoreDocument,
   onTrashDocument,
 }: {
   menu: ContextMenuState;
+  onArchiveDocument: (documentId: string) => void;
   onClose: () => void;
   onCreateFolder: (parentPath?: string) => void;
   onDeleteFolder: (folderPath: string) => void;
   onOpen: (documentId: string) => void;
   onRenameDocument: (documentId: string) => void;
   onRenameFolder: (folderPath: string) => void;
+  onRestoreDocument: (
+    documentId: string,
+    destinationStatus: "active" | "inbox",
+  ) => void;
   onTrashDocument: (documentId: string) => void;
 }) {
   useEffect(() => {
@@ -495,6 +508,9 @@ function ContextMenu({
   const item = menu.item;
   const editableFile =
     item.kind === "file" && item.document.isMarkdown !== false;
+  const archivedFile =
+    editableFile &&
+    item.document.status?.trim().toLocaleLowerCase() === "archived";
   return (
     <div
       aria-label="File tree actions"
@@ -513,7 +529,7 @@ function ContextMenu({
           >
             Open
           </button>
-          {editableFile ? (
+          {editableFile && !archivedFile ? (
             <>
               <button
                 role="menuitem"
@@ -521,6 +537,38 @@ function ContextMenu({
                 onClick={() => onRenameDocument(item.document.id)}
               >
                 Rename
+              </button>
+              <button
+                role="menuitem"
+                type="button"
+                onClick={() => onArchiveDocument(item.document.id)}
+              >
+                Archive
+              </button>
+              <button
+                role="menuitem"
+                type="button"
+                onClick={() => onTrashDocument(item.document.id)}
+              >
+                Move to Trash
+              </button>
+            </>
+          ) : null}
+          {archivedFile ? (
+            <>
+              <button
+                role="menuitem"
+                type="button"
+                onClick={() => onRestoreDocument(item.document.id, "inbox")}
+              >
+                Restore to Inbox
+              </button>
+              <button
+                role="menuitem"
+                type="button"
+                onClick={() => onRestoreDocument(item.document.id, "active")}
+              >
+                Restore to Workbench
               </button>
               <button
                 role="menuitem"
@@ -571,6 +619,7 @@ export function FileRail({
   trashCount,
   vaultName,
   vaultSelected,
+  onArchiveDocument,
   onCreateFolder,
   onCreateNote,
   onDeleteFolder,
@@ -579,6 +628,7 @@ export function FileRail({
   onQueryChange,
   onRenameDocument,
   onRenameFolder,
+  onRestoreDocument,
   onSelectDocument,
   onToggleFolder,
   onTrashDocument,
@@ -791,7 +841,7 @@ export function FileRail({
         item.kind === "folder" ? `folder:${item.path}` : item.document.id,
       );
       const menuWidth = 190;
-      const menuHeight = 124;
+      const menuHeight = 172;
       setContextMenu({
         item,
         x: Math.max(8, Math.min(event.clientX, window.innerWidth - menuWidth)),
@@ -1083,6 +1133,9 @@ export function FileRail({
       {contextMenu ? (
         <ContextMenu
           menu={contextMenu}
+          onArchiveDocument={(id) =>
+            runContextAction(() => onArchiveDocument(id))
+          }
           onClose={closeContextMenu}
           onCreateFolder={(path) =>
             runContextAction(() => onCreateFolder(path))
@@ -1096,6 +1149,9 @@ export function FileRail({
           }
           onRenameFolder={(path) =>
             runContextAction(() => onRenameFolder(path))
+          }
+          onRestoreDocument={(id, destinationStatus) =>
+            runContextAction(() => onRestoreDocument(id, destinationStatus))
           }
           onTrashDocument={(id) => runContextAction(() => onTrashDocument(id))}
         />

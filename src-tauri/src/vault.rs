@@ -9,6 +9,7 @@ use std::{
     },
 };
 
+use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Manager, State};
 use tauri_plugin_dialog::DialogExt;
@@ -21,7 +22,10 @@ use crate::continuity::{
     restore_folder_from_trash, restore_note_from_trash, RememberedVault, TrashEntry,
 };
 use crate::links::{plan_rename_link_rewrites_by_path, LinkNote, LinkSource};
-use crate::metadata::{inspect_note_aliases, inspect_note_properties, inspect_wikilinks};
+use crate::metadata::{
+    archive_note, inspect_note_aliases, inspect_note_properties, inspect_wikilinks, restore_note,
+    stamp_note_created_at,
+};
 
 const MAX_VAULT_ENTRIES: usize = 50_000;
 const MAX_VAULT_DEPTH: usize = 64;
@@ -122,9 +126,17 @@ struct PersistedVaultIndex {
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct VaultDocument {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub archived_at: Option<String>,
     pub content: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub created_at: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub note_type: Option<String>,
     pub relative_path: String,
     pub size_bytes: u64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub status: Option<String>,
 }
 
 #[derive(Debug, PartialEq, Eq, Serialize)]
@@ -259,6 +271,21 @@ impl VaultError {
         Self {
             code: "vaultConflict",
             message: "This Markdown file changed outside Anchored. Your local edits were kept and were not saved over the external version.".to_owned(),
+        }
+    }
+
+    fn archived_read_only() -> Self {
+        Self {
+            code: "archivedReadOnly",
+            message: "Archived notes are read-only. Restore this note before editing it."
+                .to_owned(),
+        }
+    }
+
+    fn lifecycle(message: impl Into<String>) -> Self {
+        Self {
+            code: "unsafeLifecycleMetadata",
+            message: message.into(),
         }
     }
 
@@ -586,6 +613,37 @@ pub async fn save_vault_file(
         .ok_or_else(|| VaultError::state("Select a vault before saving a Markdown file."))?;
 
     save_markdown_file(&root, &relative_path, &content, &expected_content)
+}
+
+#[tauri::command]
+pub async fn archive_vault_file(
+    state: State<'_, VaultState>,
+    relative_path: String,
+    expected_content: String,
+) -> Result<VaultDocument, VaultError> {
+    let root = selected_vault_root(&state, "archiving a Markdown file")?;
+    transition_markdown_lifecycle(
+        &root,
+        &relative_path,
+        &expected_content,
+        LifecycleTransition::Archive,
+    )
+}
+
+#[tauri::command]
+pub async fn restore_archived_vault_file(
+    state: State<'_, VaultState>,
+    relative_path: String,
+    expected_content: String,
+    destination_status: String,
+) -> Result<VaultDocument, VaultError> {
+    let root = selected_vault_root(&state, "restoring an archived Markdown file")?;
+    transition_markdown_lifecycle(
+        &root,
+        &relative_path,
+        &expected_content,
+        LifecycleTransition::Restore(destination_status),
+    )
 }
 
 #[tauri::command]
@@ -1506,6 +1564,28 @@ fn vault_file_signature(root: &Path, relative_path: &str) -> Result<FileSignatur
     Ok(file_signature_from_metadata(&metadata))
 }
 
+enum LifecycleTransition {
+    Archive,
+    Restore(String),
+}
+
+fn current_utc_timestamp() -> String {
+    Utc::now().format("%Y-%m-%dT%H:%M:%SZ").to_string()
+}
+
+fn vault_document(content: String, relative_path: String, size_bytes: u64) -> VaultDocument {
+    let properties = inspect_note_properties(&content);
+    VaultDocument {
+        archived_at: properties.archived_at,
+        content,
+        created_at: properties.created_at,
+        note_type: properties.note_type,
+        relative_path,
+        size_bytes,
+        status: properties.status,
+    }
+}
+
 fn read_markdown_file(root: &Path, relative_path: &str) -> Result<VaultDocument, VaultError> {
     let canonical_file = resolve_vault_markdown_file(root, relative_path)?;
     let metadata = fs::metadata(&canonical_file)
@@ -1518,11 +1598,11 @@ fn read_markdown_file(root: &Path, relative_path: &str) -> Result<VaultDocument,
         .map_err(|error| VaultError::io("The Markdown file could not be read", error))?;
     let content = String::from_utf8(bytes).map_err(|_| VaultError::invalid_encoding())?;
 
-    Ok(VaultDocument {
+    Ok(vault_document(
         content,
-        relative_path: relative_path.to_owned(),
-        size_bytes: metadata.len(),
-    })
+        relative_path.to_owned(),
+        metadata.len(),
+    ))
 }
 
 fn save_markdown_file(
@@ -1539,6 +1619,14 @@ fn save_markdown_file(
     if current_content != expected_content {
         return Err(VaultError::conflict());
     }
+    if inspect_note_properties(&current_content).status.as_deref() == Some("archived") {
+        return Err(VaultError::archived_read_only());
+    }
+    if inspect_note_properties(content).status.as_deref() == Some("archived") {
+        return Err(VaultError::lifecycle(
+            "Use the Archive action so Anchored can write archived_at safely.",
+        ));
+    }
     if content.len() as u64 > MAX_MARKDOWN_FILE_BYTES {
         return Err(VaultError::file_too_large());
     }
@@ -1553,11 +1641,70 @@ fn save_markdown_file(
     write_result?;
 
     let size_bytes = content.len() as u64;
-    Ok(VaultDocument {
-        content: content.to_owned(),
-        relative_path: relative_path.to_owned(),
+    Ok(vault_document(
+        content.to_owned(),
+        relative_path.to_owned(),
         size_bytes,
-    })
+    ))
+}
+
+fn transition_markdown_lifecycle(
+    root: &Path,
+    relative_path: &str,
+    expected_content: &str,
+    transition: LifecycleTransition,
+) -> Result<VaultDocument, VaultError> {
+    let canonical_file = resolve_vault_markdown_file(root, relative_path)?;
+    let current_bytes = fs::read(&canonical_file)
+        .map_err(|error| VaultError::io("The Markdown file could not be read", error))?;
+    let current_content =
+        String::from_utf8(current_bytes).map_err(|_| VaultError::invalid_encoding())?;
+    if current_content != expected_content {
+        return Err(VaultError::conflict());
+    }
+
+    let current_status = inspect_note_properties(&current_content).status;
+    let updated = match transition {
+        LifecycleTransition::Archive => {
+            if current_status.as_deref() == Some("archived") {
+                return Err(VaultError::archived_read_only());
+            }
+            archive_note(&current_content, &current_utc_timestamp())
+        }
+        LifecycleTransition::Restore(destination_status) => {
+            if current_status.as_deref() != Some("archived") {
+                return Err(VaultError::lifecycle(
+                    "Only archived notes can be restored to an editable collection.",
+                ));
+            }
+            restore_note(&current_content, &destination_status)
+        }
+    }
+    .map_err(|error| {
+        VaultError::lifecycle(format!(
+            "Anchored could not update this note's lifecycle metadata: {error}."
+        ))
+    })?;
+    if updated.len() as u64 > MAX_MARKDOWN_FILE_BYTES {
+        return Err(VaultError::file_too_large());
+    }
+
+    let metadata = fs::metadata(&canonical_file)
+        .map_err(|error| VaultError::io("The Markdown file could not be inspected", error))?;
+    let temporary_path = temporary_sibling_path(&canonical_file)?;
+    let write_result = write_atomically(&temporary_path, &canonical_file, &updated, &metadata);
+    if write_result.is_err() {
+        let _ = fs::remove_file(&temporary_path);
+    }
+    write_result?;
+
+    Ok(vault_document(
+        updated,
+        relative_path.to_owned(),
+        fs::metadata(&canonical_file)
+            .map_err(|error| VaultError::io("The Markdown file could not be inspected", error))?
+            .len(),
+    ))
 }
 
 fn create_markdown_file(
@@ -1565,27 +1712,35 @@ fn create_markdown_file(
     destination: &Path,
     content: &str,
 ) -> Result<VaultDocument, VaultError> {
+    let timestamp = current_utc_timestamp();
+    let mut content = stamp_note_created_at(content, &timestamp).map_err(|error| {
+        VaultError::lifecycle(format!(
+            "Anchored could not add creation metadata safely: {error}."
+        ))
+    })?;
+    if inspect_note_properties(&content).status.as_deref() == Some("archived") {
+        content = archive_note(&content, &timestamp).map_err(|error| {
+            VaultError::lifecycle(format!(
+                "Anchored could not add archive metadata safely: {error}."
+            ))
+        })?;
+    }
     if content.len() as u64 > MAX_MARKDOWN_FILE_BYTES {
         return Err(VaultError::file_too_large());
     }
 
     let (destination, relative_path) = resolve_new_vault_markdown_file(root, destination)?;
     let temporary_path = temporary_sibling_path(&destination)?;
-    let write_result = write_new_atomically(&temporary_path, &destination, content);
+    let write_result = write_new_atomically(&temporary_path, &destination, &content);
     if write_result.is_err() {
         let _ = fs::remove_file(&temporary_path);
     }
     write_result?;
 
-    Ok(VaultDocument {
-        content: content.to_owned(),
-        relative_path,
-        size_bytes: fs::metadata(&destination)
-            .map_err(|error| {
-                VaultError::io("The created Markdown file could not be inspected", error)
-            })?
-            .len(),
-    })
+    let size_bytes = fs::metadata(&destination)
+        .map_err(|error| VaultError::io("The created Markdown file could not be inspected", error))?
+        .len();
+    Ok(vault_document(content, relative_path, size_bytes))
 }
 
 fn rename_markdown_file(
@@ -2342,9 +2497,10 @@ mod tests {
         enrich_vault_metadata_cached, move_markdown_file_to_folder, read_markdown_file,
         recover_rename_transaction, rename_folder, rename_markdown_file,
         resolve_new_vault_markdown_file, save_markdown_file, scan_vault, search_markdown_files,
-        validate_folder_name, validate_new_vault_name, write_rename_journal, RenameJournal,
-        RenameJournalEntry, RenameJournalPhase, RenameOutcome, VaultMetadataCache,
-        MAX_MARKDOWN_FILE_BYTES, MAX_SEARCH_RESULTS, RENAME_JOURNAL_NAME,
+        transition_markdown_lifecycle, validate_folder_name, validate_new_vault_name,
+        write_rename_journal, LifecycleTransition, RenameJournal, RenameJournalEntry,
+        RenameJournalPhase, RenameOutcome, VaultMetadataCache, MAX_MARKDOWN_FILE_BYTES,
+        MAX_SEARCH_RESULTS, RENAME_JOURNAL_NAME,
     };
 
     #[test]
@@ -2732,6 +2888,77 @@ mod tests {
     }
 
     #[test]
+    fn archives_restores_and_guards_read_only_notes_atomically() {
+        let vault = tempdir().expect("create fixture vault");
+        let note = vault.path().join("Note.md");
+        let original = "---\nstatus: active\n---\n# Note\n";
+        fs::write(&note, original).expect("write note");
+
+        let archived = transition_markdown_lifecycle(
+            vault.path(),
+            "Note.md",
+            original,
+            LifecycleTransition::Archive,
+        )
+        .expect("archive note");
+        assert_eq!(archived.status.as_deref(), Some("archived"));
+        assert!(archived.archived_at.is_some());
+        assert_eq!(
+            fs::read_to_string(&note).expect("read archived note"),
+            archived.content
+        );
+
+        let save_error = save_markdown_file(
+            vault.path(),
+            "Note.md",
+            "# Illicit edit\n",
+            &archived.content,
+        )
+        .expect_err("refuse archived save");
+        assert_eq!(save_error.code, "archivedReadOnly");
+
+        let restored = transition_markdown_lifecycle(
+            vault.path(),
+            "Note.md",
+            &archived.content,
+            LifecycleTransition::Restore("active".to_owned()),
+        )
+        .expect("restore note");
+        assert_eq!(restored.status.as_deref(), Some("active"));
+        assert_eq!(restored.archived_at, None);
+        assert!(!restored.content.contains("archived_at:"));
+
+        let saved = save_markdown_file(
+            vault.path(),
+            "Note.md",
+            &format!("{}Edited\n", restored.content),
+            &restored.content,
+        )
+        .expect("save restored note");
+        assert!(saved.content.ends_with("Edited\n"));
+    }
+
+    #[test]
+    fn lifecycle_transitions_preserve_external_changes() {
+        let vault = tempdir().expect("create fixture vault");
+        fs::write(vault.path().join("Note.md"), "# External\n").expect("write note");
+
+        let error = transition_markdown_lifecycle(
+            vault.path(),
+            "Note.md",
+            "# Stale\n",
+            LifecycleTransition::Archive,
+        )
+        .expect_err("reject stale archive");
+
+        assert_eq!(error.code, "vaultConflict");
+        assert_eq!(
+            fs::read_to_string(vault.path().join("Note.md")).expect("read note"),
+            "# External\n"
+        );
+    }
+
+    #[test]
     fn preserves_local_edits_when_the_file_changes_externally() {
         let vault = tempdir().expect("create fixture vault");
         let note = vault.path().join("Note.md");
@@ -2762,7 +2989,8 @@ mod tests {
             .expect("create Markdown file");
 
         assert_eq!(document.relative_path, "Notes/New note.md");
-        assert_eq!(document.content, "# New note\n");
+        assert!(document.content.ends_with("\n# New note\n"));
+        assert!(document.created_at.is_some());
         assert_eq!(document.size_bytes, document.content.len() as u64);
         assert_eq!(
             fs::read_to_string(&destination).expect("read created note"),
@@ -2787,7 +3015,8 @@ mod tests {
             create_untitled_markdown_file(vault.path(), "").expect("create numbered untitled note");
 
         assert_eq!(document.relative_path, "Untitled 3.md");
-        assert!(document.content.is_empty());
+        assert!(document.content.contains("created_at:"));
+        assert!(document.created_at.is_some());
         assert_eq!(
             fs::read_to_string(vault.path().join("Untitled.md")).expect("read first note"),
             "# First\n"
@@ -2828,16 +3057,16 @@ mod tests {
     }
 
     #[test]
-    fn preserves_unknown_or_malformed_front_matter_during_creation() {
+    fn refuses_malformed_front_matter_during_lifecycle_stamping() {
         let vault = tempdir().expect("create fixture vault");
         let destination = vault.path().join("Unsafe.md");
         let content = "---\ntags: [unfinished\n---\n# Unsafe\n";
 
-        let document = create_markdown_file(vault.path(), &destination, content)
-            .expect("create note without interpreting metadata");
+        let error = create_markdown_file(vault.path(), &destination, content)
+            .expect_err("refuse unsafe creation metadata mutation");
 
-        assert_eq!(document.content, content);
-        assert_eq!(fs::read_to_string(destination).expect("read note"), content);
+        assert_eq!(error.code, "unsafeLifecycleMetadata");
+        assert!(!destination.exists());
     }
 
     #[test]
@@ -2850,8 +3079,8 @@ mod tests {
         let document =
             create_markdown_file(vault.path(), &destination, &content).expect("create copy");
 
-        assert_eq!(document.content, content);
         assert!(document.content.contains(original_id));
+        assert!(document.created_at.is_some());
     }
 
     #[test]

@@ -1056,7 +1056,7 @@ and preserves link integrity across filename changes.
       duplicate-path labels, cross-view selection, and a 700-note model under
       the 100 ms classification budget.
 
-21G. [ ] **Chunk: Add lifecycle timestamps and read-only Archive**
+21G. [x] **Chunk: Add lifecycle timestamps and read-only Archive**
     - Expected files: `src-tauri/src/metadata.rs`, lifecycle mutation commands
       and tests, typed bridge, Archive/read-view components, `App.tsx`, and
       `CHANGELOG.md`.
@@ -1077,6 +1077,13 @@ and preserves link integrity across filename changes.
       write atomically, and test only on synthetic or backed-up vaults first.
     - Expected changelog: New notes receive UTC creation timestamps; archived
       notes receive archive timestamps and remain read-only until restored.
+    - Verification result: Native source-preserving mutations now write
+      second-precision UTC `created_at` and `archived_at`, retain unrelated
+      YAML order/comments/quotes plus BOM/line endings, and refuse malformed,
+      duplicate, stale, or archived save inputs. Archive opens directly in the
+      sanitized Preview and restores to `inbox` or `active` before editing.
+      Rust and frontend tests cover atomic transitions, conflicts, read-only
+      enforcement, creation/Save As plumbing, and the rendered restore flow.
 
 21H. [ ] **Chunk: Add the lightweight local Scratchpad**
     - Expected files: a separate Scratchpad frontend entry and minimal styles,

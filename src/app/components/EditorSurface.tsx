@@ -21,6 +21,8 @@ type EditorSurfaceProps = {
   vaultName: string;
   vaultSelected: boolean;
   wikilinkCandidates: WikilinkCandidate[];
+  lifecycleChanging: boolean;
+  onArchiveDocument: () => void;
   onCloseDocument: () => void;
   onCreateVault: () => void;
   onDocumentChange: (content: string) => void;
@@ -31,6 +33,7 @@ type EditorSurfaceProps = {
   onOpenWikilink: (target: string) => void;
   onRetryDocument: () => void;
   onRenameDocument: () => void;
+  onRestoreDocument: (destinationStatus: "active" | "inbox") => void;
   onSaveDocument: () => void;
   onSaveDocumentAs: () => void;
   onTrashDocument: () => void;
@@ -49,6 +52,8 @@ export function EditorSurface({
   vaultName,
   vaultSelected,
   wikilinkCandidates,
+  lifecycleChanging,
+  onArchiveDocument,
   onCloseDocument,
   onCreateVault,
   onDocumentChange,
@@ -59,6 +64,7 @@ export function EditorSurface({
   onOpenWikilink,
   onRetryDocument,
   onRenameDocument,
+  onRestoreDocument,
   onSaveDocument,
   onSaveDocumentAs,
   onTrashDocument,
@@ -120,6 +126,8 @@ export function EditorSurface({
     );
   }
 
+  const archived = document.status?.trim().toLocaleLowerCase() === "archived";
+
   const frontMatter = [
     "---",
     `aliases: [${document.aliases.join(", ")}]`,
@@ -136,12 +144,13 @@ export function EditorSurface({
           <span>{document.name}</span>
         </span>
         <div className="editor-surface__actions">
-          {document.relativePath ? (
+          {document.relativePath && !archived ? (
             <button
               aria-label={`Move ${document.name}`}
               className="editor-surface__action"
               disabled={
                 moving ||
+                lifecycleChanging ||
                 renaming ||
                 trashing ||
                 document.saveState !== "saved" ||
@@ -153,12 +162,13 @@ export function EditorSurface({
               {moving ? "Moving…" : "Move"}
             </button>
           ) : null}
-          {document.relativePath ? (
+          {document.relativePath && !archived ? (
             <button
               aria-label={`Rename ${document.name}`}
               className="editor-surface__action"
               disabled={
                 moving ||
+                lifecycleChanging ||
                 renaming ||
                 document.saveState !== "saved" ||
                 loadState.status === "loading"
@@ -169,7 +179,7 @@ export function EditorSurface({
               {renaming ? "Renaming…" : "Rename"}
             </button>
           ) : null}
-          {document.sourceText !== undefined ? (
+          {document.sourceText !== undefined && !archived ? (
             <button
               aria-pressed={previewVisible}
               className="editor-surface__action"
@@ -183,16 +193,54 @@ export function EditorSurface({
               {previewVisible ? "Edit source" : "Preview"}
             </button>
           ) : null}
-          {document.sourceText !== undefined ? (
+          {document.sourceText !== undefined && !archived ? (
             <button
               aria-label={`Save ${document.name} as`}
               className="editor-surface__action"
-              disabled={moving || renaming || trashing}
+              disabled={moving || lifecycleChanging || renaming || trashing}
               type="button"
               onClick={onSaveDocumentAs}
             >
               Save as
             </button>
+          ) : null}
+          {document.relativePath && !archived ? (
+            <button
+              aria-label={`Archive ${document.name}`}
+              className="editor-surface__action"
+              disabled={
+                lifecycleChanging ||
+                moving ||
+                renaming ||
+                trashing ||
+                document.saveState !== "saved" ||
+                loadState.status === "loading"
+              }
+              type="button"
+              onClick={onArchiveDocument}
+            >
+              {lifecycleChanging ? "Archiving…" : "Archive"}
+            </button>
+          ) : null}
+          {document.relativePath && archived ? (
+            <>
+              <button
+                className="editor-surface__action"
+                disabled={lifecycleChanging || trashing}
+                type="button"
+                onClick={() => onRestoreDocument("inbox")}
+              >
+                {lifecycleChanging ? "Restoring…" : "Restore to Inbox"}
+              </button>
+              <button
+                className="editor-surface__action"
+                disabled={lifecycleChanging || trashing}
+                type="button"
+                onClick={() => onRestoreDocument("active")}
+              >
+                Restore to Workbench
+              </button>
+            </>
           ) : null}
           {document.relativePath ? (
             <button
@@ -200,6 +248,7 @@ export function EditorSurface({
               className="editor-surface__action"
               disabled={
                 moving ||
+                lifecycleChanging ||
                 renaming ||
                 trashing ||
                 document.saveState !== "saved" ||
@@ -214,7 +263,7 @@ export function EditorSurface({
           <button
             aria-label={`Close ${document.name}`}
             className="editor-surface__action"
-            disabled={moving || renaming || trashing}
+            disabled={moving || lifecycleChanging || renaming || trashing}
             type="button"
             onClick={onCloseDocument}
           >
@@ -242,7 +291,7 @@ export function EditorSurface({
             </div>
           ) : null
         ) : document.sourceText !== undefined ? (
-          previewVisible ? (
+          archived || previewVisible ? (
             <Suspense
               fallback={
                 <p className="document__empty" role="status">

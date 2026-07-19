@@ -53,9 +53,13 @@ export type TrashMutationResult = {
 };
 
 export type VaultDocument = {
+  archivedAt?: string;
   content: string;
+  createdAt?: string;
+  noteType?: string;
   relativePath: string;
   sizeBytes: number;
+  status?: string;
 };
 
 export type VaultSearchResult = {
@@ -78,6 +82,15 @@ export type SaveVaultFileRequest = {
 export type CreateVaultFileRequest = {
   content: string;
   suggestedName: string;
+};
+
+export type LifecycleVaultFileRequest = {
+  expectedContent: string;
+  relativePath: string;
+};
+
+export type RestoreArchivedVaultFileRequest = LifecycleVaultFileRequest & {
+  destinationStatus: "active" | "inbox";
 };
 
 export type CreateVaultRequest = {
@@ -192,6 +205,18 @@ export function saveVaultFile(
   request: SaveVaultFileRequest,
 ): Promise<VaultDocument> {
   return invoke<VaultDocument>("save_vault_file", request);
+}
+
+export function archiveVaultFile(
+  request: LifecycleVaultFileRequest,
+): Promise<VaultDocument> {
+  return invoke<VaultDocument>("archive_vault_file", request);
+}
+
+export function restoreArchivedVaultFile(
+  request: RestoreArchivedVaultFileRequest,
+): Promise<VaultDocument> {
+  return invoke<VaultDocument>("restore_archived_vault_file", request);
 }
 
 export function createVaultFile(
