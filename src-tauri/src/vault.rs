@@ -1,16 +1,16 @@
 use std::{
-    collections::{BTreeMap, HashSet},
+    collections::{BTreeMap, HashMap, HashSet},
     fs,
     fs::OpenOptions,
     path::{Component, Path, PathBuf},
     sync::{
         atomic::{AtomicU64, Ordering},
-        Mutex, RwLock,
+        Arc, Mutex, RwLock,
     },
 };
 
 use serde::{Deserialize, Serialize};
-use tauri::{AppHandle, State};
+use tauri::{AppHandle, Manager, State};
 use tauri_plugin_dialog::DialogExt;
 
 use crate::continuity::{
@@ -21,7 +21,7 @@ use crate::continuity::{
     restore_folder_from_trash, restore_note_from_trash, RememberedVault, TrashEntry,
 };
 use crate::links::{plan_rename_link_rewrites_by_path, LinkNote, LinkSource};
-use crate::metadata::{inspect_note_aliases, inspect_wikilinks};
+use crate::metadata::{inspect_note_aliases, inspect_note_properties, inspect_wikilinks};
 
 const MAX_VAULT_ENTRIES: usize = 50_000;
 const MAX_VAULT_DEPTH: usize = 64;
@@ -34,6 +34,7 @@ static TEMPORARY_FILE_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 #[derive(Default)]
 pub struct VaultState {
+    metadata_cache: Arc<Mutex<VaultMetadataCache>>,
     rename_transaction: Mutex<()>,
     root: RwLock<Option<PathBuf>>,
 }
@@ -42,10 +43,20 @@ pub struct VaultState {
 #[serde(rename_all = "camelCase")]
 pub struct VaultFile {
     pub aliases: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub archived_at: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub created_at: Option<String>,
+    #[serde(skip)]
+    signature: Option<FileSignature>,
     pub outgoing_links: Vec<String>,
     pub name: String,
     pub parent: String,
     pub relative_path: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub status: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub note_type: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -79,6 +90,33 @@ pub struct VaultSnapshot {
 struct FileSignature {
     size_bytes: u64,
     modified_millis: u64,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct CachedNoteMetadata {
+    aliases: Vec<String>,
+    archived_at: Option<String>,
+    created_at: Option<String>,
+    note_type: Option<String>,
+    outgoing_links: Vec<String>,
+    signature: FileSignature,
+    status: Option<String>,
+}
+
+#[derive(Debug, Default)]
+struct VaultMetadataCache {
+    entries: HashMap<String, CachedNoteMetadata>,
+    last_refresh_reads: usize,
+    vault_id: String,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct PersistedVaultIndex {
+    entries: BTreeMap<String, CachedNoteMetadata>,
+    vault_id: String,
+    version: u32,
 }
 
 #[derive(Debug, Serialize)]
@@ -295,7 +333,7 @@ pub async fn create_vault_folder(
     let root = selected_vault_root(&state, "creating a folder")?;
     recover_rename_transaction(&root)?;
     create_folder(&root, parent_path.as_deref(), &name)?;
-    build_vault_snapshot(&app, &root)
+    build_vault_snapshot(&app, &root, state.metadata_cache.as_ref())
 }
 
 #[tauri::command]
@@ -312,7 +350,7 @@ pub async fn rename_vault_folder(
     let root = selected_vault_root(&state, "renaming a folder")?;
     recover_rename_transaction(&root)?;
     rename_folder(&root, &folder_path, &name)?;
-    build_vault_snapshot(&app, &root)
+    build_vault_snapshot(&app, &root, state.metadata_cache.as_ref())
 }
 
 #[tauri::command]
@@ -328,7 +366,7 @@ pub async fn delete_vault_folder(
     let root = selected_vault_root(&state, "deleting a folder")?;
     recover_rename_transaction(&root)?;
     delete_empty_folder(&root, &folder_path)?;
-    build_vault_snapshot(&app, &root)
+    build_vault_snapshot(&app, &root, state.metadata_cache.as_ref())
 }
 
 #[tauri::command]
@@ -350,7 +388,7 @@ pub async fn move_vault_folder_to_trash(
     let root = selected_vault_root(&state, "moving a folder to Trash")?;
     recover_rename_transaction(&root)?;
     let entry = move_folder_to_trash(&root, &folder_path, current_time_millis())?;
-    let snapshot = build_vault_snapshot(&app, &root)?;
+    let snapshot = build_vault_snapshot(&app, &root, state.metadata_cache.as_ref())?;
     Ok(TrashMutationResult { entry, snapshot })
 }
 
@@ -391,7 +429,12 @@ pub async fn rescan_vault(
     let Some(root) = root else {
         return Ok(None);
     };
-    build_vault_snapshot(&app, &root).map(Some)
+    let cache = Arc::clone(&state.metadata_cache);
+    tauri::async_runtime::spawn_blocking(move || {
+        build_vault_snapshot(&app, &root, cache.as_ref()).map(Some)
+    })
+    .await
+    .map_err(|error| VaultError::state(format!("Vault refresh could not finish: {error}")))?
 }
 
 #[tauri::command]
@@ -412,7 +455,7 @@ pub async fn move_vault_file_to_trash(
         .map_err(|_| VaultError::state("The vault file operation lock could not be acquired."))?;
     let root = selected_vault_root(&state, "moving a note to Trash")?;
     let entry = move_note_to_trash(&root, &relative_path, current_time_millis())?;
-    let snapshot = build_vault_snapshot(&app, &root)?;
+    let snapshot = build_vault_snapshot(&app, &root, state.metadata_cache.as_ref())?;
     Ok(TrashMutationResult { entry, snapshot })
 }
 
@@ -428,7 +471,7 @@ pub async fn restore_vault_file_from_trash(
         .map_err(|_| VaultError::state("The vault file operation lock could not be acquired."))?;
     let root = selected_vault_root(&state, "restoring a note from Trash")?;
     let entry = restore_note_from_trash(&root, &trash_id)?;
-    let snapshot = build_vault_snapshot(&app, &root)?;
+    let snapshot = build_vault_snapshot(&app, &root, state.metadata_cache.as_ref())?;
     Ok(TrashMutationResult { entry, snapshot })
 }
 
@@ -444,7 +487,7 @@ pub async fn restore_vault_folder_from_trash(
         .map_err(|_| VaultError::state("The vault file operation lock could not be acquired."))?;
     let root = selected_vault_root(&state, "restoring a folder from Trash")?;
     let entry = restore_folder_from_trash(&root, &trash_id)?;
-    let snapshot = build_vault_snapshot(&app, &root)?;
+    let snapshot = build_vault_snapshot(&app, &root, state.metadata_cache.as_ref())?;
     Ok(TrashMutationResult { entry, snapshot })
 }
 
@@ -465,7 +508,7 @@ fn activate_vault(
     state: &State<'_, VaultState>,
     root: PathBuf,
 ) -> Result<VaultSnapshot, VaultError> {
-    let snapshot = build_vault_snapshot(app, &root)?;
+    let snapshot = build_vault_snapshot(app, &root, state.metadata_cache.as_ref())?;
     remember_vault(
         &registry_path(app)?,
         &root,
@@ -481,12 +524,18 @@ fn activate_vault(
     Ok(snapshot)
 }
 
-fn build_vault_snapshot(_app: &AppHandle, root: &Path) -> Result<VaultSnapshot, VaultError> {
+fn build_vault_snapshot(
+    app: &AppHandle,
+    root: &Path,
+    cache: &Mutex<VaultMetadataCache>,
+) -> Result<VaultSnapshot, VaultError> {
     let vault_id = ensure_vault_identity(root)?;
     recover_rename_transaction(root)?;
     let mut snapshot = scan_vault(root)?;
+    prepare_metadata_cache(app, &vault_id, cache)?;
     snapshot.vault_id = vault_id;
-    enrich_vault_metadata(root, &mut snapshot.files)?;
+    enrich_vault_metadata_cached(root, &mut snapshot.files, cache)?;
+    persist_metadata_cache(app, cache)?;
     Ok(snapshot)
 }
 
@@ -1119,12 +1168,20 @@ fn scan_vault(root: &Path) -> Result<VaultSnapshot, VaultError> {
                 .to_owned();
 
             if is_markdown(&entry.path()) {
+                let metadata = fs::metadata(&canonical_file).map_err(|error| {
+                    VaultError::io("A Markdown file could not be inspected", error)
+                })?;
                 files.push(VaultFile {
                     aliases: Vec::new(),
+                    archived_at: None,
+                    created_at: None,
+                    signature: Some(file_signature_from_metadata(&metadata)),
                     outgoing_links: Vec::new(),
                     name,
                     parent,
                     relative_path: relative_path.to_owned(),
+                    status: None,
+                    note_type: None,
                 });
             } else {
                 assets.push(VaultAsset {
@@ -1262,46 +1319,191 @@ fn search_snippet(line: &str, match_character_index: usize) -> String {
     snippet
 }
 
-fn enrich_vault_metadata(root: &Path, files: &mut [VaultFile]) -> Result<(), VaultError> {
-    let mut indexed = Vec::with_capacity(files.len());
+fn metadata_index_path(app: &AppHandle, vault_id: &str) -> Result<PathBuf, VaultError> {
+    let directory = app
+        .path()
+        .app_data_dir()
+        .map_err(|error| {
+            VaultError::state(format!("The vault index location is unavailable: {error}"))
+        })?
+        .join("vault-indexes");
+    fs::create_dir_all(&directory)
+        .map_err(|error| VaultError::io("The vault index directory could not be created", error))?;
+    Ok(directory.join(format!("{vault_id}.json")))
+}
 
-    for file in files.iter() {
-        let signature = vault_file_signature(root, &file.relative_path)?;
-        if signature.size_bytes > MAX_MARKDOWN_FILE_BYTES {
-            indexed.push((Vec::new(), Vec::new()));
-            continue;
-        }
-        let path = resolve_vault_markdown_file(root, &file.relative_path)?;
-        let bytes = fs::read(path)
-            .map_err(|error| VaultError::io("Note metadata could not be read", error))?;
-        let Ok(content) = String::from_utf8(bytes) else {
-            indexed.push((Vec::new(), Vec::new()));
-            continue;
-        };
-        indexed.push((inspect_note_aliases(&content), inspect_wikilinks(&content)));
+fn prepare_metadata_cache(
+    app: &AppHandle,
+    vault_id: &str,
+    cache: &Mutex<VaultMetadataCache>,
+) -> Result<(), VaultError> {
+    let mut cache = cache
+        .lock()
+        .map_err(|_| VaultError::state("The vault metadata cache could not be prepared."))?;
+    if cache.vault_id == vault_id {
+        return Ok(());
     }
 
-    for (file, (aliases, outgoing_links)) in files.iter_mut().zip(indexed) {
-        file.aliases = aliases;
-        file.outgoing_links = outgoing_links;
-    }
+    let path = metadata_index_path(app, vault_id)?;
+    let persisted = fs::read(path)
+        .ok()
+        .and_then(|bytes| serde_json::from_slice::<PersistedVaultIndex>(&bytes).ok())
+        .filter(|index| index.version == 1 && index.vault_id == vault_id);
+    cache.vault_id = vault_id.to_owned();
+    cache.entries = persisted
+        .map(|index| index.entries.into_iter().collect())
+        .unwrap_or_default();
+    cache.last_refresh_reads = 0;
     Ok(())
 }
 
-fn vault_file_signature(root: &Path, relative_path: &str) -> Result<FileSignature, VaultError> {
+fn persist_metadata_cache(
+    app: &AppHandle,
+    cache: &Mutex<VaultMetadataCache>,
+) -> Result<(), VaultError> {
+    let cache = cache
+        .lock()
+        .map_err(|_| VaultError::state("The vault metadata cache could not be saved."))?;
+    if cache.vault_id.is_empty() {
+        return Ok(());
+    }
+    let payload = PersistedVaultIndex {
+        entries: cache
+            .entries
+            .iter()
+            .map(|(path, metadata)| (path.clone(), metadata.clone()))
+            .collect(),
+        vault_id: cache.vault_id.clone(),
+        version: 1,
+    };
+    let bytes = serde_json::to_vec(&payload)
+        .map_err(|error| VaultError::state(format!("The vault index is invalid: {error}")))?;
+    let path = metadata_index_path(app, &cache.vault_id)?;
+    let temporary_path = path.with_extension(format!(
+        "json.anchored-{}-{}.tmp",
+        std::process::id(),
+        TEMPORARY_FILE_COUNTER.fetch_add(1, Ordering::Relaxed)
+    ));
+    let mut file = OpenOptions::new()
+        .create_new(true)
+        .write(true)
+        .open(&temporary_path)
+        .map_err(|error| VaultError::io("A temporary vault index could not be created", error))?;
+    use std::io::Write;
+    file.write_all(&bytes)
+        .and_then(|_| file.sync_all())
+        .map_err(|error| VaultError::io("The vault index could not be written", error))?;
+    drop(file);
+    if let Err(error) = fs::rename(&temporary_path, &path) {
+        let _ = fs::remove_file(&temporary_path);
+        return Err(VaultError::io(
+            "The vault index could not be replaced",
+            error,
+        ));
+    }
+    sync_parent_directory(&path)
+}
+
+fn enrich_vault_metadata(root: &Path, files: &mut [VaultFile]) -> Result<(), VaultError> {
+    enrich_vault_metadata_cached(root, files, &Mutex::new(VaultMetadataCache::default()))
+}
+
+fn enrich_vault_metadata_cached(
+    root: &Path,
+    files: &mut [VaultFile],
+    cache: &Mutex<VaultMetadataCache>,
+) -> Result<(), VaultError> {
+    let existing = cache
+        .lock()
+        .map_err(|_| VaultError::state("The vault metadata cache could not be read."))?
+        .entries
+        .clone();
+    let mut next = HashMap::with_capacity(files.len());
+    let mut metadata_reads = 0;
+
+    for file in files.iter_mut() {
+        let signature = file
+            .signature
+            .unwrap_or(vault_file_signature(root, &file.relative_path)?);
+        let metadata = if let Some(cached) = existing.get(&file.relative_path) {
+            if cached.signature == signature {
+                cached.clone()
+            } else {
+                metadata_reads += 1;
+                read_cached_note_metadata(root, &file.relative_path, signature)?
+            }
+        } else {
+            metadata_reads += 1;
+            read_cached_note_metadata(root, &file.relative_path, signature)?
+        };
+        file.aliases.clone_from(&metadata.aliases);
+        file.archived_at.clone_from(&metadata.archived_at);
+        file.created_at.clone_from(&metadata.created_at);
+        file.note_type.clone_from(&metadata.note_type);
+        file.outgoing_links.clone_from(&metadata.outgoing_links);
+        file.status.clone_from(&metadata.status);
+        next.insert(file.relative_path.clone(), metadata);
+    }
+
+    let mut cache = cache
+        .lock()
+        .map_err(|_| VaultError::state("The vault metadata cache could not be updated."))?;
+    cache.entries = next;
+    cache.last_refresh_reads = metadata_reads;
+    Ok(())
+}
+
+fn read_cached_note_metadata(
+    root: &Path,
+    relative_path: &str,
+    signature: FileSignature,
+) -> Result<CachedNoteMetadata, VaultError> {
+    let mut metadata = CachedNoteMetadata {
+        aliases: Vec::new(),
+        archived_at: None,
+        created_at: None,
+        note_type: None,
+        outgoing_links: Vec::new(),
+        signature,
+        status: None,
+    };
+    if signature.size_bytes > MAX_MARKDOWN_FILE_BYTES {
+        return Ok(metadata);
+    }
     let path = resolve_vault_markdown_file(root, relative_path)?;
-    let metadata = fs::metadata(path)
-        .map_err(|error| VaultError::io("A Markdown file could not be inspected", error))?;
+    let bytes =
+        fs::read(path).map_err(|error| VaultError::io("Note metadata could not be read", error))?;
+    let Ok(content) = String::from_utf8(bytes) else {
+        return Ok(metadata);
+    };
+    let properties = inspect_note_properties(&content);
+    metadata.aliases = inspect_note_aliases(&content);
+    metadata.archived_at = properties.archived_at;
+    metadata.created_at = properties.created_at;
+    metadata.note_type = properties.note_type;
+    metadata.outgoing_links = inspect_wikilinks(&content);
+    metadata.status = properties.status;
+    Ok(metadata)
+}
+
+fn file_signature_from_metadata(metadata: &fs::Metadata) -> FileSignature {
     let modified_millis = metadata
         .modified()
         .ok()
         .and_then(|modified| modified.duration_since(std::time::UNIX_EPOCH).ok())
         .map(|duration| duration.as_millis().min(u128::from(u64::MAX)) as u64)
         .unwrap_or_default();
-    Ok(FileSignature {
+    FileSignature {
         modified_millis,
         size_bytes: metadata.len(),
-    })
+    }
+}
+
+fn vault_file_signature(root: &Path, relative_path: &str) -> Result<FileSignature, VaultError> {
+    let path = resolve_vault_markdown_file(root, relative_path)?;
+    let metadata = fs::metadata(path)
+        .map_err(|error| VaultError::io("A Markdown file could not be inspected", error))?;
+    Ok(file_signature_from_metadata(&metadata))
 }
 
 fn read_markdown_file(root: &Path, relative_path: &str) -> Result<VaultDocument, VaultError> {
@@ -2129,6 +2331,7 @@ fn is_markdown(path: &Path) -> bool {
 #[cfg(test)]
 mod tests {
     use std::fs;
+    use std::sync::Mutex;
     use std::time::{Duration, Instant};
 
     use tempfile::tempdir;
@@ -2136,10 +2339,11 @@ mod tests {
     use super::{
         canonical_vault_root, create_folder, create_markdown_file, create_named_vault,
         create_untitled_markdown_file, delete_empty_folder, enrich_vault_metadata,
-        move_markdown_file_to_folder, read_markdown_file, recover_rename_transaction,
-        rename_folder, rename_markdown_file, resolve_new_vault_markdown_file, save_markdown_file,
-        scan_vault, search_markdown_files, validate_folder_name, validate_new_vault_name,
-        write_rename_journal, RenameJournal, RenameJournalEntry, RenameJournalPhase, RenameOutcome,
+        enrich_vault_metadata_cached, move_markdown_file_to_folder, read_markdown_file,
+        recover_rename_transaction, rename_folder, rename_markdown_file,
+        resolve_new_vault_markdown_file, save_markdown_file, scan_vault, search_markdown_files,
+        validate_folder_name, validate_new_vault_name, write_rename_journal, RenameJournal,
+        RenameJournalEntry, RenameJournalPhase, RenameOutcome, VaultMetadataCache,
         MAX_MARKDOWN_FILE_BYTES, MAX_SEARCH_RESULTS, RENAME_JOURNAL_NAME,
     };
 
@@ -2273,6 +2477,50 @@ mod tests {
         assert_eq!(result.matches.len(), 1);
         assert_eq!(result.searched_files, 1_000);
         assert!(started.elapsed() < Duration::from_secs(5));
+    }
+
+    #[test]
+    fn reuses_metadata_for_an_unchanged_large_vault() {
+        let vault = tempdir().expect("create fixture vault");
+        for folder_index in 0..56 {
+            fs::create_dir(vault.path().join(format!("Folder {folder_index:02}")))
+                .expect("create fixture folder");
+        }
+        for note_index in 0..700 {
+            let folder = vault.path().join(format!("Folder {:02}", note_index % 56));
+            let links = (0..5)
+                .map(|offset| format!("[[Note {:04}]]", (note_index + offset + 1) % 700))
+                .collect::<Vec<_>>()
+                .join(" ");
+            fs::write(
+                folder.join(format!("Note {note_index:04}.md")),
+                format!("---\nstatus: active\ntype: Project\n---\n{links}\n"),
+            )
+            .expect("write fixture note");
+        }
+
+        let cache = Mutex::new(VaultMetadataCache::default());
+        let mut first = scan_vault(vault.path()).expect("scan first fixture");
+        enrich_vault_metadata_cached(vault.path(), &mut first.files, &cache)
+            .expect("index first fixture");
+        assert_eq!(cache.lock().expect("read cache").last_refresh_reads, 700);
+
+        let started = Instant::now();
+        let mut warm = scan_vault(vault.path()).expect("scan warm fixture");
+        enrich_vault_metadata_cached(vault.path(), &mut warm.files, &cache)
+            .expect("reuse fixture metadata");
+        assert_eq!(cache.lock().expect("read cache").last_refresh_reads, 0);
+        assert!(started.elapsed() < Duration::from_secs(1));
+
+        fs::write(
+            vault.path().join("Folder 00/Note 0000.md"),
+            "---\nstatus: archived\ntype: Project\n---\nChanged content and size.\n",
+        )
+        .expect("change one fixture note");
+        let mut changed = scan_vault(vault.path()).expect("scan changed fixture");
+        enrich_vault_metadata_cached(vault.path(), &mut changed.files, &cache)
+            .expect("refresh changed metadata");
+        assert_eq!(cache.lock().expect("read cache").last_refresh_reads, 1);
     }
 
     #[test]

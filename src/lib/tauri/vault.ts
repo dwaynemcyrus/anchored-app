@@ -2,10 +2,14 @@ import { invoke } from "@tauri-apps/api/core";
 
 export type VaultFile = {
   aliases?: string[];
+  archivedAt?: string;
+  createdAt?: string;
   name: string;
+  noteType?: string;
   outgoingLinks?: string[];
   parent: string;
   relativePath: string;
+  status?: string;
 };
 
 export type VaultAsset = {

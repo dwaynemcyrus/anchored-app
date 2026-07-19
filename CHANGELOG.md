@@ -43,6 +43,9 @@ Git commit. The format follows [Keep a Changelog], and releases follow
 
 ### Changed
 
+- Vault refresh now reuses a versioned native metadata index keyed by relative
+  path, size, and modification time. Unchanged notes are not reread, malformed
+  caches rebuild automatically, and focus refresh runs off the UI thread.
 - Note IDs are deferred. Existing `id` frontmatter remains untouched as
   ordinary user metadata, while creation, editing, moving, renaming, recent
   activity, warnings, and link maintenance now use safe vault-relative paths.

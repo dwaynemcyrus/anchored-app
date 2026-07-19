@@ -290,6 +290,7 @@ export function App() {
   const loadRequestRef = useRef(0);
   const searchRequestRef = useRef(0);
   const rescanInFlightRef = useRef(false);
+  const focusRefreshTimeoutRef = useRef<number | undefined>(undefined);
   const vaultNoticeIdRef = useRef(0);
   const vaultNoticeTimeoutsRef = useRef<Map<number, number>>(new Map());
   const notificationIdRef = useRef(0);
@@ -1101,8 +1102,22 @@ export function App() {
   }, [activeDocument, saveDocument, saveState]);
 
   useEffect(() => {
-    window.addEventListener("focus", refreshVault);
-    return () => window.removeEventListener("focus", refreshVault);
+    const scheduleRefresh = () => {
+      if (focusRefreshTimeoutRef.current !== undefined) {
+        window.clearTimeout(focusRefreshTimeoutRef.current);
+      }
+      focusRefreshTimeoutRef.current = window.setTimeout(() => {
+        focusRefreshTimeoutRef.current = undefined;
+        void refreshVault();
+      }, 250);
+    };
+    window.addEventListener("focus", scheduleRefresh);
+    return () => {
+      window.removeEventListener("focus", scheduleRefresh);
+      if (focusRefreshTimeoutRef.current !== undefined) {
+        window.clearTimeout(focusRefreshTimeoutRef.current);
+      }
+    };
   }, [refreshVault]);
 
   const selectDocument = useCallback(async (documentId: string) => {

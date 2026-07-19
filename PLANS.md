@@ -894,7 +894,7 @@ and preserves link integrity across filename changes.
       work as a minor release; no version, tag, package, or hosted release is
       authorized by this plan.
 
-21A. [ ] **Chunk: Establish contracts and performance harness**
+21A. [x] **Chunk: Establish contracts and performance harness**
     - Expected files: `OVERVIEW.md`, `PROJECT.md`, `PLANS.md`, generated
       large-vault fixture helpers, focused performance tests, and the manual QA
       checklist.
@@ -913,6 +913,10 @@ and preserves link integrity across filename changes.
       backed-up vault without logging note names or content. Documentation and
       test harnesses are independently reversible.
     - Expected changelog: None; this chunk changes contracts and tests only.
+    - Verification result: Added a deterministic native 700-note, 56-folder,
+      3,500-link fixture that measures cold metadata reads, a zero-body-read
+      warm refresh, one-file invalidation, and the existing 1,000-note search
+      budget without using private vault content.
 
 21B. [x] **Chunk: Retire active note-ID behavior safely**
     - Expected files: `src-tauri/src/metadata.rs`, `src-tauri/src/vault.rs`,
@@ -942,7 +946,7 @@ and preserves link integrity across filename changes.
       frontmatter is preserved on untouched saves and behaves like any other
       user-editable property.
 
-21C. [ ] **Chunk: Build one incremental native vault index**
+21C. [x] **Chunk: Build one incremental native vault index**
     - Expected files: a focused native index module, `src-tauri/src/vault.rs`,
       Tauri command registration, typed frontend snapshot contracts, and Rust
       tests.
@@ -965,6 +969,11 @@ and preserves link integrity across filename changes.
       rebuild path. Never store note contents in the cache.
     - Expected changelog: Vault refresh and large-vault navigation become
       incremental and non-blocking.
+    - Verification result: Added a versioned app-data cache keyed by vault ID,
+      relative path, size, and modification time. Cached aliases, links,
+      lifecycle properties, and type values are reused for unchanged notes;
+      stale entries are dropped, malformed caches rebuild, changed notes alone
+      are reread, and focus refresh runs on a blocking worker after a debounce.
 
 21D. [ ] **Chunk: Replace quadratic link and backlink work**
     - Expected files: `src/app/links.ts`, `src/app/linkCandidates.ts`, a new
@@ -1373,6 +1382,10 @@ Every future large plan must identify:
 - 2026-07-19: Completed Epic 21B. Active note-ID generation, migration,
   validation, save guards, warnings, and runtime keys were removed without
   rewriting existing notes. Vault and Trash identities remain unchanged.
+- 2026-07-19: Completed Epic 21A and 21C. A deterministic representative
+  fixture now protects the large-vault path, and a persisted native metadata
+  index reduces an unchanged focus refresh from 700 Markdown body reads to
+  zero while refreshing changed notes individually off the UI thread.
 
 ## Completion
 

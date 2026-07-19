@@ -4,6 +4,7 @@ export type DocumentSaveState =
   "saved" | "unsaved" | "saving" | "conflict" | "error";
 
 export type AnchoredDocument = {
+  archivedAt?: string;
   id: string;
   name: string;
   outgoingLinks: string[];
@@ -22,6 +23,9 @@ export type AnchoredDocument = {
   relatedDocumentId?: string;
   relatedLabel?: string;
   isMarkdown?: boolean;
+  createdAt?: string;
+  noteType?: string;
+  status?: string;
 };
 
 export function createUntitledDocument(
@@ -53,17 +57,21 @@ export function documentsFromVault(
 ): AnchoredDocument[] {
   const notes = snapshot.files.map((file) => ({
     id: `vault-path:${file.relativePath}`,
+    archivedAt: file.archivedAt,
     name: file.name,
     outgoingLinks: file.outgoingLinks ?? [],
     folder: file.parent || snapshot.name,
     folderPath: file.parent,
     title: file.name.replace(/\.md$/i, ""),
     aliases: file.aliases ?? [],
+    createdAt: file.createdAt,
     tags: [],
     body: "",
     relativePath: file.relativePath,
     saveState: "saved" as const,
     isMarkdown: true,
+    noteType: file.noteType,
+    status: file.status,
   }));
   const assets = (snapshot.assets ?? []).map((file) => ({
     id: `vault-path:${file.relativePath}`,
@@ -103,13 +111,17 @@ export function mergeDocumentsFromVault(
       ? {
           ...current,
           aliases: document.aliases,
+          archivedAt: document.archivedAt,
+          createdAt: document.createdAt,
           folder: document.folder,
           folderPath: document.folderPath,
           id: document.id,
           name: document.name,
+          noteType: document.noteType,
           outgoingLinks: document.outgoingLinks,
           relativePath: document.relativePath,
           title: document.title,
+          status: document.status,
         }
       : document;
   });

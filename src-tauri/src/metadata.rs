@@ -47,6 +47,14 @@ pub struct WikilinkOccurrence {
     pub target_range: Range<usize>,
 }
 
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct NoteProperties {
+    pub archived_at: Option<String>,
+    pub created_at: Option<String>,
+    pub note_type: Option<String>,
+    pub status: Option<String>,
+}
+
 pub fn generate_note_id() -> String {
     Ulid::new().to_string()
 }
@@ -128,6 +136,50 @@ pub fn inspect_note_aliases(content: &str) -> Vec<String> {
         }
     }
     unique
+}
+
+pub fn inspect_note_properties(content: &str) -> NoteProperties {
+    let bounds = match front_matter_bounds(content) {
+        Ok(Some(bounds)) => bounds,
+        Ok(None) | Err(()) => return NoteProperties::default(),
+    };
+    let yaml = &content[bounds.body_start..bounds.body_end];
+    let Ok(documents) = YamlLoader::load_from_str(yaml) else {
+        return NoteProperties::default();
+    };
+    let Some(Yaml::Hash(mapping)) = documents.first() else {
+        return NoteProperties::default();
+    };
+
+    NoteProperties {
+        archived_at: unique_string_property(mapping, yaml, "archived_at", false),
+        created_at: unique_string_property(mapping, yaml, "created_at", false),
+        note_type: unique_string_property(mapping, yaml, "type", false),
+        status: unique_string_property(mapping, yaml, "status", true),
+    }
+}
+
+fn unique_string_property(
+    mapping: &yaml_rust2::yaml::Hash,
+    yaml: &str,
+    key: &str,
+    lowercase: bool,
+) -> Option<String> {
+    if count_top_level_keys(yaml, key) != 1 {
+        return None;
+    }
+    let Yaml::String(value) = mapping.get(&Yaml::String(key.to_owned()))? else {
+        return None;
+    };
+    let value = value.trim();
+    if value.is_empty() {
+        return None;
+    }
+    Some(if lowercase {
+        value.to_lowercase()
+    } else {
+        value.to_owned()
+    })
 }
 
 pub fn inspect_wikilinks(content: &str) -> Vec<String> {
@@ -523,8 +575,8 @@ fn find_top_level_id_value(yaml: &str, id: &str) -> Option<std::ops::Range<usize
 mod tests {
     use super::{
         add_note_identity, assign_new_note_identity, generate_note_id, inspect_note_aliases,
-        inspect_note_identity, inspect_wikilink_occurrences, inspect_wikilinks,
-        rewrite_wikilink_targets, IdentityMutationError, NoteIdentityStatus,
+        inspect_note_identity, inspect_note_properties, inspect_wikilink_occurrences,
+        inspect_wikilinks, rewrite_wikilink_targets, IdentityMutationError, NoteIdentityStatus,
     };
 
     const ID: &str = "01JZQ7K8P4A6F2M9V3C5T7X1BY";
@@ -549,6 +601,25 @@ mod tests {
         assert_eq!(
             inspect_note_aliases("---\naliases: One alias\n---\n"),
             vec!["One alias".to_owned()]
+        );
+    }
+
+    #[test]
+    fn reads_lifecycle_properties_without_treating_blank_values_as_metadata() {
+        let properties = inspect_note_properties(
+            "---\nstatus: ACTIVE\ntype: Project\ncreated_at: 2026-11-28T15:48:32Z\narchived_at: ''\n---\n",
+        );
+
+        assert_eq!(properties.status.as_deref(), Some("active"));
+        assert_eq!(properties.note_type.as_deref(), Some("Project"));
+        assert_eq!(
+            properties.created_at.as_deref(),
+            Some("2026-11-28T15:48:32Z")
+        );
+        assert_eq!(properties.archived_at, None);
+        assert_eq!(
+            inspect_note_properties("---\nstatus: one\nstatus: two\n---\n").status,
+            None
         );
     }
 
