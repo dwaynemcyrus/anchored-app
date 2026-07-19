@@ -975,7 +975,7 @@ and preserves link integrity across filename changes.
       stale entries are dropped, malformed caches rebuild, changed notes alone
       are reread, and focus refresh runs on a blocking worker after a debounce.
 
-21D. [ ] **Chunk: Replace quadratic link and backlink work**
+21D. [x] **Chunk: Replace quadratic link and backlink work**
     - Expected files: `src/app/links.ts`, `src/app/linkCandidates.ts`, a new
       link-index module, retrieval/editor consumers, and focused tests.
     - Change: Build path, filename, alias, outgoing-link, and reverse-backlink
@@ -996,6 +996,10 @@ and preserves link integrity across filename changes.
       fixture corpus before switching consumers.
     - Expected changelog: Note opening, backlinks, Quick Open, and wikilink
       suggestions no longer stall large vaults.
+    - Verification result: Path, filename, alias, duplicate-name, and reverse
+      backlink maps are built once and shared by backlinks, candidate creation,
+      and Quick Open. The deterministic 700-note/3,500-link topology test
+      completes under the 100 ms budget without resolving ambiguous links.
 
 21E. [ ] **Chunk: Stabilize the physical Files tree**
     - Expected files: `src/app/components/FileRail.tsx`, focused tree-model and
@@ -1386,6 +1390,10 @@ Every future large plan must identify:
   fixture now protects the large-vault path, and a persisted native metadata
   index reduces an unchanged focus refresh from 700 Markdown body reads to
   zero while refreshing changed notes individually off the UI thread.
+- 2026-07-19: Completed Epic 21D. Shared map indexes replace repeated
+  document-array scans for supported link resolution, backlinks, candidate
+  creation, and Quick Open, and the representative topology passes its 100 ms
+  automated budget.
 
 ## Completion
 

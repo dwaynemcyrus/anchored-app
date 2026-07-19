@@ -46,6 +46,9 @@ Git commit. The format follows [Keep a Changelog], and releases follow
 - Vault refresh now reuses a versioned native metadata index keyed by relative
   path, size, and modification time. Unchanged notes are not reread, malformed
   caches rebuild automatically, and focus refresh runs off the UI thread.
+- Link resolution, backlinks, Quick Open, and wikilink candidates now share
+  path, filename, alias, and reverse-link maps instead of repeatedly scanning
+  every note for every link.
 - Note IDs are deferred. Existing `id` frontmatter remains untouched as
   ordinary user metadata, while creation, editing, moving, renaming, recent
   activity, warnings, and link maintenance now use safe vault-relative paths.

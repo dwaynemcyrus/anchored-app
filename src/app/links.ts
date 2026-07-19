@@ -17,6 +17,14 @@ export type WikilinkCompletionContext = {
   query: string;
 };
 
+export type DocumentLinkIndex = {
+  backlinksByTargetId: ReadonlyMap<string, AnchoredDocument[]>;
+  byAlias: ReadonlyMap<string, string[]>;
+  byFilename: ReadonlyMap<string, string[]>;
+  byPath: ReadonlyMap<string, string[]>;
+  filenameCounts: ReadonlyMap<string, number>;
+};
+
 function normalized(value: string): string {
   return value.trim().toLocaleLowerCase();
 }
@@ -381,9 +389,89 @@ function isEscaped(content: string, index: number): boolean {
   return backslashes % 2 === 1;
 }
 
-export function resolveWikilink(
-  rawTarget: string,
+function addIndexValue(
+  index: Map<string, string[]>,
+  key: string,
+  documentId: string,
+): void {
+  const values = index.get(key);
+  if (values) {
+    if (!values.includes(documentId)) values.push(documentId);
+  } else {
+    index.set(key, [documentId]);
+  }
+}
+
+export function buildDocumentLinkIndex(
   documents: AnchoredDocument[],
+): DocumentLinkIndex {
+  const byAlias = new Map<string, string[]>();
+  const byFilename = new Map<string, string[]>();
+  const byPath = new Map<string, string[]>();
+  const filenameCounts = new Map<string, number>();
+
+  for (const document of documents) {
+    if (!document.relativePath || document.isMarkdown === false) continue;
+    const filename = normalized(withoutMarkdownExtension(document.name));
+    const path = normalized(
+      withoutMarkdownExtension(document.relativePath),
+    ).replace(/^\.\//, "");
+    addIndexValue(byFilename, filename, document.id);
+    addIndexValue(byPath, path, document.id);
+    filenameCounts.set(filename, (filenameCounts.get(filename) ?? 0) + 1);
+    for (const alias of document.aliases) {
+      const normalizedAlias = normalized(alias);
+      if (normalizedAlias) addIndexValue(byAlias, normalizedAlias, document.id);
+    }
+  }
+
+  const index: DocumentLinkIndex = {
+    backlinksByTargetId: new Map(),
+    byAlias,
+    byFilename,
+    byPath,
+    filenameCounts,
+  };
+  const backlinksByTargetId = new Map<string, AnchoredDocument[]>();
+  for (const source of documents) {
+    if (source.isMarkdown === false) continue;
+    const outgoingLinks =
+      source.sourceText !== undefined &&
+      !source.sourceText.replace(/^\ufeff/, "").startsWith("---")
+        ? wikilinksInContent(source.sourceText).map((link) => link.target)
+        : source.outgoingLinks;
+    const linkedTargets = new Set<string>();
+    for (const target of outgoingLinks) {
+      const resolution = resolveWikilinkFromIndex(target, index, source.id);
+      if (
+        resolution.status !== "resolved" ||
+        resolution.documentId === source.id ||
+        linkedTargets.has(resolution.documentId)
+      ) {
+        continue;
+      }
+      linkedTargets.add(resolution.documentId);
+      const backlinks = backlinksByTargetId.get(resolution.documentId);
+      if (backlinks) backlinks.push(source);
+      else backlinksByTargetId.set(resolution.documentId, [source]);
+    }
+  }
+  return { ...index, backlinksByTargetId };
+}
+
+function resolutionFromIds(documentIds: string[] = []): WikilinkResolution {
+  if (documentIds.length === 1) {
+    return { status: "resolved", documentId: documentIds[0] };
+  }
+  if (documentIds.length > 1) {
+    return { status: "ambiguous", matches: [...documentIds] };
+  }
+  return { status: "missing" };
+}
+
+export function resolveWikilinkFromIndex(
+  rawTarget: string,
+  index: DocumentLinkIndex,
   currentDocumentId: string,
 ): WikilinkResolution {
   const target = rawTarget.trim();
@@ -396,57 +484,29 @@ export function resolveWikilink(
   const normalizedTarget = normalized(withoutMarkdownExtension(noteTarget));
   const normalizedPath = normalizedTarget.replace(/^\.\//, "");
 
-  const pathMatches = documents.filter((document) => {
-    if (!document.relativePath) return false;
-    return (
-      normalized(withoutMarkdownExtension(document.relativePath)) ===
-      normalizedPath
-    );
-  });
-  if (pathMatches.length > 0) return resolutionFrom(pathMatches);
-
-  const filenameMatches = documents.filter(
-    (document) =>
-      normalized(withoutMarkdownExtension(document.name)) === normalizedTarget,
-  );
-  if (filenameMatches.length > 0) return resolutionFrom(filenameMatches);
-
-  const aliasMatches = documents.filter((document) =>
-    document.aliases.some((alias) => normalized(alias) === normalizedTarget),
-  );
-  return resolutionFrom(aliasMatches);
+  const pathMatches = index.byPath.get(normalizedPath);
+  if (pathMatches) return resolutionFromIds(pathMatches);
+  const filenameMatches = index.byFilename.get(normalizedTarget);
+  if (filenameMatches) return resolutionFromIds(filenameMatches);
+  return resolutionFromIds(index.byAlias.get(normalizedTarget));
 }
 
-function resolutionFrom(documents: AnchoredDocument[]): WikilinkResolution {
-  const documentIds = Array.from(
-    new Set(documents.map((document) => document.id)),
+export function resolveWikilink(
+  rawTarget: string,
+  documents: AnchoredDocument[],
+  currentDocumentId: string,
+): WikilinkResolution {
+  return resolveWikilinkFromIndex(
+    rawTarget,
+    buildDocumentLinkIndex(documents),
+    currentDocumentId,
   );
-  if (documentIds.length === 1) {
-    return { status: "resolved", documentId: documentIds[0] };
-  }
-  if (documentIds.length > 1) {
-    return { status: "ambiguous", matches: documentIds };
-  }
-  return { status: "missing" };
 }
 
 export function backlinksForDocument(
   documents: AnchoredDocument[],
   targetDocumentId: string,
+  index = buildDocumentLinkIndex(documents),
 ): AnchoredDocument[] {
-  return documents.filter((source) => {
-    if (source.id === targetDocumentId) return false;
-    const outgoingLinks =
-      source.sourceText !== undefined &&
-      !source.sourceText.replace(/^\ufeff/, "").startsWith("---")
-        ? wikilinksInContent(source.sourceText).map((link) => link.target)
-        : source.outgoingLinks;
-    return outgoingLinks.some((target) => {
-      const resolution = resolveWikilink(target, documents, source.id);
-      return (
-        resolution.status === "resolved" &&
-        resolution.documentId === targetDocumentId
-      );
-    });
-  });
+  return index.backlinksByTargetId.get(targetDocumentId) ?? [];
 }

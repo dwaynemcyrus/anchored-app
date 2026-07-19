@@ -1,5 +1,10 @@
 import type { AnchoredDocument } from "./documents";
-import { resolveWikilink, wikilinksInContent } from "./links";
+import {
+  buildDocumentLinkIndex,
+  resolveWikilinkFromIndex,
+  wikilinksInContent,
+  type DocumentLinkIndex,
+} from "./links";
 
 export type DocumentActivity = {
   firstSeenAt: number;
@@ -53,15 +58,12 @@ function safeLabel(value: string): boolean {
 export function shortestWikilinkTarget(
   document: AnchoredDocument,
   documents: AnchoredDocument[],
+  index = buildDocumentLinkIndex(documents),
 ): string | null {
-  if (!document.relativePath) return null;
+  if (!document.relativePath || document.isMarkdown === false) return null;
 
   const stem = filenameStem(document);
-  const duplicateCount = documents.filter(
-    (candidate) =>
-      candidate.relativePath &&
-      normalized(filenameStem(candidate)) === normalized(stem),
-  ).length;
+  const duplicateCount = index.filenameCounts.get(normalized(stem)) ?? 0;
   const target =
     duplicateCount === 1
       ? stem
@@ -87,11 +89,12 @@ function unresolvedTarget(rawTarget: string): string | null {
 export function buildWikilinkCandidates(
   documents: AnchoredDocument[],
   activity: ReadonlyMap<string, DocumentActivity>,
+  index: DocumentLinkIndex = buildDocumentLinkIndex(documents),
 ): WikilinkCandidate[] {
   const candidates: WikilinkCandidate[] = [];
 
   for (const document of documents) {
-    const target = shortestWikilinkTarget(document, documents);
+    const target = shortestWikilinkTarget(document, documents, index);
     if (!target || !document.relativePath) continue;
 
     const documentActivity = activity.get(document.id);
@@ -134,7 +137,8 @@ export function buildWikilinkCandidates(
     const sourcePlaceholders = new Set<string>();
     for (const rawTarget of outgoingTargets(source)) {
       if (
-        resolveWikilink(rawTarget, documents, source.id).status !== "missing"
+        resolveWikilinkFromIndex(rawTarget, index, source.id).status !==
+        "missing"
       ) {
         continue;
       }

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { AnchoredDocument } from "./documents";
+import { buildDocumentLinkIndex } from "./links";
 import {
   buildWikilinkCandidates,
   rankWikilinkCandidates,
@@ -193,5 +194,30 @@ describe("wikilink candidates", () => {
       target: "Future idea",
     });
     expect(rankWikilinkCandidates(candidates, "Unsafe|link")).toEqual([]);
+  });
+
+  it("builds 700-note link topology without quadratic scans", () => {
+    const documents = Array.from({ length: 700 }, (_, index) =>
+      note(
+        `note-${index}`,
+        `Folder ${String(index % 56).padStart(2, "0")}/Note ${String(index).padStart(4, "0")}.md`,
+        index % 20 === 0 ? [`Alias ${index}`] : [],
+        Array.from(
+          { length: 5 },
+          (_, offset) =>
+            `Note ${String((index + offset + 1) % 700).padStart(4, "0")}`,
+        ),
+      ),
+    );
+
+    const started = performance.now();
+    const index = buildDocumentLinkIndex(documents);
+    const candidates = buildWikilinkCandidates(documents, new Map(), index);
+    const duration = performance.now() - started;
+
+    expect(
+      candidates.filter((candidate) => candidate.kind === "note"),
+    ).toHaveLength(700);
+    expect(duration).toBeLessThan(100);
   });
 });

@@ -33,7 +33,11 @@ import {
   type AnchoredDocument,
   type DocumentSaveState,
 } from "./documents";
-import { backlinksForDocument, resolveWikilink } from "./links";
+import {
+  backlinksForDocument,
+  buildDocumentLinkIndex,
+  resolveWikilink,
+} from "./links";
 import {
   buildWikilinkCandidates,
   type DocumentActivity,
@@ -322,26 +326,39 @@ export function App() {
   }, [deletingFolderPath, documents, folderPaths]);
   const saveState: DocumentSaveState = activeDocument?.saveState ?? "saved";
   const deferredDocuments = useDeferredValue(documents);
+  const linkIndex = useMemo(
+    () => buildDocumentLinkIndex(deferredDocuments),
+    [deferredDocuments],
+  );
   const backlinks = useMemo(
     () =>
       activeDocumentId
-        ? backlinksForDocument(deferredDocuments, activeDocumentId)
+        ? backlinksForDocument(deferredDocuments, activeDocumentId, linkIndex)
         : [],
-    [activeDocumentId, deferredDocuments],
+    [activeDocumentId, deferredDocuments, linkIndex],
   );
   const wikilinkCandidates = useMemo(
-    () => buildWikilinkCandidates(deferredDocuments, documentActivity),
-    [deferredDocuments, documentActivity],
+    () =>
+      buildWikilinkCandidates(deferredDocuments, documentActivity, linkIndex),
+    [deferredDocuments, documentActivity, linkIndex],
   );
   const quickOpenResults = useMemo(
     () =>
-      rankQuickOpenResults(
-        wikilinkCandidates,
-        deferredDocuments,
-        quickOpenQuery,
-        activeDocumentId,
-      ),
-    [activeDocumentId, deferredDocuments, quickOpenQuery, wikilinkCandidates],
+      quickOpenVisible
+        ? rankQuickOpenResults(
+            wikilinkCandidates,
+            deferredDocuments,
+            quickOpenQuery,
+            activeDocumentId,
+          )
+        : [],
+    [
+      activeDocumentId,
+      deferredDocuments,
+      quickOpenQuery,
+      quickOpenVisible,
+      wikilinkCandidates,
+    ],
   );
   const notificationScopeId = vaultId || GENERAL_NOTIFICATION_SCOPE;
   const visibleNotificationHistory = useMemo(
