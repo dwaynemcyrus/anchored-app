@@ -29,6 +29,7 @@
     "dompurify": "^3.4.12",
     "highlight.js": "^11.11.1",
     "katex": "^0.18.0",
+    "lucide-react": "^1.25.0",
     "markdown-it": "^14.3.0",
     "markdown-it-anchor": "^9.2.1",
     "markdown-it-deflist": "^3.0.1",

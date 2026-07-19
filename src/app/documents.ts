@@ -21,6 +21,7 @@ export type AnchoredDocument = {
   sizeBytes?: number;
   relatedDocumentId?: string;
   relatedLabel?: string;
+  isMarkdown?: boolean;
 };
 
 export function createUntitledDocument(
@@ -50,7 +51,7 @@ export function createUntitledDocument(
 export function documentsFromVault(
   snapshot: VaultSnapshot,
 ): AnchoredDocument[] {
-  return snapshot.files.map((file) => ({
+  const notes = snapshot.files.map((file) => ({
     id: file.id ? `vault-id:${file.id}` : `vault-path:${file.relativePath}`,
     name: file.name,
     outgoingLinks: file.outgoingLinks ?? [],
@@ -61,8 +62,24 @@ export function documentsFromVault(
     tags: [],
     body: "",
     relativePath: file.relativePath,
-    saveState: "saved",
+    saveState: "saved" as const,
+    isMarkdown: true,
   }));
+  const assets = (snapshot.assets ?? []).map((file) => ({
+    id: `vault-path:${file.relativePath}`,
+    name: file.name,
+    outgoingLinks: [],
+    folder: file.parent || snapshot.name,
+    folderPath: file.parent,
+    title: file.name,
+    aliases: [],
+    tags: [],
+    body: "",
+    relativePath: file.relativePath,
+    saveState: "saved" as const,
+    isMarkdown: false,
+  }));
+  return [...notes, ...assets];
 }
 
 export function mergeDocumentsFromVault(
@@ -77,7 +94,11 @@ export function mergeDocumentsFromVault(
   const currentById = new Map(
     currentDocuments.map((document) => [document.id, document]),
   );
-  const scannedPaths = new Set(snapshot.files.map((file) => file.relativePath));
+  const scannedPaths = new Set(
+    [...snapshot.files, ...(snapshot.assets ?? [])].map(
+      (file) => file.relativePath,
+    ),
+  );
   const incomingDocuments = documentsFromVault(snapshot);
   const scannedIds = new Set(incomingDocuments.map((document) => document.id));
   const scannedDocuments = incomingDocuments.map((document) => {

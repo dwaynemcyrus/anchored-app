@@ -1058,6 +1058,18 @@ Every future large plan must identify:
   values, list markers, comments, and delimiters. Typography settings expose
   persisted 12px, 14px, and 16px source-editor sizes. Frontend and Rust tests,
   quality gates, and the optimized macOS app bundle pass.
+- 2026-07-19: Began the file-tree workspace pass. The tree will gain a
+  normalized visible-row model, selection separate from expansion, keyboard
+  navigation, context actions, type-aware file icons, and recoverable
+  recursive folder deletion with typed confirmation. Large-vault rendering
+  will be measured against a 700-file fixture before the chunk is complete.
+
+- 2026-07-19: Completed the first file-tree workspace pass. Virtualized rows,
+  separated selection and expansion, keyboard navigation, context actions,
+  type-aware Lucide icons, non-empty-folder confirmation, recoverable folder
+  Trash, and non-Markdown asset scanning are implemented and covered by the
+  frontend and Rust checks. A representative 700-file interactive timing pass
+  remains a follow-up for desktop hardware.
 
 ## Completion
 

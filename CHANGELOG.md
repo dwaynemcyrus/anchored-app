@@ -8,6 +8,13 @@ Git commit. The format follows [Keep a Changelog], and releases follow
 
 ### Added
 
+- The file rail now virtualizes large vaults, keeps selection separate from
+  folder expansion, supports keyboard navigation and context menus, shows
+  Lucide file-type icons, and recognizes common non-Markdown assets such as
+  PDFs, images, audio, video, archives, and code files.
+- Non-empty folder deletion now warns before proceeding and requires typing
+  `delete folder`; confirmed folders move as one recoverable Trash entry.
+
 - Anchored now supports the Markdown v1 rendering pipeline, including
   CommonMark, GFM tables, footnotes, task lists, definition lists, math,
   wikilinks, admonitions, heading IDs, subscript, superscript, highlighting,

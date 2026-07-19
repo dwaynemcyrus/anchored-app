@@ -16,9 +16,9 @@ use tauri_plugin_dialog::DialogExt;
 use crate::continuity::{
     current_time_millis, ensure_vault_identity, forget_vault as forget_registered_vault,
     is_internal_component, is_internal_relative_path,
-    list_remembered_vaults as load_remembered_vaults, list_trash_entries, move_note_to_trash,
-    registry_path, remember_vault, remembered_vault_root, restore_note_from_trash, RememberedVault,
-    TrashEntry,
+    list_remembered_vaults as load_remembered_vaults, list_trash_entries, move_folder_to_trash,
+    move_note_to_trash, registry_path, remember_vault, remembered_vault_root,
+    restore_folder_from_trash, restore_note_from_trash, RememberedVault, TrashEntry,
 };
 use crate::links::{plan_rename_link_rewrites, LinkNote, LinkSource};
 use crate::metadata::{
@@ -56,6 +56,14 @@ pub struct VaultFile {
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
+pub struct VaultAsset {
+    pub name: String,
+    pub parent: String,
+    pub relative_path: String,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct VaultWarnings {
     pub added_identities: usize,
     pub identity_conflicts: usize,
@@ -67,6 +75,7 @@ pub struct VaultWarnings {
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct VaultSnapshot {
+    pub assets: Vec<VaultAsset>,
     pub files: Vec<VaultFile>,
     pub folders: Vec<String>,
     pub name: String,
@@ -395,6 +404,29 @@ pub async fn delete_vault_folder(
 }
 
 #[tauri::command]
+pub async fn move_vault_folder_to_trash(
+    app: AppHandle,
+    state: State<'_, VaultState>,
+    folder_path: String,
+    confirmation: String,
+) -> Result<TrashMutationResult, VaultError> {
+    if confirmation != "delete folder" {
+        return Err(VaultError::invalid(
+            "Type delete folder to confirm moving this folder to Trash.",
+        ));
+    }
+    let _rename_guard = state
+        .rename_transaction
+        .lock()
+        .map_err(|_| VaultError::state("The folder delete lock could not be acquired."))?;
+    let root = selected_vault_root(&state, "moving a folder to Trash")?;
+    recover_rename_transaction(&root)?;
+    let entry = move_folder_to_trash(&root, &folder_path, current_time_millis())?;
+    let snapshot = build_vault_snapshot(&app, &root)?;
+    Ok(TrashMutationResult { entry, snapshot })
+}
+
+#[tauri::command]
 pub async fn list_remembered_vaults(app: AppHandle) -> Result<Vec<RememberedVault>, VaultError> {
     load_remembered_vaults(&registry_path(&app)?)
 }
@@ -468,6 +500,22 @@ pub async fn restore_vault_file_from_trash(
         .map_err(|_| VaultError::state("The vault file operation lock could not be acquired."))?;
     let root = selected_vault_root(&state, "restoring a note from Trash")?;
     let entry = restore_note_from_trash(&root, &trash_id)?;
+    let snapshot = build_vault_snapshot(&app, &root)?;
+    Ok(TrashMutationResult { entry, snapshot })
+}
+
+#[tauri::command]
+pub async fn restore_vault_folder_from_trash(
+    app: AppHandle,
+    state: State<'_, VaultState>,
+    trash_id: String,
+) -> Result<TrashMutationResult, VaultError> {
+    let _guard = state
+        .rename_transaction
+        .lock()
+        .map_err(|_| VaultError::state("The vault file operation lock could not be acquired."))?;
+    let root = selected_vault_root(&state, "restoring a folder from Trash")?;
+    let entry = restore_folder_from_trash(&root, &trash_id)?;
     let snapshot = build_vault_snapshot(&app, &root)?;
     Ok(TrashMutationResult { entry, snapshot })
 }
@@ -1140,6 +1188,7 @@ fn delete_empty_folder(root: &Path, folder_path: &str) -> Result<(), VaultError>
 fn scan_vault(root: &Path) -> Result<VaultSnapshot, VaultError> {
     let root = canonical_vault_root(root)?;
     let mut files = Vec::new();
+    let mut assets = Vec::new();
     let mut folders = Vec::new();
     let mut stack = vec![(root.clone(), 0_usize)];
     let mut visited_entries = 0_usize;
@@ -1188,7 +1237,7 @@ fn scan_vault(root: &Path) -> Result<VaultSnapshot, VaultError> {
                 continue;
             }
 
-            if !file_type.is_file() || !is_markdown(&entry.path()) {
+            if !file_type.is_file() {
                 continue;
             }
 
@@ -1214,18 +1263,31 @@ fn scan_vault(root: &Path) -> Result<VaultSnapshot, VaultError> {
                 .unwrap_or_default()
                 .to_owned();
 
-            files.push(VaultFile {
-                id: None,
-                aliases: Vec::new(),
-                outgoing_links: Vec::new(),
-                name,
-                parent,
-                relative_path: relative_path.to_owned(),
-            });
+            if is_markdown(&entry.path()) {
+                files.push(VaultFile {
+                    id: None,
+                    aliases: Vec::new(),
+                    outgoing_links: Vec::new(),
+                    name,
+                    parent,
+                    relative_path: relative_path.to_owned(),
+                });
+            } else {
+                assets.push(VaultAsset {
+                    name,
+                    parent,
+                    relative_path: relative_path.to_owned(),
+                });
+            }
         }
     }
 
     files.sort_by(|left, right| {
+        left.relative_path
+            .to_lowercase()
+            .cmp(&right.relative_path.to_lowercase())
+    });
+    assets.sort_by(|left, right| {
         left.relative_path
             .to_lowercase()
             .cmp(&right.relative_path.to_lowercase())
@@ -1239,6 +1301,7 @@ fn scan_vault(root: &Path) -> Result<VaultSnapshot, VaultError> {
         .to_owned();
 
     Ok(VaultSnapshot {
+        assets,
         files,
         folders,
         name,

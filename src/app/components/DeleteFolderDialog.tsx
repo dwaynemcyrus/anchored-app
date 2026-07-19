@@ -1,4 +1,4 @@
-import { useRef } from "react";
+import { useRef, useState } from "react";
 
 import { useModalDialog } from "./useModalDialog";
 
@@ -6,17 +6,23 @@ type DeleteFolderDialogProps = {
   deleting: boolean;
   error?: string;
   folderName: string;
+  fileCount: number;
+  folderCount: number;
   onClose: () => void;
-  onDelete: () => void;
+  onDelete: (confirmation: string) => void;
 };
 
 export function DeleteFolderDialog({
   deleting,
   error,
   folderName,
+  fileCount,
+  folderCount,
   onClose,
   onDelete,
 }: DeleteFolderDialogProps) {
+  const [confirming, setConfirming] = useState(false);
+  const [confirmation, setConfirmation] = useState("");
   const cancelButtonRef = useRef<HTMLButtonElement>(null);
   const { dialogRef, onDialogKeyDown } = useModalDialog<HTMLElement>({
     initialFocusRef: cancelButtonRef,
@@ -37,8 +43,9 @@ export function DeleteFolderDialog({
         <div>
           <h2>Delete folder</h2>
           <p>
-            Delete {folderName} only if it is empty. Anchored will refuse this
-            action when notes or subfolders still exist inside it.
+            {fileCount === 0 && folderCount === 0
+              ? `Delete ${folderName}?`
+              : `This folder contains ${fileCount} file${fileCount === 1 ? "" : "s"} and ${folderCount} subfolder${folderCount === 1 ? "" : "s"}. Moving it to Trash will include everything inside it.`}
           </p>
         </div>
         <button
@@ -51,6 +58,25 @@ export function DeleteFolderDialog({
         </button>
       </header>
       <div className="continuity-panel__body">
+        {fileCount > 0 || folderCount > 0 ? (
+          <>
+            <p>
+              You can restore this folder later from Trash. This cannot be
+              undone from the file tree.
+            </p>
+            {confirming ? (
+              <label className="continuity-panel__confirmation">
+                Type <strong>delete folder</strong> to continue.
+                <input
+                  aria-label="Delete folder confirmation"
+                  autoComplete="off"
+                  value={confirmation}
+                  onChange={(event) => setConfirmation(event.target.value)}
+                />
+              </label>
+            ) : null}
+          </>
+        ) : null}
         {error ? (
           <p className="continuity-panel__error" role="alert">
             {error}
@@ -68,11 +94,29 @@ export function DeleteFolderDialog({
         </button>
         <button
           className="continuity-panel__primary"
-          disabled={deleting}
+          disabled={
+            deleting || (confirming && confirmation !== "delete folder")
+          }
           type="button"
-          onClick={onDelete}
+          onClick={() => {
+            if (fileCount > 0 || folderCount > 0) {
+              if (!confirming) {
+                setConfirming(true);
+                return;
+              }
+              onDelete(confirmation);
+              return;
+            }
+            onDelete("");
+          }}
         >
-          {deleting ? "Deleting…" : "Delete folder"}
+          {deleting
+            ? "Deleting…"
+            : fileCount > 0 || folderCount > 0
+              ? confirming
+                ? "Move folder to Trash"
+                : "Continue"
+              : "Delete folder"}
         </button>
       </footer>
     </aside>

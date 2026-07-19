@@ -105,6 +105,21 @@ export function EditorSurface({
     );
   }
 
+  if (document.isMarkdown === false) {
+    return (
+      <main className="editor-surface">
+        <header className="editor-surface__header">{vaultName}</header>
+        <section className="document document--empty">
+          <h1>{document.name}</h1>
+          <p>
+            This file type is recognized in the tree but is not editable in
+            Anchored yet.
+          </p>
+        </section>
+      </main>
+    );
+  }
+
   const frontMatter = [
     "---",
     `id: ${

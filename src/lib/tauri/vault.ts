@@ -9,6 +9,12 @@ export type VaultFile = {
   relativePath: string;
 };
 
+export type VaultAsset = {
+  name: string;
+  parent: string;
+  relativePath: string;
+};
+
 export type VaultWarnings = {
   addedIdentities: number;
   identityConflicts: number;
@@ -18,6 +24,7 @@ export type VaultWarnings = {
 };
 
 export type VaultSnapshot = {
+  assets?: VaultAsset[];
   files: VaultFile[];
   folders?: string[];
   name: string;
@@ -34,6 +41,7 @@ export type RememberedVault = {
 
 export type TrashEntry = {
   id: string;
+  isFolder?: boolean;
   name: string;
   originalPath: string;
   trashedAt: number;
@@ -136,6 +144,16 @@ export function deleteVaultFolder(folderPath: string): Promise<VaultSnapshot> {
   return invoke<VaultSnapshot>("delete_vault_folder", { folderPath });
 }
 
+export function moveVaultFolderToTrash(
+  folderPath: string,
+  confirmation: string,
+): Promise<TrashMutationResult> {
+  return invoke<TrashMutationResult>("move_vault_folder_to_trash", {
+    confirmation,
+    folderPath,
+  });
+}
+
 export function listRememberedVaults(): Promise<RememberedVault[]> {
   return invoke<RememberedVault[]>("list_remembered_vaults");
 }
@@ -168,6 +186,14 @@ export function restoreVaultFileFromTrash(
   trashId: string,
 ): Promise<TrashMutationResult> {
   return invoke<TrashMutationResult>("restore_vault_file_from_trash", {
+    trashId,
+  });
+}
+
+export function restoreVaultFolderFromTrash(
+  trashId: string,
+): Promise<TrashMutationResult> {
+  return invoke<TrashMutationResult>("restore_vault_folder_from_trash", {
     trashId,
   });
 }

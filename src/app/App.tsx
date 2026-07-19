@@ -88,6 +88,7 @@ import {
   listVaultTrash,
   moveVaultFileToFolder,
   moveVaultFileToTrash,
+  moveVaultFolderToTrash,
   openRememberedVault,
   previewIdentityMigration,
   readVaultFile,
@@ -98,6 +99,7 @@ import {
   searchVault,
   selectVault,
   restoreVaultFileFromTrash,
+  restoreVaultFolderFromTrash,
   type RememberedVault,
   type TrashEntry,
   type VaultSnapshot,
@@ -335,6 +337,17 @@ export function App() {
   const moveTargetDocument = documents.find(
     (document) => document.id === moveDocumentId,
   );
+  const deletingFolderContents = useMemo(() => {
+    if (!deletingFolderPath) return { fileCount: 0, folderCount: 0 };
+    const prefix = `${deletingFolderPath}/`;
+    return {
+      fileCount: documents.filter((document) =>
+        (document.folderPath ?? "").startsWith(prefix),
+      ).length,
+      folderCount: folderPaths.filter((folder) => folder.startsWith(prefix))
+        .length,
+    };
+  }, [deletingFolderPath, documents, folderPaths]);
   const saveState: DocumentSaveState = activeDocument?.saveState ?? "saved";
   const deferredDocuments = useDeferredValue(documents);
   const backlinks = useMemo(
@@ -1212,6 +1225,12 @@ export function App() {
     setCursorPosition({ line: 1, column: 1 });
     setSidebarOpen(false);
 
+    if (document.isMarkdown === false) {
+      loadRequestRef.current += 1;
+      setDocumentLoad({ status: "idle" });
+      return;
+    }
+
     if (!document.relativePath || document.sourceText !== undefined) {
       loadRequestRef.current += 1;
       setDocumentLoad({ status: "idle" });
@@ -1493,7 +1512,9 @@ export function App() {
     setRestoringTrashId(entry.id);
     setTrashError(undefined);
     try {
-      const result = await restoreVaultFileFromTrash(entry.id);
+      const result = entry.isFolder
+        ? await restoreVaultFolderFromTrash(entry.id)
+        : await restoreVaultFileFromTrash(entry.id);
       adoptVaultSnapshot(result.snapshot);
       setTrashEntries((current) =>
         current.filter((candidate) => candidate.id !== entry.id),
@@ -1709,7 +1730,7 @@ export function App() {
     }
   }
 
-  async function deleteExistingFolder() {
+  async function deleteExistingFolder(confirmation = "") {
     if (!vaultSelected || !deletingFolderPath) {
       addVaultNotice("Open a vault before deleting a folder.");
       return;
@@ -1719,8 +1740,23 @@ export function App() {
     setDeleteFolderPending(true);
     setDeleteFolderError(undefined);
     try {
-      const snapshot = await deleteVaultFolder(targetFolderPath);
-      adoptVaultSnapshot(snapshot);
+      if (
+        deletingFolderContents.fileCount > 0 ||
+        deletingFolderContents.folderCount > 0
+      ) {
+        const result = await moveVaultFolderToTrash(
+          targetFolderPath,
+          confirmation,
+        );
+        adoptVaultSnapshot(result.snapshot);
+        setTrashEntries((current) => [
+          result.entry,
+          ...current.filter((entry) => entry.id !== result.entry.id),
+        ]);
+      } else {
+        const snapshot = await deleteVaultFolder(targetFolderPath);
+        adoptVaultSnapshot(snapshot);
+      }
       setExpandedFolders((currentFolders) => {
         const nextFolders = new Set(currentFolders);
         Array.from(nextFolders).forEach((folderPath) => {
@@ -1735,9 +1771,12 @@ export function App() {
       });
       setDeleteFolderVisible(false);
       setDeletingFolderPath(undefined);
-      addVaultNotice(`${folderName(targetFolderPath)} deleted.`, {
-        history: { kind: "rename" },
-      });
+      addVaultNotice(
+        `${folderName(targetFolderPath)} ${confirmation ? "moved to Trash" : "deleted"}.`,
+        {
+          history: { kind: confirmation ? "trash" : "rename" },
+        },
+      );
     } catch (error) {
       setDeleteFolderError(readErrorMessage(error));
     } finally {
@@ -1910,6 +1949,11 @@ export function App() {
             void refreshTrashEntries();
           }}
           onQueryChange={setQuery}
+          onRenameDocument={(documentId) => {
+            void selectDocument(documentId).then(() =>
+              renameDocument(documentId),
+            );
+          }}
           onRenameFolder={(folderPath) => {
             setRenamingFolderPath(folderPath);
             setRenameFolderError(undefined);
@@ -1917,11 +1961,18 @@ export function App() {
           }}
           onSelectDocument={selectDocument}
           onToggleFolder={toggleFolder}
+          onTrashDocument={(documentId) => {
+            void selectDocument(documentId).then(() =>
+              trashDocument(documentId),
+            );
+          }}
         />
         <EditorSurface
           backlinks={backlinks}
           document={activeDocument}
-          hasDocuments={documents.length > 0}
+          hasDocuments={documents.some(
+            (document) => document.isMarkdown !== false,
+          )}
           findRequest={findRequest}
           loadState={
             documentLoad.status !== "idle" &&
@@ -2122,6 +2173,8 @@ export function App() {
         <DeleteFolderDialog
           deleting={deleteFolderPending}
           error={deleteFolderError}
+          fileCount={deletingFolderContents.fileCount}
+          folderCount={deletingFolderContents.folderCount}
           folderName={folderName(deletingFolderPath)}
           onClose={() => {
             if (!deleteFolderPending) {
@@ -2130,7 +2183,7 @@ export function App() {
               setDeleteFolderVisible(false);
             }
           }}
-          onDelete={() => void deleteExistingFolder()}
+          onDelete={(confirmation) => void deleteExistingFolder(confirmation)}
         />
       ) : null}
       {moveDocumentVisible && moveTargetDocument ? (
@@ -2238,7 +2291,10 @@ export function App() {
         document={activeDocument}
         vaultFileCount={
           vaultSelected
-            ? documents.filter((document) => document.relativePath).length
+            ? documents.filter(
+                (document) =>
+                  document.relativePath && document.isMarkdown !== false,
+              ).length
             : undefined
         }
         vaultName={vaultName}

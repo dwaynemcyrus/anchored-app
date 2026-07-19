@@ -1,210 +1,113 @@
-import type { SVGProps } from "react";
+import {
+  Bell,
+  CheckCircle2,
+  ChevronRight,
+  File,
+  FileArchive,
+  FileAudio,
+  FileCode2,
+  FileImage,
+  FilePlus2,
+  FileText,
+  FileVideo,
+  Folder,
+  FolderPlus,
+  Menu,
+  Pencil,
+  Search,
+  Settings,
+  Trash2,
+  type LucideProps,
+} from "lucide-react";
 
-type IconProps = SVGProps<SVGSVGElement>;
+import { fileTypeForName, type FileType } from "../fileTypes";
 
-function IconFrame({ children, ...props }: IconProps) {
-  return (
-    <svg
-      aria-hidden="true"
-      fill="none"
-      height="18"
-      viewBox="0 0 24 24"
-      width="18"
-      {...props}
-    >
-      {children}
-    </svg>
-  );
-}
+export type IconProps = LucideProps;
+
+const iconProps: Partial<LucideProps> = {
+  "aria-hidden": true,
+  size: 18,
+  strokeWidth: 1.5,
+};
 
 export function CheckIcon(props: IconProps) {
-  return (
-    <IconFrame {...props}>
-      <circle cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="1.5" />
-      <path
-        d="m8 12 2.5 2.5L16 9"
-        stroke="currentColor"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        strokeWidth="1.5"
-      />
-    </IconFrame>
-  );
+  return <CheckCircle2 {...iconProps} {...props} />;
 }
 
 export function ChevronIcon({ className = "", ...props }: IconProps) {
   return (
-    <IconFrame className={`chevron-icon ${className}`} {...props}>
-      <path
-        d="m9 6 6 6-6 6"
-        stroke="currentColor"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        strokeWidth="1.5"
-      />
-    </IconFrame>
+    <ChevronRight
+      {...iconProps}
+      {...props}
+      className={`chevron-icon ${className}`}
+    />
   );
 }
 
 export function FileIcon(props: IconProps) {
-  return (
-    <IconFrame {...props}>
-      <path
-        d="M7 3.75h6.5L18 8.2v12.05H7z"
-        stroke="currentColor"
-        strokeLinejoin="round"
-        strokeWidth="1.5"
-      />
-      <path d="M13.5 3.75V8.2H18" stroke="currentColor" strokeWidth="1.5" />
-    </IconFrame>
-  );
+  return <FileText {...iconProps} {...props} />;
 }
 
 export function FolderIcon(props: IconProps) {
-  return (
-    <IconFrame {...props}>
-      <path
-        d="M3.75 6.75h6l1.5 2h9v10.5H3.75z"
-        stroke="currentColor"
-        strokeLinejoin="round"
-        strokeWidth="1.5"
-      />
-    </IconFrame>
-  );
+  return <Folder {...iconProps} {...props} />;
 }
 
 export function MenuIcon(props: IconProps) {
-  return (
-    <IconFrame {...props}>
-      <path
-        d="M5 7.5h14M5 12h14M5 16.5h14"
-        stroke="currentColor"
-        strokeLinecap="round"
-        strokeWidth="1.5"
-      />
-    </IconFrame>
-  );
+  return <Menu {...iconProps} {...props} />;
 }
 
 export function NewFileIcon(props: IconProps) {
-  return (
-    <IconFrame {...props}>
-      <path
-        d="M5.5 3.75H13l4.5 4.45v12.05h-12z"
-        stroke="currentColor"
-        strokeLinejoin="round"
-        strokeWidth="1.5"
-      />
-      <path
-        d="M13 3.75V8.2h4.5M8.5 14h6M11.5 11v6"
-        stroke="currentColor"
-        strokeWidth="1.5"
-      />
-    </IconFrame>
-  );
+  return <FilePlus2 {...iconProps} {...props} />;
 }
 
 export function NewFolderIcon(props: IconProps) {
-  return (
-    <IconFrame {...props}>
-      <path
-        d="M3.75 7h6l1.5 2h9v9.25H3.75z"
-        stroke="currentColor"
-        strokeLinejoin="round"
-        strokeWidth="1.5"
-      />
-      <path
-        d="M12 12.25h4M14 10.25v4"
-        stroke="currentColor"
-        strokeLinecap="round"
-        strokeWidth="1.5"
-      />
-    </IconFrame>
-  );
+  return <FolderPlus {...iconProps} {...props} />;
 }
 
 export function RenameIcon(props: IconProps) {
-  return (
-    <IconFrame {...props}>
-      <path
-        d="m6.75 16.75 1.75-5.25L15.9 4.1a1.5 1.5 0 0 1 2.12 0l1.88 1.88a1.5 1.5 0 0 1 0 2.12l-7.4 7.4-5.75 1.25Z"
-        stroke="currentColor"
-        strokeLinejoin="round"
-        strokeWidth="1.5"
-      />
-      <path
-        d="m14.5 5.5 4 4"
-        stroke="currentColor"
-        strokeLinecap="round"
-        strokeWidth="1.5"
-      />
-    </IconFrame>
-  );
+  return <Pencil {...iconProps} {...props} />;
 }
 
 export function TrashIcon(props: IconProps) {
-  return (
-    <IconFrame {...props}>
-      <path
-        d="M5.75 7.5h12.5M9.25 7.5V5.75h5.5V7.5M8.25 10.25v7m3.75-7v7m3.75-7v7M7 7.5l.65 11.2a1.5 1.5 0 0 0 1.5 1.4h5.7a1.5 1.5 0 0 0 1.5-1.4L17 7.5"
-        stroke="currentColor"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        strokeWidth="1.5"
-      />
-    </IconFrame>
-  );
+  return <Trash2 {...iconProps} {...props} />;
 }
 
 export function SearchIcon(props: IconProps) {
-  return (
-    <IconFrame {...props}>
-      <circle
-        cx="10.5"
-        cy="10.5"
-        r="5.75"
-        stroke="currentColor"
-        strokeWidth="1.5"
-      />
-      <path
-        d="m15 15 4.25 4.25"
-        stroke="currentColor"
-        strokeLinecap="round"
-        strokeWidth="1.5"
-      />
-    </IconFrame>
-  );
+  return <Search {...iconProps} {...props} />;
 }
 
 export function NotificationIcon(props: IconProps) {
-  return (
-    <IconFrame {...props}>
-      <path
-        d="M6.5 10.5a5.5 5.5 0 0 1 11 0c0 4 1.75 5 1.75 5H4.75s1.75-1 1.75-5Z"
-        stroke="currentColor"
-        strokeLinejoin="round"
-        strokeWidth="1.5"
-      />
-      <path
-        d="M9.75 18.25a2.5 2.5 0 0 0 4.5 0"
-        stroke="currentColor"
-        strokeLinecap="round"
-        strokeWidth="1.5"
-      />
-    </IconFrame>
-  );
+  return <Bell {...iconProps} {...props} />;
 }
 
 export function SettingsIcon(props: IconProps) {
-  return (
-    <IconFrame {...props}>
-      <circle cx="12" cy="12" r="2.5" stroke="currentColor" strokeWidth="1.5" />
-      <path
-        d="M12 4.5v2M12 17.5v2M19.5 12h-2M6.5 12h-2M17.3 6.7l-1.4 1.4M8.1 15.9l-1.4 1.4M17.3 17.3l-1.4-1.4M8.1 8.1 6.7 6.7"
-        stroke="currentColor"
-        strokeLinecap="round"
-        strokeWidth="1.5"
-      />
-    </IconFrame>
-  );
+  return <Settings {...iconProps} {...props} />;
+}
+
+function fileIconForType(type: FileType) {
+  switch (type) {
+    case "archive":
+      return FileArchive;
+    case "audio":
+      return FileAudio;
+    case "code":
+      return FileCode2;
+    case "image":
+      return FileImage;
+    case "video":
+      return FileVideo;
+    case "markdown":
+    case "pdf":
+      return FileText;
+    default:
+      return File;
+  }
+}
+
+export function FileTypeIcon({
+  fileName,
+  ...props
+}: IconProps & { fileName: string }) {
+  const Icon = fileIconForType(fileTypeForName(fileName));
+  return <Icon {...iconProps} {...props} />;
 }
