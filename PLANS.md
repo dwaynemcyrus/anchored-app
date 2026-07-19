@@ -1141,6 +1141,17 @@ and preserves link integrity across filename changes.
     - Expected changelog: Reconcile all user-visible entries from chunks 21B
       through 21H under `[Unreleased]`; do not change version without an
       explicit release request.
+    - Automated verification result (2026-07-19): Formatting, ESLint,
+      TypeScript, all 145 frontend tests, Rust formatting, strict Clippy, all
+      79 Rust tests, the production Vite build, and
+      `npm run tauri build -- --bundles app` pass. The resulting separate
+      Scratchpad feature chunk is 18.35 kB minified (5.21 kB gzip), while the
+      CodeMirror and Preview chunks remain lazy. The generated 13 MB x86_64
+      `Anchored.app` targets macOS 12.0. The exact local Tauri build is unsigned;
+      release signing remains owned by the dedicated alpha packaging workflow.
+      Native interaction timing, representative-vault byte diffs, VoiceOver,
+      and 2015 MacBook Pro measurements remain manual release blockers, so this
+      chunk and Epic 21 stay open until those checklist results are recorded.
 
 ## Requirements for future large plans
 
