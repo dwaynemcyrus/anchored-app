@@ -80,6 +80,8 @@ Git commit. The format follows [Keep a Changelog], and releases follow
 
 ### Fixed
 
+- Scratchpad shortcut handling and visible key hints now consistently use
+  Control-Option-N/P instead of showing Command-Option symbols.
 - Native saves now independently refuse archived notes, and lifecycle changes
   use expected-content checks plus atomic writes so external edits are never
   overwritten.

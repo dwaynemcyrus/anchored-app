@@ -304,11 +304,24 @@ starting.
 - [ ] Confirm comments, key order, quotes, BOM, line endings, and unrelated front matter survive every transition.
 - [ ] Create malformed or duplicate lifecycle fields and confirm mutation is refused safely.
 - [ ] Edit the file externally before archive or restore and confirm the expected-content conflict preserves both versions.
+- [ ] Move a note to Workbench and choose an existing type, a validated new type, and Untyped in separate passes.
+- [ ] Confirm choosing Untyped removes or omits `type` instead of writing `type: untyped`.
+- [ ] Move a note to Archive and confirm its existing type is preserved unless explicitly changed.
+- [ ] Confirm restoring to Workbench asks for type while restoring to Inbox preserves the existing type.
+- [ ] Confirm stored `created_at`, `updated_at`, and `archived_at` values remain second-precision UTC while the UI displays local time.
+- [ ] Create a note with initial authored content and confirm `created_at` and `updated_at` begin with the same timestamp.
+- [ ] Confirm successful content edits and autosaves advance `updated_at`.
+- [ ] Confirm status/type-only changes, rename, move, conflicts, failed saves, and detected external edits do not advance `updated_at`.
+- [ ] Confirm no `modified_at` front-matter property is generated and Last Edited follows cached filesystem modification time.
 
 ## Scratchpad usage and safety
 
 - [ ] Open a new Scratchpad from the Lucide toolbar button.
-- [ ] Open a new Scratchpad with Command-Option-N while Anchored is active.
+- [ ] Open a new Scratchpad with Control-Option-N while Anchored is active.
+- [ ] Confirm a Scratchpad saved-view row with an accurate active count appears between Inbox and Workbench.
+- [ ] Confirm the saved view and list contain only `type: scratchpad`, `status: inbox` notes and exclude archived captures.
+- [ ] With multiple active captures, open the right-side list with Control-Option-S and select another note without loading the full editor.
+- [ ] Confirm the Scratchpad list is sorted by Last Edited newest first and is keyboard accessible.
 - [ ] Confirm the warm Scratchpad window focuses within 250 ms.
 - [ ] Confirm the Scratchpad uses the lightweight capture surface rather than loading the full editor.
 - [ ] Close a blank Scratchpad and confirm no file is created.
@@ -321,7 +334,7 @@ starting.
 - [ ] Trigger an external-edit conflict and confirm the Scratchpad remains visible with the local draft intact.
 - [ ] Type `[[`, filter suggestions, navigate with arrow keys, insert with Return, and dismiss with Escape.
 - [ ] Confirm a completed wikilink remains ordinary portable Markdown source.
-- [ ] Use Command-Option-P and confirm the newest non-archived Scratchpad note opens.
+- [ ] Use Control-Option-P and confirm the newest non-archived Scratchpad note opens.
 - [ ] Archive the newest capture and confirm Previous skips it.
 - [ ] Invoke New and Previous rapidly and confirm stale loads never replace newer typing.
 - [ ] Confirm Scratchpad shortcuts explain that a vault must be opened when no vault is selected.

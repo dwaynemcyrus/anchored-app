@@ -167,7 +167,7 @@ describe("App", () => {
   it("keeps Scratchpad unavailable until a vault is open", () => {
     render(<App />);
 
-    fireEvent.keyDown(window, { altKey: true, key: "n", metaKey: true });
+    fireEvent.keyDown(window, { altKey: true, ctrlKey: true, key: "n" });
 
     expect(mockedOpenScratchpad).not.toHaveBeenCalled();
     expect(
@@ -269,8 +269,8 @@ describe("App", () => {
     await user.click(screen.getByRole("button", { name: "Open vault" }));
     await screen.findByRole("button", { name: "Switch vault: My Vault" });
 
-    fireEvent.keyDown(window, { altKey: true, key: "n", metaKey: true });
-    fireEvent.keyDown(window, { altKey: true, key: "p", metaKey: true });
+    fireEvent.keyDown(window, { altKey: true, ctrlKey: true, key: "n" });
+    fireEvent.keyDown(window, { altKey: true, ctrlKey: true, key: "p" });
     await user.click(screen.getByRole("button", { name: "Open Scratchpad" }));
 
     expect(mockedOpenScratchpad.mock.calls).toEqual([

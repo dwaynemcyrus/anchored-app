@@ -1081,24 +1081,24 @@ export function App() {
     function handleKeyboardShortcut(event: KeyboardEvent) {
       const commandKey = event.metaKey || event.ctrlKey;
 
-      if (commandKey && event.altKey && event.key.toLowerCase() === "n") {
+      if (event.ctrlKey && event.altKey && event.key.toLowerCase() === "n") {
         event.preventDefault();
         openScratchpadWindow("new");
         return;
       }
 
-      if (commandKey && event.altKey && event.key.toLowerCase() === "p") {
+      if (event.ctrlKey && event.altKey && event.key.toLowerCase() === "p") {
         event.preventDefault();
         openScratchpadWindow("previous");
         return;
       }
 
-      if (commandKey && event.key.toLowerCase() === "n") {
+      if (commandKey && !event.altKey && event.key.toLowerCase() === "n") {
         event.preventDefault();
         createNote();
       }
 
-      if (commandKey && event.key.toLowerCase() === "p") {
+      if (commandKey && !event.altKey && event.key.toLowerCase() === "p") {
         event.preventDefault();
         setQuickOpenQuery("");
         setQuickOpenVisible(true);

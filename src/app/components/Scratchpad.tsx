@@ -216,13 +216,20 @@ export function Scratchpad() {
           setSelectedSuggestion(0);
         }}
         onKeyDown={(event) => {
-          const commandKey = event.metaKey || event.ctrlKey;
-          if (commandKey && event.altKey && event.key.toLowerCase() === "n") {
+          if (
+            event.ctrlKey &&
+            event.altKey &&
+            event.key.toLowerCase() === "n"
+          ) {
             event.preventDefault();
             void openMode("new");
             return;
           }
-          if (commandKey && event.altKey && event.key.toLowerCase() === "p") {
+          if (
+            event.ctrlKey &&
+            event.altKey &&
+            event.key.toLowerCase() === "p"
+          ) {
             event.preventDefault();
             void openMode("previous");
             return;
@@ -265,8 +272,8 @@ export function Scratchpad() {
         </div>
       ) : null}
       <footer className="scratchpad-footer">
-        <span>⌘⌥N New</span>
-        <span>⌘⌥P Previous</span>
+        <span>⌃⌥N New</span>
+        <span>⌃⌥P Previous</span>
         <span>Type [[ to link</span>
       </footer>
     </main>

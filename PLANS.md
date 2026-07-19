@@ -872,8 +872,8 @@ and preserves link integrity across filename changes.
       lightweight floating window focuses immediately, creates the file only
       after the first non-whitespace input, autosaves atomically, flushes on
       close, discards a blank capture, and supports wikilink completion through
-      the shared cached link index. `Command-Option-N` opens a new capture and
-      `Command-Option-P` opens the most recent non-archived Scratchpad note.
+      the shared cached link index. `Control-Option-N` opens a new capture and
+      `Control-Option-P` opens the most recent non-archived Scratchpad note.
       System-wide shortcuts remain deferred to GitHub issue #41.
     - Deferred asset import: Current non-Markdown files are indexed in place.
       Copying explicitly imported assets into a physical asset folder while
@@ -1096,8 +1096,8 @@ and preserves link integrity across filename changes.
       lifecycle/native creation commands, shortcut wiring, and tests.
     - Change: Create one reusable small floating window that loads a minimal
       textarea-based Markdown capture surface rather than the full App or
-      CodeMirror bundle. `Command-Option-N` resets it for a new separate note;
-      `Command-Option-P` opens the newest non-archived Scratchpad note. Focus
+      CodeMirror bundle. `Control-Option-N` resets it for a new separate note;
+      `Control-Option-P` opens the newest non-archived Scratchpad note. Focus
       immediately, create on first non-whitespace input, autosave after a short
       idle interval, flush before hide/close, show save state, and offer bounded
       wikilink completion backed by the cached index. Use collision-safe UTC
@@ -1121,7 +1121,7 @@ and preserves link integrity across filename changes.
       after nonblank input, serialize expected-content atomic saves, retain
       drafts when conflicts prevent hiding, select the newest editable capture,
       and provide bounded cached link candidates. The Lucide toolbar action and
-      local Command-Option-N/P shortcuts are covered alongside blank capture,
+      local Control-Option-N/P shortcuts are covered alongside blank capture,
       Unicode/IME, close flush, conflict, wikilink, bridge, and native file
       tests; system-wide shortcuts remain tracked by issue #41.
 
@@ -1178,7 +1178,56 @@ and preserves link integrity across filename changes.
       Workbench defaults to an expanded newest-edited flat list with persistent
       view and bidirectional sorting.
 
-21J. [ ] **Chunk: Complete performance, safety, and native QA**
+21J. [ ] **Chunk: Add Scratchpad browsing and authored timestamps**
+    - Expected files: collection/saved-view models, the lightweight Scratchpad
+      entry and native bridge, lifecycle/type transition dialogs, source-
+      preserving timestamp mutations, cached filesystem metadata contracts,
+      tests, feature documentation, and `CHANGELOG.md` when implemented.
+    - Change: Add a Scratchpad saved-view row with a count between Inbox and
+      Workbench. Scratchpad remains a view over notes with `type: scratchpad`
+      and `status: inbox`, not a second lifecycle location. Activating the row
+      reuses the lightweight floating Scratchpad window. When more than one
+      active Inbox capture exists, expose a right-side list menu in that window,
+      sorted by Last Edited newest first; selecting an item opens it in the same
+      lightweight surface. Exclude archived Scratchpad notes completely from
+      this row and list. `Control-Option-S` opens or toggles the list, alongside
+      `Control-Option-N` for New and `Control-Option-P` for Previous.
+    - Change: Treat lifecycle movement as metadata transition rather than a
+      physical folder move. Moving to Workbench requires choosing an existing
+      type, adding a validated new type, or choosing Untyped. Untyped omits or
+      removes the `type` property instead of writing `type: untyped`. Moving to
+      Archive writes lifecycle metadata and preserves the current type by
+      default while allowing Type/Untyped selection. Restoring to Workbench
+      asks again; restoring to Inbox preserves the existing type. Scratchpad
+      notes keep `type: scratchpad`.
+    - Change: Store canonical lifecycle timestamps as UTC ISO 8601 with second
+      precision and display them in the Mac's local timezone in UI. Continue
+      writing `created_at` once and `archived_at` only for Archive transitions.
+      Add `updated_at` for authored Markdown changes: write it alongside
+      `created_at` when an Anchored-created note initially contains authored
+      content, then update it only after successful user-content saves,
+      including autosave. Do not update it for status/type-only transitions,
+      rename/move operations, failed/conflicted saves, or merely detected
+      external edits. Do not add a front-matter `modified_at`; use cached native
+      filesystem modification time for Last Edited.
+    - Verify: Scratchpad zero/one/many list states, Inbox-only filtering,
+      archived exclusion, count updates, same-window selection, Control-Option
+      N/P/S and visible hints, keyboard navigation, rapid switching with a save
+      in flight, Workbench/Archive type choices, new-type validation, Untyped
+      property removal, source-preserving `updated_at` insertion/replacement,
+      creation with blank/nonblank content, autosave, external conflicts,
+      lifecycle-only changes, UTC storage, DST/local display, missing dates,
+      cached modification-time sorting, and large-vault responsiveness.
+    - Risk/rollback: A duplicate Scratchpad saved view must not violate the
+      one-lifecycle-collection invariant or load the full App/CodeMirror bundle.
+      Managed timestamp updates must compare authored source separately from
+      app-owned metadata to avoid save loops. Native expected-content checks
+      remain mandatory for every mutation.
+    - Expected changelog: Add the active Scratchpad saved view and lightweight
+      list, Control-Option-S, explicit lifecycle type selection, local timestamp
+      display, and source-preserving authored `updated_at` metadata.
+
+21K. [ ] **Chunk: Complete performance, safety, and native QA**
     - Expected files: automated performance suites, manual QA checklist,
       `docs/FEATURES.md`, `PROJECT.md`, `PLANS.md`, and `CHANGELOG.md`.
     - Change: Run the complete Collections/Files, lifecycle, Archive, Assets,
@@ -1197,7 +1246,7 @@ and preserves link integrity across filename changes.
       diffs, stale-cache behavior, or lost Scratchpad drafts as release
       blockers and revert the responsible focused chunk.
     - Expected changelog: Reconcile all user-visible entries from chunks 21B
-      through 21I under `[Unreleased]`; do not change version without an
+      through 21J under `[Unreleased]`; do not change version without an
       explicit release request.
     - Automated verification result (2026-07-19): Formatting, ESLint,
       TypeScript, all 145 frontend tests, Rust formatting, strict Clippy, all
@@ -1209,8 +1258,8 @@ and preserves link integrity across filename changes.
       release signing remains owned by the dedicated alpha packaging workflow.
       Native interaction timing, representative-vault byte diffs, VoiceOver,
       and 2015 MacBook Pro measurements remain manual release blockers, so this
-      chunk and Epic 21 stay open until Chunk 21I lands and those checklist
-      results are recorded.
+      chunk and Epic 21 stay open until Chunks 21I and 21J land and those
+      checklist results are recorded.
 
 ## Requirements for future large plans
 

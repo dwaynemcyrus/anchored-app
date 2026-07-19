@@ -132,10 +132,10 @@ expected result, actual result, and whether any file bytes changed.
 - [ ] Confirm non-Markdown files are recognized and grouped in Assets.
 - [ ] Archive a note; expect `status: archived`, `archived_at`, and read-only
   Preview until an explicit restore to Inbox or Workbench.
-- [ ] Open Scratchpad with Command-Option-N, type immediately, and confirm one
+- [ ] Open Scratchpad with Control-Option-N, type immediately, and confirm one
   separate Inbox note is created and autosaved.
 - [ ] Type `[[` in Scratchpad and insert a note suggestion.
-- [ ] Open the previous non-archived capture with Command-Option-P.
+- [ ] Open the previous non-archived capture with Control-Option-P.
 - [ ] Close a blank Scratchpad and confirm no file is created.
 
 ## 8. Wikilink resolution

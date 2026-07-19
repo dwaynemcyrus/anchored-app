@@ -133,6 +133,22 @@ describe("Scratchpad", () => {
     expect(mockedLatest).toHaveBeenCalledOnce();
   });
 
+  it("uses Control-Option shortcuts and displays matching key hints", async () => {
+    mockedLatest.mockResolvedValue(null);
+    render(<Scratchpad />);
+    const textarea = screen.getByRole("textbox", {
+      name: "Scratchpad Markdown",
+    });
+
+    expect(screen.getByText("⌃⌥N New")).toBeVisible();
+    expect(screen.getByText("⌃⌥P Previous")).toBeVisible();
+    fireEvent.keyDown(textarea, { altKey: true, key: "p", metaKey: true });
+    expect(mockedLatest).not.toHaveBeenCalled();
+    fireEvent.keyDown(textarea, { altKey: true, ctrlKey: true, key: "p" });
+
+    await waitFor(() => expect(mockedLatest).toHaveBeenCalledOnce());
+  });
+
   it("waits for composition to finish before autosaving", async () => {
     render(<Scratchpad />);
     const textarea = screen.getByRole("textbox", {

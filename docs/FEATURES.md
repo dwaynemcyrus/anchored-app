@@ -103,13 +103,13 @@ rendered interface on 2026-07-19.
 ## Scratchpad
 
 - Open a reusable lightweight floating capture window from the Lucide toolbar
-  action or `Command-Option-N`.
+  action or `Control-Option-N`.
 - Create the Markdown file only after the first non-whitespace input; a blank
   capture leaves no file behind.
 - Give each capture `type: scratchpad`, `status: inbox`, and `created_at`.
 - Autosave through serialized atomic writes, flush before hiding, and keep the
   visible draft when an external edit conflict prevents saving.
-- Open the newest non-archived capture with `Command-Option-P`.
+- Open the newest non-archived capture with `Control-Option-P`.
 - Complete bounded wikilink suggestions from the cached vault index.
 - Keep system-wide shortcuts deferred; the current shortcuts work while
   Anchored is active.
@@ -220,8 +220,8 @@ Behavior:
 | Action | Shortcut |
 |---|---|
 | New note | Command-N |
-| New Scratchpad capture | Command-Option-N |
-| Previous Scratchpad capture | Command-Option-P |
+| New Scratchpad capture | Control-Option-N |
+| Previous Scratchpad capture | Control-Option-P |
 | Quick Open | Command-P |
 | Search all note content | Command-Shift-F |
 | Find in the active note | Command-F |
