@@ -303,7 +303,7 @@ and preserves link integrity across filename changes.
 
 11E. [x] **Chunk: Complete pre-package review**
     - Files: application and native source review, automated checks,
-      `docs/FEATURES.md`, `docs/PUBLIC_TEST_CHECKLIST.md`, `README.md`,
+      `docs/FEATURES.md`, `docs/TEST_CHECKLIST.md`, `README.md`,
       `PROJECT.md`, `PLANS.md`
     - Change: Audit the implemented editor journey and trusted filesystem
       boundary before packaging. Publish an evidence-based feature reference
@@ -345,7 +345,7 @@ and preserves link integrity across filename changes.
     - Files: close-protection and modal components, app composition and tests,
       title bar and file explorer controls, global styles, Tauri capabilities
       and security configuration, macOS bundle assets and release scripts,
-      `README.md`, `docs/FEATURES.md`, `docs/PUBLIC_TEST_CHECKLIST.md`,
+      `README.md`, `docs/FEATURES.md`, `docs/TEST_CHECKLIST.md`,
       `CHANGELOG.md`, `PROJECT.md`, `PLANS.md`
     - Change: Prevent loss of first-save drafts on native close or quit, prevent
       note creation without a selected vault, provide complete modal focus
@@ -1129,7 +1129,7 @@ and preserves link integrity across filename changes.
     - Expected files: native vault traversal and folder mutation modules,
       typed snapshot contracts, collection/file-rail models and preferences,
       context-menu components, Lucide controls, focused tests,
-      `docs/MANUAL_QA_CHECKLIST.md`, and `CHANGELOG.md` when implemented.
+      `docs/TEST_CHECKLIST.md`, and `CHANGELOG.md` when implemented.
     - Change: Exclude every path with a dot-prefixed component from all user-
       facing indexing and operations. Hidden files and hidden-folder
       descendants must not appear in Collections, Assets, Files, counts,
@@ -1243,7 +1243,7 @@ and preserves link integrity across filename changes.
       manual QA.
 
 21K. [ ] **Chunk: Complete performance, safety, and native QA**
-    - Expected files: automated performance suites, manual QA checklist,
+    - Expected files: automated performance suites, `docs/TEST_CHECKLIST.md`,
       `docs/FEATURES.md`, `PROJECT.md`, `PLANS.md`, and `CHANGELOG.md`.
     - Change: Run the complete Collections/Files, lifecycle, Archive, Assets,
       Scratchpad, links, typing, and filesystem journey against generated and

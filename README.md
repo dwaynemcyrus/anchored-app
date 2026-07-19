@@ -108,8 +108,8 @@ cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
 
 - [`docs/FEATURES.md`](docs/FEATURES.md) — current feature and limitation
   reference
-- [`docs/PUBLIC_TEST_CHECKLIST.md`](docs/PUBLIC_TEST_CHECKLIST.md) — repeatable
-  private-alpha and future public-testing checklist
+- [`docs/TEST_CHECKLIST.md`](docs/TEST_CHECKLIST.md) — complete feature,
+  safety, accessibility, performance, and release checklist
 - [`docs/ALPHA_STABILITY_LOG.md`](docs/ALPHA_STABILITY_LOG.md) — seven-day
   in-house stability record
 - [`OVERVIEW.md`](OVERVIEW.md) — approved product intent

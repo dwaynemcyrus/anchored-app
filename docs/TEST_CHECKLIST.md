@@ -1,11 +1,38 @@
-# Anchored Manual QA Checklist
+# Anchored Complete Testing Checklist
 
-Use this checklist on a backup copy of the vault. Record the date, app build,
-macOS version, Mac model, display scale, vault size, and tester initials before
-starting.
+Use this as the single testing checklist for each development build, private
+alpha, and future release candidate. Run destructive tests only against a
+disposable vault or a verified backup. Record every failure with the build,
+environment, exact steps, expected and actual results, and whether any file
+bytes changed.
+
+> **Current scope:** Anchored is a private, ad-hoc-signed Intel alpha for macOS
+> 12 and later. Public distribution remains deferred until Developer ID signing
+> and notarization are available. Do not use a primary vault until the full
+> checklist and seven-day stability observation pass.
+
+## Test record
+
+- [ ] Anchored version/commit:
+- [ ] Installation: development app / packaged `.app` / private DMG / future
+      Developer ID package
+- [ ] macOS version:
+- [ ] Mac model, processor, and memory:
+- [ ] Display resolution and scale:
+- [ ] Test vault and approximate Markdown/asset counts:
+- [ ] Backup location and verification time:
+- [ ] Test start date:
+- [ ] Tester:
+- [ ] Diagnostic log location:
 
 ## Test setup
 
+- [ ] Use a disposable vault or a copy that can be restored independently of
+      Anchored.
+- [ ] Confirm the backup opens correctly in another Markdown editor.
+- [ ] Record hashes or byte-for-byte copies of representative notes containing
+      front matter, Unicode, CRLF, attachments, and unsupported Obsidian syntax.
+- [ ] Confirm no other Anchored development process is running.
 - [ ] Test on the minimum supported macOS version.
 - [ ] Test on the primary development macOS version.
 - [ ] Test on the slowest supported/available Mac.
@@ -16,6 +43,43 @@ starting.
 - [ ] Confirm the test vault has nested folders, aliases, wikilinks, front matter, tags, attachments, PDFs, images, audio, video, archives, code, and unknown file types.
 - [ ] Keep a clean copy of the vault so destructive-flow tests can be repeated.
 - [ ] Open Console/diagnostic logs before testing and record unexpected errors.
+- [ ] Keep Finder and another Markdown editor available for external-change
+      tests.
+
+## Installation, launch, and recovery shell
+
+- [ ] Run `npm run release:alpha:macos`; confirm signing, integrity,
+      architecture, deployment-target, and checksum checks pass.
+- [ ] Open the DMG, drag Anchored into Applications, eject it, and launch from
+      Applications without a terminal.
+- [ ] If macOS blocks a trusted transferred private build, record the message
+      and verify explicit approval through Privacy & Security works.
+- [ ] Confirm the application name and icon are correct.
+- [ ] Launch with no vault selected; confirm **No vault open** and **Open vault**
+      appear without an error or blank window.
+- [ ] Resize to 900×600; confirm primary controls remain reachable without
+      horizontal app-shell scrolling.
+- [ ] Test at 200% zoom or equivalent display/text scaling.
+- [ ] Quit and relaunch with no active note; confirm startup remains stable.
+
+## Vault selection, switching, and persistence
+
+- [ ] Choose **Open vault** and select a folder rather than an individual file.
+- [ ] Open a second disposable vault and switch between remembered vaults.
+- [ ] Confirm the active vault is labelled and cannot be duplicated in the
+      remembered-vault list.
+- [ ] Move a remembered vault in Finder; confirm it becomes unavailable rather
+      than silently disappearing.
+- [ ] Reopen the moved vault at its new location; confirm vault-specific history
+      follows its stable vault identity.
+- [ ] Forget a remembered vault; confirm its files and `.anchored` data remain
+      unchanged.
+- [ ] Relaunch; confirm the remembered vault and last valid note restore.
+- [ ] Open an empty note, a root note, and a nested note; confirm exact source
+      content and an editable empty editor.
+- [ ] Switch repeatedly among three notes; confirm no stale document content.
+- [ ] Try a non-UTF-8 and a larger-than-10-MiB disposable Markdown file; confirm
+      recoverable refusal without alteration.
 
 ## Typography and text rendering
 
@@ -247,6 +311,24 @@ starting.
 - [ ] Confirm cancelling at every dialog stage leaves the folder unchanged.
 - [ ] Confirm a failed delete leaves the source folder and its contents intact.
 
+### Note Trash and restoration
+
+- [ ] Trash a saved note; confirm it disappears from Collections, Files, Quick
+      Open, search, wikilink candidates, aliases, and backlinks.
+- [ ] Confirm references in other notes are not rewritten when the target is
+      moved to Trash.
+- [ ] Open Trash; confirm the note's name, original path, and timestamp.
+- [ ] Restore the note; confirm identical bytes, path, front matter, links, and
+      backlinks.
+- [ ] Trash a nested note, remove its empty parent folder externally, and
+      restore; confirm safe parent-folder recreation.
+- [ ] Put another file at the original path and attempt restore; confirm refusal
+      with both files unchanged.
+- [ ] Switch vaults; confirm Trash contents remain vault-specific.
+- [ ] Confirm there is no permanent-delete action.
+- [ ] Close Trash with Escape and the visible control; confirm focus returns to
+      the invoking control.
+
 ## Markdown editing and cursor behavior
 
 - [ ] Open a short Markdown note and type at the beginning, middle, and end.
@@ -290,6 +372,18 @@ starting.
 - [ ] Confirm unsupported front matter and Obsidian syntax remain intact.
 - [ ] Confirm attachments are not deleted or rewritten by Markdown edits.
 - [ ] Confirm `.anchored` metadata is additive and does not expose vault content in logs.
+- [ ] Save As over an existing note and outside the vault; confirm both are
+      refused without overwriting anything.
+- [ ] Close a note with unfinished edits; confirm Anchored keeps it open and
+      clearly explains the required action.
+- [ ] Create an unsaved note, close the window, then quit; confirm an explicit
+      save/discard/cancel guard protects the draft.
+- [ ] Confirm app-created notes receive `created_at`, while Finder-added notes
+      are indexed without automatic metadata writes.
+- [ ] Add malformed or duplicate legacy IDs; confirm they remain inert user
+      metadata and do not generate recurring identity notifications.
+- [ ] Add, rename, move, and delete files externally; return focus and confirm
+      the index refreshes without rewriting unrelated files.
 
 ## Lifecycle and Archive
 
@@ -346,17 +440,98 @@ starting.
 - [ ] Search by alias.
 - [ ] Search Markdown content.
 - [ ] Open a search result.
+- [ ] Open Quick Open with Command-P; confirm recent notes appear by default.
+- [ ] Search Quick Open by filename, path, and alias; navigate with Arrow keys
+      and open with Return.
+- [ ] Confirm the active note is excluded from default recent suggestions.
+- [ ] Move or delete a note externally; confirm stale Quick Open results vanish
+      after refresh.
+- [ ] Use Command-Shift-F to search Unicode body text.
+- [ ] Confirm search results include path, line number, and a useful snippet.
+- [ ] Search text with more than 100 matches; confirm a visible limited-result
+      state and safely skipped-file count rather than interface failure.
 - [ ] Search with no vault open and confirm the explanation is actionable.
 - [ ] Search with no matches and confirm the empty state.
+- [ ] Trigger a recoverable search error, close the palette, and search again.
+- [ ] Use Command-F in the active note; confirm Find searches only that note and
+      Escape closes it.
 - [ ] Open a valid wikilink.
 - [ ] Open a wikilink by alias.
+- [ ] Open `[[Folder/Note]]`, `[[Folder/Note.md]]`, `[[Note#Heading]]`,
+      `[[Note|Label]]`, and `![[Note]]`.
+- [ ] Open a supported link inside a quoted top-level YAML text/list value.
+- [ ] Confirm `[[#Heading]]` resolves to the current note.
+- [ ] Command-click and Command-Enter a wikilink; confirm both open the same
+      target.
+- [ ] Confirm duplicate filename and alias links report ambiguity rather than
+      opening an arbitrary note.
+- [ ] Confirm missing links report no match and create no file.
+- [ ] Confirm escaped links and links inside inline, fenced, and indented code
+      do not navigate or create backlinks.
+- [ ] Type `[[`; confirm recent notes appear, excluding the active note.
+- [ ] Navigate completion with Arrow keys and Return.
+- [ ] Confirm a unique filename inserts `[[Name]]`, while duplicate filenames
+      insert vault-relative paths.
+- [ ] Search completion by alias; confirm `[[target|alias]]` insertion.
+- [ ] Confirm completion shows at most 24 options and ranks filename, folder,
+      alias, and recent-note matches predictably.
+- [ ] Confirm unresolved references appear as **Uncreated** with counts without
+      creating a file.
+- [ ] Confirm completion works in supported quoted YAML but not in code,
+      comments, malformed links, or unsupported YAML values.
 - [ ] Follow a wikilink from Preview.
 - [ ] Confirm unresolved wikilinks remain visibly unresolved without crashing.
+- [ ] Confirm body and supported front-matter backlinks appear and open the
+      correct source note.
+- [ ] Confirm ambiguous and missing source links do not create false backlinks.
+- [ ] Edit a link without saving; confirm the live backlink view updates.
 - [ ] Confirm backlinks update after a file rename.
 - [ ] Confirm ambiguous links remain unchanged and are not silently redirected.
+- [ ] Rename and move a heavily linked disposable note; confirm filename, path,
+      `.md` style, heading fragments, display labels, aliases, and backlinks
+      remain valid.
+- [ ] Confirm changing only YAML `title` does not rewrite references.
+- [ ] Confirm unrelated notes remain byte-for-byte unchanged after rename/move.
+- [ ] Attempt rename with affected unsaved notes or an occupied destination;
+      confirm refusal without a partial transaction.
+- [ ] Confirm no temporary, backup, or rename-journal file remains afterward.
+- [ ] In a disposable recovery test, force-quit during rename; reopening must
+      restore the old state or complete the new state, never a mixture.
 - [ ] Render Preview with headings, lists, tables, footnotes, math, code, emoji, admonitions, and Mermaid.
 - [ ] Confirm dangerous HTML or URLs are sanitized.
 - [ ] Confirm Preview errors are recoverable and do not blank the app.
+
+## Notifications and history
+
+- [ ] Trigger multiple messages; confirm a centered newest-first stack that
+      does not obstruct note actions.
+- [ ] Dismiss messages independently and confirm identical events deduplicate.
+- [ ] Open the bell; confirm timestamped history is scoped to the current vault.
+- [ ] Confirm vault, link, rename, Trash, conflict, lifecycle, and error events
+      use clear labels while routine autosaves do not flood history.
+- [ ] Delete an ordinary record and clear resolved records.
+- [ ] Confirm an active conflict cannot be deleted as ordinary history but can
+      be marked resolved.
+- [ ] Switch vaults and back; confirm each vault restores its own badge and
+      history.
+- [ ] Close with Escape and the visible Close control; confirm focus returns.
+- [ ] Tab through the panel; focus must not enter obscured application controls.
+
+## Privacy, integrity, and portability
+
+- [ ] Disconnect networking; confirm every implemented core feature continues
+      to work.
+- [ ] Confirm no account, login, analytics, telemetry, or network request is
+      required.
+- [ ] Inspect edited files in another Markdown editor; confirm portability.
+- [ ] Confirm unsupported syntax, tags, comments, attachment links, BOM, and
+      unrelated front matter remain present after supported operations.
+- [ ] Confirm attachments are indexed as Assets and never interpreted as
+      Markdown.
+- [ ] Inspect `.anchored`; confirm it contains only expected vault identity,
+      Trash, and recovery metadata.
+- [ ] Confirm local interface storage, notifications, and recent-note data do
+      not expose note contents or absolute vault paths.
 
 ## Performance and stability
 
@@ -382,6 +557,16 @@ starting.
 - [ ] Confirm rapid Files scrolling and direction reversals show no black gaps or missed input.
 - [ ] Confirm no measured main-thread interaction task exceeds 50 ms during rapid tree use.
 - [ ] Confirm focus refresh reads bodies only for new or signature-changed Markdown files.
+- [ ] On the 2015 MacBook Pro baseline, record cold launch, vault-to-usable,
+      first-note, and warm-note-switch timings.
+- [ ] Type continuously for five minutes; confirm no dropped input or visible
+      completion lag.
+- [ ] Exercise wikilink completion, Quick Open, and content search repeatedly;
+      confirm memory growth does not make the app unusable.
+- [ ] Rename a heavily linked note; confirm responsive progress rather than an
+      interface freeze.
+- [ ] Leave the app open for at least four hours with normal editing, searches,
+      Scratchpad use, and vault switching; confirm stable memory and saving.
 
 ## Accessibility and input methods
 
@@ -397,6 +582,12 @@ starting.
 - [ ] Test increased text size or system accessibility settings if available.
 - [ ] Test mouse, trackpad, and keyboard activation for the same actions.
 - [ ] Confirm right-click alternatives exist for users who cannot use a secondary click.
+- [ ] Enable Reduce Motion; confirm no required information depends on motion.
+- [ ] Complete create, open, edit, save, search, link, rename, archive, Trash,
+      restore, notification, and vault-switch flows without a pointer.
+- [ ] Run VoiceOver through the title bar, file tree, editor, Preview,
+      backlinks, palettes, notifications, vault switcher, Trash, lifecycle
+      dialogs, and Scratchpad list.
 
 ## Final regression and release checks
 
@@ -421,6 +612,45 @@ starting.
 - [ ] Confirm no unexpected files, logs, secrets, or debug overlays were created.
 - [ ] Record all failures with reproduction steps, screenshots, app version, OS version, and vault fixture details.
 - [ ] Do not test destructive operations against the primary vault until the backup run is clean.
+
+## Seven-day stability observation
+
+Repeat the core journey on a backed-up representative vault for seven
+consecutive days. Content loss, corruption, unsafe overwrite, or broken
+supported links resets the observation after the defect is fixed.
+
+| Day | Launch/open | Write/autosave | Links/rename | Search | Scratchpad | Relaunch/recovery | Result/issues |
+|---|---|---|---|---|---|---|---|
+| 1 | [ ] | [ ] | [ ] | [ ] | [ ] | [ ] | |
+| 2 | [ ] | [ ] | [ ] | [ ] | [ ] | [ ] | |
+| 3 | [ ] | [ ] | [ ] | [ ] | [ ] | [ ] | |
+| 4 | [ ] | [ ] | [ ] | [ ] | [ ] | [ ] | |
+| 5 | [ ] | [ ] | [ ] | [ ] | [ ] | [ ] | |
+| 6 | [ ] | [ ] | [ ] | [ ] | [ ] | [ ] | |
+| 7 | [ ] | [ ] | [ ] | [ ] | [ ] | [ ] | |
+
+## Issue report template
+
+```text
+Anchored version/commit:
+macOS version and Mac model:
+Installation type:
+Vault size and relevant structure:
+Backup confirmed before test: yes/no
+
+Steps to reproduce:
+1.
+2.
+3.
+
+Expected result:
+Actual result:
+Frequency: once/intermittent/every time
+Any note bytes changed unexpectedly: yes/no/unknown
+Recovery attempted and result:
+Screenshots or exact visible message:
+Relevant disposable files (never attach private vault content):
+```
 
 ## Sign-off
 

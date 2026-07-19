@@ -8,7 +8,7 @@ rendered interface on 2026-07-19.
 > **Testing status:** The ad-hoc-signed Intel build is ready for Dwayne's
 > private in-house alpha on a disposable or verified backup vault. It is not
 > ready for a primary vault or broad public distribution. See the
-> [testing checklist](PUBLIC_TEST_CHECKLIST.md) and
+> [testing checklist](TEST_CHECKLIST.md) and
 > [stability log](ALPHA_STABILITY_LOG.md).
 
 ## Product and platform
