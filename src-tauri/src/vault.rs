@@ -20,7 +20,9 @@ use crate::continuity::{
     move_note_to_trash, registry_path, remember_vault, remembered_vault_root,
     restore_folder_from_trash, restore_note_from_trash, RememberedVault, TrashEntry,
 };
-use crate::links::{plan_rename_link_rewrites, LinkNote, LinkSource};
+use crate::links::{
+    plan_rename_link_rewrites, plan_rename_link_rewrites_by_path, LinkNote, LinkSource,
+};
 use crate::metadata::{
     add_note_identity, assign_new_note_identity, generate_note_id, inspect_note_aliases,
     inspect_note_identity, inspect_wikilinks, NoteIdentityStatus,
@@ -121,6 +123,7 @@ struct IdentityMigrationPlan {
 #[derive(Debug, Clone)]
 struct IdentityMigrationPlanEntry {
     relative_path: String,
+    replace_existing: bool,
     signature: FileSignature,
 }
 
@@ -1103,15 +1106,6 @@ fn rename_folder(root: &Path, folder_path: &str, name: &str) -> Result<(), Vault
         return Ok(());
     }
 
-    let moved_note_paths = moved_files.iter().cloned().collect::<HashSet<_>>();
-    for file in &snapshot.files {
-        if moved_note_paths.contains(&file.relative_path) && file.id.is_none() {
-            return Err(VaultError::identity_conflict(
-                "Every note in this folder needs a unique permanent identity before the folder can be renamed safely.",
-            ));
-        }
-    }
-
     fs::create_dir(&destination_directory)
         .map_err(|error| VaultError::io("The renamed folder could not be created", error))?;
 
@@ -1602,19 +1596,26 @@ fn build_identity_migration_preview(
     let mut eligible_files = Vec::new();
     let mut entries = Vec::new();
     let mut issues = Vec::new();
+    let mut retained_duplicate_ids = HashSet::new();
     for (relative_path, signature, status) in inspected {
         match status {
             NoteIdentityStatus::Missing => {
                 eligible_files.push(relative_path.clone());
                 entries.push(IdentityMigrationPlanEntry {
                     relative_path,
+                    replace_existing: false,
                     signature,
                 });
             }
             NoteIdentityStatus::Present(id) if identity_counts[&id] > 1 => {
-                issues.push(IdentityMigrationIssue {
-                    reason: "duplicateIdentity",
+                if retained_duplicate_ids.insert(id) {
+                    continue;
+                }
+                eligible_files.push(relative_path.clone());
+                entries.push(IdentityMigrationPlanEntry {
                     relative_path,
+                    replace_existing: true,
+                    signature,
                 });
             }
             NoteIdentityStatus::Invalid => issues.push(IdentityMigrationIssue {
@@ -1670,20 +1671,31 @@ fn apply_identity_migration_plan(
             continue;
         }
         let expected = read_markdown_file(&plan.root, &entry.relative_path)?.content;
+        let current_status = inspect_note_identity(&expected);
         if !matches!(
-            inspect_note_identity(&expected),
-            NoteIdentityStatus::Missing
+            current_status,
+            NoteIdentityStatus::Missing | NoteIdentityStatus::Present(_)
         ) {
             skipped += 1;
             continue;
         }
         let id = generate_unique_note_id(&known_identities);
-        let updated = add_note_identity(&expected, &id).map_err(|_| {
+        let updated = if entry.replace_existing {
+            assign_new_note_identity(&expected, &id)
+        } else {
+            add_note_identity(&expected, &id)
+        }
+        .map_err(|_| {
             VaultError::identity_conflict(
                 "A legacy note could not receive an identity without changing unsafe front matter.",
             )
         })?;
-        save_markdown_file(&plan.root, &entry.relative_path, &updated, &expected)?;
+        save_markdown_file_with_identity_replacement(
+            &plan.root,
+            &entry.relative_path,
+            &updated,
+            &expected,
+        )?;
         known_identities.insert(id);
         migrated += 1;
     }
@@ -1814,10 +1826,25 @@ fn save_markdown_file(
     content: &str,
     expected_content: &str,
 ) -> Result<VaultDocument, VaultError> {
-    if content.len() as u64 > MAX_MARKDOWN_FILE_BYTES {
-        return Err(VaultError::file_too_large());
-    }
+    save_markdown_file_internal(root, relative_path, content, expected_content, false)
+}
 
+fn save_markdown_file_with_identity_replacement(
+    root: &Path,
+    relative_path: &str,
+    content: &str,
+    expected_content: &str,
+) -> Result<VaultDocument, VaultError> {
+    save_markdown_file_internal(root, relative_path, content, expected_content, true)
+}
+
+fn save_markdown_file_internal(
+    root: &Path,
+    relative_path: &str,
+    content: &str,
+    expected_content: &str,
+    allow_identity_replacement: bool,
+) -> Result<VaultDocument, VaultError> {
     let canonical_file = resolve_vault_markdown_file(root, relative_path)?;
     let current_bytes = fs::read(&canonical_file)
         .map_err(|error| VaultError::io("The Markdown file could not be read", error))?;
@@ -1826,30 +1853,48 @@ fn save_markdown_file(
     if current_content != expected_content {
         return Err(VaultError::conflict());
     }
-    if let NoteIdentityStatus::Present(existing_id) = inspect_note_identity(&current_content) {
+    let content = if let NoteIdentityStatus::Present(existing_id) =
+        inspect_note_identity(&current_content)
+    {
         match inspect_note_identity(content) {
-            NoteIdentityStatus::Present(proposed_id) if proposed_id == existing_id => {}
+            NoteIdentityStatus::Present(proposed_id)
+                if proposed_id == existing_id || allow_identity_replacement =>
+            {
+                content.to_owned()
+            }
+            NoteIdentityStatus::Missing => assign_new_note_identity(content, &existing_id)
+                .map_err(|_| {
+                    VaultError::identity_conflict(
+                        "This save could not preserve the note's permanent identity. Your edits were kept and were not written.",
+                    )
+                })?,
             _ => {
                 return Err(VaultError::identity_conflict(
                     "This save would remove or change the note's permanent identity. Your edits were kept and were not written.",
                 ))
             }
         }
+    } else {
+        content.to_owned()
+    };
+    if content.len() as u64 > MAX_MARKDOWN_FILE_BYTES {
+        return Err(VaultError::file_too_large());
     }
 
     let metadata = fs::metadata(&canonical_file)
         .map_err(|error| VaultError::io("The Markdown file could not be inspected", error))?;
     let temporary_path = temporary_sibling_path(&canonical_file)?;
-    let write_result = write_atomically(&temporary_path, &canonical_file, content, &metadata);
+    let write_result = write_atomically(&temporary_path, &canonical_file, &content, &metadata);
     if write_result.is_err() {
         let _ = fs::remove_file(&temporary_path);
     }
     write_result?;
 
+    let size_bytes = content.len() as u64;
     Ok(VaultDocument {
-        content: content.to_owned(),
+        content,
         relative_path: relative_path.to_owned(),
-        size_bytes: content.len() as u64,
+        size_bytes,
     })
 }
 
@@ -1928,11 +1973,6 @@ fn rename_markdown_file(
         .iter()
         .find(|file| file.relative_path == relative_path)
         .ok_or_else(|| VaultError::invalid_file("The note to rename is no longer in the vault."))?;
-    let target_identity = target.id.as_deref().ok_or_else(|| {
-        VaultError::identity_conflict(
-            "This note needs a unique permanent identity before it can be renamed safely.",
-        )
-    })?;
 
     let mut sources = Vec::with_capacity(snapshot.files.len());
     for file in &snapshot.files {
@@ -1956,7 +1996,12 @@ fn rename_markdown_file(
             relative_path: file.relative_path.clone(),
         })
         .collect::<Vec<_>>();
-    let rewrites = plan_rename_link_rewrites(&notes, &sources, target_identity, &new_relative_path);
+    let rewrites = target.id.as_deref().map_or_else(
+        || plan_rename_link_rewrites_by_path(&notes, &sources, relative_path, &new_relative_path),
+        |target_identity| {
+            plan_rename_link_rewrites(&notes, &sources, target_identity, &new_relative_path)
+        },
+    );
     let updated_links = rewrites
         .iter()
         .map(|rewrite| rewrite.replacement_count)
@@ -2923,6 +2968,41 @@ mod tests {
     }
 
     #[test]
+    fn repairs_duplicate_identities_without_blocking_migration() {
+        let vault = tempdir().expect("create fixture vault");
+        let duplicate_id = "01JZQ7K8P4A6F2M9V3C5T7X1BY";
+        fs::write(
+            vault.path().join("First.md"),
+            format!("---\nid: {duplicate_id}\n---\n# First\n"),
+        )
+        .expect("write first duplicate note");
+        fs::write(
+            vault.path().join("Second.md"),
+            format!("---\nid: {duplicate_id}\n---\n# Second\n"),
+        )
+        .expect("write second duplicate note");
+        let snapshot = scan_vault(vault.path()).expect("scan duplicate notes");
+
+        let (preview, plan) = build_identity_migration_preview(vault.path(), &snapshot.files)
+            .expect("preview duplicate repair");
+
+        assert_eq!(preview.eligible_files.len(), 1);
+        assert!(preview.issues.is_empty());
+        let (migrated, skipped) = apply_identity_migration_plan(&plan).expect("repair duplicate");
+        assert_eq!((migrated, skipped), (1, 0));
+
+        let first = fs::read_to_string(vault.path().join("First.md")).expect("read first note");
+        let second = fs::read_to_string(vault.path().join("Second.md")).expect("read second note");
+        let NoteIdentityStatus::Present(first_id) = inspect_note_identity(&first) else {
+            panic!("first note should retain an identity");
+        };
+        let NoteIdentityStatus::Present(second_id) = inspect_note_identity(&second) else {
+            panic!("second note should receive an identity");
+        };
+        assert_ne!(first_id, second_id);
+    }
+
+    #[test]
     fn skips_a_legacy_note_changed_after_preview() {
         let vault = tempdir().expect("create fixture vault");
         let note = vault.path().join("Legacy.md");
@@ -3287,19 +3367,20 @@ mod tests {
     }
 
     #[test]
-    fn refuses_to_remove_an_existing_note_identity_during_save() {
+    fn restores_an_existing_note_identity_when_a_save_removes_it() {
         let vault = tempdir().expect("create fixture vault");
         let note = vault.path().join("Note.md");
         let original = "---\nid: 01JZQ7K8P4A6F2M9V3C5T7X1BY\n---\n# Before\n";
         fs::write(&note, original).expect("write identified note");
 
-        let error = save_markdown_file(vault.path(), "Note.md", "# After\n", original)
-            .expect_err("reject identity removal");
+        let document = save_markdown_file(vault.path(), "Note.md", "# After\n", original)
+            .expect("restore identity while saving");
 
-        assert_eq!(error.code, "identityConflict");
+        assert!(document.content.contains("id: 01JZQ7K8P4A6F2M9V3C5T7X1BY"));
+        assert!(document.content.ends_with("# After\n"));
         assert_eq!(
             fs::read_to_string(&note).expect("read protected note"),
-            original
+            document.content
         );
     }
 
@@ -3600,21 +3681,20 @@ mod tests {
     }
 
     #[test]
-    fn refuses_to_rename_a_note_without_a_unique_identity() {
+    fn renames_a_note_without_a_unique_identity() {
         let vault = tempdir().expect("create fixture vault");
         fs::write(vault.path().join("Legacy.md"), "# Legacy\n").expect("write legacy note");
 
-        let error = rename_markdown_file(
+        rename_markdown_file(
             vault.path(),
             "Legacy.md",
             &vault.path().join("Renamed.md"),
             None,
         )
-        .expect_err("reject unidentified note");
+        .expect("rename unidentified note");
 
-        assert_eq!(error.code, "identityConflict");
-        assert!(vault.path().join("Legacy.md").exists());
-        assert!(!vault.path().join("Renamed.md").exists());
+        assert!(!vault.path().join("Legacy.md").exists());
+        assert!(vault.path().join("Renamed.md").exists());
     }
 
     #[test]

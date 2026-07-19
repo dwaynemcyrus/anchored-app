@@ -43,6 +43,10 @@ Git commit. The format follows [Keep a Changelog], and releases follow
 
 ### Changed
 
+- Note identities are now durable metadata rather than a prerequisite for
+  normal editing, renaming, moving, and folder operations. Missing and
+  duplicate identities can be repaired through the migration flow, while
+  ambiguous links remain unchanged until they can be resolved safely.
 - The source editor now defaults to a compact 14px type size, with persisted
   12px, 14px, and 16px choices in Settings. Markdown and YAML front matter
   now use separate CodeMirror language parsing and dark-theme syntax styles.

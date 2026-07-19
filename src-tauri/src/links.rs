@@ -47,6 +47,30 @@ pub fn plan_rename_link_rewrites(
     else {
         return Vec::new();
     };
+    plan_rename_link_rewrites_for_target(notes, sources, target_index, new_relative_path)
+}
+
+pub fn plan_rename_link_rewrites_by_path(
+    notes: &[LinkNote],
+    sources: &[LinkSource],
+    target_path: &str,
+    new_relative_path: &str,
+) -> Vec<PlannedLinkRewrite> {
+    let Some(target_index) = notes
+        .iter()
+        .position(|note| note.relative_path == target_path)
+    else {
+        return Vec::new();
+    };
+    plan_rename_link_rewrites_for_target(notes, sources, target_index, new_relative_path)
+}
+
+fn plan_rename_link_rewrites_for_target(
+    notes: &[LinkNote],
+    sources: &[LinkSource],
+    target_index: usize,
+    new_relative_path: &str,
+) -> Vec<PlannedLinkRewrite> {
     let new_stem = markdown_stem(new_relative_path);
     let new_filename_is_ambiguous = notes.iter().enumerate().any(|(index, note)| {
         index != target_index
@@ -215,7 +239,9 @@ fn markdown_stem(relative_path: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{plan_rename_link_rewrites, LinkNote, LinkSource};
+    use super::{
+        plan_rename_link_rewrites, plan_rename_link_rewrites_by_path, LinkNote, LinkSource,
+    };
 
     const TARGET_ID: &str = "01JZQ7K8P4A6F2M9V3C5T7X1BY";
 
@@ -292,6 +318,31 @@ mod tests {
         assert_eq!(
             rewrites[0].content,
             "[[Archive/Überblick.md#Résumé|Shown]] [[Überblick#Résumé]]\r\n"
+        );
+    }
+
+    #[test]
+    fn rewrites_links_by_path_when_the_target_has_no_identity() {
+        let notes = vec![
+            note("Notes/Old Name.md", None, &["Legacy"]),
+            note("Sources.md", None, &[]),
+        ];
+        let source = LinkSource {
+            content: "[[Old Name]] [[Legacy]] [[Notes/Old Name.md]]\n".to_owned(),
+            relative_path: "Sources.md".to_owned(),
+        };
+
+        let rewrites = plan_rename_link_rewrites_by_path(
+            &notes,
+            &[source],
+            "Notes/Old Name.md",
+            "Archive/New Name.md",
+        );
+
+        assert_eq!(rewrites[0].replacement_count, 3);
+        assert_eq!(
+            rewrites[0].content,
+            "[[New Name]] [[New Name|Legacy]] [[Archive/New Name.md]]\n"
         );
     }
 }

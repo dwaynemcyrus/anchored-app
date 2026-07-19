@@ -156,7 +156,7 @@ function vaultSummaryMessage(snapshot: VaultSnapshot): string {
   }
   if (snapshot.warnings.identityConflicts > 0) {
     notices.push(
-      `${snapshot.warnings.identityConflicts} identity conflicts need attention.`,
+      `${snapshot.warnings.identityConflicts} identity metadata issues detected; normal editing remains available.`,
     );
   }
   if (snapshot.warnings.skippedSymlinks > 0) {
@@ -866,13 +866,12 @@ export function App() {
         );
       }
       if (snapshot.warnings.identityConflicts > 0) {
+        const count = snapshot.warnings.identityConflicts;
         addHistoryEntry(
-          `${snapshot.warnings.identityConflicts} identity conflict${
-            snapshot.warnings.identityConflicts === 1 ? " needs" : "s need"
-          } attention.`,
+          `${count} identity metadata issue${count === 1 ? "" : "s"} detected; repair is optional and normal editing remains available.`,
           {
             kind: "identity",
-            requiresAction: true,
+            requiresAction: false,
             sourceId: "vault:identity-conflicts",
           },
         );

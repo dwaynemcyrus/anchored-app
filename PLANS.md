@@ -1070,6 +1070,13 @@ Every future large plan must identify:
   Trash, and non-Markdown asset scanning are implemented and covered by the
   frontend and Rust checks. A representative 700-file interactive timing pass
   remains a follow-up for desktop hardware.
+- 2026-07-19: Decoupled normal vault operations from note identity metadata.
+  Rename and move link planning now falls back to a unique relative path when
+  a note has no usable ID, identity warnings are informational, duplicate IDs
+  can be repaired by the migration flow, and saves restore a valid existing ID
+  when an editor draft omits it. Valid IDs remain protected from accidental
+  changes, while malformed front matter and ambiguous references remain
+  conservative safety stops.
 
 ## Completion
 
