@@ -1,0 +1,339 @@
+# Anchored Manual QA Checklist
+
+Use this checklist on a backup copy of the vault. Record the date, app build,
+macOS version, Mac model, display scale, vault size, and tester initials before
+starting.
+
+## Test setup
+
+- [ ] Test on the minimum supported macOS version.
+- [ ] Test on the primary development macOS version.
+- [ ] Test on the slowest supported/available Mac.
+- [ ] Test at the default display scale.
+- [ ] Test at a non-default display scale or smaller laptop viewport.
+- [ ] Test with a representative vault backup.
+- [ ] Test with a large vault: approximately 700 Markdown files and 56 root folders.
+- [ ] Confirm the test vault has nested folders, aliases, wikilinks, front matter, tags, attachments, PDFs, images, audio, video, archives, code, and unknown file types.
+- [ ] Keep a clean copy of the vault so destructive-flow tests can be repeated.
+- [ ] Open Console/diagnostic logs before testing and record unexpected errors.
+
+## Typography and text rendering
+
+### Global typography
+
+- [ ] Confirm the app uses one intentional type hierarchy for title bar, sidebar, editor, status bar, dialogs, menus, and notices.
+- [ ] Confirm body text is readable at normal brightness and contrast.
+- [ ] Confirm muted text is still legible and does not become too faint.
+- [ ] Confirm text does not appear blurry, doubled, clipped, or incorrectly antialiased.
+- [ ] Confirm font rendering is consistent between the title bar, file tree, dialogs, and editor.
+- [ ] Confirm uppercase labels, button labels, and status text have consistent tracking and weight.
+- [ ] Confirm headings have visibly distinct size, weight, and spacing.
+- [ ] Confirm long headings wrap or truncate intentionally rather than overlapping controls.
+- [ ] Confirm there are no accidental fallback fonts or missing glyph boxes.
+- [ ] Test accented Latin characters: `é`, `ö`, `ñ`, `ø`, `ß`.
+- [ ] Test non-Latin text relevant to the vault: Arabic, Cyrillic, Greek, CJK, and emoji.
+- [ ] Confirm mixed-script text does not change line height unexpectedly.
+- [ ] Confirm emoji render consistently in the editor, tree, search results, and Preview.
+- [ ] Confirm symbols such as arrows, quotation marks, em dashes, ellipses, and math characters render correctly.
+
+### Editor typography
+
+- [ ] Confirm the default editor font size is comfortable for a long writing session.
+- [ ] Test every available editor font-size setting.
+- [ ] Confirm changing font size updates the editor without losing focus, selection, or cursor position.
+- [ ] Confirm font-size settings persist after closing and reopening the app.
+- [ ] Confirm Markdown headings have the intended visual hierarchy in the source editor.
+- [ ] Confirm front matter remains visually distinguishable from Markdown body text.
+- [ ] Confirm code fences, inline code, links, wikilinks, tags, tasks, emphasis, highlights, math, and admonitions are distinguishable without becoming visually noisy.
+- [ ] Confirm syntax colors remain readable against the editor background.
+- [ ] Confirm selected text remains readable over syntax-highlighted text.
+- [ ] Confirm the active line or cursor indicator does not overpower the text.
+- [ ] Confirm wrapped long lines maintain consistent line height.
+- [ ] Confirm blank lines, trailing spaces, tabs, and indentation are visually predictable.
+- [ ] Confirm the editor does not horizontally jump when typing near the viewport edge.
+- [ ] Confirm the editor does not reflow unexpectedly while typing or autosaving.
+- [ ] Confirm Preview typography matches the source/editor design language.
+- [ ] Confirm rendered headings, lists, quotes, tables, code blocks, math, footnotes, and callouts have readable spacing.
+- [ ] Confirm links and wikilinks are visibly identifiable in Preview.
+- [ ] Confirm very long unbroken URLs or code lines do not overflow the window.
+
+### File tree and utility typography
+
+- [ ] Confirm file and folder names use consistent size, weight, and line height.
+- [ ] Confirm nested rows remain readable at every indentation level.
+- [ ] Confirm long names truncate with an ellipsis and expose the full name through a title/accessible label.
+- [ ] Confirm file-type labels do not collide with long filenames.
+- [ ] Confirm search text, empty-state text, loading text, and error text have distinct but consistent emphasis.
+- [ ] Confirm dialog descriptions are readable at the smallest supported window size.
+- [ ] Confirm button labels never clip or wrap awkwardly.
+- [ ] Confirm success, warning, and error notices remain readable in both light and dark themes.
+
+## Visual layout and appearance
+
+### App shell
+
+- [ ] Confirm the first viewport is not blank and the primary action is obvious.
+- [ ] Confirm title bar, workspace, file rail, editor, and status bar align cleanly.
+- [ ] Confirm there is no horizontal scrollbar caused by the app shell.
+- [ ] Confirm the sidebar opens and closes without layout jumps or content overlap.
+- [ ] Confirm the sidebar width is usable for long filenames and does not starve the editor.
+- [ ] Confirm resizing the window preserves the intended minimum widths.
+- [ ] Confirm controls remain visible at narrow desktop widths.
+- [ ] Confirm the status bar does not cover editor content or dialogs.
+- [ ] Confirm fixed, sticky, and overlay elements have the correct stacking order.
+- [ ] Confirm no tooltip, menu, or dialog is clipped by the window edge.
+
+### Icons and controls
+
+- [ ] Confirm file-tree icons are Lucide icons with consistent stroke weight and size.
+- [ ] Confirm folder, disclosure, file, image, PDF, audio, video, archive, code, and unknown-file icons are visually distinct.
+- [ ] Confirm icons do not shift text alignment between file types.
+- [ ] Confirm icon-only controls have visible hover, focus, pressed, and disabled states.
+- [ ] Confirm icon-only controls have meaningful accessible labels/tooltips.
+- [ ] Confirm disabled controls have sufficient contrast and a clear disabled appearance.
+- [ ] Confirm hover states do not cause layout shifts.
+- [ ] Confirm active-row indicators are visible but not visually dominant.
+- [ ] Confirm selection and active-document states are distinguishable.
+- [ ] Confirm drag-over folder highlighting is obvious and disappears after drag cancellation.
+
+### Themes, contrast, and states
+
+- [ ] Test the app in every supported theme or appearance mode.
+- [ ] Test macOS light mode.
+- [ ] Test macOS dark mode.
+- [ ] Test increased contrast if supported by the OS.
+- [ ] Confirm borders remain visible without becoming heavy.
+- [ ] Confirm focus rings remain visible in both light and dark modes.
+- [ ] Confirm text, icons, borders, backgrounds, and selected rows meet the intended contrast level.
+- [ ] Confirm error states are not communicated by color alone.
+- [ ] Confirm success states are not communicated by color alone.
+- [ ] Confirm loading states are visible but do not flicker.
+- [ ] Confirm empty states explain what to do next.
+- [ ] Confirm no-vault, vault-loading, vault-open, no-results, and error states all look intentional.
+
+## File tree usage tests
+
+### Navigation and selection
+
+- [ ] Open a vault and confirm the tree loads without stalling.
+- [ ] Click a file and confirm it becomes selected and opens in the editor.
+- [ ] Click a folder row and confirm selection does not unexpectedly expand it.
+- [ ] Click the disclosure control and confirm only expansion changes.
+- [ ] Confirm selection remains stable after expanding or collapsing folders.
+- [ ] Confirm the active document indicator is distinct from ordinary selection.
+- [ ] Confirm selection survives a harmless rescan.
+- [ ] Confirm selection clears or moves safely when the selected file/folder is deleted or renamed.
+- [ ] Confirm sorting is deterministic for mixed-case names, numeric names, folders, and files.
+- [ ] Confirm root files appear at the root and nested files appear under the correct folders.
+- [ ] Confirm folder nesting and indentation remain correct after renaming a parent folder.
+
+### Keyboard navigation
+
+- [ ] Focus the file tree without using the mouse.
+- [ ] Use Arrow Up and Arrow Down to move selection.
+- [ ] Use Home and End to move to the first and last visible tree item.
+- [ ] Use Arrow Right to expand a collapsed folder.
+- [ ] Use Arrow Left to collapse an expanded folder.
+- [ ] Use Arrow Left on a collapsed nested folder to move to its parent.
+- [ ] Use Enter to open a file or toggle a folder.
+- [ ] Use Space and confirm it does not insert or remove characters from the filter input.
+- [ ] Use Escape to close an open context menu.
+- [ ] Use Shift+F10 or the keyboard Context Menu key to open item actions.
+- [ ] Confirm keyboard focus is never lost after a tree action.
+- [ ] Confirm keyboard navigation works after filtering.
+
+### Search and filtering
+
+- [ ] Filter by an exact filename.
+- [ ] Filter by a partial filename.
+- [ ] Filter by an alias.
+- [ ] Filter by a file type such as `pdf`, `image`, or `audio`.
+- [ ] Filter with mixed case.
+- [ ] Filter with leading and trailing spaces.
+- [ ] Filter with spaces inside an alias or filename.
+- [ ] Confirm folders containing matching descendants remain visible.
+- [ ] Confirm unrelated folders disappear.
+- [ ] Clear the filter and confirm the prior tree state is restored.
+- [ ] Confirm no-results text is clear and correctly styled.
+- [ ] Confirm filtering a large vault remains responsive while typing.
+
+### Context menus and actions
+
+- [ ] Right-click a Markdown file.
+- [ ] Right-click a non-Markdown file.
+- [ ] Right-click a folder.
+- [ ] Confirm the menu opens at the pointer and remains inside the window.
+- [ ] Confirm clicking outside closes the menu.
+- [ ] Confirm Escape closes the menu.
+- [ ] Confirm only actions relevant to the selected item are shown.
+- [ ] Open a file from its context menu.
+- [ ] Rename a file from its context menu.
+- [ ] Move a file to Trash from its context menu.
+- [ ] Create a subfolder from a folder context menu.
+- [ ] Rename a folder from a folder context menu.
+- [ ] Delete a folder from a folder context menu.
+- [ ] Confirm an action closes the menu and opens the correct dialog or state.
+
+### Drag and drop
+
+- [ ] Drag a saved Markdown file onto a root folder.
+- [ ] Drag a saved Markdown file onto a nested folder.
+- [ ] Confirm the destination folder highlights during drag-over.
+- [ ] Confirm dropping on an invalid target does not move the file.
+- [ ] Confirm cancelling a drag clears the highlight.
+- [ ] Confirm the moved file appears in the new location.
+- [ ] Confirm supported links and backlinks remain correct after the move.
+- [ ] Confirm unsaved, conflicted, or draft files cannot be dragged as saved vault files.
+
+## Folder deletion and Trash tests
+
+- [ ] Delete an empty folder.
+- [ ] Confirm the empty-folder dialog supports Cancel.
+- [ ] Confirm cancelling leaves the folder unchanged.
+- [ ] Delete a folder containing a file.
+- [ ] Confirm the warning shows the file and subfolder counts.
+- [ ] Confirm the first action is Continue, not immediate deletion.
+- [ ] Confirm the confirmation input is visible only after Continue.
+- [ ] Enter the wrong phrase and confirm the destructive action remains disabled.
+- [ ] Enter `delete folder` exactly and confirm the destructive action enables.
+- [ ] Confirm capitalization or extra text does not satisfy the exact phrase requirement.
+- [ ] Confirm proceeding moves the complete folder hierarchy to Trash.
+- [ ] Confirm the folder disappears from the tree after the operation.
+- [ ] Confirm the Trash count updates.
+- [ ] Open Trash and confirm the folder is represented as one recoverable entry.
+- [ ] Restore the folder and confirm all nested files and subfolders return.
+- [ ] Confirm a restore conflict is reported without overwriting existing data.
+- [ ] Confirm cancelling at every dialog stage leaves the folder unchanged.
+- [ ] Confirm a failed delete leaves the source folder and its contents intact.
+
+## Markdown editing and cursor behavior
+
+- [ ] Open a short Markdown note and type at the beginning, middle, and end.
+- [ ] Type continuously while the first load/save is still in progress.
+- [ ] Type immediately after opening a note.
+- [ ] Type immediately after creating a new note.
+- [ ] Confirm every keystroke appears once and in the correct order.
+- [ ] Confirm the cursor does not jump to the beginning or end while typing.
+- [ ] Confirm the cursor remains on the intended line after autosave.
+- [ ] Confirm selection remains selected during non-destructive background updates.
+- [ ] Replace selected text and confirm only the selection changes.
+- [ ] Test Shift+Arrow selection.
+- [ ] Test Option/Alt+Arrow movement.
+- [ ] Test Command/Ctrl+A, C, X, V, Z, and Shift+Z.
+- [ ] Test typing with an active selection across multiple lines.
+- [ ] Test typing before and after a wikilink, tag, code span, and front matter block.
+- [ ] Test typing at the end of a very long line.
+- [ ] Test typing while the editor scrolls vertically.
+- [ ] Confirm selection and cursor survive opening and closing Preview.
+- [ ] Confirm selection and cursor survive changing editor font size.
+- [ ] Confirm selection and cursor survive a harmless vault rescan.
+- [ ] Confirm the editor does not duplicate input during autosave or identity assignment.
+- [ ] Confirm IME/composition input is not interrupted if applicable.
+- [ ] Confirm undo and redo preserve cursor and selection behavior.
+
+## Saving, conflicts, and data safety
+
+- [ ] Create a new note and confirm it becomes editable immediately.
+- [ ] Type into a new note before its first save completes.
+- [ ] Confirm save state visibly changes through unsaved, saving, and saved.
+- [ ] Use manual Save.
+- [ ] Use autosave.
+- [ ] Use Save As.
+- [ ] Rename a saved note and confirm supported links update.
+- [ ] Change only YAML `title` and confirm links do not rewrite.
+- [ ] Edit the same file externally and confirm the app shows a conflict instead of overwriting silently.
+- [ ] Resolve or recover from a conflict without losing the newer content.
+- [ ] Close and reopen the app after saving.
+- [ ] Quit during or immediately after a save and verify the saved content.
+- [ ] Confirm CRLF/legacy line endings are normalized only on intentional save.
+- [ ] Confirm unsupported front matter and Obsidian syntax remain intact.
+- [ ] Confirm attachments are not deleted or rewritten by Markdown edits.
+- [ ] Confirm `.anchored` metadata is additive and does not expose vault content in logs.
+
+## Search, links, and Preview
+
+- [ ] Search by filename.
+- [ ] Search by alias.
+- [ ] Search Markdown content.
+- [ ] Open a search result.
+- [ ] Search with no vault open and confirm the explanation is actionable.
+- [ ] Search with no matches and confirm the empty state.
+- [ ] Open a valid wikilink.
+- [ ] Open a wikilink by alias.
+- [ ] Follow a wikilink from Preview.
+- [ ] Confirm unresolved wikilinks remain visibly unresolved without crashing.
+- [ ] Confirm backlinks update after a file rename.
+- [ ] Confirm ambiguous links remain unchanged and are not silently redirected.
+- [ ] Render Preview with headings, lists, tables, footnotes, math, code, emoji, admonitions, and Mermaid.
+- [ ] Confirm dangerous HTML or URLs are sanitized.
+- [ ] Confirm Preview errors are recoverable and do not blank the app.
+
+## Performance and stability
+
+- [ ] Open the 700-file/56-folder vault and time until the first usable tree appears.
+- [ ] Scroll from top to bottom repeatedly.
+- [ ] Expand and collapse large folders repeatedly.
+- [ ] Select files rapidly while the tree is scrolling.
+- [ ] Type rapidly into the tree filter.
+- [ ] Open and close context menus repeatedly.
+- [ ] Drag files through a large tree.
+- [ ] Rescan the large vault while the tree is expanded.
+- [ ] Add, rename, move, and delete files externally, then return focus to the app.
+- [ ] Confirm the UI does not stall for multiple seconds during any operation.
+- [ ] Confirm memory and CPU settle after scrolling and filtering.
+- [ ] Leave the app open for at least 30 minutes and continue editing.
+- [ ] Open and close at least 20 notes in one session.
+- [ ] Confirm no gradual slowdown, growing lag, or visual corruption.
+- [ ] Confirm the app remains responsive while Preview loads large content.
+- [ ] Confirm a recoverable error never leaves a permanent loading state.
+
+## Accessibility and input methods
+
+- [ ] Navigate the primary workflow using keyboard only.
+- [ ] Confirm every interactive control has an accessible name.
+- [ ] Confirm focus order follows the visual order.
+- [ ] Confirm focus is trapped in dialogs and restored after dialogs close.
+- [ ] Confirm menus expose menu roles and keyboard behavior correctly.
+- [ ] Confirm selected tree items expose selected state.
+- [ ] Confirm expanded folders expose expanded state.
+- [ ] Confirm screen-reader labels distinguish files with the same visible basename in different folders where necessary.
+- [ ] Test with VoiceOver if available.
+- [ ] Test increased text size or system accessibility settings if available.
+- [ ] Test mouse, trackpad, and keyboard activation for the same actions.
+- [ ] Confirm right-click alternatives exist for users who cannot use a secondary click.
+
+## Final regression and release checks
+
+- [ ] Start from a clean launch.
+- [ ] Open a vault.
+- [ ] Open a note.
+- [ ] Edit and save it.
+- [ ] Close and reopen the note.
+- [ ] Navigate folders.
+- [ ] Search and open a result.
+- [ ] Follow a link.
+- [ ] Open Preview.
+- [ ] Create a note.
+- [ ] Rename a note.
+- [ ] Move a note.
+- [ ] Delete and restore a note.
+- [ ] Delete and restore a non-empty folder.
+- [ ] Close and relaunch the app.
+- [ ] Confirm the remembered vault and last note restore correctly.
+- [ ] Confirm no unexpected files, logs, secrets, or debug overlays were created.
+- [ ] Record all failures with reproduction steps, screenshots, app version, OS version, and vault fixture details.
+- [ ] Do not test destructive operations against the primary vault until the backup run is clean.
+
+## Sign-off
+
+- Tester: ____________________
+- Date: ______________________
+- App/build: _________________
+- macOS/device: ______________
+- Vault fixture: ______________
+- Result: [ ] Pass  [ ] Pass with known issues  [ ] Fail
+- Known issues / follow-up:
+
+  ```text
+  
+  ```
