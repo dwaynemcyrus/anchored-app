@@ -8,7 +8,7 @@ Product scope remains governed by `OVERVIEW.md`.
 - **Overview:** `OVERVIEW.md`
 - **Overview status:** approved on 2026-07-16
 - **Additional source documents:** `anchor-stuff.md`
-- **Contract last reviewed:** 2026-07-17
+- **Contract last reviewed:** 2026-07-19
 - **Blocking decisions:** none for the private in-house alpha. Public website
   distribution remains deferred until Developer ID signing and notarization
   prerequisites are available.
@@ -45,19 +45,25 @@ Product scope remains governed by `OVERVIEW.md`.
   from the filesystem.
 - Create, open, edit, save, save-as, and autosave Markdown files safely.
 - Parse YAML front matter and preserve unsupported content verbatim.
-- Resolve wikilinks and aliases through stable item IDs.
+- Resolve wikilinks and aliases through a cached path, filename, and alias
+  index without requiring note IDs.
 - Update affected references when a filename changes; changing only the YAML
   `title` must not rewrite references.
 - Provide file exploration, recent files, search, visible unsaved state, and
   keyboard-first core actions.
+- Provide Inbox, Workbench, Archive, and Assets as the default virtual
+  collections, with the physical vault tree available through a Files toggle.
+- Provide a lightweight local Scratchpad capture window for separate,
+  immediately saved Inbox notes with wikilink authoring.
 - Remain responsive on a 2015 MacBook Pro.
 
 ### Non-goals
 
 - Accounts, cloud sync, analytics, payments, or hosted services.
 - Habits, tasks, projects, journal workflows, Qur'an features, or Reader.
-- PDFs, EPUBs, AI, graph view, handwriting, OCR, collaboration, publishing,
-  mobile apps, browser extensions, or plugins.
+- PDF or EPUB reading, AI, graph view, handwriting, OCR, collaboration,
+  publishing, mobile apps, browser extensions, or plugins. Non-Markdown files
+  are listed only as Assets in this phase.
 - Executing or interpreting Obsidian plugins, Canvas, Dataview, or other
   unsupported Obsidian-specific features.
 - Full Obsidian feature parity.
@@ -70,12 +76,15 @@ Product scope remains governed by `OVERVIEW.md`.
   navigated by folder, recent file, search, wikilink, and alias.
 - Markdown files can be created and edited; manual save, save-as, and autosave
   preserve exact user content and visibly report unsaved state.
-- Every supported linkable item has a stable ID without making its Markdown
-  unreadable in other tools.
+- Existing note IDs remain byte-preserved but inert; the MVP neither requires
+  nor writes note IDs during ordinary vault use.
 - Renaming a file updates affected supported references and backlinks without
   changing references merely because YAML `title` changed.
 - Front matter, tags, linked attachments, and unsupported Obsidian syntax are
   preserved without silent damage.
+- App-created notes receive a UTC `created_at` value with second precision;
+  archived notes receive `status: archived` plus `archived_at` and become
+  read-only until restored to Inbox or Workbench.
 - All configured checks pass, and the core workflow remains stable for seven
   consecutive days on the target vault copy before primary-vault use.
 
@@ -168,9 +177,9 @@ These scripts must exist in `package.json` after the scaffold chunk.
 ## Data and security
 
 - **Stored data:** User Markdown, YAML front matter, attachments, vault-local
-  `.anchored` identity and reversible-trash data, native-only remembered paths,
-  lightweight local settings, scoped notification history, recent-file
-  references, and derived indexes.
+  `.anchored` vault identity and reversible-trash data, native-only remembered
+  paths, lightweight local settings, scoped notification history, recent-file
+  references, and rebuildable derived indexes.
 - **Sensitive data:** The personal vault may contain private writing and
   attachments. Its content must not be logged, uploaded, or exposed to third
   parties.
@@ -185,8 +194,9 @@ These scripts must exist in `package.json` after the scaffold chunk.
 - **Concurrency:** Detect external modification before overwriting and surface
   a recoverable conflict instead of silently choosing a version.
 - **Backup/migration approach:** Develop and verify only against a disposable
-  or backed-up vault copy. Stable-ID insertion and bulk link rewrites require
-  preview, recoverability, targeted tests, and a separate verified plan chunk.
+  or backed-up vault copy. Bulk metadata and link rewrites require preview,
+  recoverability, targeted tests, and a separate verified plan chunk. Existing
+  note IDs are preserved but ignored until a future UID migration is approved.
 - **Privacy or compliance needs:** Local-first and offline; no telemetry,
   analytics, cloud upload, or third-party data transfer in the MVP.
 
@@ -204,9 +214,10 @@ These scripts must exist in `package.json` after the scaffold chunk.
 - **Visual direction:** True black background, white primary text, restrained
   grays, no decorative gradients, and minimal chrome. Precision in typography,
   spacing, and focus states carries the design.
-- **Performance target:** Normal writing, file opening, and navigation must
-  feel immediate on the baseline machine. Establish numeric budgets from a
-  representative vault before release rather than inventing them now.
+- **Performance target:** Normal writing, file opening, navigation, collection
+  switching, and Scratchpad capture must remain responsive on the 2015 MacBook
+  Pro. Chunk 21 establishes measured budgets against a representative 700-note,
+  56-folder fixture and treats regressions as release blockers.
 - **Critical product rules:** Keyboard-first but not Vim-first; Markdown stays
   portable; filename changes update references; front-matter title changes do
   not; unsupported syntax is preserved; no operation silently loses content.
@@ -258,8 +269,11 @@ These scripts must exist in `package.json` after the scaffold chunk.
   public website download.
 - The target vault can contain symlinks, unsupported syntax, external edits,
   duplicate names, ambiguous aliases, and malformed front matter.
-- Stable-ID insertion and cross-file rename updates are high-risk data changes;
-  they must never be tested first against the primary vault.
+- Cross-file rename, status, timestamp, and archive updates are high-risk data
+  changes; they must never be tested first against the primary vault.
+- Current link and backlink derivation scales quadratically and the file-tree
+  virtualizer can expose unpainted gaps during rapid scrolling. Chunk 21 must
+  remove both defects before adding more collection UI.
 - macOS 12 and the 2015 hardware baseline constrain dependency and WebKit API
   choices.
 - Seven-day stability cannot be completed within a single implementation
@@ -288,3 +302,7 @@ These scripts must exist in `package.json` after the scaffold chunk.
 | 2026-07-18 | Use a browser-safe Markdown-it adapter for Preview | It supports the required syntax and render-only settings directly in the existing Tauri WebView while keeping source persistence independent of parser tokens |
 | 2026-07-17 | Defer public website, Apple Silicon, and Linux packages | These delivery targets require separate prerequisites and verification and are outside the current private-alpha scope |
 | 2026-07-17 | Release the source under MIT | Keeps Anchored permissive for use, modification, and redistribution while preserving copyright notice requirements |
+| 2026-07-19 | Defer note IDs and preserve existing values as inert metadata | Removes identity errors and scan work now while leaving a future reviewed Supabase UID migration possible; supersedes the three 2026-07-16 note-ID decisions |
+| 2026-07-19 | Use virtual lifecycle collections as the default navigation | Inbox, Workbench, Archive, and Assets reflect note meaning while Files preserves physical-vault access and portability |
+| 2026-07-19 | Write lifecycle timestamps as UTC ISO 8601 values | Values such as `2026-11-28T15:48:32Z` remain unambiguous across time zones, daylight-saving changes, and future databases |
+| 2026-07-19 | Keep global Scratchpad shortcuts and asset copying deferred | Local capture ships only after performance work; GitHub issues #41 and #40 own the later operating-system and import workflows |

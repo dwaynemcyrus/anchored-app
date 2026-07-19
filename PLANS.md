@@ -813,6 +813,289 @@ and preserves link integrity across filename changes.
     - Expected changelog: Finalize the complete Markdown v1 support entry;
       no version change without an explicit release request.
 
+21. [ ] **Epic: Build fast virtual collections and Scratchpad**
+    - Outcome: Replace the physical file tree as the default navigation model
+      with fast Inbox, Workbench, Archive, and Assets collections while keeping
+      Files as a secondary physical-vault view. Retire active note-ID behavior,
+      make archived notes read-only, add UTC lifecycle timestamps, and provide
+      a lightweight local Scratchpad capture window without regressing writing,
+      scrolling, or file safety.
+    - Priority rule: Performance and stability are release-blocking product
+      requirements. New collection UI does not begin until the large-vault link
+      and tree interaction budgets pass. A feature that misses those budgets is
+      reduced or deferred instead of shipping with known stalls.
+    - Superseded behavior: Existing note `id` fields remain byte-preserved as
+      ordinary user metadata, but Anchored stops generating, migrating,
+      validating, repairing, warning about, protecting, or depending on note
+      IDs. Stable vault IDs and Trash entry IDs remain because they do not
+      require rewriting authored notes. This epic supersedes the note-ID parts
+      of chunks 9, 10, 20C, 20D, and 20G without removing their historical
+      record.
+    - Collection rules:
+      - Inbox: Markdown notes whose normalized `status` is missing, blank,
+        null, unusable, or `inbox`.
+      - Workbench: Markdown notes with any nonblank normalized `status` other
+        than `inbox` or `archived`.
+      - Archive: Markdown notes whose normalized `status` is `archived`.
+      - Assets: every indexed non-Markdown file, regardless of its physical
+        vault folder.
+      - Files: the existing physical folder structure, exposed by a persisted
+        Collections/Files toggle rather than as the default view.
+      - Each item appears in exactly one top-level collection. Workbench groups
+        by normalized front-matter `type`; Article, Project, Reference, and
+        Untyped use the canonical order, and additional values follow
+        alphabetically. Assets group by file type and sort alphabetically
+        within groups, with an optional flat alphabetical view.
+    - Sidebar rules: Inbox, Workbench, every expanded Workbench type, Archive,
+      and Assets display counts. System collections cannot be renamed,
+      deleted, or treated as physical drag destinations. Physical folder
+      actions remain available only in Files view through an opaque right-click
+      menu; inline folder action icons are removed.
+    - Timestamp rules: App-created Markdown files receive `created_at` in UTC,
+      ISO 8601, second precision, with no fractional seconds, for example
+      `2026-11-28T15:48:32Z`. Transitioning to Archive writes
+      `status: archived` and a fresh `archived_at` in the same format.
+      Transitioning out removes `archived_at` and writes either
+      `status: inbox` or `status: active`. Existing and externally imported
+      Markdown files are never backfilled automatically.
+    - Archive rules: Archived notes open directly in the sanitized rendered
+      read view. The editor and every ordinary save path reject archived notes.
+      Dedicated Restore to Inbox and Restore to Workbench actions perform the
+      only supported transition back to an editable state.
+    - Scratchpad rules: Each capture is a separate Markdown note with
+      `type: scratchpad`, `status: inbox`, and `created_at`. A reusable,
+      lightweight floating window focuses immediately, creates the file only
+      after the first non-whitespace input, autosaves atomically, flushes on
+      close, discards a blank capture, and supports wikilink completion through
+      the shared cached link index. `Command-Option-N` opens a new capture and
+      `Command-Option-P` opens the most recent non-archived Scratchpad note.
+      System-wide shortcuts remain deferred to GitHub issue #41.
+    - Deferred asset import: Current non-Markdown files are indexed in place.
+      Copying explicitly imported assets into a physical asset folder while
+      preserving originals remains deferred to GitHub issue #40.
+    - Performance budgets for the generated 700-note, 56-folder fixture:
+      - Selection feedback paints within 50 ms.
+      - A warm Markdown note up to 1 MiB becomes editable within 200 ms at p95;
+        a cold open completes within 500 ms at p95 on the baseline machine.
+      - Link topology and backlinks rebuild in no more than 100 ms for 700
+        notes and 3,500 links, with no quadratic full-array scan per link.
+      - Rapid top-to-bottom and direction-reversing file-tree scrolling shows
+        no black gaps, missed input, or main-thread task longer than 50 ms.
+      - A focus refresh never blocks editing or scrolling and reads note bodies
+        only for new or signature-changed files.
+      - The warm Scratchpad window focuses within 250 ms and remains responsive
+        while wikilink suggestions and autosave run.
+      - Measurements must be recorded on current development hardware and the
+        2015 MacBook Pro baseline before the epic closes. If hardware evidence
+        requires adjusting a numeric threshold, record the measurement and
+        obtain human approval rather than silently weakening the gate.
+    - Version impact: This is unreleased alpha behavior and does not change the
+      version. A later release request may classify the collection/Scratchpad
+      work as a minor release; no version, tag, package, or hosted release is
+      authorized by this plan.
+
+21A. [ ] **Chunk: Establish contracts and performance harness**
+    - Expected files: `OVERVIEW.md`, `PROJECT.md`, `PLANS.md`, generated
+      large-vault fixture helpers, focused performance tests, and the manual QA
+      checklist.
+    - Change: Lock the collection, timestamp, archive, Scratchpad, note-ID
+      retirement, and deferred-feature rules. Add deterministic fixture
+      generation for 700 notes, 56 physical folders, realistic aliases and
+      3,500 links, non-Markdown assets, duplicate filenames, missing/invalid
+      metadata, and archived notes. Capture the current note-open, link-build,
+      focus-refresh, and rapid-scroll baselines before changing behavior.
+    - Verify: Fixture generation is deterministic and contains no private vault
+      content. Measurements distinguish native scan time, IPC read time, React
+      derivation, editor mount, and tree paint rather than reporting only total
+      elapsed time.
+    - Risk/rollback: Synthetic data can hide real-world costs. Calibrate file
+      sizes and link density against aggregate counts from a representative
+      backed-up vault without logging note names or content. Documentation and
+      test harnesses are independently reversible.
+    - Expected changelog: None; this chunk changes contracts and tests only.
+
+21B. [ ] **Chunk: Retire active note-ID behavior safely**
+    - Expected files: `src-tauri/src/metadata.rs`, `src-tauri/src/vault.rs`,
+      `src-tauri/src/lib.rs`, `src/lib/tauri/vault.ts`, `src/app/App.tsx`,
+      identity migration components/tests, `PROJECT.md`, and `CHANGELOG.md`.
+    - Change: Remove note-ID generation from new files and Save As, identity
+      baselines and reconciliation, migration commands/panels, identity save
+      guards, conflict warnings, and recurring identity notifications. Use a
+      runtime key derived from normalized relative path for document state and
+      keep path-based safe rename/link rewriting. Do not delete or rewrite
+      existing `id` properties or app-data baseline files; simply stop reading
+      and using them. Keep `.anchored/vault.json` and Trash IDs unchanged.
+    - Verify: Notes with missing, valid, duplicate, malformed, or multiple `id`
+      fields all open, edit, save, rename, and move without identity-specific
+      errors. Ordinary saves preserve untouched front matter; direct user edits
+      to `id` behave like edits to any unknown property. No identity notice or
+      migration action appears after repeated focus refreshes.
+    - Risk/rollback: Frontend state currently uses IDs as keys and link rename
+      code has identity-preferred paths. Replace each dependency atomically and
+      test duplicate filenames and rename continuity before removing parsers.
+      Rollback restores behavior without touching existing note contents.
+    - Expected changelog: Note IDs are deferred; existing IDs remain preserved
+      but no longer affect normal use.
+
+21C. [ ] **Chunk: Build one incremental native vault index**
+    - Expected files: a focused native index module, `src-tauri/src/vault.rs`,
+      Tauri command registration, typed frontend snapshot contracts, and Rust
+      tests.
+    - Change: Replace repeated full-content passes with one rebuildable index
+      keyed by canonical relative path plus size and modification time. Store
+      only derived metadata in native app data: aliases, outgoing links,
+      normalized status/type, created/archive timestamps, asset type, and file
+      signature. Return cached snapshots immediately, refresh on a blocking
+      worker, and read bodies only for new or changed Markdown files. Debounce
+      focus refreshes and merge deltas rather than replacing the entire
+      frontend document collection when nothing changed.
+    - Verify: Initial build, warm reopen, Finder add/change/remove, rename,
+      malformed cache, missing cache, external edits, same-size timestamp
+      changes, symlinks, Unicode, oversized files, and cache rebuild. A warm
+      focus refresh performs no Markdown body reads when signatures are
+      unchanged and cannot block editor input.
+    - Risk/rollback: A stale derived index could hide external changes. The
+      filesystem remains authoritative; validate cache version and vault ID,
+      replace cache atomically, expose refresh errors, and provide a full
+      rebuild path. Never store note contents in the cache.
+    - Expected changelog: Vault refresh and large-vault navigation become
+      incremental and non-blocking.
+
+21D. [ ] **Chunk: Replace quadratic link and backlink work**
+    - Expected files: `src/app/links.ts`, `src/app/linkCandidates.ts`, a new
+      link-index module, retrieval/editor consumers, and focused tests.
+    - Change: Build path, filename, alias, outgoing-link, and reverse-backlink
+      maps once in linear time. Resolve supported links through map lookups,
+      preserve ambiguity, and recompute only changed graph nodes. Separate
+      candidate topology from recent-activity ranking so selecting a note does
+      not rebuild all candidates. Calculate Quick Open and completion results
+      only while their interfaces are open; reuse the same read-only index in
+      Scratchpad.
+    - Verify: Existing path/name/alias/heading/Unicode/ambiguity fixtures,
+      incremental add/change/remove, rename transactions, 700-note performance,
+      rapid note switching, and picker-open/closed render counts. Results must
+      match the current supported resolver while meeting the 100 ms graph
+      budget.
+    - Risk/rollback: Faster indexing must not resolve an ambiguous link to an
+      arbitrary note. Keep normalized keys mapped to sets, retain conservative
+      unresolved states, and compare old/new resolver outputs on the complete
+      fixture corpus before switching consumers.
+    - Expected changelog: Note opening, backlinks, Quick Open, and wikilink
+      suggestions no longer stall large vaults.
+
+21E. [ ] **Chunk: Stabilize the physical Files tree**
+    - Expected files: `src/app/components/FileRail.tsx`, focused tree-model and
+      row components/tests, `src/styles/global.css`, and `CHANGELOG.md`.
+    - Change: Isolate tree rendering from editor and link state, use stable row
+      callbacks and a gap-free scrolling strategy measured against the large
+      fixture. Prefer rendering the complete simple row list up to a measured
+      threshold with `content-visibility`; retain windowing only above that
+      threshold if it passes direction-reversal tests. Remove inline folder
+      action icons and keep actions in the right-click menu. Define and use
+      opaque menu background/border tokens, clamp menus to the viewport, and
+      retain keyboard/context-menu accessibility.
+    - Verify: Slow and momentum scrolling, immediate direction reversals,
+      selection during scroll, expand/collapse, filter, keyboard Home/End and
+      arrows, right-click at every edge, 200% zoom, narrow/desktop windows, and
+      700/2,000/10,000-row performance. No black gaps or multi-second stalls.
+    - Risk/rollback: Rendering every row can increase mount cost while fragile
+      windowing can expose blank regions. Select the simplest strategy that
+      meets both mount and scroll budgets and preserve the old tree behind one
+      focused revert until native QA passes.
+    - Expected changelog: The Files tree scrolls reliably, folder actions move
+      to an opaque context menu, and inline folder action icons are removed.
+
+21F. [ ] **Chunk: Add virtual collection navigation**
+    - Expected files: collection classification/model modules, sidebar
+      components and tests, `src/app/App.tsx`, settings persistence, styles,
+      and `CHANGELOG.md`.
+    - Change: Make Collections the default sidebar mode and add a persisted
+      Collections/Files toggle. Render Inbox, Workbench, Archive, and Assets
+      with counts; group Workbench by type and Assets by file type; support
+      collapsed groups and grouped/flat Assets sorting. Keep selection stable
+      across views and show disambiguating relative paths only when filenames
+      collide. System collections have no rename/delete controls.
+    - Verify: Every status/type combination, malformed metadata, dynamic type
+      values, assets without extensions, duplicate filenames, empty states,
+      count updates after external changes, selection continuity, keyboard
+      navigation, toggling, persistence, 200% zoom, and large-vault rendering.
+    - Risk/rollback: A classification bug can hide a note. Assert that every
+      indexed Markdown note belongs to exactly one lifecycle collection and
+      that Files always exposes the physical source. Collection state is
+      derived and can be reverted without changing vault contents.
+    - Expected changelog: Add default Inbox, Workbench, Archive, and Assets
+      navigation with counts and retain Files as a secondary view.
+
+21G. [ ] **Chunk: Add lifecycle timestamps and read-only Archive**
+    - Expected files: `src-tauri/src/metadata.rs`, lifecycle mutation commands
+      and tests, typed bridge, Archive/read-view components, `App.tsx`, and
+      `CHANGELOG.md`.
+    - Change: Add source-preserving atomic mutations for `created_at`, `status`,
+      and `archived_at`. Stamp every Anchored-created Markdown file, including
+      Save As and Scratchpad, with current UTC time. Archive and restore through
+      dedicated commands with expected-content checks. Open archived notes in
+      sanitized Preview, disable editor/save/autosave, and expose Restore to
+      Inbox and Restore to Workbench. Remove `archived_at` on restore and write
+      a new value on every later archive transition.
+    - Verify: UTC formatting around second/minute/day/year boundaries, existing
+      front matter comments/order/quotes, no-front-matter notes, CRLF/BOM,
+      malformed or duplicate lifecycle fields, external conflicts, repeated
+      archive/restore, Save As, Finder-import preservation, keyboard actions,
+      rendered links, and native write refusal for archived notes.
+    - Risk/rollback: Lifecycle transitions mutate authored Markdown. Re-read
+      before write, refuse malformed/ambiguous fields, preserve unknown YAML,
+      write atomically, and test only on synthetic or backed-up vaults first.
+    - Expected changelog: New notes receive UTC creation timestamps; archived
+      notes receive archive timestamps and remain read-only until restored.
+
+21H. [ ] **Chunk: Add the lightweight local Scratchpad**
+    - Expected files: a separate Scratchpad frontend entry and minimal styles,
+      Tauri window/command configuration, shared wikilink picker adapter,
+      lifecycle/native creation commands, shortcut wiring, and tests.
+    - Change: Create one reusable small floating window that loads a minimal
+      textarea-based Markdown capture surface rather than the full App or
+      CodeMirror bundle. `Command-Option-N` resets it for a new separate note;
+      `Command-Option-P` opens the newest non-archived Scratchpad note. Focus
+      immediately, create on first non-whitespace input, autosave after a short
+      idle interval, flush before hide/close, show save state, and offer bounded
+      wikilink completion backed by the cached index. Use collision-safe UTC
+      filenames and never trigger a full vault refresh from typing.
+    - Verify: First and repeated open latency, new/previous shortcuts, rapid
+      repeated invocation, blank close, Unicode/composition, paste, wikilink
+      insertion, autosave and close flush, external edit conflict, no selected
+      vault, archived previous captures, filename collision, app quit, window
+      reuse, reduced motion, keyboard-only flow, and baseline-machine timing.
+    - Risk/rollback: A second WebView can duplicate heavy bundles or race saves.
+      Give Scratchpad a separate minimal entry, share data through narrow native
+      commands, serialize writes, keep local drafts on conflict, and hide rather
+      than destroy the warm window. Disable the shortcuts and window as one
+      reversible feature if latency or safety gates fail.
+    - Expected changelog: Add fast separate Scratchpad captures with Inbox
+      metadata, local shortcuts, autosave, previous-capture access, and
+      wikilinks. Global shortcuts remain deferred to issue #41.
+
+21I. [ ] **Chunk: Complete performance, safety, and native QA**
+    - Expected files: automated performance suites, manual QA checklist,
+      `docs/FEATURES.md`, `PROJECT.md`, `PLANS.md`, and `CHANGELOG.md`.
+    - Change: Run the complete Collections/Files, lifecycle, Archive, Assets,
+      Scratchpad, links, typing, and filesystem journey against generated and
+      representative backed-up vaults. Record before/after timings, final
+      bundle impact, memory use, and baseline-hardware results. Remove stale
+      identity documentation and confirm issues #40 and #41 remain deferred.
+    - Verify: All configured formatting, lint, type-check, frontend/Rust tests,
+      strict Clippy, production frontend and Tauri builds, disposable-vault
+      byte-diff checks, native keyboard/accessibility checks, rapid scrolling,
+      note switching, focus refresh, archived write refusal, Scratchpad close
+      recovery, and every epic performance budget. Restart the seven-day
+      stability observation after this epic lands.
+    - Risk/rollback: Passing unit tests cannot prove native WebKit smoothness or
+      vault safety. Treat failed native interaction budgets, unexplained file
+      diffs, stale-cache behavior, or lost Scratchpad drafts as release
+      blockers and revert the responsible focused chunk.
+    - Expected changelog: Reconcile all user-visible entries from chunks 21B
+      through 21H under `[Unreleased]`; do not change version without an
+      explicit release request.
+
 ## Requirements for future large plans
 
 Every future large plan must identify:
@@ -1077,6 +1360,11 @@ Every future large plan must identify:
   when an editor draft omits it. Valid IDs remain protected from accidental
   changes, while malformed front matter and ambiguous references remain
   conservative safety stops.
+- 2026-07-19: Approved Epic 21 as the next implementation sequence. The plan
+  makes measured large-vault performance the release gate, retires note-ID
+  behavior before building the cached index, then adds virtual lifecycle
+  collections, archive timestamps and read-only behavior, and a lightweight
+  Scratchpad. No Epic 21 implementation has started.
 
 ## Completion
 

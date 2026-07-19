@@ -8,7 +8,7 @@ does not authorize technical setup or implementation.
 
 - **Status:** approved
 - **Owner:** Dwayne Cyrus
-- **Last reviewed:** 2026-07-16
+- **Last reviewed:** 2026-07-19
 - **Source documents or links:** `anchor-stuff.md`
 
 ## 1. Project
@@ -45,8 +45,8 @@ does not authorize technical setup or implementation.
 3. Create or edit a Markdown document with keyboard-first controls, then save
    manually or rely on autosave without losing or corrupting content.
 4. Return on later days and continue working with the same portable files,
-   recent-file context, front matter, wikilinks, aliases, and stable note
-   identities.
+   recent-file context, front matter, virtual collections, wikilinks, and
+   aliases.
 
 ## 4. First-version requirements
 
@@ -64,7 +64,13 @@ as the initial MVP in the source brief. It must include:
 - Keyboard shortcuts for core actions.
 - YAML front matter parsing without making the Markdown body less portable.
 - Wikilink parsing, navigation, and aliases.
-- A unique, stable internal ID for every linkable item.
+- Default virtual collections for Inbox, Workbench, Archive, and Assets, with
+  the physical vault tree retained as a secondary Files view.
+- A lightweight Scratchpad capture window that creates separate Inbox notes
+  and supports wikilink authoring without loading the full editor surface.
+- Existing note `id` fields remain preserved as ordinary front matter, but
+  note-ID generation, migration, validation, warnings, and runtime dependency
+  are deferred until a future database-backed phase.
 - Rename-safe links: changing a file name must not break wikilinks, aliases,
   backlinks, or other references to that item.
 - References in linked files and areas must remain correct and update when a
@@ -81,13 +87,17 @@ The following are explicitly outside the initial MVP:
 
 - Habits, tasks, projects, and journal-specific workflows.
 - Qur'an reader and Qur'an reflection features.
-- Reader or read-later workflows, PDFs, EPUBs, highlights, and annotations.
+- PDF or EPUB reading, read-later workflows, highlights, and annotations;
+  non-Markdown files are listed only as Assets in this phase.
 - Cloud sync, browser companion, mobile applications, or collaboration.
 - User accounts, payments, browser extensions, and hosted services.
 - AI features, knowledge graph, handwriting, OCR, audio-linked notes,
   publishing, and a plugin system.
 - Full replication of Obsidian or any other reference application.
 - Advanced formatting at the expense of editor speed or reliability.
+- Database-backed object identities, Supabase integration, global macOS
+  Scratchpad shortcuts, and copying imported assets into a physical asset
+  folder.
 
 These ideas remain part of the long-term source brief, not the first release.
 
@@ -96,9 +106,9 @@ These ideas remain part of the long-term source brief, not the first release.
 - **User accounts:** No for the initial local, single-user MVP.
 - **Stored data:** Yes. Human-authored content remains in the user's existing
   Markdown files with YAML front matter. The application may store local
-  recent-file information, settings, indexes, and stable identity metadata,
-  but those mechanisms must not replace the Markdown files as the source of
-  truth for authored content.
+  recent-file information, settings, and rebuildable indexes, but those
+  mechanisms must not replace the Markdown files as the source of truth for
+  authored content.
 - **Payments:** No.
 - **External services:** None for the initial MVP.
 - **Notifications or email:** None.
@@ -155,11 +165,11 @@ These ideas remain part of the long-term source brief, not the first release.
   technical planning.
 - **Performance constraint:** Core writing and navigation must remain usable
   on a 2015 MacBook Pro.
-- **Product risk:** Rename-safe identity and link updates must work across
-  file names, aliases, backlinks, and source references without corrupting the
-  vault. A front-matter title change must not cause an unintended reference
-  rewrite. Obsidian plugins, Canvas, Dataview, and other unsupported syntax
-  must be preserved even when Anchored does not interpret them.
+- **Product risk:** Rename-safe path, alias, and link updates must work across
+  file names, backlinks, and source references without corrupting the vault.
+  A front-matter title change must not cause an unintended reference rewrite.
+  Obsidian plugins, Canvas, Dataview, and other unsupported syntax must be
+  preserved even when Anchored does not interpret them.
 
 ## 9. Success and acceptance
 
@@ -167,7 +177,7 @@ The first version is successful when:
 
 - Dwayne can use it daily to write Markdown and navigate the existing
   Obsidian vault.
-- Core file operations, autosave, identity resolution, aliases, and link
+- Core file operations, autosave, collection classification, aliases, and link
   updates remain completely stable through seven consecutive days of normal
   use, with no observed content loss, corruption, or broken supported links.
 - Markdown files remain readable and editable outside Anchored.
@@ -202,8 +212,9 @@ It is ready for handoff or release when:
   Markdown; future structured operational data may use SQLite.
 - Universal linking: future linkable objects should be navigable through one
   coherent wikilink and backlink system regardless of storage type.
-- Permanent identities: linkable objects should have stable internal IDs so
-  visible titles, filenames, and locations can change safely. Filename changes
+- Permanent identities: a future database-backed phase may assign stable UIDs
+  to linkable objects through a reviewed migration. The current Markdown MVP
+  must not depend on, generate, validate, or repair note IDs. Filename changes
   update affected references; front-matter title changes do not.
 - Portable and modular: future modules must not sacrifice ownership, speed,
   offline use, or simplicity.
@@ -220,9 +231,8 @@ It is ready for handoff or release when:
 - `[ASSUMPTION]` The initial MVP is a local, single-user application with no
   account because it is for Dwayne personally and the source brief places
   accounts in a later browser-companion phase.
-- `[ASSUMPTION]` Stable note IDs may add or maintain front matter, but must not
-  make notes unreadable or unusable in other Markdown tools. The exact storage
-  and migration design remains a technical-planning decision.
+- Existing note `id` fields are inert user metadata in the current phase and
+  remain untouched unless the user edits them directly.
 - `[ASSUMPTION]` The source brief's technical choices other than the required
   Tauri 2 desktop wrapper remain recommendations until technical planning.
 
