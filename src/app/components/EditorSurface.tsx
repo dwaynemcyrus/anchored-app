@@ -4,6 +4,7 @@ import type { AnchoredDocument } from "../documents";
 import type { WikilinkCandidate } from "../linkCandidates";
 import type { MarkdownSettings } from "../markdown/types";
 import { Backlinks } from "./Backlinks";
+import type { EditorCursorPosition } from "./MarkdownEditor";
 
 const MarkdownEditor = lazy(() => import("./MarkdownEditor"));
 const MarkdownPreview = lazy(() => import("./MarkdownPreview"));
@@ -23,6 +24,7 @@ type EditorSurfaceProps = {
   onCloseDocument: () => void;
   onCreateVault: () => void;
   onDocumentChange: (content: string) => void;
+  onCursorPosition: (position: EditorCursorPosition) => void;
   onOpenLinkedDocument: (documentId: string) => void;
   onOpenVault: () => void;
   onOpenMoveDocument: () => void;
@@ -50,6 +52,7 @@ export function EditorSurface({
   onCloseDocument,
   onCreateVault,
   onDocumentChange,
+  onCursorPosition,
   onOpenLinkedDocument,
   onOpenMoveDocument,
   onOpenVault,
@@ -261,6 +264,7 @@ export function EditorSurface({
                 value={document.sourceText}
                 wikilinkCandidates={wikilinkCandidates}
                 onChange={onDocumentChange}
+                onCursorPosition={onCursorPosition}
                 onOpenWikilink={onOpenWikilink}
                 onPreview={() => setPreviewVisible(true)}
                 onSave={onSaveDocument}

@@ -18,6 +18,7 @@ import { NotificationCenter } from "./components/NotificationCenter";
 import { QuickOpenPalette } from "./components/QuickOpenPalette";
 import { SettingsModal } from "./components/SettingsModal";
 import { StatusBar } from "./components/StatusBar";
+import type { EditorCursorPosition } from "./components/MarkdownEditor";
 import { TitleBar } from "./components/TitleBar";
 import { TrashPanel } from "./components/TrashPanel";
 import { VaultSwitcher } from "./components/VaultSwitcher";
@@ -200,6 +201,10 @@ function persistMarkdownSettings(settings: MarkdownSettings): void {
 export function App() {
   const [documents, setDocuments] = useState<AnchoredDocument[]>([]);
   const [activeDocumentId, setActiveDocumentId] = useState("");
+  const [cursorPosition, setCursorPosition] = useState<EditorCursorPosition>({
+    line: 1,
+    column: 1,
+  });
   const [expandedFolders, setExpandedFolders] = useState<Set<string>>(
     () => new Set(),
   );
@@ -1204,6 +1209,7 @@ export function App() {
       markDocumentActive(current, documentId, Date.now()),
     );
     setActiveDocumentId(documentId);
+    setCursorPosition({ line: 1, column: 1 });
     setSidebarOpen(false);
 
     if (!document.relativePath || document.sourceText !== undefined) {
@@ -1542,6 +1548,7 @@ export function App() {
   function closeDocument() {
     loadRequestRef.current += 1;
     setActiveDocumentId("");
+    setCursorPosition({ line: 1, column: 1 });
     setDocumentLoad({ status: "idle" });
   }
 
@@ -1931,6 +1938,7 @@ export function App() {
             setCreateVaultVisible(true);
           }}
           onDocumentChange={updateDocumentContent}
+          onCursorPosition={setCursorPosition}
           onOpenLinkedDocument={(documentId) => void selectDocument(documentId)}
           onOpenMoveDocument={() => {
             if (
@@ -2226,6 +2234,7 @@ export function App() {
         />
       ) : null}
       <StatusBar
+        cursorPosition={cursorPosition}
         document={activeDocument}
         vaultFileCount={
           vaultSelected

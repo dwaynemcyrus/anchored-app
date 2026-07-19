@@ -51,6 +51,11 @@ Git commit. The format follows [Keep a Changelog], and releases follow
 - New notes now accept typing immediately while Anchored assigns their
   permanent identity. The generated front matter is merged into the local
   draft before autosave, preventing identity-conflict save failures.
+- Markdown editing now preserves local typing, undo history, selections, and
+  cursor position across parent updates and external content changes. Link
+  completion collapses its selection correctly, composition input is protected
+  during reconciliation, find returns focus to the editor, and the status bar
+  reports the live line and column.
 
 ## [0.1.0-alpha] - 2026-07-17
 

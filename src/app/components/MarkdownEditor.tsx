@@ -27,6 +27,12 @@ import {
 } from "../markdown/editorLanguage";
 import type { EditorFontSize } from "../markdown/types";
 import { wikilinkAtOffset, wikilinkCompletionAtOffset } from "../links";
+import { describeExternalDocumentChange } from "./editorSync";
+
+export type EditorCursorPosition = {
+  line: number;
+  column: number;
+};
 
 type MarkdownEditorProps = {
   autoFocus?: boolean;
@@ -37,15 +43,12 @@ type MarkdownEditorProps = {
   value: string;
   wikilinkCandidates: WikilinkCandidate[];
   onChange: (content: string) => void;
+  onCursorPosition: (position: EditorCursorPosition) => void;
   onOpenWikilink: (target: string) => void;
   onPreview: () => void;
   onSave: () => void;
   onSaveAs: () => void;
 };
-
-function hasPermanentIdentity(source: string): boolean {
-  return /^\uFEFF?---\r?\n[\s\S]*?^id:\s*\S+/m.test(source);
-}
 
 export default function MarkdownEditor({
   autoFocus = false,
@@ -56,6 +59,7 @@ export default function MarkdownEditor({
   value,
   wikilinkCandidates,
   onChange,
+  onCursorPosition,
   onOpenWikilink,
   onPreview,
   onSave,
@@ -70,7 +74,10 @@ export default function MarkdownEditor({
   const onSaveRef = useRef(onSave);
   const onSaveAsRef = useRef(onSaveAs);
   const wikilinkCandidatesRef = useRef(wikilinkCandidates);
+  const onCursorPositionRef = useRef(onCursorPosition);
   const syncingValueRef = useRef(false);
+  const composingRef = useRef(false);
+  const localValueHistoryRef = useRef(new Set([value]));
 
   valueRef.current = value;
   onChangeRef.current = onChange;
@@ -79,6 +86,7 @@ export default function MarkdownEditor({
   onSaveRef.current = onSave;
   onSaveAsRef.current = onSaveAs;
   wikilinkCandidatesRef.current = wikilinkCandidates;
+  onCursorPositionRef.current = onCursorPosition;
 
   useEffect(() => {
     const host = hostRef.current;
@@ -107,7 +115,10 @@ export default function MarkdownEditor({
             const inserted = `${candidate.target}]]`;
             editor.dispatch({
               changes: { from, insert: inserted, to },
-              selection: { anchor: from + inserted.length },
+              selection: {
+                anchor: from + inserted.length,
+                head: from + inserted.length,
+              },
             });
           },
           detail: candidate.detail,
@@ -119,6 +130,23 @@ export default function MarkdownEditor({
         update: (_current, _from, _to, nextContext) =>
           completeWikilink(nextContext),
       };
+    }
+
+    function syncExternalValue(view: EditorView): void {
+      const current = view.state.doc.toString();
+      const next = valueRef.current;
+      if (current === next || composingRef.current) return;
+
+      const currentSelection = view.state.selection.main;
+      const sync = describeExternalDocumentChange(current, next, {
+        anchor: currentSelection.anchor,
+        head: currentSelection.head,
+      });
+      if (!sync) return;
+
+      syncingValueRef.current = true;
+      view.dispatch({ changes: sync.change, selection: sync.selection });
+      syncingValueRef.current = false;
     }
 
     const view = new EditorView({
@@ -169,7 +197,24 @@ export default function MarkdownEditor({
             },
           ]),
           EditorView.domEventHandlers({
+            compositionstart: () => {
+              composingRef.current = true;
+              return false;
+            },
+            compositionend: () => {
+              composingRef.current = false;
+              syncExternalValue(view);
+              return false;
+            },
             keydown: (event, editor) => {
+              if (
+                event.key === "Escape" &&
+                event.target instanceof Element &&
+                event.target.closest(".cm-search")
+              ) {
+                window.requestAnimationFrame(() => editor.focus());
+                return false;
+              }
               if (event.key !== "Enter" || (!event.metaKey && !event.ctrlKey)) {
                 return false;
               }
@@ -202,9 +247,28 @@ export default function MarkdownEditor({
             },
           }),
           EditorView.updateListener.of((update) => {
+            if (update.selectionSet || update.docChanged) {
+              const position = update.state.doc.lineAt(
+                update.state.selection.main.head,
+              );
+              onCursorPositionRef.current({
+                line: position.number,
+                column: update.state.selection.main.head - position.from + 1,
+              });
+            }
             if (update.docChanged) {
               if (!syncingValueRef.current) {
-                onChangeRef.current(update.state.doc.toString());
+                const nextValue = update.state.doc.toString();
+                localValueHistoryRef.current.add(nextValue);
+                if (localValueHistoryRef.current.size > 64) {
+                  const oldest = localValueHistoryRef.current
+                    .values()
+                    .next().value;
+                  if (typeof oldest === "string") {
+                    localValueHistoryRef.current.delete(oldest);
+                  }
+                }
+                onChangeRef.current(nextValue);
               }
             }
           }),
@@ -212,6 +276,11 @@ export default function MarkdownEditor({
       }),
     });
     editorRef.current = view;
+    const initialLine = view.state.doc.lineAt(view.state.selection.main.head);
+    onCursorPositionRef.current({
+      line: initialLine.number,
+      column: view.state.selection.main.head - initialLine.from + 1,
+    });
     if (autoFocus) view.focus();
 
     return () => {
@@ -224,50 +293,43 @@ export default function MarkdownEditor({
     const view = editorRef.current;
     if (!view) return;
 
+    valueRef.current = value;
+    if (localValueHistoryRef.current.has(value)) return;
+    if (composingRef.current) return;
+
     const current = view.state.doc.toString();
-    if (
-      current === value ||
-      !hasPermanentIdentity(value) ||
-      hasPermanentIdentity(current)
-    ) {
-      return;
-    }
+    if (current === value) return;
 
-    const currentSelection = view.state.selection;
-    const currentStart = value.endsWith(current)
-      ? value.length - current.length
-      : value.indexOf(current);
-    if (currentStart < 0) return;
-
-    const mapPosition = (position: number) =>
-      Math.max(
-        0,
-        Math.min(
-          value.length,
-          currentStart >= 0 ? currentStart + position : position,
-        ),
-      );
+    const currentSelection = view.state.selection.main;
+    const sync = describeExternalDocumentChange(current, value, {
+      anchor: currentSelection.anchor,
+      head: currentSelection.head,
+    });
+    if (!sync) return;
 
     syncingValueRef.current = true;
-    view.dispatch({
-      changes: { from: 0, insert: value, to: view.state.doc.length },
-      selection: {
-        anchor: mapPosition(currentSelection.main.anchor),
-        head: mapPosition(currentSelection.main.head),
-      },
-    });
+    view.dispatch({ changes: sync.change, selection: sync.selection });
     syncingValueRef.current = false;
+    localValueHistoryRef.current.clear();
+    localValueHistoryRef.current.add(value);
   }, [value]);
 
   useEffect(() => {
-    if (findRequest > 0 && editorRef.current) {
-      openSearchPanel(editorRef.current);
+    if (findRequest <= 0 || !editorRef.current) return;
+
+    openSearchPanel(editorRef.current);
+    const focusFindInput = () => {
       const findInput = hostRef.current?.querySelector<HTMLInputElement>(
-        ".cm-search [main-field]",
+        ".cm-search input[main-field], .cm-search input",
       );
       findInput?.focus();
       findInput?.select();
-    }
+      return Boolean(findInput);
+    };
+    if (focusFindInput()) return;
+
+    const frame = window.requestAnimationFrame(focusFindInput);
+    return () => window.cancelAnimationFrame(frame);
   }, [findRequest]);
 
   return (

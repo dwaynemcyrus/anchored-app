@@ -1,13 +1,16 @@
 import type { AnchoredDocument } from "../documents";
+import type { EditorCursorPosition } from "./MarkdownEditor";
 
 type StatusBarProps = {
   document?: AnchoredDocument;
+  cursorPosition?: EditorCursorPosition;
   vaultFileCount?: number;
   vaultName: string;
 };
 
 export function StatusBar({
   document,
+  cursorPosition,
   vaultFileCount,
   vaultName,
 }: StatusBarProps) {
@@ -40,7 +43,9 @@ export function StatusBar({
           <span aria-hidden="true">•</span>
           <span>UTF-8</span>
           <span aria-hidden="true">•</span>
-          <span>Ln 12, Col 1</span>
+          <span>
+            Ln {cursorPosition?.line ?? 1}, Col {cursorPosition?.column ?? 1}
+          </span>
         </div>
       ) : null}
     </footer>
