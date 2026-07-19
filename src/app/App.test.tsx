@@ -368,7 +368,7 @@ describe("App", () => {
     ).toBeVisible();
   });
 
-  it("creates a subfolder from a folder row action", async () => {
+  it("creates a subfolder from the folder context menu", async () => {
     const user = userEvent.setup();
     mockedSelectVault.mockResolvedValue({
       files: [],
@@ -387,8 +387,12 @@ describe("App", () => {
     render(<App />);
 
     await user.click(screen.getByRole("button", { name: "Open vault" }));
+    fireEvent.contextMenu(screen.getByRole("button", { name: "Projects" }));
     await user.click(
-      screen.getByRole("button", { name: "Create subfolder inside Projects" }),
+      within(screen.getByRole("menu", { name: "File tree actions" })).getByRole(
+        "menuitem",
+        { name: "New subfolder" },
+      ),
     );
     const dialog = screen.getByRole("dialog", { name: "Create folder" });
     await user.type(
@@ -406,7 +410,7 @@ describe("App", () => {
     expect(await screen.findByRole("button", { name: "Inbox" })).toBeVisible();
   });
 
-  it("renames a folder from a folder row action", async () => {
+  it("renames a folder from the folder context menu", async () => {
     const user = userEvent.setup();
     mockedSelectVault.mockResolvedValue({
       files: [],
@@ -425,8 +429,12 @@ describe("App", () => {
     render(<App />);
 
     await user.click(screen.getByRole("button", { name: "Open vault" }));
+    fireEvent.contextMenu(screen.getByRole("button", { name: "Projects" }));
     await user.click(
-      screen.getByRole("button", { name: "Rename Projects folder" }),
+      within(screen.getByRole("menu", { name: "File tree actions" })).getByRole(
+        "menuitem",
+        { name: "Rename" },
+      ),
     );
     const dialog = screen.getByRole("dialog", { name: "Rename folder" });
     const input = within(dialog).getByRole("textbox", {
@@ -447,7 +455,7 @@ describe("App", () => {
     ).toBeVisible();
   });
 
-  it("deletes an empty folder from a folder row action", async () => {
+  it("deletes an empty folder from the folder context menu", async () => {
     const user = userEvent.setup();
     mockedSelectVault.mockResolvedValue({
       files: [],
@@ -466,8 +474,12 @@ describe("App", () => {
     render(<App />);
 
     await user.click(screen.getByRole("button", { name: "Open vault" }));
+    fireEvent.contextMenu(screen.getByRole("button", { name: "Archive" }));
     await user.click(
-      screen.getByRole("button", { name: "Delete Archive folder" }),
+      within(screen.getByRole("menu", { name: "File tree actions" })).getByRole(
+        "menuitem",
+        { name: "Delete folder" },
+      ),
     );
     const dialog = screen.getByRole("dialog", { name: "Delete folder" });
     await user.click(

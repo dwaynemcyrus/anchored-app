@@ -1001,7 +1001,7 @@ and preserves link integrity across filename changes.
       and Quick Open. The deterministic 700-note/3,500-link topology test
       completes under the 100 ms budget without resolving ambiguous links.
 
-21E. [ ] **Chunk: Stabilize the physical Files tree**
+21E. [x] **Chunk: Stabilize the physical Files tree**
     - Expected files: `src/app/components/FileRail.tsx`, focused tree-model and
       row components/tests, `src/styles/global.css`, and `CHANGELOG.md`.
     - Change: Isolate tree rendering from editor and link state, use stable row
@@ -1022,6 +1022,11 @@ and preserves link integrity across filename changes.
       focused revert until native QA passes.
     - Expected changelog: The Files tree scrolls reliably, folder actions move
       to an opaque context menu, and inline folder action icons are removed.
+    - Verification result: The Files view now renders its complete lightweight
+      row model with browser-native scrolling and per-row paint containment,
+      removing the scroll-position state that could expose black gaps during
+      rapid reversals. Folder actions are context-menu-only, menus use opaque
+      tokens and viewport clamping, and focused App tests plus TypeScript pass.
 
 21F. [ ] **Chunk: Add virtual collection navigation**
     - Expected files: collection classification/model modules, sidebar

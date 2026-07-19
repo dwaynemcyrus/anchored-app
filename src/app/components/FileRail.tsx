@@ -2,7 +2,6 @@ import {
   memo,
   useEffect,
   useMemo,
-  useRef,
   useState,
   type KeyboardEvent,
   type MouseEvent,
@@ -18,14 +17,9 @@ import {
   FolderIcon,
   NewFileIcon,
   NewFolderIcon,
-  RenameIcon,
   SearchIcon,
-  TrashIcon,
 } from "./Icons";
 import { IconButton } from "./IconButton";
-
-const TREE_ROW_HEIGHT = 40;
-const TREE_OVERSCAN = 8;
 
 type FileRailProps = {
   activeDocumentId: string;
@@ -113,7 +107,7 @@ function documentIsDraggable(document: AnchoredDocument): boolean {
   );
 }
 
-function VirtualTree({
+function PhysicalTree({
   rows,
   activeDocumentId,
   expandedFolders,
@@ -127,9 +121,6 @@ function VirtualTree({
   onDragOver,
   onDragLeave,
   onDrop,
-  onCreateFolder,
-  onRenameFolder,
-  onDeleteFolder,
   dropTargetFolder,
 }: {
   rows: TreeRowData[];
@@ -145,93 +136,41 @@ function VirtualTree({
   onDragOver: (event: DragEvent, folderPath: string) => void;
   onDragLeave: () => void;
   onDrop: (event: DragEvent, folderPath: string) => void;
-  onCreateFolder: (parentPath: string) => void;
-  onRenameFolder: (folderPath: string) => void;
-  onDeleteFolder: (folderPath: string) => void;
   dropTargetFolder?: string;
 }) {
-  const scrollRef = useRef<HTMLElement>(null);
-  const [scrollTop, setScrollTop] = useState(0);
-  const [viewportHeight, setViewportHeight] = useState(800);
-
-  useEffect(() => {
-    const element = scrollRef.current;
-    if (!element) return;
-
-    function updateSize() {
-      setViewportHeight(element?.clientHeight ?? 0);
-    }
-
-    updateSize();
-    if (typeof ResizeObserver !== "undefined") {
-      const resizeObserver = new ResizeObserver(updateSize);
-      resizeObserver.observe(element);
-      return () => resizeObserver.disconnect();
-    }
-
-    window.addEventListener("resize", updateSize);
-    return () => window.removeEventListener("resize", updateSize);
-  }, []);
-
-  const visibleStart = Math.max(
-    0,
-    Math.floor(scrollTop / TREE_ROW_HEIGHT) - TREE_OVERSCAN,
-  );
-  const visibleEnd = Math.min(
-    rows.length,
-    Math.ceil((scrollTop + viewportHeight) / TREE_ROW_HEIGHT) + TREE_OVERSCAN,
-  );
-  const visibleRows = rows.slice(visibleStart, visibleEnd);
-
   return (
-    <nav
-      ref={scrollRef}
-      aria-label="Vault files"
-      className="file-tree"
-      onScroll={(event) => setScrollTop(event.currentTarget.scrollTop)}
-    >
-      <div style={{ height: rows.length * TREE_ROW_HEIGHT }}>
-        <div
-          style={{
-            transform: `translateY(${visibleStart * TREE_ROW_HEIGHT}px)`,
-          }}
-        >
-          {visibleRows.map((row) => {
-            const key = treeRowKey(row);
-            return row.kind === "folder" ? (
-              <FolderTreeRow
-                expanded={expandedFolders.has(row.path)}
-                key={key}
-                path={row.path}
-                selected={selectedKey === key}
-                depth={row.depth}
-                onContextMenu={(event) => onContextMenu(event, row)}
-                onSelect={() => onSelectFolder(row.path)}
-                onToggle={() => onToggleFolder(row.path)}
-                onDragOver={(event) => onDragOver(event, row.path)}
-                onDragLeave={onDragLeave}
-                onDrop={(event) => onDrop(event, row.path)}
-                onCreateFolder={() => onCreateFolder(row.path)}
-                onRename={() => onRenameFolder(row.path)}
-                onDelete={() => onDeleteFolder(row.path)}
-                dropTarget={dropTargetFolder === row.path}
-              />
-            ) : (
-              <FileTreeRow
-                active={row.document.id === activeDocumentId}
-                depth={row.depth}
-                document={row.document}
-                key={key}
-                selected={selectedKey === key}
-                onContextMenu={(event) => onContextMenu(event, row)}
-                onSelect={() => onSelectDocument(row.document.id)}
-                onDragStart={(event) => onDragStart(event, row.document)}
-                onDragEnd={onDragEnd}
-              />
-            );
-          })}
-        </div>
-      </div>
+    <nav aria-label="Vault files" className="file-tree">
+      {rows.map((row) => {
+        const key = treeRowKey(row);
+        return row.kind === "folder" ? (
+          <FolderTreeRow
+            expanded={expandedFolders.has(row.path)}
+            key={key}
+            path={row.path}
+            selected={selectedKey === key}
+            depth={row.depth}
+            onContextMenu={(event) => onContextMenu(event, row)}
+            onSelect={() => onSelectFolder(row.path)}
+            onToggle={() => onToggleFolder(row.path)}
+            onDragOver={(event) => onDragOver(event, row.path)}
+            onDragLeave={onDragLeave}
+            onDrop={(event) => onDrop(event, row.path)}
+            dropTarget={dropTargetFolder === row.path}
+          />
+        ) : (
+          <FileTreeRow
+            active={row.document.id === activeDocumentId}
+            depth={row.depth}
+            document={row.document}
+            key={key}
+            selected={selectedKey === key}
+            onContextMenu={(event) => onContextMenu(event, row)}
+            onSelect={() => onSelectDocument(row.document.id)}
+            onDragStart={(event) => onDragStart(event, row.document)}
+            onDragEnd={onDragEnd}
+          />
+        );
+      })}
     </nav>
   );
 }
@@ -247,9 +186,6 @@ const FolderTreeRow = memo(function FolderTreeRow({
   onDragOver,
   onDragLeave,
   onDrop,
-  onCreateFolder,
-  onRename,
-  onDelete,
   dropTarget,
 }: {
   depth: number;
@@ -262,9 +198,6 @@ const FolderTreeRow = memo(function FolderTreeRow({
   onDragOver: (event: DragEvent) => void;
   onDragLeave: () => void;
   onDrop: (event: DragEvent) => void;
-  onCreateFolder: () => void;
-  onRename: () => void;
-  onDelete: () => void;
   dropTarget: boolean;
 }) {
   return (
@@ -294,35 +227,6 @@ const FolderTreeRow = memo(function FolderTreeRow({
       </button>
       <FolderIcon />
       <span>{folderName(path)}</span>
-      <span className="tree-row__actions">
-        <IconButton
-          label={`Create subfolder inside ${folderName(path)}`}
-          onClick={(event) => {
-            event.stopPropagation();
-            onCreateFolder();
-          }}
-        >
-          <NewFolderIcon />
-        </IconButton>
-        <IconButton
-          label={`Rename ${folderName(path)} folder`}
-          onClick={(event) => {
-            event.stopPropagation();
-            onRename();
-          }}
-        >
-          <RenameIcon />
-        </IconButton>
-        <IconButton
-          label={`Delete ${folderName(path)} folder`}
-          onClick={(event) => {
-            event.stopPropagation();
-            onDelete();
-          }}
-        >
-          <TrashIcon />
-        </IconButton>
-      </span>
     </div>
   );
 });
@@ -396,11 +300,13 @@ function ContextMenu({
     function close() {
       onClose();
     }
-    document.addEventListener("mousedown", close);
-    return () => document.removeEventListener("mousedown", close);
+    document.addEventListener("click", close);
+    return () => document.removeEventListener("click", close);
   }, [onClose]);
 
   const item = menu.item;
+  const editableFile =
+    item.kind === "file" && item.document.isMarkdown !== false;
   return (
     <div
       aria-label="File tree actions"
@@ -419,20 +325,24 @@ function ContextMenu({
           >
             Open
           </button>
-          <button
-            role="menuitem"
-            type="button"
-            onClick={() => onRenameDocument(item.document.id)}
-          >
-            Rename
-          </button>
-          <button
-            role="menuitem"
-            type="button"
-            onClick={() => onTrashDocument(item.document.id)}
-          >
-            Move to Trash
-          </button>
+          {editableFile ? (
+            <>
+              <button
+                role="menuitem"
+                type="button"
+                onClick={() => onRenameDocument(item.document.id)}
+              >
+                Rename
+              </button>
+              <button
+                role="menuitem"
+                type="button"
+                onClick={() => onTrashDocument(item.document.id)}
+              >
+                Move to Trash
+              </button>
+            </>
+          ) : null}
         </>
       ) : (
         <>
@@ -562,7 +472,13 @@ export function FileRail({
     setSelectedKey(
       item.kind === "folder" ? `folder:${item.path}` : item.document.id,
     );
-    setContextMenu({ item, x: event.clientX, y: event.clientY });
+    const menuWidth = 190;
+    const menuHeight = 124;
+    setContextMenu({
+      item,
+      x: Math.max(8, Math.min(event.clientX, window.innerWidth - menuWidth)),
+      y: Math.max(8, Math.min(event.clientY, window.innerHeight - menuHeight)),
+    });
   }
 
   function closeContextMenu() {
@@ -716,7 +632,7 @@ export function FileRail({
         </IconButton>
       </div>
       {rows.length > 0 ? (
-        <VirtualTree
+        <PhysicalTree
           activeDocumentId={activeDocumentId}
           expandedFolders={expandedFolders}
           rows={rows}
@@ -733,9 +649,6 @@ export function FileRail({
           onDragOver={handleDragOver}
           onDragLeave={() => setDropTargetFolder(undefined)}
           onDrop={handleDrop}
-          onCreateFolder={(path) => onCreateFolder(path)}
-          onRenameFolder={onRenameFolder}
-          onDeleteFolder={onDeleteFolder}
           dropTargetFolder={dropTargetFolder}
         />
       ) : (

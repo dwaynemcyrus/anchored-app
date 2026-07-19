@@ -43,6 +43,10 @@ Git commit. The format follows [Keep a Changelog], and releases follow
 
 ### Changed
 
+- The physical Files tree now uses browser-native scrolling with contained
+  lightweight rows, removing the blank regions and stalls caused by its
+  previous JavaScript scroll window. Folder actions now live only in an opaque,
+  viewport-clamped right-click menu.
 - Vault refresh now reuses a versioned native metadata index keyed by relative
   path, size, and modification time. Unchanged notes are not reread, malformed
   caches rebuild automatically, and focus refresh runs off the UI thread.

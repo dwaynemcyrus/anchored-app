@@ -13,6 +13,8 @@
   --color-row-active: #151515;
   --color-focus: #fff;
   --color-danger: #ffb4ab;
+  --color-menu: #111;
+  --color-menu-border: #333;
 }
 
 * {
@@ -374,6 +376,9 @@ input:focus-visible,
   color: var(--color-text-muted);
   font-size: 13px;
   text-align: left;
+  contain: layout paint style;
+  content-visibility: auto;
+  contain-intrinsic-size: 40px;
 }
 
 .tree-row span,
@@ -501,9 +506,9 @@ input:focus-visible,
   display: grid;
   min-width: 170px;
   padding: 4px;
-  border: 1px solid var(--color-border);
+  border: 1px solid var(--color-menu-border);
   border-radius: 8px;
-  background: var(--color-panel);
+  background: var(--color-menu);
   box-shadow: 0 12px 30px rgb(0 0 0 / 24%);
 }
 
