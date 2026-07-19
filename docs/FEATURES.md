@@ -26,10 +26,12 @@ rendered interface on 2026-07-19.
 ## Vaults and file navigation
 
 - Select a local folder containing Markdown files.
-- Default to virtual Inbox, Workbench, Archive, and Assets collections with
-  live counts. Each Markdown note appears in one lifecycle collection.
-- Group Workbench notes by front-matter `type`, with Untyped first and all
-  actual type values alphabetized.
+- Default to virtual Inbox, Scratchpad, Workbench, Archive, and Assets views
+  with live counts. Each Markdown note appears in one lifecycle collection;
+  Scratchpad is an Inbox-only saved view.
+- Start Workbench expanded as a Last Edited/newest flat list. It can group by
+  front-matter `type`, with Untyped first, or sort in both directions by name,
+  filesystem modification time, and `created_at`.
 - Group non-Markdown Assets by recognized file type or show one alphabetical
   list.
 - Retain the physical folder tree as a secondary persisted Files view with
@@ -43,6 +45,8 @@ rendered interface on 2026-07-19.
   folder is moved and opened again.
 - Reserve the vault-local `.anchored` folder for Anchored metadata and Trash;
   it is excluded from ordinary files, search, links, and backlinks.
+- Exclude every dot-prefixed path component and refuse folder moves/deletes
+  that would carry hidden application data as an invisible side effect.
 
 ## Markdown editing and saving
 
@@ -61,6 +65,9 @@ rendered interface on 2026-07-19.
 - Refuse to create or rename over an existing Markdown file.
 - Add second-precision UTC `created_at` metadata to notes created by Anchored
   without backfilling externally imported notes.
+- Add second-precision UTC `updated_at` only after successful authored saves;
+  display stored timestamps in local time and use cached filesystem metadata
+  for Last Edited without writing `modified_at`.
 - Archive through a dedicated atomic transition that writes `status: archived`
   and `archived_at`; archived notes open in read-only Preview until restored.
 - Close a note without closing its vault. A note with unfinished edits is
@@ -93,7 +100,9 @@ rendered interface on 2026-07-19.
 ## Lifecycle collections and note IDs
 
 - Inbox contains notes with missing, blank, unusable, or `inbox` status.
-- Workbench contains other non-archived statuses and groups notes by `type`.
+- Workbench contains other non-archived statuses and supports flat or `type`
+  grouped navigation. Moving there requires an existing, new, or Untyped type
+  choice; Untyped removes the property.
 - Archive contains `status: archived` notes and exposes explicit Restore to
   Inbox and Restore to Workbench actions.
 - Existing front-matter `id` values are preserved as ordinary user metadata.
@@ -109,7 +118,8 @@ rendered interface on 2026-07-19.
 - Give each capture `type: scratchpad`, `status: inbox`, and `created_at`.
 - Autosave through serialized atomic writes, flush before hiding, and keep the
   visible draft when an external edit conflict prevents saving.
-- Open the newest non-archived capture with `Control-Option-P`.
+- Open the newest active Inbox capture with `Control-Option-P`, or toggle a
+  newest-edited right-side list with `Control-Option-S`.
 - Complete bounded wikilink suggestions from the cached vault index.
 - Keep system-wide shortcuts deferred; the current shortcuts work while
   Anchored is active.
@@ -222,6 +232,7 @@ Behavior:
 | New note | Command-N |
 | New Scratchpad capture | Control-Option-N |
 | Previous Scratchpad capture | Control-Option-P |
+| Toggle Scratchpad notes | Control-Option-S |
 | Quick Open | Command-P |
 | Search all note content | Command-Shift-F |
 | Find in the active note | Command-F |

@@ -77,6 +77,28 @@ describe("vault collections", () => {
     );
   });
 
+  it("duplicates only active Inbox scratchpads into the saved view", () => {
+    const collections = buildVaultCollections([
+      document("Active Scratchpad.md", {
+        noteType: "scratchpad",
+        status: "inbox",
+      }),
+      document("Missing Status.md", { noteType: "SCRATCHPAD" }),
+      document("Archived Scratchpad.md", {
+        noteType: "scratchpad",
+        status: "archived",
+      }),
+    ]);
+
+    expect(collections.scratchpad.map((item) => item.name)).toEqual([
+      "Active Scratchpad.md",
+      "Missing Status.md",
+    ]);
+    expect(collections.archive.map((item) => item.name)).toEqual([
+      "Archived Scratchpad.md",
+    ]);
+  });
+
   it("classifies and groups a large vault without quadratic work", () => {
     const documents = Array.from({ length: 700 }, (_, index) =>
       document(`Folder ${index % 56}/Note ${index}.md`, {

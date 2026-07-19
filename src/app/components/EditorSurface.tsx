@@ -1,4 +1,4 @@
-import { lazy, Suspense, useState } from "react";
+import { lazy, Suspense, useEffect, useState } from "react";
 
 import type { AnchoredDocument } from "../documents";
 import type { WikilinkCandidate } from "../linkCandidates";
@@ -74,6 +74,13 @@ export function EditorSurface({
   trashing,
 }: EditorSurfaceProps) {
   const [previewVisible, setPreviewVisible] = useState(false);
+
+  useEffect(() => {
+    const showPreview = () => setPreviewVisible(true);
+    window.addEventListener("anchored:show-preview", showPreview);
+    return () =>
+      window.removeEventListener("anchored:show-preview", showPreview);
+  }, []);
   const [focusEditorOnOpen, setFocusEditorOnOpen] = useState(false);
   if (!document) {
     return (

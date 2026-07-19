@@ -12,6 +12,7 @@ import {
   FileVideo,
   Folder,
   FolderPlus,
+  ListCollapse,
   Menu,
   NotebookPen,
   Pencil,
@@ -63,6 +64,10 @@ export function NewFileIcon(props: IconProps) {
 
 export function NewFolderIcon(props: IconProps) {
   return <FolderPlus {...iconProps} {...props} />;
+}
+
+export function ExpandCollapseIcon(props: IconProps) {
+  return <ListCollapse {...iconProps} {...props} />;
 }
 
 export function ScratchpadIcon(props: IconProps) {

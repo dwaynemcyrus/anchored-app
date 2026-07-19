@@ -19,14 +19,18 @@ import {
   loadFileRailPreferences,
   saveFileRailPreferences,
   type FileRailPreferences,
+  type WorkbenchListMode,
+  type WorkbenchSort,
 } from "../fileRailPreferences";
 import {
   ChevronIcon,
+  ExpandCollapseIcon,
   FileTypeIcon,
   FolderIcon,
   NewFileIcon,
   NewFolderIcon,
   SearchIcon,
+  ScratchpadIcon,
 } from "./Icons";
 import { IconButton } from "./IconButton";
 
@@ -60,6 +64,10 @@ function useNavigationDocuments(
         document.saveState ?? "",
         document.status ?? "",
         document.noteType ?? "",
+        document.modifiedMillis ?? "",
+        document.createdAt ?? "",
+        document.updatedAt ?? "",
+        document.archivedAt ?? "",
         document.aliases.join("\u001f"),
       ].join("\u001e"),
     )
@@ -83,19 +91,28 @@ type FileRailProps = {
   vaultSelected: boolean;
   onArchiveDocument: (documentId: string) => void;
   onCreateFolder: (parentPath?: string) => void;
+  onCreateNoteInFolder: (folderPath: string) => void;
   onCreateNote: () => void;
   onDeleteFolder: (folderPath: string) => void;
   onMoveDocument: (documentId: string, destinationFolderPath: string) => void;
+  onMoveDocumentToWorkbench: (documentId: string) => void;
+  onMoveDocumentRequest: (documentId: string) => void;
+  onMoveFolderRequest: (folderPath: string) => void;
   onOpenTrash: () => void;
+  onOpenScratchpad: () => void;
   onQueryChange: (query: string) => void;
   onRenameDocument: (documentId: string) => void;
   onRenameFolder: (folderPath: string) => void;
+  onPreviewDocument: (documentId: string) => void;
   onRestoreDocument: (
     documentId: string,
     destinationStatus: "active" | "inbox",
   ) => void;
   onSelectDocument: (documentId: string) => void;
+  onSearchDocument: (documentId: string) => void;
+  onSearchInFolder: (folderPath: string) => void;
   onToggleFolder: (folder: string) => void;
+  onSetAllFoldersExpanded: (expanded: boolean) => void;
   onTrashDocument: (documentId: string) => void;
 };
 
@@ -128,7 +145,7 @@ type CollectionRowData =
 type NavigableRow = TreeRowData | CollectionRowData;
 
 type ContextMenuState = {
-  item: TreeRowData;
+  item: NavigableRow;
   x: number;
   y: number;
 };
@@ -152,6 +169,55 @@ function compareNames(left: string, right: string): number {
   return nameCollator.compare(left, right);
 }
 
+function compareDocumentPaths(
+  left: AnchoredDocument,
+  right: AnchoredDocument,
+): number {
+  return compareNames(
+    left.relativePath ?? left.name,
+    right.relativePath ?? right.name,
+  );
+}
+
+function compareOptionalDates(
+  left: number | undefined,
+  right: number | undefined,
+  direction: "asc" | "desc",
+): number {
+  const leftMissing = left === undefined || !Number.isFinite(left) || left <= 0;
+  const rightMissing =
+    right === undefined || !Number.isFinite(right) || right <= 0;
+  if (leftMissing !== rightMissing) return leftMissing ? 1 : -1;
+  if (leftMissing || rightMissing || left === right) return 0;
+  return direction === "asc" ? left - right : right - left;
+}
+
+function sortWorkbenchDocuments(
+  documents: AnchoredDocument[],
+  sort: WorkbenchSort,
+): AnchoredDocument[] {
+  return [...documents].sort((left, right) => {
+    let result = 0;
+    if (sort === "name-asc" || sort === "name-desc") {
+      result = compareNames(left.name, right.name);
+      if (sort === "name-desc") result *= -1;
+    } else if (sort === "modified-asc" || sort === "modified-desc") {
+      result = compareOptionalDates(
+        left.modifiedMillis,
+        right.modifiedMillis,
+        sort.endsWith("asc") ? "asc" : "desc",
+      );
+    } else {
+      result = compareOptionalDates(
+        left.createdAt ? Date.parse(left.createdAt) : undefined,
+        right.createdAt ? Date.parse(right.createdAt) : undefined,
+        sort.endsWith("asc") ? "asc" : "desc",
+      );
+    }
+    return result || compareDocumentPaths(left, right);
+  });
+}
+
 function treeRowKey(row: NavigableRow): string {
   if (row.kind === "folder") return `folder:${row.path}`;
   if (row.kind === "collection") return row.key;
@@ -165,6 +231,7 @@ function documentMatchesQuery(
   return (
     normalizedQuery.length === 0 ||
     document.name.toLocaleLowerCase().includes(normalizedQuery) ||
+    document.relativePath?.toLocaleLowerCase().includes(normalizedQuery) ||
     fileTypeLabel(fileTypeForName(document.name))
       .toLocaleLowerCase()
       .includes(normalizedQuery) ||
@@ -203,7 +270,7 @@ function PhysicalTree({
   activeDocumentId: string;
   expandedFolders: Set<string>;
   selectedKey?: string;
-  onContextMenu: (event: MouseEvent, item: TreeRowData) => void;
+  onContextMenu: (event: MouseEvent, item: NavigableRow) => void;
   onSelectDocument: (documentId: string) => void;
   onSelectFolder: (folderPath: string) => void;
   onToggleFolder: (folderPath: string) => void;
@@ -267,7 +334,7 @@ const CollectionTree = memo(function CollectionTree({
   duplicateNames: Set<string>;
   rows: CollectionRowData[];
   selectedKey?: string;
-  onContextMenu: (event: MouseEvent, item: TreeRowData) => void;
+  onContextMenu: (event: MouseEvent, item: NavigableRow) => void;
   onSelectCollection: (key: string) => void;
   onSelectDocument: (documentId: string) => void;
   onToggleCollection: (key: string) => void;
@@ -281,9 +348,12 @@ const CollectionTree = memo(function CollectionTree({
             count={row.count}
             depth={row.depth}
             expanded={!collapsedCollections.has(row.key)}
+            expandable={row.key !== "collection:scratchpad"}
             key={key}
             label={row.label}
             selected={selectedKey === key}
+            scratchpad={row.key === "collection:scratchpad"}
+            onContextMenu={(event) => onContextMenu(event, row)}
             onSelect={() => onSelectCollection(row.key)}
             onToggle={() => onToggleCollection(row.key)}
           />
@@ -319,22 +389,28 @@ const CollectionTreeRow = memo(function CollectionTreeRow({
   count,
   depth,
   expanded,
+  expandable,
   label,
   selected,
+  scratchpad,
+  onContextMenu,
   onSelect,
   onToggle,
 }: {
   count: number;
   depth: number;
   expanded: boolean;
+  expandable: boolean;
   label: string;
   selected: boolean;
+  scratchpad: boolean;
+  onContextMenu: (event: MouseEvent) => void;
   onSelect: () => void;
   onToggle: () => void;
 }) {
   return (
     <div
-      aria-expanded={expanded}
+      aria-expanded={expandable ? expanded : undefined}
       aria-label={label}
       aria-selected={selected}
       className={`tree-row tree-row--folder tree-row--collection${
@@ -343,19 +419,24 @@ const CollectionTreeRow = memo(function CollectionTreeRow({
       role="button"
       style={{ paddingLeft: `${8 + depth * 18}px` }}
       onClick={onSelect}
+      onContextMenu={onContextMenu}
     >
-      <button
-        aria-label={`${expanded ? "Collapse" : "Expand"} ${label}`}
-        className="tree-row__disclosure"
-        type="button"
-        onClick={(event) => {
-          event.stopPropagation();
-          onToggle();
-        }}
-      >
-        <ChevronIcon className={expanded ? "is-expanded" : ""} />
-      </button>
-      <FolderIcon />
+      {expandable ? (
+        <button
+          aria-label={`${expanded ? "Collapse" : "Expand"} ${label}`}
+          className="tree-row__disclosure"
+          type="button"
+          onClick={(event) => {
+            event.stopPropagation();
+            onToggle();
+          }}
+        >
+          <ChevronIcon className={expanded ? "is-expanded" : ""} />
+        </button>
+      ) : (
+        <span className="tree-row__disclosure" aria-hidden="true" />
+      )}
+      {scratchpad ? <ScratchpadIcon /> : <FolderIcon />}
       <span>{label}</span>
       <span aria-hidden="true" className="tree-row__count">
         {count}
@@ -476,26 +557,44 @@ function ContextMenu({
   onArchiveDocument,
   onClose,
   onCreateFolder,
+  onCreateNoteInFolder,
   onDeleteFolder,
   onOpen,
+  onMoveDocumentRequest,
+  onMoveFolderRequest,
+  onMoveDocumentToWorkbench,
   onRenameDocument,
   onRenameFolder,
+  onPreviewDocument,
   onRestoreDocument,
   onTrashDocument,
+  onSearchDocument,
+  onSearchInFolder,
+  onSetWorkbenchListMode,
+  onSetWorkbenchSort,
 }: {
   menu: ContextMenuState;
   onArchiveDocument: (documentId: string) => void;
   onClose: () => void;
   onCreateFolder: (parentPath?: string) => void;
+  onCreateNoteInFolder: (folderPath: string) => void;
   onDeleteFolder: (folderPath: string) => void;
   onOpen: (documentId: string) => void;
+  onMoveDocumentRequest: (documentId: string) => void;
+  onMoveFolderRequest: (folderPath: string) => void;
+  onMoveDocumentToWorkbench: (documentId: string) => void;
   onRenameDocument: (documentId: string) => void;
   onRenameFolder: (folderPath: string) => void;
+  onPreviewDocument: (documentId: string) => void;
   onRestoreDocument: (
     documentId: string,
     destinationStatus: "active" | "inbox",
   ) => void;
   onTrashDocument: (documentId: string) => void;
+  onSearchDocument: (documentId: string) => void;
+  onSearchInFolder: (folderPath: string) => void;
+  onSetWorkbenchListMode: (mode: WorkbenchListMode) => void;
+  onSetWorkbenchSort: (sort: WorkbenchSort) => void;
 }) {
   useEffect(() => {
     function close() {
@@ -506,11 +605,86 @@ function ContextMenu({
   }, [onClose]);
 
   const item = menu.item;
+  if (item.kind === "collection") {
+    if (item.key !== "collection:workbench") return null;
+    return (
+      <div
+        aria-label="Workbench view and sort"
+        className="tree-context-menu"
+        role="menu"
+        style={{ left: menu.x, top: menu.y }}
+        onClick={(event) => event.stopPropagation()}
+        onContextMenu={(event) => event.preventDefault()}
+      >
+        <button
+          role="menuitem"
+          type="button"
+          onClick={() => onSetWorkbenchListMode("flat")}
+        >
+          Flat list
+        </button>
+        <button
+          role="menuitem"
+          type="button"
+          onClick={() => onSetWorkbenchListMode("grouped")}
+        >
+          Group by Type
+        </button>
+        <button
+          role="menuitem"
+          type="button"
+          onClick={() => onSetWorkbenchSort("name-asc")}
+        >
+          Name A–Z
+        </button>
+        <button
+          role="menuitem"
+          type="button"
+          onClick={() => onSetWorkbenchSort("name-desc")}
+        >
+          Name Z–A
+        </button>
+        <button
+          role="menuitem"
+          type="button"
+          onClick={() => onSetWorkbenchSort("modified-desc")}
+        >
+          Last Edited newest
+        </button>
+        <button
+          role="menuitem"
+          type="button"
+          onClick={() => onSetWorkbenchSort("modified-asc")}
+        >
+          Last Edited oldest
+        </button>
+        <button
+          role="menuitem"
+          type="button"
+          onClick={() => onSetWorkbenchSort("created-desc")}
+        >
+          Created newest
+        </button>
+        <button
+          role="menuitem"
+          type="button"
+          onClick={() => onSetWorkbenchSort("created-asc")}
+        >
+          Created oldest
+        </button>
+      </div>
+    );
+  }
   const editableFile =
     item.kind === "file" && item.document.isMarkdown !== false;
   const archivedFile =
     editableFile &&
     item.document.status?.trim().toLocaleLowerCase() === "archived";
+  const inboxFile =
+    editableFile &&
+    !archivedFile &&
+    (!item.document.status?.trim() ||
+      item.document.status.trim().toLocaleLowerCase() === "inbox");
   return (
     <div
       aria-label="File tree actions"
@@ -529,8 +703,87 @@ function ContextMenu({
           >
             Open
           </button>
+          {!editableFile ? (
+            <>
+              <button
+                disabled
+                role="menuitem"
+                title="Finder reveal is not available in this build."
+                type="button"
+              >
+                Reveal in Finder
+              </button>
+              <button
+                disabled
+                role="menuitem"
+                title="Asset moves are not available in this build."
+                type="button"
+              >
+                Move To…
+              </button>
+              <button
+                disabled
+                role="menuitem"
+                title="Asset rename is not available in this build."
+                type="button"
+              >
+                Rename
+              </button>
+              <button
+                disabled
+                role="menuitem"
+                title="Asset deletion is not available in this build."
+                type="button"
+              >
+                Delete
+              </button>
+            </>
+          ) : null}
+          {editableFile ? (
+            <button
+              role="menuitem"
+              type="button"
+              onClick={() => onPreviewDocument(item.document.id)}
+            >
+              Preview
+            </button>
+          ) : null}
+          {editableFile ? (
+            <button
+              disabled={archivedFile}
+              role="menuitem"
+              title={
+                archivedFile
+                  ? "Archived notes cannot be physically moved."
+                  : undefined
+              }
+              type="button"
+              onClick={() => onMoveDocumentRequest(item.document.id)}
+            >
+              Move To…
+            </button>
+          ) : null}
+          {editableFile ? (
+            <button
+              role="menuitem"
+              type="button"
+              onClick={() => onSearchDocument(item.document.id)}
+            >
+              Search in Note
+            </button>
+          ) : null}
           {editableFile && !archivedFile ? (
             <>
+              {inboxFile &&
+              item.document.noteType?.toLocaleLowerCase() !== "scratchpad" ? (
+                <button
+                  role="menuitem"
+                  type="button"
+                  onClick={() => onMoveDocumentToWorkbench(item.document.id)}
+                >
+                  Move to Workbench…
+                </button>
+              ) : null}
               <button
                 role="menuitem"
                 type="button"
@@ -585,9 +838,30 @@ function ContextMenu({
           <button
             role="menuitem"
             type="button"
+            onClick={() => onCreateNoteInFolder(item.path)}
+          >
+            New note
+          </button>
+          <button
+            role="menuitem"
+            type="button"
             onClick={() => onCreateFolder(item.path)}
           >
             New subfolder
+          </button>
+          <button
+            role="menuitem"
+            type="button"
+            onClick={() => onMoveFolderRequest(item.path)}
+          >
+            Move Folder To…
+          </button>
+          <button
+            role="menuitem"
+            type="button"
+            onClick={() => onSearchInFolder(item.path)}
+          >
+            Search in Folder
           </button>
           <button
             role="menuitem"
@@ -621,16 +895,25 @@ export function FileRail({
   vaultSelected,
   onArchiveDocument,
   onCreateFolder,
+  onCreateNoteInFolder,
   onCreateNote,
   onDeleteFolder,
   onMoveDocument,
+  onMoveDocumentRequest,
+  onMoveFolderRequest,
+  onMoveDocumentToWorkbench,
+  onOpenScratchpad,
   onOpenTrash,
   onQueryChange,
+  onPreviewDocument,
   onRenameDocument,
   onRenameFolder,
   onRestoreDocument,
   onSelectDocument,
+  onSearchDocument,
+  onSearchInFolder,
   onToggleFolder,
+  onSetAllFoldersExpanded,
   onTrashDocument,
 }: FileRailProps) {
   const [selectedKey, setSelectedKey] = useState<string>();
@@ -762,27 +1045,52 @@ export function FileRail({
     }
 
     appendGroup(
+      "collection:scratchpad",
+      "Scratchpad",
+      collections.scratchpad.length,
+      0,
+    );
+
+    appendGroup(
       "collection:workbench",
       "Workbench",
       collections.workbench.length,
       0,
     );
     if (isExpanded("collection:workbench")) {
-      const fullCounts = new Map(
-        collections.workbenchGroups.map((group) => [
-          group.name.toLocaleLowerCase(),
-          group.documents.length,
-        ]),
-      );
-      for (const group of filteredCollections.workbenchGroups) {
-        const key = `collection:workbench:${group.name.toLocaleLowerCase()}`;
-        appendGroup(
-          key,
-          group.name,
-          fullCounts.get(group.name.toLocaleLowerCase()) ?? 0,
+      if (preferences.workbenchListMode === "flat") {
+        appendDocuments(
+          sortWorkbenchDocuments(
+            filteredCollections.workbench,
+            preferences.workbenchSort,
+          ),
           1,
         );
-        if (isExpanded(key)) appendDocuments(group.documents, 2);
+      } else {
+        const fullCounts = new Map(
+          collections.workbenchGroups.map((group) => [
+            group.name.toLocaleLowerCase(),
+            group.documents.length,
+          ]),
+        );
+        for (const group of filteredCollections.workbenchGroups) {
+          const key = `collection:workbench:${group.name.toLocaleLowerCase()}`;
+          appendGroup(
+            key,
+            group.name,
+            fullCounts.get(group.name.toLocaleLowerCase()) ?? 0,
+            1,
+          );
+          if (isExpanded(key)) {
+            appendDocuments(
+              sortWorkbenchDocuments(
+                group.documents,
+                preferences.workbenchSort,
+              ),
+              2,
+            );
+          }
+        }
       }
     }
 
@@ -822,9 +1130,44 @@ export function FileRail({
     filteredCollections,
     normalizedQuery.length,
     preferences.assetListMode,
+    preferences.workbenchListMode,
+    preferences.workbenchSort,
   ]);
   const navigationRows: NavigableRow[] =
     preferences.mode === "collections" ? collectionRows : rows;
+  const expandableCollectionKeys = useMemo(() => {
+    const keys = [
+      "collection:inbox",
+      "collection:workbench",
+      "collection:archive",
+      "collection:assets",
+    ];
+    if (preferences.workbenchListMode === "grouped") {
+      keys.push(
+        ...collections.workbenchGroups.map(
+          (group) => `collection:workbench:${group.name.toLocaleLowerCase()}`,
+        ),
+      );
+    }
+    if (preferences.assetListMode === "grouped") {
+      keys.push(
+        ...collections.assetGroups.map(
+          (group) => `collection:assets:${group.name.toLocaleLowerCase()}`,
+        ),
+      );
+    }
+    return keys;
+  }, [
+    collections.assetGroups,
+    collections.workbenchGroups,
+    preferences.assetListMode,
+    preferences.workbenchListMode,
+  ]);
+  const allExpanded =
+    preferences.mode === "collections"
+      ? expandableCollectionKeys.every((key) => !collapsedCollections.has(key))
+      : folders.length > 0 &&
+        folders.every((folder) => expandedFolders.has(folder));
 
   useEffect(() => {
     persistFileRailPreferences(preferences);
@@ -835,19 +1178,27 @@ export function FileRail({
   }, []);
 
   const showContextMenu = useCallback(
-    (event: MouseEvent, item: TreeRowData) => {
+    (event: MouseEvent, item: NavigableRow) => {
       event.preventDefault();
-      setSelectedKey(
-        item.kind === "folder" ? `folder:${item.path}` : item.document.id,
-      );
+      setSelectedKey(treeRowKey(item));
       const menuWidth = 190;
-      const menuHeight = 172;
+      const menuHeight =
+        item.kind === "collection"
+          ? 292
+          : item.kind === "folder"
+            ? 250
+            : item.document.isMarkdown === false
+              ? 180
+              : 330;
       setContextMenu({
         item,
         x: Math.max(8, Math.min(event.clientX, window.innerWidth - menuWidth)),
         y: Math.max(
           8,
-          Math.min(event.clientY, window.innerHeight - menuHeight),
+          Math.min(
+            event.clientY,
+            window.innerHeight - Math.min(menuHeight, window.innerHeight - 16),
+          ),
         ),
       });
     },
@@ -867,9 +1218,13 @@ export function FileRail({
     setSelectedKey(`folder:${folderPath}`);
   }
 
-  const selectCollection = useCallback((key: string) => {
-    setSelectedKey(key);
-  }, []);
+  const selectCollection = useCallback(
+    (key: string) => {
+      setSelectedKey(key);
+      if (key === "collection:scratchpad") onOpenScratchpad();
+    },
+    [onOpenScratchpad],
+  );
 
   const toggleCollection = useCallback(
     (key: string) => {
@@ -887,6 +1242,17 @@ export function FileRail({
   function updatePreferences(next: Partial<FileRailPreferences>) {
     closeContextMenu();
     setPreferences((current) => ({ ...current, ...next }));
+  }
+
+  function toggleAllGroups() {
+    closeContextMenu();
+    if (preferences.mode === "files") {
+      onSetAllFoldersExpanded(!allExpanded);
+      return;
+    }
+    setCollapsedCollections(
+      allExpanded ? new Set(expandableCollectionKeys) : new Set(),
+    );
   }
 
   function runContextAction(action: () => void) {
@@ -985,7 +1351,11 @@ export function FileRail({
       event.preventDefault();
       if (currentRow.kind === "folder") onToggleFolder(currentRow.path);
       else if (currentRow.kind === "collection") {
-        toggleCollection(currentRow.key);
+        if (currentRow.key === "collection:scratchpad") {
+          selectCollection(currentRow.key);
+        } else {
+          toggleCollection(currentRow.key);
+        }
       } else selectDocument(currentRow.document.id);
       return;
     }
@@ -1061,34 +1431,78 @@ export function FileRail({
             Files
           </button>
         </div>
-        {preferences.mode === "collections" ? (
-          <div
-            aria-label="Asset list order"
-            className="file-rail__segmented file-rail__segmented--compact"
+        <div className="file-rail__view-actions">
+          {preferences.mode === "collections" ? (
+            <div
+              aria-label="Asset list order"
+              className="file-rail__segmented file-rail__segmented--compact"
+            >
+              <button
+                aria-label="Group assets by type"
+                aria-pressed={preferences.assetListMode === "grouped"}
+                title="Group assets by type"
+                type="button"
+                onClick={() => updatePreferences({ assetListMode: "grouped" })}
+              >
+                Type
+              </button>
+              <button
+                aria-label="Sort assets alphabetically"
+                aria-pressed={preferences.assetListMode === "alphabetical"}
+                title="Sort assets alphabetically"
+                type="button"
+                onClick={() =>
+                  updatePreferences({ assetListMode: "alphabetical" })
+                }
+              >
+                A–Z
+              </button>
+            </div>
+          ) : null}
+          <IconButton
+            disabled={preferences.mode === "files" && folders.length === 0}
+            label={allExpanded ? "Collapse all groups" : "Expand all groups"}
+            onClick={toggleAllGroups}
           >
-            <button
-              aria-label="Group assets by type"
-              aria-pressed={preferences.assetListMode === "grouped"}
-              title="Group assets by type"
-              type="button"
-              onClick={() => updatePreferences({ assetListMode: "grouped" })}
-            >
-              Type
-            </button>
-            <button
-              aria-label="Sort assets alphabetically"
-              aria-pressed={preferences.assetListMode === "alphabetical"}
-              title="Sort assets alphabetically"
-              type="button"
-              onClick={() =>
-                updatePreferences({ assetListMode: "alphabetical" })
-              }
-            >
-              A–Z
-            </button>
-          </div>
-        ) : null}
+            <ExpandCollapseIcon />
+          </IconButton>
+        </div>
       </div>
+      {preferences.mode === "collections" ? (
+        <div
+          className="file-rail__workbench-options"
+          aria-label="Workbench view and sort"
+        >
+          <select
+            aria-label="Workbench view"
+            value={preferences.workbenchListMode}
+            onChange={(event) =>
+              updatePreferences({
+                workbenchListMode: event.target.value as WorkbenchListMode,
+              })
+            }
+          >
+            <option value="flat">Flat</option>
+            <option value="grouped">Group by Type</option>
+          </select>
+          <select
+            aria-label="Workbench sort"
+            value={preferences.workbenchSort}
+            onChange={(event) =>
+              updatePreferences({
+                workbenchSort: event.target.value as WorkbenchSort,
+              })
+            }
+          >
+            <option value="modified-desc">Last Edited · Newest</option>
+            <option value="modified-asc">Last Edited · Oldest</option>
+            <option value="created-desc">Created · Newest</option>
+            <option value="created-asc">Created · Oldest</option>
+            <option value="name-asc">Name · A–Z</option>
+            <option value="name-desc">Name · Z–A</option>
+          </select>
+        </div>
+      ) : null}
       {preferences.mode === "collections" ? (
         <CollectionTree
           activeDocumentId={activeDocumentId}
@@ -1140,10 +1554,25 @@ export function FileRail({
           onCreateFolder={(path) =>
             runContextAction(() => onCreateFolder(path))
           }
+          onCreateNoteInFolder={(path) =>
+            runContextAction(() => onCreateNoteInFolder(path))
+          }
           onDeleteFolder={(path) =>
             runContextAction(() => onDeleteFolder(path))
           }
           onOpen={(id) => runContextAction(() => selectDocument(id))}
+          onMoveDocumentToWorkbench={(id) =>
+            runContextAction(() => onMoveDocumentToWorkbench(id))
+          }
+          onMoveDocumentRequest={(id) =>
+            runContextAction(() => onMoveDocumentRequest(id))
+          }
+          onMoveFolderRequest={(path) =>
+            runContextAction(() => onMoveFolderRequest(path))
+          }
+          onPreviewDocument={(id) =>
+            runContextAction(() => onPreviewDocument(id))
+          }
           onRenameDocument={(id) =>
             runContextAction(() => onRenameDocument(id))
           }
@@ -1154,6 +1583,20 @@ export function FileRail({
             runContextAction(() => onRestoreDocument(id, destinationStatus))
           }
           onTrashDocument={(id) => runContextAction(() => onTrashDocument(id))}
+          onSearchDocument={(id) =>
+            runContextAction(() => onSearchDocument(id))
+          }
+          onSearchInFolder={(path) =>
+            runContextAction(() => onSearchInFolder(path))
+          }
+          onSetWorkbenchListMode={(mode) =>
+            runContextAction(() =>
+              updatePreferences({ workbenchListMode: mode }),
+            )
+          }
+          onSetWorkbenchSort={(sort) =>
+            runContextAction(() => updatePreferences({ workbenchSort: sort }))
+          }
         />
       ) : null}
       {vaultSelected ? (

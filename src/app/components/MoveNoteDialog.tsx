@@ -7,6 +7,7 @@ type MoveNoteDialogProps = {
   documentName: string;
   folders: string[];
   moving: boolean;
+  itemKind?: "note" | "folder";
   onClose: () => void;
   onMove: (destinationFolderPath: string) => void;
 };
@@ -20,6 +21,7 @@ export function MoveNoteDialog({
   documentName,
   folders,
   moving,
+  itemKind = "note",
   onClose,
   onMove,
 }: MoveNoteDialogProps) {
@@ -32,7 +34,7 @@ export function MoveNoteDialog({
   return (
     <aside
       ref={dialogRef}
-      aria-label="Move note"
+      aria-label={`Move ${itemKind}`}
       aria-modal="true"
       className="continuity-panel continuity-panel--compact"
       role="dialog"
@@ -41,7 +43,7 @@ export function MoveNoteDialog({
     >
       <header className="continuity-panel__header">
         <div>
-          <h2>Move note</h2>
+          <h2>Move {itemKind}</h2>
           <p>Choose where {documentName} should live inside this vault.</p>
         </div>
         <button
@@ -66,7 +68,9 @@ export function MoveNoteDialog({
                 <div className="continuity-record__copy">
                   <strong>{folderDisplayName(folderPath)}</strong>
                   <span>
-                    {isCurrent ? "Current location" : "Move this note here"}
+                    {isCurrent
+                      ? "Current location"
+                      : `Move this ${itemKind} here`}
                   </span>
                 </div>
                 <div className="continuity-record__actions">

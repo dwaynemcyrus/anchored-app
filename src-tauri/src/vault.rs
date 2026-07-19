@@ -15,16 +15,17 @@ use tauri::{AppHandle, Emitter, Manager, State, WebviewUrl, WebviewWindowBuilder
 use tauri_plugin_dialog::DialogExt;
 
 use crate::continuity::{
-    current_time_millis, ensure_vault_identity, forget_vault as forget_registered_vault,
-    is_internal_component, is_internal_relative_path,
+    current_time_millis, ensure_no_hidden_descendants, ensure_vault_identity,
+    forget_vault as forget_registered_vault, is_internal_component, is_internal_relative_path,
     list_remembered_vaults as load_remembered_vaults, list_trash_entries, move_folder_to_trash,
     move_note_to_trash, registry_path, remember_vault, remembered_vault_root,
     restore_folder_from_trash, restore_note_from_trash, RememberedVault, TrashEntry,
 };
 use crate::links::{plan_rename_link_rewrites_by_path, LinkNote, LinkSource};
 use crate::metadata::{
-    archive_note, inspect_note_aliases, inspect_note_properties, inspect_wikilinks, restore_note,
-    split_note_source, stamp_note_created_at,
+    archive_note, archive_note_with_type, inspect_note_aliases, inspect_note_properties,
+    inspect_wikilinks, restore_note, restore_note_with_type, split_note_source,
+    stamp_note_created_at, stamp_note_updated_at,
 };
 
 const MAX_VAULT_ENTRIES: usize = 50_000;
@@ -51,6 +52,7 @@ pub struct VaultFile {
     pub archived_at: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub created_at: Option<String>,
+    pub modified_millis: u64,
     #[serde(skip)]
     signature: Option<FileSignature>,
     pub outgoing_links: Vec<String>,
@@ -61,11 +63,14 @@ pub struct VaultFile {
     pub status: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub note_type: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub updated_at: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct VaultAsset {
+    pub modified_millis: u64,
     pub name: String,
     pub parent: String,
     pub relative_path: String,
@@ -106,6 +111,7 @@ struct CachedNoteMetadata {
     outgoing_links: Vec<String>,
     signature: FileSignature,
     status: Option<String>,
+    updated_at: Option<String>,
 }
 
 #[derive(Debug, Default)]
@@ -131,12 +137,15 @@ pub struct VaultDocument {
     pub content: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub created_at: Option<String>,
+    pub modified_millis: u64,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub note_type: Option<String>,
     pub relative_path: String,
     pub size_bytes: u64,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub status: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub updated_at: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -152,6 +161,15 @@ pub struct ScratchpadDocument {
 pub struct ScratchpadLinkCandidate {
     pub label: String,
     pub target: String,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ScratchpadListItem {
+    pub created_at: Option<String>,
+    pub modified_millis: u64,
+    pub name: String,
+    pub relative_path: String,
 }
 
 #[derive(Debug, PartialEq, Eq, Serialize)]
@@ -396,6 +414,23 @@ pub async fn rename_vault_folder(
 }
 
 #[tauri::command]
+pub async fn move_vault_folder(
+    app: AppHandle,
+    state: State<'_, VaultState>,
+    folder_path: String,
+    destination_folder: String,
+) -> Result<VaultSnapshot, VaultError> {
+    let _rename_guard = state
+        .rename_transaction
+        .lock()
+        .map_err(|_| VaultError::state("The folder move lock could not be acquired."))?;
+    let root = selected_vault_root(&state, "moving a folder")?;
+    recover_rename_transaction(&root)?;
+    move_folder(&root, &folder_path, &destination_folder)?;
+    build_vault_snapshot(&app, &root, state.metadata_cache.as_ref())
+}
+
+#[tauri::command]
 pub async fn delete_vault_folder(
     app: AppHandle,
     state: State<'_, VaultState>,
@@ -635,13 +670,18 @@ pub async fn archive_vault_file(
     state: State<'_, VaultState>,
     relative_path: String,
     expected_content: String,
+    note_type: Option<String>,
+    update_type: Option<bool>,
 ) -> Result<VaultDocument, VaultError> {
     let root = selected_vault_root(&state, "archiving a Markdown file")?;
     transition_markdown_lifecycle(
         &root,
         &relative_path,
         &expected_content,
-        LifecycleTransition::Archive,
+        LifecycleTransition::Archive {
+            note_type,
+            update_type: update_type.unwrap_or(false),
+        },
     )
 }
 
@@ -651,13 +691,35 @@ pub async fn restore_archived_vault_file(
     relative_path: String,
     expected_content: String,
     destination_status: String,
+    note_type: Option<String>,
+    update_type: Option<bool>,
 ) -> Result<VaultDocument, VaultError> {
     let root = selected_vault_root(&state, "restoring an archived Markdown file")?;
     transition_markdown_lifecycle(
         &root,
         &relative_path,
         &expected_content,
-        LifecycleTransition::Restore(destination_status),
+        LifecycleTransition::Restore {
+            destination_status,
+            note_type,
+            update_type: update_type.unwrap_or(false),
+        },
+    )
+}
+
+#[tauri::command]
+pub async fn move_vault_file_to_workbench(
+    state: State<'_, VaultState>,
+    relative_path: String,
+    expected_content: String,
+    note_type: Option<String>,
+) -> Result<VaultDocument, VaultError> {
+    let root = selected_vault_root(&state, "moving a Markdown file to Workbench")?;
+    transition_markdown_lifecycle(
+        &root,
+        &relative_path,
+        &expected_content,
+        LifecycleTransition::Workbench { note_type },
     )
 }
 
@@ -667,7 +729,7 @@ pub async fn open_scratchpad(
     state: State<'_, VaultState>,
     mode: String,
 ) -> Result<(), VaultError> {
-    if !matches!(mode.as_str(), "new" | "previous") {
+    if !matches!(mode.as_str(), "new" | "previous" | "list") {
         return Err(VaultError::invalid_file("Unsupported Scratchpad mode."));
     }
     selected_vault_root(&state, "opening Scratchpad")?;
@@ -756,7 +818,7 @@ fn save_scratchpad_markdown_file(
 ) -> Result<ScratchpadDocument, VaultError> {
     let properties = inspect_note_properties(expected_content);
     if properties.note_type.as_deref() != Some("scratchpad")
-        || properties.status.as_deref() == Some("archived")
+        || !matches!(properties.status.as_deref(), None | Some("inbox"))
     {
         return Err(VaultError::invalid_file(
             "Only editable Scratchpad notes can be saved here.",
@@ -786,16 +848,12 @@ pub async fn latest_scratchpad_note(
         .iter()
         .filter(|file| {
             file.note_type.as_deref() == Some("scratchpad")
-                && file.status.as_deref() != Some("archived")
+                && matches!(file.status.as_deref(), None | Some("inbox"))
         })
         .max_by(|left, right| {
-            left.created_at
-                .cmp(&right.created_at)
-                .then_with(|| {
-                    left.signature
-                        .map(|signature| signature.modified_millis)
-                        .cmp(&right.signature.map(|signature| signature.modified_millis))
-                })
+            left.modified_millis
+                .cmp(&right.modified_millis)
+                .then_with(|| left.created_at.cmp(&right.created_at))
                 .then_with(|| {
                     scratchpad_filename_sequence(&left.name)
                         .cmp(&scratchpad_filename_sequence(&right.name))
@@ -804,6 +862,54 @@ pub async fn latest_scratchpad_note(
     latest
         .map(|file| read_markdown_file(&root, &file.relative_path).and_then(scratchpad_document))
         .transpose()
+}
+
+#[tauri::command]
+pub async fn list_scratchpad_notes(
+    app: AppHandle,
+    state: State<'_, VaultState>,
+) -> Result<Vec<ScratchpadListItem>, VaultError> {
+    let root = selected_vault_root(&state, "listing Scratchpad notes")?;
+    let snapshot = build_vault_snapshot(&app, &root, state.metadata_cache.as_ref())?;
+    let mut items = snapshot
+        .files
+        .into_iter()
+        .filter(|file| {
+            file.note_type.as_deref() == Some("scratchpad")
+                && matches!(file.status.as_deref(), None | Some("inbox"))
+        })
+        .map(|file| ScratchpadListItem {
+            created_at: file.created_at,
+            modified_millis: file.modified_millis,
+            name: file.name,
+            relative_path: file.relative_path,
+        })
+        .collect::<Vec<_>>();
+    items.sort_by(|left, right| {
+        right
+            .modified_millis
+            .cmp(&left.modified_millis)
+            .then_with(|| left.relative_path.cmp(&right.relative_path))
+    });
+    Ok(items)
+}
+
+#[tauri::command]
+pub async fn read_scratchpad_note(
+    state: State<'_, VaultState>,
+    relative_path: String,
+) -> Result<ScratchpadDocument, VaultError> {
+    let root = selected_vault_root(&state, "opening a Scratchpad note")?;
+    let document = read_markdown_file(&root, &relative_path)?;
+    let properties = inspect_note_properties(&document.content);
+    if properties.note_type.as_deref() != Some("scratchpad")
+        || !matches!(properties.status.as_deref(), None | Some("inbox"))
+    {
+        return Err(VaultError::invalid_file(
+            "Only active Inbox Scratchpad notes can open here.",
+        ));
+    }
+    scratchpad_document(document)
 }
 
 #[tauri::command]
@@ -884,6 +990,7 @@ pub async fn create_vault_file(
 pub async fn create_untitled_vault_file(
     state: State<'_, VaultState>,
     content: String,
+    parent_path: Option<String>,
 ) -> Result<VaultDocument, VaultError> {
     let root = state
         .root
@@ -892,7 +999,7 @@ pub async fn create_untitled_vault_file(
         .clone()
         .ok_or_else(|| VaultError::state("Select a vault before creating a Markdown file."))?;
 
-    create_untitled_markdown_file(&root, &content)
+    create_untitled_markdown_file(&root, parent_path.as_deref(), &content)
 }
 
 #[tauri::command]
@@ -910,14 +1017,19 @@ pub async fn move_vault_file_to_folder(
     move_markdown_file_to_folder(&root, &relative_path, &destination_folder)
 }
 
-fn create_untitled_markdown_file(root: &Path, content: &str) -> Result<VaultDocument, VaultError> {
+fn create_untitled_markdown_file(
+    root: &Path,
+    parent_path: Option<&str>,
+    content: &str,
+) -> Result<VaultDocument, VaultError> {
+    let parent = resolve_vault_directory(root, parent_path.unwrap_or_default())?;
     for count in 1..=10_000 {
         let name = if count == 1 {
             "Untitled.md".to_owned()
         } else {
             format!("Untitled {count}.md")
         };
-        let destination = root.join(name);
+        let destination = parent.join(name);
         match create_markdown_file(root, &destination, content) {
             Ok(document) => return Ok(document),
             Err(error) if error.code == "vaultFileExists" => continue,
@@ -1205,6 +1317,7 @@ fn folder_path_with_suffix(
 }
 
 fn validate_folder_tree_for_rename(directory: &Path) -> Result<(), VaultError> {
+    ensure_no_hidden_descendants(directory)?;
     let mut stack = vec![directory.to_path_buf()];
     while let Some(current) = stack.pop() {
         let mut entries = fs::read_dir(&current)
@@ -1226,9 +1339,9 @@ fn validate_folder_tree_for_rename(directory: &Path) -> Result<(), VaultError> {
                 stack.push(entry.path());
                 continue;
             }
-            if !file_type.is_file() || !is_markdown(&entry.path()) {
+            if !file_type.is_file() {
                 return Err(VaultError::invalid_file(
-                    "Only folders containing Markdown notes and subfolders can be renamed safely right now.",
+                    "Only folders containing normal files and subfolders can be moved safely.",
                 ));
             }
         }
@@ -1237,12 +1350,47 @@ fn validate_folder_tree_for_rename(directory: &Path) -> Result<(), VaultError> {
 }
 
 fn rename_folder(root: &Path, folder_path: &str, name: &str) -> Result<(), VaultError> {
+    let current_relative_path = selected_folder_relative_path(root, folder_path)?;
+    let destination_relative_path = folder_destination_relative_path(&current_relative_path, name)?;
+    relocate_folder(root, &current_relative_path, &destination_relative_path)
+}
+
+fn move_folder(root: &Path, folder_path: &str, destination_folder: &str) -> Result<(), VaultError> {
+    let current_relative_path = selected_folder_relative_path(root, folder_path)?;
+    let current_path = Path::new(&current_relative_path);
+    let name = current_path
+        .file_name()
+        .and_then(|value| value.to_str())
+        .ok_or_else(|| VaultError::invalid_file("The folder name is not valid UTF-8."))?;
+    let destination_parent = resolve_vault_directory(root, destination_folder)?;
+    let root = canonical_vault_root(root)?;
+    let destination_relative_path = destination_parent
+        .join(name)
+        .strip_prefix(&root)
+        .map_err(|_| VaultError::invalid_file("The folder destination is outside the vault."))?
+        .to_str()
+        .ok_or_else(|| VaultError::invalid_file("The folder destination is not valid UTF-8."))?
+        .to_owned();
+    if destination_relative_path == current_relative_path
+        || destination_relative_path.starts_with(&format!("{current_relative_path}/"))
+    {
+        return Err(VaultError::rename_conflict(
+            "A folder cannot be moved into itself or its descendants.",
+        ));
+    }
+    relocate_folder(&root, &current_relative_path, &destination_relative_path)
+}
+
+fn relocate_folder(
+    root: &Path,
+    folder_path: &str,
+    destination_relative_path: &str,
+) -> Result<(), VaultError> {
     let root = canonical_vault_root(root)?;
     let current_relative_path = selected_folder_relative_path(&root, folder_path)?;
     let current_directory = resolve_vault_directory(&root, &current_relative_path)?;
     validate_folder_tree_for_rename(&current_directory)?;
-    let destination_relative_path = folder_destination_relative_path(&current_relative_path, name)?;
-    let destination_directory = root.join(&destination_relative_path);
+    let destination_directory = root.join(destination_relative_path);
 
     match fs::symlink_metadata(&destination_directory) {
         Ok(_) => return Err(VaultError::file_exists()),
@@ -1260,6 +1408,12 @@ fn rename_folder(root: &Path, folder_path: &str, name: &str) -> Result<(), Vault
     let folder_prefix = format!("{current_relative_path}/");
     let moved_files = snapshot
         .files
+        .iter()
+        .filter(|file| file.relative_path.starts_with(&folder_prefix))
+        .map(|file| file.relative_path.clone())
+        .collect::<Vec<_>>();
+    let moved_assets = snapshot
+        .assets
         .iter()
         .filter(|file| file.relative_path.starts_with(&folder_prefix))
         .map(|file| file.relative_path.clone())
@@ -1292,7 +1446,7 @@ fn rename_folder(root: &Path, folder_path: &str, name: &str) -> Result<(), Vault
         .filter(|folder| folder.as_str() != current_relative_path)
     {
         let destination_relative =
-            folder_path_with_suffix(&current_relative_path, &destination_relative_path, folder)?;
+            folder_path_with_suffix(&current_relative_path, destination_relative_path, folder)?;
         fs::create_dir(root.join(destination_relative))
             .map_err(|error| VaultError::io("A renamed subfolder could not be created", error))?;
     }
@@ -1301,12 +1455,23 @@ fn rename_folder(root: &Path, folder_path: &str, name: &str) -> Result<(), Vault
     for relative_path in &moved_files {
         let destination_relative = folder_path_with_suffix(
             &current_relative_path,
-            &destination_relative_path,
+            destination_relative_path,
             relative_path,
         )?;
         let destination = root.join(destination_relative);
         rename_markdown_file(&root, relative_path, &destination, None)?;
         renamed_count += 1;
+    }
+
+    for relative_path in &moved_assets {
+        let destination_relative = folder_path_with_suffix(
+            &current_relative_path,
+            destination_relative_path,
+            relative_path,
+        )?;
+        fs::rename(root.join(relative_path), root.join(destination_relative)).map_err(|error| {
+            VaultError::io("An asset could not be moved with its folder", error)
+        })?;
     }
 
     if renamed_count > 0 {
@@ -1372,6 +1537,9 @@ fn scan_vault(root: &Path) -> Result<VaultSnapshot, VaultError> {
         entries.sort_by_key(|entry| entry.file_name());
 
         for entry in entries {
+            if is_internal_component(&entry.file_name()) {
+                continue;
+            }
             visited_entries += 1;
             if visited_entries > MAX_VAULT_ENTRIES {
                 return Err(VaultError::too_large());
@@ -1380,10 +1548,6 @@ fn scan_vault(root: &Path) -> Result<VaultSnapshot, VaultError> {
             let file_type = entry
                 .file_type()
                 .map_err(|error| VaultError::io("A vault entry could not be inspected", error))?;
-
-            if directory == root && is_internal_component(&entry.file_name()) {
-                continue;
-            }
 
             if file_type.is_symlink() {
                 skipped_symlinks += 1;
@@ -1430,20 +1594,27 @@ fn scan_vault(root: &Path) -> Result<VaultSnapshot, VaultError> {
                 let metadata = fs::metadata(&canonical_file).map_err(|error| {
                     VaultError::io("A Markdown file could not be inspected", error)
                 })?;
+                let signature = file_signature_from_metadata(&metadata);
                 files.push(VaultFile {
                     aliases: Vec::new(),
                     archived_at: None,
                     created_at: None,
-                    signature: Some(file_signature_from_metadata(&metadata)),
+                    modified_millis: signature.modified_millis,
+                    signature: Some(signature),
                     outgoing_links: Vec::new(),
                     name,
                     parent,
                     relative_path: relative_path.to_owned(),
                     status: None,
                     note_type: None,
+                    updated_at: None,
                 });
             } else {
+                let metadata = fs::metadata(&canonical_file).map_err(|error| {
+                    VaultError::io("An asset file could not be inspected", error)
+                })?;
                 assets.push(VaultAsset {
+                    modified_millis: file_signature_from_metadata(&metadata).modified_millis,
                     name,
                     parent,
                     relative_path: relative_path.to_owned(),
@@ -1607,7 +1778,7 @@ fn prepare_metadata_cache(
     let persisted = fs::read(path)
         .ok()
         .and_then(|bytes| serde_json::from_slice::<PersistedVaultIndex>(&bytes).ok())
-        .filter(|index| index.version == 1 && index.vault_id == vault_id);
+        .filter(|index| index.version == 2 && index.vault_id == vault_id);
     cache.vault_id = vault_id.to_owned();
     cache.entries = persisted
         .map(|index| index.entries.into_iter().collect())
@@ -1633,7 +1804,7 @@ fn persist_metadata_cache(
             .map(|(path, metadata)| (path.clone(), metadata.clone()))
             .collect(),
         vault_id: cache.vault_id.clone(),
-        version: 1,
+        version: 2,
     };
     let bytes = serde_json::to_vec(&payload)
         .map_err(|error| VaultError::state(format!("The vault index is invalid: {error}")))?;
@@ -1701,6 +1872,7 @@ fn enrich_vault_metadata_cached(
         file.note_type.clone_from(&metadata.note_type);
         file.outgoing_links.clone_from(&metadata.outgoing_links);
         file.status.clone_from(&metadata.status);
+        file.updated_at.clone_from(&metadata.updated_at);
         next.insert(file.relative_path.clone(), metadata);
     }
 
@@ -1725,6 +1897,7 @@ fn read_cached_note_metadata(
         outgoing_links: Vec::new(),
         signature,
         status: None,
+        updated_at: None,
     };
     if signature.size_bytes > MAX_MARKDOWN_FILE_BYTES {
         return Ok(metadata);
@@ -1742,6 +1915,7 @@ fn read_cached_note_metadata(
     metadata.note_type = properties.note_type;
     metadata.outgoing_links = inspect_wikilinks(&content);
     metadata.status = properties.status;
+    metadata.updated_at = properties.updated_at;
     Ok(metadata)
 }
 
@@ -1766,24 +1940,54 @@ fn vault_file_signature(root: &Path, relative_path: &str) -> Result<FileSignatur
 }
 
 enum LifecycleTransition {
-    Archive,
-    Restore(String),
+    Archive {
+        note_type: Option<String>,
+        update_type: bool,
+    },
+    Restore {
+        destination_status: String,
+        note_type: Option<String>,
+        update_type: bool,
+    },
+    Workbench {
+        note_type: Option<String>,
+    },
+}
+
+fn validated_note_type(note_type: Option<&str>) -> Result<Option<&str>, VaultError> {
+    let Some(note_type) = note_type else {
+        return Ok(None);
+    };
+    let value = note_type.trim();
+    if value.is_empty() || value.chars().count() > 100 || value.chars().any(char::is_control) {
+        return Err(VaultError::lifecycle(
+            "Types must contain 1–100 visible characters.",
+        ));
+    }
+    Ok(Some(value))
 }
 
 fn current_utc_timestamp() -> String {
     Utc::now().format("%Y-%m-%dT%H:%M:%SZ").to_string()
 }
 
-fn vault_document(content: String, relative_path: String, size_bytes: u64) -> VaultDocument {
+fn vault_document(
+    content: String,
+    relative_path: String,
+    size_bytes: u64,
+    modified_millis: u64,
+) -> VaultDocument {
     let properties = inspect_note_properties(&content);
     VaultDocument {
         archived_at: properties.archived_at,
         content,
         created_at: properties.created_at,
+        modified_millis,
         note_type: properties.note_type,
         relative_path,
         size_bytes,
         status: properties.status,
+        updated_at: properties.updated_at,
     }
 }
 
@@ -1803,6 +2007,7 @@ fn read_markdown_file(root: &Path, relative_path: &str) -> Result<VaultDocument,
         content,
         relative_path.to_owned(),
         metadata.len(),
+        file_signature_from_metadata(&metadata).modified_millis,
     ))
 }
 
@@ -1828,6 +2033,15 @@ fn save_markdown_file(
             "Use the Archive action so Anchored can write archived_at safely.",
         ));
     }
+    let content = if content != current_content {
+        stamp_note_updated_at(content, &current_utc_timestamp()).map_err(|error| {
+            VaultError::lifecycle(format!(
+                "Anchored could not update authored metadata safely: {error}."
+            ))
+        })?
+    } else {
+        content.to_owned()
+    };
     if content.len() as u64 > MAX_MARKDOWN_FILE_BYTES {
         return Err(VaultError::file_too_large());
     }
@@ -1835,17 +2049,20 @@ fn save_markdown_file(
     let metadata = fs::metadata(&canonical_file)
         .map_err(|error| VaultError::io("The Markdown file could not be inspected", error))?;
     let temporary_path = temporary_sibling_path(&canonical_file)?;
-    let write_result = write_atomically(&temporary_path, &canonical_file, content, &metadata);
+    let write_result = write_atomically(&temporary_path, &canonical_file, &content, &metadata);
     if write_result.is_err() {
         let _ = fs::remove_file(&temporary_path);
     }
     write_result?;
 
+    let metadata = fs::metadata(&canonical_file)
+        .map_err(|error| VaultError::io("The Markdown file could not be inspected", error))?;
     let size_bytes = content.len() as u64;
     Ok(vault_document(
-        content.to_owned(),
+        content,
         relative_path.to_owned(),
         size_bytes,
+        file_signature_from_metadata(&metadata).modified_millis,
     ))
 }
 
@@ -1864,21 +2081,64 @@ fn transition_markdown_lifecycle(
         return Err(VaultError::conflict());
     }
 
-    let current_status = inspect_note_properties(&current_content).status;
+    let current_properties = inspect_note_properties(&current_content);
+    let current_status = current_properties.status;
     let updated = match transition {
-        LifecycleTransition::Archive => {
+        LifecycleTransition::Archive {
+            note_type,
+            update_type,
+        } => {
             if current_status.as_deref() == Some("archived") {
                 return Err(VaultError::archived_read_only());
             }
-            archive_note(&current_content, &current_utc_timestamp())
+            if current_properties.note_type.as_deref() == Some("scratchpad") {
+                archive_note(&current_content, &current_utc_timestamp())
+            } else if update_type {
+                archive_note_with_type(
+                    &current_content,
+                    &current_utc_timestamp(),
+                    validated_note_type(note_type.as_deref())?,
+                )
+            } else {
+                archive_note(&current_content, &current_utc_timestamp())
+            }
         }
-        LifecycleTransition::Restore(destination_status) => {
+        LifecycleTransition::Restore {
+            destination_status,
+            note_type,
+            update_type,
+        } => {
             if current_status.as_deref() != Some("archived") {
                 return Err(VaultError::lifecycle(
                     "Only archived notes can be restored to an editable collection.",
                 ));
             }
-            restore_note(&current_content, &destination_status)
+            if update_type && current_properties.note_type.as_deref() != Some("scratchpad") {
+                restore_note_with_type(
+                    &current_content,
+                    &destination_status,
+                    validated_note_type(note_type.as_deref())?,
+                )
+            } else {
+                restore_note(&current_content, &destination_status)
+            }
+        }
+        LifecycleTransition::Workbench { note_type } => {
+            if current_status.as_deref() == Some("archived") {
+                return Err(VaultError::lifecycle(
+                    "Use Restore to move an archived note to Workbench.",
+                ));
+            }
+            if current_properties.note_type.as_deref() == Some("scratchpad") {
+                return Err(VaultError::lifecycle(
+                    "Scratchpad notes remain in Inbox until archived.",
+                ));
+            }
+            restore_note_with_type(
+                &current_content,
+                "active",
+                validated_note_type(note_type.as_deref())?,
+            )
         }
     }
     .map_err(|error| {
@@ -1899,12 +2159,13 @@ fn transition_markdown_lifecycle(
     }
     write_result?;
 
+    let metadata = fs::metadata(&canonical_file)
+        .map_err(|error| VaultError::io("The Markdown file could not be inspected", error))?;
     Ok(vault_document(
         updated,
         relative_path.to_owned(),
-        fs::metadata(&canonical_file)
-            .map_err(|error| VaultError::io("The Markdown file could not be inspected", error))?
-            .len(),
+        metadata.len(),
+        file_signature_from_metadata(&metadata).modified_millis,
     ))
 }
 
@@ -1914,11 +2175,19 @@ fn create_markdown_file(
     content: &str,
 ) -> Result<VaultDocument, VaultError> {
     let timestamp = current_utc_timestamp();
+    let has_authored_content = !content.trim().is_empty();
     let mut content = stamp_note_created_at(content, &timestamp).map_err(|error| {
         VaultError::lifecycle(format!(
             "Anchored could not add creation metadata safely: {error}."
         ))
     })?;
+    if has_authored_content {
+        content = stamp_note_updated_at(&content, &timestamp).map_err(|error| {
+            VaultError::lifecycle(format!(
+                "Anchored could not add authored metadata safely: {error}."
+            ))
+        })?;
+    }
     if inspect_note_properties(&content).status.as_deref() == Some("archived") {
         content = archive_note(&content, &timestamp).map_err(|error| {
             VaultError::lifecycle(format!(
@@ -1938,10 +2207,15 @@ fn create_markdown_file(
     }
     write_result?;
 
-    let size_bytes = fs::metadata(&destination)
-        .map_err(|error| VaultError::io("The created Markdown file could not be inspected", error))?
-        .len();
-    Ok(vault_document(content, relative_path, size_bytes))
+    let metadata = fs::metadata(&destination).map_err(|error| {
+        VaultError::io("The created Markdown file could not be inspected", error)
+    })?;
+    Ok(vault_document(
+        content,
+        relative_path,
+        metadata.len(),
+        file_signature_from_metadata(&metadata).modified_millis,
+    ))
 }
 
 fn rename_markdown_file(
@@ -2695,14 +2969,14 @@ mod tests {
     use super::{
         canonical_vault_root, create_folder, create_markdown_file, create_named_vault,
         create_scratchpad_markdown_file, create_untitled_markdown_file, delete_empty_folder,
-        enrich_vault_metadata, enrich_vault_metadata_cached, move_markdown_file_to_folder,
-        read_markdown_file, recover_rename_transaction, rename_folder, rename_markdown_file,
-        resolve_new_vault_markdown_file, save_markdown_file, save_scratchpad_markdown_file,
-        scan_vault, scratchpad_filename_sequence, search_markdown_files,
-        transition_markdown_lifecycle, validate_folder_name, validate_new_vault_name,
-        write_rename_journal, LifecycleTransition, RenameJournal, RenameJournalEntry,
-        RenameJournalPhase, RenameOutcome, VaultMetadataCache, MAX_MARKDOWN_FILE_BYTES,
-        MAX_SEARCH_RESULTS, RENAME_JOURNAL_NAME,
+        enrich_vault_metadata, enrich_vault_metadata_cached, move_folder,
+        move_markdown_file_to_folder, read_markdown_file, recover_rename_transaction,
+        rename_folder, rename_markdown_file, resolve_new_vault_markdown_file, save_markdown_file,
+        save_scratchpad_markdown_file, scan_vault, scratchpad_filename_sequence,
+        search_markdown_files, transition_markdown_lifecycle, validate_folder_name,
+        validate_new_vault_name, write_rename_journal, LifecycleTransition, RenameJournal,
+        RenameJournalEntry, RenameJournalPhase, RenameOutcome, VaultMetadataCache,
+        MAX_MARKDOWN_FILE_BYTES, MAX_SEARCH_RESULTS, RENAME_JOURNAL_NAME,
     };
 
     #[test]
@@ -2751,6 +3025,43 @@ mod tests {
         assert_eq!(snapshot.files[0].relative_path, "Visible.md");
         assert_eq!(read_error.code, "invalidVaultFile");
         assert_eq!(create_error.code, "invalidVaultFile");
+    }
+
+    #[test]
+    fn prunes_all_nested_dot_paths_but_keeps_visible_assets() {
+        let vault = tempdir().expect("create fixture vault");
+        fs::create_dir_all(vault.path().join("Notes/.obsidian/cache"))
+            .expect("create nested hidden directory");
+        fs::write(vault.path().join(".root.md"), "# Hidden").expect("write root dotfile");
+        fs::write(vault.path().join("Notes/.draft.md"), "# Hidden").expect("write nested dotfile");
+        fs::write(vault.path().join("Notes/.obsidian/cache/schema.json"), "{}")
+            .expect("write hidden asset");
+        fs::write(vault.path().join("Notes/schema.json"), "{}").expect("write visible asset");
+
+        let snapshot = scan_vault(vault.path()).expect("scan fixture vault");
+
+        assert!(snapshot.files.is_empty());
+        assert_eq!(snapshot.assets.len(), 1);
+        assert_eq!(snapshot.assets[0].relative_path, "Notes/schema.json");
+        assert_eq!(snapshot.folders, vec!["Notes"]);
+    }
+
+    #[test]
+    fn writes_updated_at_only_for_initial_authored_content() {
+        let vault = tempdir().expect("create fixture vault");
+        let blank = create_markdown_file(vault.path(), &vault.path().join("Blank.md"), "")
+            .expect("create blank note");
+        let authored = create_markdown_file(
+            vault.path(),
+            &vault.path().join("Authored.md"),
+            "# Authored\n",
+        )
+        .expect("create authored note");
+
+        assert!(blank.created_at.is_some());
+        assert!(blank.updated_at.is_none());
+        assert!(authored.created_at.is_some());
+        assert_eq!(authored.updated_at, authored.created_at);
     }
 
     #[test]
@@ -2996,17 +3307,36 @@ mod tests {
     }
 
     #[test]
-    fn refuses_to_rename_a_folder_with_non_markdown_files() {
+    fn renames_a_folder_with_visible_assets() {
         let vault = tempdir().expect("create fixture vault");
         fs::create_dir(vault.path().join("Notes")).expect("create Notes folder");
         fs::write(vault.path().join("Notes/image.png"), "png").expect("write attachment");
 
-        let error =
-            rename_folder(vault.path(), "Notes", "Archive").expect_err("reject attachment folder");
+        rename_folder(vault.path(), "Notes", "Archive").expect("rename attachment folder");
 
-        assert_eq!(error.code, "invalidVaultFile");
-        assert!(vault.path().join("Notes").exists());
-        assert!(!vault.path().join("Archive").exists());
+        assert!(!vault.path().join("Notes").exists());
+        assert!(vault.path().join("Archive/image.png").is_file());
+    }
+
+    #[test]
+    fn moves_a_folder_without_entering_its_descendants() {
+        let vault = tempdir().expect("create fixture vault");
+        fs::create_dir_all(vault.path().join("Source/Nested")).expect("create source");
+        fs::create_dir(vault.path().join("Destination")).expect("create destination");
+        fs::write(vault.path().join("Source/Nested/Note.md"), "# Note").expect("write note");
+
+        move_folder(vault.path(), "Source", "Destination").expect("move folder");
+        assert!(vault
+            .path()
+            .join("Destination/Source/Nested/Note.md")
+            .is_file());
+        let error = move_folder(
+            vault.path(),
+            "Destination/Source",
+            "Destination/Source/Nested",
+        )
+        .expect_err("refuse descendant move");
+        assert_eq!(error.code, "vaultRenameConflict");
     }
 
     #[test]
@@ -3074,11 +3404,12 @@ mod tests {
         let document = save_markdown_file(vault.path(), "Note.md", "# After\n", "# Before\n")
             .expect("save changed note");
 
-        assert_eq!(document.content, "# After\n");
-        assert_eq!(document.size_bytes, 8);
+        assert!(document.content.contains("updated_at:"));
+        assert!(document.content.ends_with("# After\n"));
+        assert_eq!(document.size_bytes, document.content.len() as u64);
         assert_eq!(
             fs::read_to_string(&note).expect("read saved note"),
-            "# After\n"
+            document.content
         );
         assert!(fs::read_dir(vault.path())
             .expect("read vault")
@@ -3100,7 +3431,10 @@ mod tests {
             vault.path(),
             "Note.md",
             original,
-            LifecycleTransition::Archive,
+            LifecycleTransition::Archive {
+                note_type: None,
+                update_type: false,
+            },
         )
         .expect("archive note");
         assert_eq!(archived.status.as_deref(), Some("archived"));
@@ -3123,7 +3457,11 @@ mod tests {
             vault.path(),
             "Note.md",
             &archived.content,
-            LifecycleTransition::Restore("active".to_owned()),
+            LifecycleTransition::Restore {
+                destination_status: "active".to_owned(),
+                note_type: None,
+                update_type: false,
+            },
         )
         .expect("restore note");
         assert_eq!(restored.status.as_deref(), Some("active"));
@@ -3149,7 +3487,10 @@ mod tests {
             vault.path(),
             "Note.md",
             "# Stale\n",
-            LifecycleTransition::Archive,
+            LifecycleTransition::Archive {
+                note_type: None,
+                update_type: false,
+            },
         )
         .expect_err("reject stale archive");
 
@@ -3213,8 +3554,8 @@ mod tests {
         fs::write(vault.path().join("Untitled.md"), "# First\n").expect("write first note");
         fs::write(vault.path().join("Untitled 2.md"), "# Second\n").expect("write second note");
 
-        let document =
-            create_untitled_markdown_file(vault.path(), "").expect("create numbered untitled note");
+        let document = create_untitled_markdown_file(vault.path(), None, "")
+            .expect("create numbered untitled note");
 
         assert_eq!(document.relative_path, "Untitled 3.md");
         assert!(document.content.contains("created_at:"));
@@ -3357,7 +3698,8 @@ mod tests {
         let document = save_markdown_file(vault.path(), "Note.md", "# After\n", original)
             .expect("save without identity guard");
 
-        assert_eq!(document.content, "# After\n");
+        assert!(document.content.contains("updated_at:"));
+        assert!(document.content.ends_with("# After\n"));
         assert_eq!(
             fs::read_to_string(&note).expect("read protected note"),
             document.content

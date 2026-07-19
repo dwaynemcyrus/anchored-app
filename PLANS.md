@@ -1125,7 +1125,7 @@ and preserves link integrity across filename changes.
       Unicode/IME, close flush, conflict, wikilink, bridge, and native file
       tests; system-wide shortcuts remain tracked by issue #41.
 
-21I. [ ] **Chunk: Restore safe tree operations and Workbench controls**
+21I. [x] **Chunk: Restore safe tree operations and Workbench controls**
     - Expected files: native vault traversal and folder mutation modules,
       typed snapshot contracts, collection/file-rail models and preferences,
       context-menu components, Lucide controls, focused tests,
@@ -1177,8 +1177,15 @@ and preserves link integrity across filename changes.
       file/folder context menus and expand/collapse-all controls return; and
       Workbench defaults to an expanded newest-edited flat list with persistent
       view and bidirectional sorting.
+    - Verification result: Native scans prune every dot-prefixed component and
+      path resolution rejects nested hidden paths. Folder move/Trash validation
+      refuses hidden descendants, while normal note/asset folder moves preserve
+      visible content and link-safe Markdown relocation. Cached filesystem
+      modification times drive persistent Workbench flat/grouped sorting; the
+      complete Lucide tree controls, opaque menus, scoped actions, and expansion
+      behavior pass frontend/Rust tests and rendered no-vault inspection.
 
-21J. [ ] **Chunk: Add Scratchpad browsing and authored timestamps**
+21J. [x] **Chunk: Add Scratchpad browsing and authored timestamps**
     - Expected files: collection/saved-view models, the lightweight Scratchpad
       entry and native bridge, lifecycle/type transition dialogs, source-
       preserving timestamp mutations, cached filesystem metadata contracts,
@@ -1226,6 +1233,14 @@ and preserves link integrity across filename changes.
     - Expected changelog: Add the active Scratchpad saved view and lightweight
       list, Control-Option-S, explicit lifecycle type selection, local timestamp
       display, and source-preserving authored `updated_at` metadata.
+    - Verification result: Active Inbox Scratchpads now appear in a counted
+      saved view and cached newest-edited lightweight list with same-window
+      selection and Control-Option-S. Source-preserving lifecycle/type mutation,
+      Untyped removal, Scratchpad type retention, canonical UTC creation/archive/
+      authored-update metadata, cached modification timestamps, and local UI
+      display pass focused and full frontend/Rust coverage. Native Scratchpad
+      window appearance and rapid-switch timing remain part of open Chunk 21K
+      manual QA.
 
 21K. [ ] **Chunk: Complete performance, safety, and native QA**
     - Expected files: automated performance suites, manual QA checklist,

@@ -5,8 +5,10 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   createScratchpadNote,
   latestScratchpadNote,
+  listScratchpadNotes,
   loadScratchpadLinkCandidates,
   saveScratchpadNote,
+  readScratchpadNote,
 } from "../../lib/tauri/scratchpad";
 import { Scratchpad } from "./Scratchpad";
 
@@ -33,14 +35,18 @@ vi.mock("@tauri-apps/api/window", () => ({
 vi.mock("../../lib/tauri/scratchpad", () => ({
   createScratchpadNote: vi.fn(),
   latestScratchpadNote: vi.fn(),
+  listScratchpadNotes: vi.fn(),
   loadScratchpadLinkCandidates: vi.fn(),
   saveScratchpadNote: vi.fn(),
+  readScratchpadNote: vi.fn(),
 }));
 
 const mockedCreate = vi.mocked(createScratchpadNote);
 const mockedLatest = vi.mocked(latestScratchpadNote);
+const mockedList = vi.mocked(listScratchpadNotes);
 const mockedLoadCandidates = vi.mocked(loadScratchpadLinkCandidates);
 const mockedSave = vi.mocked(saveScratchpadNote);
+const mockedRead = vi.mocked(readScratchpadNote);
 
 describe("Scratchpad", () => {
   beforeEach(() => {
@@ -49,8 +55,11 @@ describe("Scratchpad", () => {
     hide.mockReset();
     mockedCreate.mockReset();
     mockedLatest.mockReset();
+    mockedList.mockReset();
     mockedLoadCandidates.mockReset();
     mockedSave.mockReset();
+    mockedRead.mockReset();
+    mockedList.mockResolvedValue([]);
     mockedLoadCandidates.mockResolvedValue([
       { label: "Linked note", target: "Notes/Linked note" },
     ]);
@@ -142,11 +151,47 @@ describe("Scratchpad", () => {
 
     expect(screen.getByText("⌃⌥N New")).toBeVisible();
     expect(screen.getByText("⌃⌥P Previous")).toBeVisible();
+    expect(screen.getByText("⌃⌥S Notes")).toBeVisible();
     fireEvent.keyDown(textarea, { altKey: true, key: "p", metaKey: true });
     expect(mockedLatest).not.toHaveBeenCalled();
     fireEvent.keyDown(textarea, { altKey: true, ctrlKey: true, key: "p" });
 
     await waitFor(() => expect(mockedLatest).toHaveBeenCalledOnce());
+  });
+
+  it("lists active captures and opens one in the same lightweight window", async () => {
+    const user = userEvent.setup();
+    mockedList.mockResolvedValue([
+      {
+        modifiedMillis: Date.UTC(2026, 6, 19, 10),
+        name: "Scratchpad listed.md",
+        relativePath: "Scratchpad listed.md",
+      },
+    ]);
+    mockedRead.mockResolvedValue({
+      body: "Listed capture",
+      persistedContent:
+        "---\ntype: scratchpad\nstatus: inbox\n---\nListed capture",
+      relativePath: "Scratchpad listed.md",
+    });
+    render(<Scratchpad />);
+
+    fireEvent.keyDown(
+      screen.getByRole("textbox", { name: "Scratchpad Markdown" }),
+      {
+        altKey: true,
+        ctrlKey: true,
+        key: "s",
+      },
+    );
+    await user.click(
+      await screen.findByRole("button", { name: /Scratchpad listed/ }),
+    );
+
+    expect(mockedRead).toHaveBeenCalledWith("Scratchpad listed.md");
+    expect(
+      screen.getByRole("textbox", { name: "Scratchpad Markdown" }),
+    ).toHaveValue("Listed capture");
   });
 
   it("waits for composition to finish before autosaving", async () => {

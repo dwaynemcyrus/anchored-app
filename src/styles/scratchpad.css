@@ -41,6 +41,16 @@
   cursor: pointer;
 }
 
+.scratchpad-workspace {
+  display: grid;
+  min-height: 0;
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.scratchpad-workspace.has-list {
+  grid-template-columns: minmax(0, 1fr) minmax(170px, 38%);
+}
+
 .scratchpad-shell textarea {
   width: 100%;
   height: 100%;
@@ -55,6 +65,45 @@
     "SFMono-Regular",
     Menlo,
     monospace;
+}
+
+.scratchpad-note-list {
+  display: grid;
+  align-content: start;
+  min-width: 0;
+  overflow: auto;
+  padding: 6px;
+  border-left: 1px solid var(--color-rule);
+  background: var(--color-menu);
+}
+
+.scratchpad-note-list button {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+  padding: 8px;
+  border-radius: 5px;
+  color: var(--color-text-muted);
+  text-align: left;
+}
+
+.scratchpad-note-list button:hover,
+.scratchpad-note-list button[aria-current="page"] {
+  background: var(--color-row-active);
+  color: var(--color-text);
+}
+
+.scratchpad-note-list span,
+.scratchpad-note-list small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.scratchpad-note-list small,
+.scratchpad-note-list p {
+  color: var(--color-text-subtle);
+  font-size: 10px;
 }
 
 .scratchpad-suggestions {

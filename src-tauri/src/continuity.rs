@@ -96,13 +96,41 @@ struct TrashIndex {
 pub(crate) fn is_internal_component(component: &OsStr) -> bool {
     component
         .to_str()
-        .is_some_and(|value| value.eq_ignore_ascii_case(INTERNAL_DIRECTORY_NAME))
+        .is_some_and(|value| value.starts_with('.'))
 }
 
 pub(crate) fn is_internal_relative_path(path: &Path) -> bool {
     path.components()
-        .next()
-        .is_some_and(|component| is_internal_component(component.as_os_str()))
+        .any(|component| is_internal_component(component.as_os_str()))
+}
+
+pub(crate) fn ensure_no_hidden_descendants(directory: &Path) -> Result<(), VaultError> {
+    let mut stack = vec![directory.to_path_buf()];
+    while let Some(current) = stack.pop() {
+        let entries = fs::read_dir(&current)
+            .map_err(|error| VaultError::io("A folder entry could not be read", error))?;
+        for entry in entries {
+            let entry =
+                entry.map_err(|error| VaultError::io("A folder entry could not be read", error))?;
+            if is_internal_component(&entry.file_name()) {
+                return Err(VaultError::invalid_file(
+                    "This folder contains hidden application data and cannot be moved or deleted by Anchored.",
+                ));
+            }
+            let file_type = entry
+                .file_type()
+                .map_err(|error| VaultError::io("A folder entry could not be inspected", error))?;
+            if file_type.is_symlink() {
+                return Err(VaultError::invalid_file(
+                    "Folders with symlinked entries cannot be moved or deleted safely.",
+                ));
+            }
+            if file_type.is_dir() {
+                stack.push(entry.path());
+            }
+        }
+    }
+    Ok(())
 }
 
 pub(crate) fn ensure_vault_identity(root: &Path) -> Result<String, VaultError> {
@@ -367,6 +395,7 @@ pub(crate) fn move_folder_to_trash(
             "The selected path is not a folder.",
         ));
     }
+    ensure_no_hidden_descendants(&source)?;
     let name = original
         .file_name()
         .and_then(|name| name.to_str())
@@ -1085,6 +1114,21 @@ mod tests {
         );
         assert!(folder.join("Assets").join("image.png").is_file());
         assert!(list_trash_entries(vault.path()).unwrap().is_empty());
+    }
+
+    #[test]
+    fn refuses_to_trash_a_visible_folder_with_hidden_descendants() {
+        let vault = tempdir().expect("create fixture vault");
+        let folder = vault.path().join("Visible");
+        fs::create_dir_all(folder.join("Nested/.program")).expect("create hidden descendant");
+        fs::write(folder.join("Note.md"), "# Note").expect("write visible note");
+        fs::write(folder.join("Nested/.program/state.json"), "{}").expect("write hidden state");
+
+        let error = move_folder_to_trash(vault.path(), "Visible", 100)
+            .expect_err("refuse hidden descendant move");
+
+        assert_eq!(error.code, "invalidVaultFile");
+        assert!(folder.join("Nested/.program/state.json").is_file());
     }
 
     #[test]

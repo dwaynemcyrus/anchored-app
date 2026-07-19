@@ -12,6 +12,7 @@ import { CreateVaultDialog } from "./components/CreateVaultDialog";
 import { DeleteFolderDialog } from "./components/DeleteFolderDialog";
 import { FileRail } from "./components/FileRail";
 import { FolderDialog } from "./components/FolderDialog";
+import { LifecycleTypeDialog } from "./components/LifecycleTypeDialog";
 import { MoveNoteDialog } from "./components/MoveNoteDialog";
 import { NotificationCenter } from "./components/NotificationCenter";
 import { QuickOpenPalette } from "./components/QuickOpenPalette";
@@ -90,8 +91,10 @@ import {
   listRememberedVaults,
   listVaultTrash,
   moveVaultFileToFolder,
+  moveVaultFileToWorkbench,
   moveVaultFileToTrash,
   moveVaultFolderToTrash,
+  moveVaultFolder,
   openRememberedVault,
   readVaultFile,
   renameVaultFolder,
@@ -108,7 +111,7 @@ import {
   type VaultDocument,
   type VaultSnapshot,
 } from "../lib/tauri/vault";
-import { openScratchpad } from "../lib/tauri/scratchpad";
+import { openScratchpad, type ScratchpadMode } from "../lib/tauri/scratchpad";
 
 const ACTIVITY_REFRESH_INTERVAL_MS = 60_000;
 const MINOR_NOTICE_DURATION_MS = 12_000;
@@ -127,6 +130,11 @@ type VaultNotice = {
 type VaultNoticeOptions = {
   history?: Omit<NewNotificationHistoryEntry, "id" | "message" | "scopeId">;
   persistent?: boolean;
+};
+
+type LifecycleTypeRequest = {
+  action: "archive" | "workbench";
+  documentId: string;
 };
 
 function readErrorMessage(error: unknown): string {
@@ -269,6 +277,8 @@ export function App() {
   const [transitioningDocumentId, setTransitioningDocumentId] = useState<
     string | undefined
   >();
+  const [lifecycleTypeRequest, setLifecycleTypeRequest] =
+    useState<LifecycleTypeRequest>();
   const [vaultNotices, setVaultNotices] = useState<VaultNotice[]>([]);
   const [notificationHistoryVisible, setNotificationHistoryVisible] =
     useState(false);
@@ -284,6 +294,8 @@ export function App() {
   });
   const [moveDocumentId, setMoveDocumentId] = useState<string | undefined>();
   const [moveDocumentVisible, setMoveDocumentVisible] = useState(false);
+  const [moveFolderPath, setMoveFolderPath] = useState<string>();
+  const [moveFolderPending, setMoveFolderPending] = useState(false);
   const [movingDocumentId, setMovingDocumentId] = useState<
     string | undefined
   >();
@@ -319,6 +331,19 @@ export function App() {
   );
   const moveTargetDocument = documents.find(
     (document) => document.id === moveDocumentId,
+  );
+  const lifecycleTypeDocument = documents.find(
+    (document) => document.id === lifecycleTypeRequest?.documentId,
+  );
+  const existingNoteTypes = useMemo(
+    () =>
+      documents.flatMap((document) =>
+        document.noteType?.trim() &&
+        document.noteType.trim().toLocaleLowerCase() !== "scratchpad"
+          ? [document.noteType.trim()]
+          : [],
+      ),
+    [documents],
   );
   const deletingFolderContents = useMemo(() => {
     if (!deletingFolderPath) return { fileCount: 0, folderCount: 0 };
@@ -541,6 +566,7 @@ export function App() {
                   ...current,
                   archivedAt: savedDocument.archivedAt,
                   createdAt: savedDocument.createdAt,
+                  modifiedMillis: savedDocument.modifiedMillis,
                   folder,
                   folderPath,
                   name,
@@ -553,6 +579,7 @@ export function App() {
                   savedSourceText: savedDocument.content,
                   sizeBytes: savedDocument.sizeBytes,
                   status: savedDocument.status,
+                  updatedAt: savedDocument.updatedAt,
                   sourceText: hasNewerEdit
                     ? mergeCreatedMarkdownSource(
                         sourceAtSave,
@@ -693,6 +720,7 @@ export function App() {
                   ...current,
                   archivedAt: savedDocument.archivedAt,
                   createdAt: savedDocument.createdAt,
+                  modifiedMillis: savedDocument.modifiedMillis,
                   folder,
                   folderPath,
                   name,
@@ -707,6 +735,7 @@ export function App() {
                   savedSourceText: savedDocument.content,
                   sizeBytes: savedDocument.sizeBytes,
                   status: savedDocument.status,
+                  updatedAt: savedDocument.updatedAt,
                   sourceText: hasNewerEdit
                     ? current.sourceText
                     : savedDocument.content,
@@ -821,6 +850,7 @@ export function App() {
                   ...current,
                   archivedAt: savedDocument.archivedAt,
                   createdAt: savedDocument.createdAt,
+                  modifiedMillis: savedDocument.modifiedMillis,
                   noteType: savedDocument.noteType,
                   saveMessage: hasNewerEdit
                     ? undefined
@@ -833,6 +863,7 @@ export function App() {
                   savedSourceText: savedDocument.content,
                   sizeBytes: savedDocument.sizeBytes,
                   status: savedDocument.status,
+                  updatedAt: savedDocument.updatedAt,
                   sourceText: hasNewerEdit
                     ? current.sourceText
                     : savedDocument.content,
@@ -936,9 +967,10 @@ export function App() {
       );
       setFolderPaths(nextFolders);
       setExpandedFolders((currentFolders) => {
-        const nextExpanded = new Set(currentFolders);
-        nextFolders.forEach((folder) => nextExpanded.add(folder));
-        return nextExpanded;
+        const available = new Set(nextFolders);
+        return new Set(
+          Array.from(currentFolders).filter((folder) => available.has(folder)),
+        );
       });
       recordSnapshotEvents(snapshot);
       const summary = vaultSummaryMessage(snapshot);
@@ -1065,7 +1097,7 @@ export function App() {
   }, [vaultSearchQuery, vaultSearchVisible, vaultSelected]);
 
   const openScratchpadWindow = useCallback(
-    (mode: "new" | "previous") => {
+    (mode: ScratchpadMode) => {
       if (!vaultSelected) {
         addVaultNotice("Open a vault before using Scratchpad.");
         return;
@@ -1090,6 +1122,12 @@ export function App() {
       if (event.ctrlKey && event.altKey && event.key.toLowerCase() === "p") {
         event.preventDefault();
         openScratchpadWindow("previous");
+        return;
+      }
+
+      if (event.ctrlKey && event.altKey && event.key.toLowerCase() === "s") {
+        event.preventDefault();
+        openScratchpadWindow("list");
         return;
       }
 
@@ -1240,6 +1278,7 @@ export function App() {
                 ...currentDocument,
                 archivedAt: openedDocument.archivedAt,
                 createdAt: openedDocument.createdAt,
+                modifiedMillis: openedDocument.modifiedMillis,
                 noteType: openedDocument.noteType,
                 sizeBytes: openedDocument.sizeBytes,
                 saveMessage: undefined,
@@ -1247,6 +1286,7 @@ export function App() {
                 savedSourceText: openedDocument.content,
                 sourceText: openedDocument.content,
                 status: openedDocument.status,
+                updatedAt: openedDocument.updatedAt,
               }
             : currentDocument,
         ),
@@ -1466,6 +1506,7 @@ export function App() {
           ...current,
           archivedAt: result.archivedAt,
           createdAt: result.createdAt,
+          modifiedMillis: result.modifiedMillis,
           noteType: result.noteType,
           savedSourceText: wasLoaded ? result.content : undefined,
           saveMessage: undefined,
@@ -1473,6 +1514,7 @@ export function App() {
           sizeBytes: result.sizeBytes,
           sourceText: wasLoaded ? result.content : undefined,
           status: result.status,
+          updatedAt: result.updatedAt,
         };
       }),
     );
@@ -1486,7 +1528,10 @@ export function App() {
     return (await readVaultFile(document.relativePath)).content;
   }
 
-  async function archiveDocument(documentId: string) {
+  async function archiveDocument(
+    documentId: string,
+    noteType: string | undefined,
+  ) {
     const document = documentsRef.current.find(
       (candidate) => candidate.id === documentId,
     );
@@ -1504,7 +1549,9 @@ export function App() {
     try {
       const result = await archiveVaultFile({
         expectedContent: await lifecycleExpectedContent(document),
+        noteType,
         relativePath: document.relativePath,
+        updateType: true,
       });
       applyLifecycleDocument(documentId, result);
       addVaultNotice(`${document.name} moved to Archive.`, {
@@ -1520,9 +1567,21 @@ export function App() {
     }
   }
 
+  function requestArchiveDocument(documentId: string) {
+    const document = documentsRef.current.find(
+      (candidate) => candidate.id === documentId,
+    );
+    if (document?.noteType?.trim().toLocaleLowerCase() === "scratchpad") {
+      void archiveDocument(documentId, "scratchpad");
+      return;
+    }
+    setLifecycleTypeRequest({ action: "archive", documentId });
+  }
+
   async function restoreArchivedDocument(
     documentId: string,
     destinationStatus: "active" | "inbox",
+    noteType?: string,
   ) {
     const document = documentsRef.current.find(
       (candidate) => candidate.id === documentId,
@@ -1534,7 +1593,9 @@ export function App() {
       const result = await restoreArchivedVaultFile({
         destinationStatus,
         expectedContent: await lifecycleExpectedContent(document),
+        noteType,
         relativePath: document.relativePath,
+        updateType: destinationStatus === "active",
       });
       applyLifecycleDocument(documentId, result);
       addVaultNotice(
@@ -1548,6 +1609,44 @@ export function App() {
       addHistoryEntry(`${document.name} could not be restored safely.`, {
         kind: "error",
       });
+    } finally {
+      setTransitioningDocumentId(undefined);
+    }
+  }
+
+  function requestRestoreArchivedDocument(
+    documentId: string,
+    destinationStatus: "active" | "inbox",
+  ) {
+    if (destinationStatus === "inbox") {
+      void restoreArchivedDocument(documentId, "inbox");
+      return;
+    }
+    setLifecycleTypeRequest({ action: "workbench", documentId });
+  }
+
+  async function moveDocumentToWorkbench(
+    documentId: string,
+    noteType: string | undefined,
+  ) {
+    const document = documentsRef.current.find(
+      (candidate) => candidate.id === documentId,
+    );
+    if (!document?.relativePath || document.isMarkdown === false) return;
+    setTransitioningDocumentId(documentId);
+    try {
+      const result = await moveVaultFileToWorkbench({
+        expectedContent: await lifecycleExpectedContent(document),
+        noteType,
+        relativePath: document.relativePath,
+        updateType: true,
+      });
+      applyLifecycleDocument(documentId, result);
+      addVaultNotice(`${document.name} moved to Workbench.`, {
+        history: { kind: "vault" },
+      });
+    } catch (error) {
+      addVaultNotice(readErrorMessage(error), { persistent: true });
     } finally {
       setTransitioningDocumentId(undefined);
     }
@@ -1981,6 +2080,51 @@ export function App() {
     });
   }
 
+  async function createNoteInFolder(folderPath: string) {
+    try {
+      const created = await createUntitledVaultFile("", folderPath);
+      const snapshot = await rescanVault();
+      if (snapshot) adoptVaultSnapshot(snapshot);
+      const documentId = `vault-path:${created.relativePath}`;
+      setDocuments((current) =>
+        current.map((document) =>
+          document.id === documentId
+            ? {
+                ...document,
+                createdAt: created.createdAt,
+                savedSourceText: created.content,
+                sizeBytes: created.sizeBytes,
+                sourceText: created.content,
+                updatedAt: created.updatedAt,
+              }
+            : document,
+        ),
+      );
+      setExpandedFolders((current) => new Set(current).add(folderPath));
+      setActiveDocumentId(documentId);
+      setDocumentLoad({ status: "idle" });
+    } catch (error) {
+      addVaultNotice(readErrorMessage(error), { persistent: true });
+    }
+  }
+
+  async function moveExistingFolder(destinationFolder: string) {
+    if (!moveFolderPath) return;
+    setMoveFolderPending(true);
+    try {
+      const snapshot = await moveVaultFolder(moveFolderPath, destinationFolder);
+      adoptVaultSnapshot(snapshot);
+      setMoveFolderPath(undefined);
+      addVaultNotice(`${folderName(moveFolderPath)} moved.`, {
+        history: { kind: "vault" },
+      });
+    } catch (error) {
+      addVaultNotice(readErrorMessage(error), { persistent: true });
+    } finally {
+      setMoveFolderPending(false);
+    }
+  }
+
   return (
     <div className="app-shell">
       <TitleBar
@@ -2020,8 +2164,11 @@ export function App() {
           trashCount={trashEntries.length}
           vaultName={vaultName}
           vaultSelected={vaultSelected}
-          onArchiveDocument={(documentId) => void archiveDocument(documentId)}
+          onArchiveDocument={requestArchiveDocument}
           onCreateNote={createNote}
+          onCreateNoteInFolder={(folderPath) =>
+            void createNoteInFolder(folderPath)
+          }
           onCreateFolder={(parentPath) => {
             setCreateFolderParentPath(parentPath);
             setCreateFolderError(undefined);
@@ -2035,11 +2182,25 @@ export function App() {
           onMoveDocument={(documentId, destinationFolderPath) =>
             void moveDocumentToFolder(documentId, destinationFolderPath)
           }
+          onMoveDocumentToWorkbench={(documentId) =>
+            setLifecycleTypeRequest({ action: "workbench", documentId })
+          }
+          onMoveDocumentRequest={(documentId) => {
+            setMoveDocumentId(documentId);
+            setMoveDocumentVisible(true);
+          }}
+          onMoveFolderRequest={setMoveFolderPath}
           onOpenTrash={() => {
             setTrashVisible(true);
             void refreshTrashEntries();
           }}
+          onOpenScratchpad={() => openScratchpadWindow("list")}
           onQueryChange={setQuery}
+          onPreviewDocument={(documentId) => {
+            void selectDocument(documentId).then(() => {
+              window.dispatchEvent(new Event("anchored:show-preview"));
+            });
+          }}
           onRenameDocument={(documentId) => {
             void selectDocument(documentId).then(() =>
               renameDocument(documentId),
@@ -2051,10 +2212,22 @@ export function App() {
             setRenameFolderVisible(true);
           }}
           onRestoreDocument={(documentId, destinationStatus) =>
-            void restoreArchivedDocument(documentId, destinationStatus)
+            requestRestoreArchivedDocument(documentId, destinationStatus)
           }
           onSelectDocument={selectDocument}
+          onSearchDocument={(documentId) => {
+            void selectDocument(documentId).then(() =>
+              setFindRequest((current) => current + 1),
+            );
+          }}
+          onSearchInFolder={(folderPath) => {
+            setQuery(`${folderPath}/`);
+            window.setTimeout(() => searchInputRef.current?.focus(), 0);
+          }}
           onToggleFolder={toggleFolder}
+          onSetAllFoldersExpanded={(expanded) =>
+            setExpandedFolders(expanded ? new Set(folderPaths) : new Set())
+          }
           onTrashDocument={(documentId) => {
             void selectDocument(documentId).then(() =>
               trashDocument(documentId),
@@ -2079,7 +2252,7 @@ export function App() {
           wikilinkCandidates={wikilinkCandidates}
           lifecycleChanging={transitioningDocumentId === activeDocument?.id}
           onArchiveDocument={() => {
-            if (activeDocument) void archiveDocument(activeDocument.id);
+            if (activeDocument) requestArchiveDocument(activeDocument.id);
           }}
           onCloseDocument={closeDocument}
           onCreateVault={() => {
@@ -2108,7 +2281,7 @@ export function App() {
           }}
           onRestoreDocument={(destinationStatus) => {
             if (activeDocument) {
-              void restoreArchivedDocument(
+              requestRestoreArchivedDocument(
                 activeDocument.id,
                 destinationStatus,
               );
@@ -2296,6 +2469,55 @@ export function App() {
               destinationFolderPath,
             )
           }
+        />
+      ) : null}
+      {moveFolderPath ? (
+        <MoveNoteDialog
+          currentFolderPath={moveFolderPath.split("/").slice(0, -1).join("/")}
+          documentName={folderName(moveFolderPath)}
+          folders={folderPaths.filter(
+            (folder) =>
+              folder !== moveFolderPath &&
+              !folder.startsWith(`${moveFolderPath}/`),
+          )}
+          itemKind="folder"
+          moving={moveFolderPending}
+          onClose={() => {
+            if (!moveFolderPending) setMoveFolderPath(undefined);
+          }}
+          onMove={(destinationFolder) =>
+            void moveExistingFolder(destinationFolder)
+          }
+        />
+      ) : null}
+      {lifecycleTypeRequest && lifecycleTypeDocument ? (
+        <LifecycleTypeDialog
+          action={lifecycleTypeRequest.action}
+          currentType={lifecycleTypeDocument.noteType}
+          documentName={lifecycleTypeDocument.name}
+          existingTypes={existingNoteTypes}
+          pending={transitioningDocumentId === lifecycleTypeDocument.id}
+          onClose={() => setLifecycleTypeRequest(undefined)}
+          onConfirm={(noteType) => {
+            const request = lifecycleTypeRequest;
+            setLifecycleTypeRequest(undefined);
+            if (request.action === "archive") {
+              void archiveDocument(request.documentId, noteType);
+            } else {
+              const document = documentsRef.current.find(
+                (candidate) => candidate.id === request.documentId,
+              );
+              if (document?.status?.trim().toLocaleLowerCase() === "archived") {
+                void restoreArchivedDocument(
+                  request.documentId,
+                  "active",
+                  noteType,
+                );
+              } else {
+                void moveDocumentToWorkbench(request.documentId, noteType);
+              }
+            }
+          }}
         />
       ) : null}
       {vaultSwitcherVisible ? (

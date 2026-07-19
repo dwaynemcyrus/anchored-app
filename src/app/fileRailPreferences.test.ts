@@ -17,13 +17,20 @@ describe("file rail preferences", () => {
     const setItem = vi.fn();
     saveFileRailPreferences(
       { setItem },
-      { assetListMode: "alphabetical", mode: "files" },
+      {
+        assetListMode: "alphabetical",
+        mode: "files",
+        workbenchListMode: "grouped",
+        workbenchSort: "created-asc",
+      },
     );
     const persisted = setItem.mock.calls[0]?.[1] as string;
 
     expect(loadFileRailPreferences({ getItem: () => persisted })).toEqual({
       assetListMode: "alphabetical",
       mode: "files",
+      workbenchListMode: "grouped",
+      workbenchSort: "created-asc",
     });
   });
 
@@ -49,5 +56,23 @@ describe("file rail preferences", () => {
         defaultFileRailPreferences,
       ),
     ).not.toThrow();
+  });
+
+  it("migrates version 1 without losing the selected rail mode", () => {
+    expect(
+      loadFileRailPreferences({
+        getItem: () =>
+          JSON.stringify({
+            assetListMode: "alphabetical",
+            mode: "files",
+            version: 1,
+          }),
+      }),
+    ).toEqual({
+      assetListMode: "alphabetical",
+      mode: "files",
+      workbenchListMode: "flat",
+      workbenchSort: "modified-desc",
+    });
   });
 });

@@ -24,8 +24,10 @@ export type AnchoredDocument = {
   relatedLabel?: string;
   isMarkdown?: boolean;
   createdAt?: string;
+  modifiedMillis?: number;
   noteType?: string;
   status?: string;
+  updatedAt?: string;
 };
 
 export function createUntitledDocument(
@@ -65,6 +67,7 @@ export function documentsFromVault(
     title: file.name.replace(/\.md$/i, ""),
     aliases: file.aliases ?? [],
     createdAt: file.createdAt,
+    modifiedMillis: file.modifiedMillis,
     tags: [],
     body: "",
     relativePath: file.relativePath,
@@ -72,6 +75,7 @@ export function documentsFromVault(
     isMarkdown: true,
     noteType: file.noteType,
     status: file.status,
+    updatedAt: file.updatedAt,
   }));
   const assets = (snapshot.assets ?? []).map((file) => ({
     id: `vault-path:${file.relativePath}`,
@@ -84,6 +88,7 @@ export function documentsFromVault(
     tags: [],
     body: "",
     relativePath: file.relativePath,
+    modifiedMillis: file.modifiedMillis,
     saveState: "saved" as const,
     isMarkdown: false,
   }));
@@ -113,6 +118,7 @@ export function mergeDocumentsFromVault(
           aliases: document.aliases,
           archivedAt: document.archivedAt,
           createdAt: document.createdAt,
+          modifiedMillis: document.modifiedMillis,
           folder: document.folder,
           folderPath: document.folderPath,
           id: document.id,
@@ -122,6 +128,7 @@ export function mergeDocumentsFromVault(
           relativePath: document.relativePath,
           title: document.title,
           status: document.status,
+          updatedAt: document.updatedAt,
         }
       : document;
   });

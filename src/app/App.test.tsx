@@ -258,7 +258,7 @@ describe("App", () => {
     expect(within(history).getByText("No notifications yet.")).toBeVisible();
   });
 
-  it("opens new and previous Scratchpad captures with local shortcuts", async () => {
+  it("opens new, previous, and listed Scratchpad captures with local shortcuts", async () => {
     const user = userEvent.setup();
     mockedSelectVault.mockResolvedValue({
       files: [],
@@ -271,11 +271,13 @@ describe("App", () => {
 
     fireEvent.keyDown(window, { altKey: true, ctrlKey: true, key: "n" });
     fireEvent.keyDown(window, { altKey: true, ctrlKey: true, key: "p" });
+    fireEvent.keyDown(window, { altKey: true, ctrlKey: true, key: "s" });
     await user.click(screen.getByRole("button", { name: "Open Scratchpad" }));
 
     expect(mockedOpenScratchpad.mock.calls).toEqual([
       ["new"],
       ["previous"],
+      ["list"],
       ["new"],
     ]);
   });
@@ -307,12 +309,14 @@ describe("App", () => {
           relativePath: "Notes/Inbox.md",
         },
         {
+          modifiedMillis: 100,
           name: "Untyped.md",
           parent: "Notes",
           relativePath: "Notes/Untyped.md",
           status: "active",
         },
         {
+          modifiedMillis: 300,
           name: "Project.md",
           noteType: "Project",
           parent: "Notes",
@@ -320,6 +324,7 @@ describe("App", () => {
           status: "active",
         },
         {
+          modifiedMillis: 200,
           name: "Article.md",
           noteType: "Article",
           parent: "Notes",
@@ -346,16 +351,14 @@ describe("App", () => {
     expect(
       Array.from(
         collections.querySelectorAll(
-          ".tree-row--collection > span:not(.tree-row__count)",
+          ".tree-row--collection > span:not(.tree-row__count):not(.tree-row__disclosure)",
         ),
         (element) => element.textContent,
       ),
     ).toEqual([
       "Inbox",
+      "Scratchpad",
       "Workbench",
-      "Untyped",
-      "Article",
-      "Project",
       "Archive",
       "Assets",
       "Image",
@@ -367,6 +370,16 @@ describe("App", () => {
     expect(
       within(collections).getByRole("button", { name: "Assets" }),
     ).toHaveTextContent("2");
+    expect(
+      within(collections)
+        .getAllByRole("button")
+        .filter((button) =>
+          /^(Project|Article|Untyped)\.md$/.test(
+            button.getAttribute("aria-label") ?? "",
+          ),
+        )
+        .map((button) => button.getAttribute("aria-label")),
+    ).toEqual(["Project.md", "Article.md", "Untyped.md"]);
 
     await user.click(
       within(collections).getByRole("button", { name: "Article.md" }),
@@ -477,9 +490,17 @@ describe("App", () => {
     await user.click(
       screen.getByRole("button", { name: "Archive Working.md" }),
     );
+    await user.click(
+      within(screen.getByRole("dialog", { name: "Archive note" })).getByRole(
+        "button",
+        { name: "Archive" },
+      ),
+    );
     expect(mockedArchiveVaultFile).toHaveBeenCalledWith({
       expectedContent: source,
+      noteType: undefined,
       relativePath,
+      updateType: true,
     });
     expect(
       await screen.findByRole(
@@ -498,7 +519,9 @@ describe("App", () => {
     expect(mockedRestoreArchivedVaultFile).toHaveBeenCalledWith({
       destinationStatus: "inbox",
       expectedContent: archivedSource,
+      noteType: undefined,
       relativePath,
+      updateType: false,
     });
     expect(
       await screen.findByRole(

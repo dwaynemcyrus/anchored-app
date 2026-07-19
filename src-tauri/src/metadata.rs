@@ -71,6 +71,7 @@ pub struct NoteProperties {
     pub created_at: Option<String>,
     pub note_type: Option<String>,
     pub status: Option<String>,
+    pub updated_at: Option<String>,
 }
 
 pub fn generate_note_id() -> String {
@@ -174,6 +175,7 @@ pub fn inspect_note_properties(content: &str) -> NoteProperties {
         created_at: unique_string_property(mapping, yaml, "created_at", false),
         note_type: unique_string_property(mapping, yaml, "type", false),
         status: unique_string_property(mapping, yaml, "status", true),
+        updated_at: unique_string_property(mapping, yaml, "updated_at", false),
     }
 }
 
@@ -198,6 +200,14 @@ pub fn stamp_note_created_at(
     mutate_lifecycle_properties(content, &[("created_at", Some(timestamp))])
 }
 
+pub fn stamp_note_updated_at(
+    content: &str,
+    timestamp: &str,
+) -> Result<String, LifecycleMutationError> {
+    validate_lifecycle_timestamp(timestamp)?;
+    mutate_lifecycle_properties(content, &[("updated_at", Some(timestamp))])
+}
+
 pub fn archive_note(content: &str, timestamp: &str) -> Result<String, LifecycleMutationError> {
     validate_lifecycle_timestamp(timestamp)?;
     mutate_lifecycle_properties(
@@ -205,6 +215,22 @@ pub fn archive_note(content: &str, timestamp: &str) -> Result<String, LifecycleM
         &[
             ("status", Some("archived")),
             ("archived_at", Some(timestamp)),
+        ],
+    )
+}
+
+pub fn archive_note_with_type(
+    content: &str,
+    timestamp: &str,
+    note_type: Option<&str>,
+) -> Result<String, LifecycleMutationError> {
+    validate_lifecycle_timestamp(timestamp)?;
+    mutate_lifecycle_properties(
+        content,
+        &[
+            ("status", Some("archived")),
+            ("archived_at", Some(timestamp)),
+            ("type", note_type),
         ],
     )
 }
@@ -219,6 +245,24 @@ pub fn restore_note(
     mutate_lifecycle_properties(
         content,
         &[("status", Some(destination_status)), ("archived_at", None)],
+    )
+}
+
+pub fn restore_note_with_type(
+    content: &str,
+    destination_status: &str,
+    note_type: Option<&str>,
+) -> Result<String, LifecycleMutationError> {
+    if !matches!(destination_status, "inbox" | "active") {
+        return Err(LifecycleMutationError::InvalidStatus);
+    }
+    mutate_lifecycle_properties(
+        content,
+        &[
+            ("status", Some(destination_status)),
+            ("archived_at", None),
+            ("type", note_type),
+        ],
     )
 }
 
@@ -789,8 +833,8 @@ mod tests {
         add_note_identity, archive_note, assign_new_note_identity, generate_note_id,
         inspect_note_aliases, inspect_note_identity, inspect_note_properties,
         inspect_wikilink_occurrences, inspect_wikilinks, restore_note, rewrite_wikilink_targets,
-        split_note_source, stamp_note_created_at, IdentityMutationError, LifecycleMutationError,
-        NoteIdentityStatus,
+        split_note_source, stamp_note_created_at, stamp_note_updated_at, IdentityMutationError,
+        LifecycleMutationError, NoteIdentityStatus,
     };
 
     const ID: &str = "01JZQ7K8P4A6F2M9V3C5T7X1BY";
@@ -862,6 +906,22 @@ mod tests {
                 "---\n",
                 "Body\n",
             )
+        );
+    }
+
+    #[test]
+    fn stamps_authored_updates_without_reformatting_front_matter() {
+        let original = "---\ntitle: Note # keep\nupdated_at: '2026-01-01T00:00:00Z'\n---\nBody\n";
+        let updated =
+            stamp_note_updated_at(original, "2026-11-28T15:48:32Z").expect("stamp authored update");
+
+        assert_eq!(
+            updated,
+            "---\ntitle: Note # keep\nupdated_at: '2026-11-28T15:48:32Z'\n---\nBody\n"
+        );
+        assert_eq!(
+            inspect_note_properties(&updated).updated_at.as_deref(),
+            Some("2026-11-28T15:48:32Z")
         );
     }
 

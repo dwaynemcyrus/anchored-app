@@ -12,18 +12,19 @@ Git commit. The format follows [Keep a Changelog], and releases follow
   keeps selection separate from folder expansion, supports keyboard navigation
   and context menus, shows Lucide file-type icons, and recognizes common
   non-Markdown assets such as PDFs, images, audio, video, archives, and code.
-- The sidebar now defaults to derived Inbox, Workbench, Archive, and Assets
-  collections with live counts. Workbench puts Untyped first and sorts all
-  actual types alphabetically; Assets can be grouped by file type or sorted
-  alphabetically, while a persisted Files view preserves physical navigation.
+- The sidebar now defaults to derived Inbox, Scratchpad, Workbench, Archive,
+  and Assets views with live counts. Workbench starts expanded as a flat list
+  sorted by Last Edited, supports grouped/type and bidirectional date/name
+  sorting, and persists those choices; Files preserves physical navigation.
 - Anchored-created notes now receive second-precision UTC `created_at`
   metadata. Archiving writes `status: archived` and `archived_at`, opens the
   note in sanitized read-only Preview, and offers explicit restore actions for
   Inbox or Workbench.
 - A lightweight floating Scratchpad now creates separate Inbox notes after the
   first nonblank input, autosaves atomically, preserves drafts on conflicts,
-  completes wikilinks, and opens new or previous captures with local shortcuts.
-  System-wide shortcuts remain deferred.
+  completes wikilinks, and browses active captures in a newest-edited side list
+  without loading the main editor. Control-Option-N/P/S handle New, Previous,
+  and Notes while Anchored is active; system-wide shortcuts remain deferred.
 - Non-empty folder deletion now warns before proceeding and requires typing
   `delete folder`; confirmed folders move as one recoverable Trash entry.
 
@@ -45,9 +46,9 @@ Git commit. The format follows [Keep a Changelog], and releases follow
   folders. Saved notes can also be moved between vault folders from the editor
   or by dragging them onto a folder in the file rail, and existing rename-safe
   link updates still apply to those moves.
-- Vault folders can now be renamed from the file rail when they contain only
-  Markdown notes and subfolders. Anchored updates supported note links for the
-  moved paths, and empty folders can now be deleted directly from the rail.
+- Vault folders can now be renamed or moved from the file rail with their
+  visible notes, assets, and subfolders. Anchored updates supported note links
+  for moved paths, and empty folders can be deleted directly from the rail.
 - A new Settings modal now includes a danger-scoped reload action. Anchored
   saves the current note first, reloads the window safely, and restores the
   remembered vault plus the previously open note on startup when both are
@@ -59,6 +60,16 @@ Git commit. The format follows [Keep a Changelog], and releases follow
   lightweight rows, removing the blank regions and stalls caused by its
   previous JavaScript scroll window. Folder actions now live only in an opaque,
   viewport-clamped right-click menu.
+- Every dot-prefixed file or folder component is pruned from indexing, search,
+  links, counts, and navigation. Folder move/delete refuses visible parents
+  containing hidden descendants so application-specific data is not moved.
+- Physical file and folder menus now expose creation, preview, move, scoped
+  filter/search, rename, lifecycle, and deletion actions as applicable, with a
+  shared Lucide expand/collapse-all control in Collections and Files.
+- Successful authored saves now maintain source-preserving `updated_at` UTC
+  metadata, while lifecycle/type changes and filesystem moves do not. Cached
+  filesystem modification times drive Last Edited, and timestamps display in
+  the Mac's local timezone.
 - Vault refresh now reuses a versioned native metadata index keyed by relative
   path, size, and modification time. Unchanged notes are not reread, malformed
   caches rebuild automatically, and focus refresh runs off the UI thread.
@@ -81,7 +92,7 @@ Git commit. The format follows [Keep a Changelog], and releases follow
 ### Fixed
 
 - Scratchpad shortcut handling and visible key hints now consistently use
-  Control-Option-N/P instead of showing Command-Option symbols.
+  Control-Option-N/P/S instead of showing Command-Option symbols.
 - Native saves now independently refuse archived notes, and lifecycle changes
   use expected-content checks plus atomic writes so external edits are never
   overwritten.

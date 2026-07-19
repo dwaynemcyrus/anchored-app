@@ -1,6 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 
-export type ScratchpadMode = "new" | "previous";
+export type ScratchpadMode = "new" | "previous" | "list";
 
 export type ScratchpadDocument = {
   body: string;
@@ -11,6 +11,13 @@ export type ScratchpadDocument = {
 export type ScratchpadLinkCandidate = {
   label: string;
   target: string;
+};
+
+export type ScratchpadListItem = {
+  createdAt?: string;
+  modifiedMillis: number;
+  name: string;
+  relativePath: string;
 };
 
 export function openScratchpad(mode: ScratchpadMode): Promise<void> {
@@ -33,6 +40,16 @@ export function saveScratchpadNote(request: {
 
 export function latestScratchpadNote(): Promise<ScratchpadDocument | null> {
   return invoke("latest_scratchpad_note");
+}
+
+export function listScratchpadNotes(): Promise<ScratchpadListItem[]> {
+  return invoke("list_scratchpad_notes");
+}
+
+export function readScratchpadNote(
+  relativePath: string,
+): Promise<ScratchpadDocument> {
+  return invoke("read_scratchpad_note", { relativePath });
 }
 
 export function loadScratchpadLinkCandidates(): Promise<

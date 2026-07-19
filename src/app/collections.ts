@@ -11,6 +11,7 @@ export type VaultCollections = {
   assets: AnchoredDocument[];
   assetGroups: DocumentGroup[];
   inbox: AnchoredDocument[];
+  scratchpad: AnchoredDocument[];
   workbench: AnchoredDocument[];
   workbenchGroups: DocumentGroup[];
 };
@@ -83,6 +84,7 @@ export function buildVaultCollections(
   const workbench: AnchoredDocument[] = [];
   const archive: AnchoredDocument[] = [];
   const assets: AnchoredDocument[] = [];
+  const scratchpad: AnchoredDocument[] = [];
 
   for (const document of documents) {
     if (document.isMarkdown === false) {
@@ -90,8 +92,12 @@ export function buildVaultCollections(
       continue;
     }
     const status = normalizedStatus(document);
-    if (!status || status === "inbox") inbox.push(document);
-    else if (status === "archived") archive.push(document);
+    if (!status || status === "inbox") {
+      inbox.push(document);
+      if (document.noteType?.trim().toLocaleLowerCase() === "scratchpad") {
+        scratchpad.push(document);
+      }
+    } else if (status === "archived") archive.push(document);
     else workbench.push(document);
   }
 
@@ -104,6 +110,7 @@ export function buildVaultCollections(
     assets: sortedAssets,
     assetGroups: groupedAssets(sortedAssets),
     inbox: sortedInbox,
+    scratchpad: sortedDocuments(scratchpad),
     workbench: sortedWorkbench,
     workbenchGroups: groupedByType(sortedWorkbench),
   };

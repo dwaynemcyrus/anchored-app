@@ -4,15 +4,18 @@ export type VaultFile = {
   aliases?: string[];
   archivedAt?: string;
   createdAt?: string;
+  modifiedMillis?: number;
   name: string;
   noteType?: string;
   outgoingLinks?: string[];
   parent: string;
   relativePath: string;
   status?: string;
+  updatedAt?: string;
 };
 
 export type VaultAsset = {
+  modifiedMillis?: number;
   name: string;
   parent: string;
   relativePath: string;
@@ -56,10 +59,12 @@ export type VaultDocument = {
   archivedAt?: string;
   content: string;
   createdAt?: string;
+  modifiedMillis?: number;
   noteType?: string;
   relativePath: string;
   sizeBytes: number;
   status?: string;
+  updatedAt?: string;
 };
 
 export type VaultSearchResult = {
@@ -86,7 +91,9 @@ export type CreateVaultFileRequest = {
 
 export type LifecycleVaultFileRequest = {
   expectedContent: string;
+  noteType?: string;
   relativePath: string;
+  updateType?: boolean;
 };
 
 export type RestoreArchivedVaultFileRequest = LifecycleVaultFileRequest & {
@@ -133,6 +140,16 @@ export function renameVaultFolder(
   request: RenameVaultFolderRequest,
 ): Promise<VaultSnapshot> {
   return invoke<VaultSnapshot>("rename_vault_folder", request);
+}
+
+export function moveVaultFolder(
+  folderPath: string,
+  destinationFolder: string,
+): Promise<VaultSnapshot> {
+  return invoke<VaultSnapshot>("move_vault_folder", {
+    destinationFolder,
+    folderPath,
+  });
 }
 
 export function deleteVaultFolder(folderPath: string): Promise<VaultSnapshot> {
@@ -219,6 +236,12 @@ export function restoreArchivedVaultFile(
   return invoke<VaultDocument>("restore_archived_vault_file", request);
 }
 
+export function moveVaultFileToWorkbench(
+  request: LifecycleVaultFileRequest,
+): Promise<VaultDocument> {
+  return invoke<VaultDocument>("move_vault_file_to_workbench", request);
+}
+
 export function createVaultFile(
   request: CreateVaultFileRequest,
 ): Promise<VaultDocument | null> {
@@ -227,8 +250,12 @@ export function createVaultFile(
 
 export function createUntitledVaultFile(
   content: string,
+  parentPath?: string,
 ): Promise<VaultDocument> {
-  return invoke<VaultDocument>("create_untitled_vault_file", { content });
+  return invoke<VaultDocument>("create_untitled_vault_file", {
+    content,
+    parentPath,
+  });
 }
 
 export function moveVaultFileToFolder(
