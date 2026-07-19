@@ -1,7 +1,9 @@
 import {
   memo,
+  useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type KeyboardEvent,
   type MouseEvent,
@@ -10,7 +12,14 @@ import {
 } from "react";
 
 import type { AnchoredDocument } from "../documents";
+import { buildVaultCollections } from "../collections";
 import { fileTypeLabel, fileTypeForName } from "../fileTypes";
+import {
+  defaultFileRailPreferences,
+  loadFileRailPreferences,
+  saveFileRailPreferences,
+  type FileRailPreferences,
+} from "../fileRailPreferences";
 import {
   ChevronIcon,
   FileTypeIcon,
@@ -20,6 +29,47 @@ import {
   SearchIcon,
 } from "./Icons";
 import { IconButton } from "./IconButton";
+
+function initialFileRailPreferences(): FileRailPreferences {
+  try {
+    return loadFileRailPreferences(window.localStorage);
+  } catch {
+    return defaultFileRailPreferences;
+  }
+}
+
+function persistFileRailPreferences(preferences: FileRailPreferences): void {
+  try {
+    saveFileRailPreferences(window.localStorage, preferences);
+  } catch {
+    // Storage access is optional and must never block the file rail.
+  }
+}
+
+function useNavigationDocuments(
+  documents: AnchoredDocument[],
+): AnchoredDocument[] {
+  const signature = documents
+    .map((document) =>
+      [
+        document.id,
+        document.name,
+        document.relativePath ?? "",
+        document.folderPath ?? "",
+        document.isMarkdown === false ? "asset" : "note",
+        document.saveState ?? "",
+        document.status ?? "",
+        document.noteType ?? "",
+        document.aliases.join("\u001f"),
+      ].join("\u001e"),
+    )
+    .join("\u001d");
+  const cached = useRef({ documents, signature });
+  if (cached.current.signature !== signature) {
+    cached.current = { documents, signature };
+  }
+  return cached.current.documents;
+}
 
 type FileRailProps = {
   activeDocumentId: string;
@@ -56,11 +106,32 @@ type TreeRowData =
       kind: "file";
     };
 
+type CollectionRowData =
+  | {
+      count: number;
+      depth: number;
+      key: string;
+      kind: "collection";
+      label: string;
+    }
+  | {
+      depth: number;
+      document: AnchoredDocument;
+      kind: "file";
+    };
+
+type NavigableRow = TreeRowData | CollectionRowData;
+
 type ContextMenuState = {
   item: TreeRowData;
   x: number;
   y: number;
 };
+
+const nameCollator = new Intl.Collator(undefined, {
+  numeric: true,
+  sensitivity: "base",
+});
 
 function folderName(path: string): string {
   return path.split("/").pop() ?? path;
@@ -73,14 +144,13 @@ function parentFolderPath(path: string): string | undefined {
 }
 
 function compareNames(left: string, right: string): number {
-  return left.localeCompare(right, undefined, {
-    numeric: true,
-    sensitivity: "base",
-  });
+  return nameCollator.compare(left, right);
 }
 
-function treeRowKey(row: TreeRowData): string {
-  return row.kind === "folder" ? `folder:${row.path}` : row.document.id;
+function treeRowKey(row: NavigableRow): string {
+  if (row.kind === "folder") return `folder:${row.path}`;
+  if (row.kind === "collection") return row.key;
+  return row.document.id;
 }
 
 function documentMatchesQuery(
@@ -175,6 +245,119 @@ function PhysicalTree({
   );
 }
 
+const CollectionTree = memo(function CollectionTree({
+  activeDocumentId,
+  collapsedCollections,
+  duplicateNames,
+  rows,
+  selectedKey,
+  onContextMenu,
+  onSelectCollection,
+  onSelectDocument,
+  onToggleCollection,
+}: {
+  activeDocumentId: string;
+  collapsedCollections: Set<string>;
+  duplicateNames: Set<string>;
+  rows: CollectionRowData[];
+  selectedKey?: string;
+  onContextMenu: (event: MouseEvent, item: TreeRowData) => void;
+  onSelectCollection: (key: string) => void;
+  onSelectDocument: (documentId: string) => void;
+  onToggleCollection: (key: string) => void;
+}) {
+  return (
+    <nav aria-label="Vault collections" className="file-tree">
+      {rows.map((row) => {
+        const key = treeRowKey(row);
+        return row.kind === "collection" ? (
+          <CollectionTreeRow
+            count={row.count}
+            depth={row.depth}
+            expanded={!collapsedCollections.has(row.key)}
+            key={key}
+            label={row.label}
+            selected={selectedKey === key}
+            onSelect={() => onSelectCollection(row.key)}
+            onToggle={() => onToggleCollection(row.key)}
+          />
+        ) : (
+          <FileTreeRow
+            active={row.document.id === activeDocumentId}
+            allowDrag={false}
+            depth={row.depth}
+            detail={
+              duplicateNames.has(row.document.name.toLocaleLowerCase())
+                ? row.document.relativePath
+                : undefined
+            }
+            document={row.document}
+            key={key}
+            selected={selectedKey === key}
+            onContextMenu={(event) =>
+              onContextMenu(event, {
+                depth: row.depth,
+                document: row.document,
+                kind: "file",
+              })
+            }
+            onSelect={() => onSelectDocument(row.document.id)}
+          />
+        );
+      })}
+    </nav>
+  );
+});
+
+const CollectionTreeRow = memo(function CollectionTreeRow({
+  count,
+  depth,
+  expanded,
+  label,
+  selected,
+  onSelect,
+  onToggle,
+}: {
+  count: number;
+  depth: number;
+  expanded: boolean;
+  label: string;
+  selected: boolean;
+  onSelect: () => void;
+  onToggle: () => void;
+}) {
+  return (
+    <div
+      aria-expanded={expanded}
+      aria-label={label}
+      aria-selected={selected}
+      className={`tree-row tree-row--folder tree-row--collection${
+        selected ? " is-selected" : ""
+      }`}
+      role="button"
+      style={{ paddingLeft: `${8 + depth * 18}px` }}
+      onClick={onSelect}
+    >
+      <button
+        aria-label={`${expanded ? "Collapse" : "Expand"} ${label}`}
+        className="tree-row__disclosure"
+        type="button"
+        onClick={(event) => {
+          event.stopPropagation();
+          onToggle();
+        }}
+      >
+        <ChevronIcon className={expanded ? "is-expanded" : ""} />
+      </button>
+      <FolderIcon />
+      <span>{label}</span>
+      <span aria-hidden="true" className="tree-row__count">
+        {count}
+      </span>
+    </div>
+  );
+});
+
 const FolderTreeRow = memo(function FolderTreeRow({
   depth,
   expanded,
@@ -233,7 +416,9 @@ const FolderTreeRow = memo(function FolderTreeRow({
 
 const FileTreeRow = memo(function FileTreeRow({
   active,
+  allowDrag = true,
   depth,
+  detail,
   document,
   selected,
   onContextMenu,
@@ -242,16 +427,19 @@ const FileTreeRow = memo(function FileTreeRow({
   onDragEnd,
 }: {
   active: boolean;
+  allowDrag?: boolean;
   depth: number;
+  detail?: string;
   document: AnchoredDocument;
   selected: boolean;
   onContextMenu: (event: MouseEvent) => void;
   onSelect: () => void;
-  onDragStart: (event: DragEvent) => void;
-  onDragEnd: () => void;
+  onDragStart?: (event: DragEvent) => void;
+  onDragEnd?: () => void;
 }) {
   const type = fileTypeForName(document.name);
-  const draggable = documentIsDraggable(document);
+  const draggable = allowDrag && documentIsDraggable(document);
+  const rowDetail = detail ?? fileTypeLabel(type);
   return (
     <button
       aria-current={active ? "page" : undefined}
@@ -261,7 +449,7 @@ const FileTreeRow = memo(function FileTreeRow({
       }`}
       draggable={draggable}
       style={{ paddingLeft: `${26 + depth * 18}px` }}
-      title={`${document.name} · ${fileTypeLabel(type)}`}
+      title={`${document.name} · ${rowDetail}`}
       type="button"
       onClick={onSelect}
       onContextMenu={onContextMenu}
@@ -271,7 +459,7 @@ const FileTreeRow = memo(function FileTreeRow({
       <FileTypeIcon fileName={document.name} />
       <span>{document.name}</span>
       <span className="tree-row__type" aria-hidden="true">
-        {fileTypeLabel(type)}
+        {rowDetail}
       </span>
     </button>
   );
@@ -399,13 +587,20 @@ export function FileRail({
   const [contextMenu, setContextMenu] = useState<ContextMenuState>();
   const [draggingDocumentId, setDraggingDocumentId] = useState<string>();
   const [dropTargetFolder, setDropTargetFolder] = useState<string>();
+  const [collapsedCollections, setCollapsedCollections] = useState<Set<string>>(
+    () => new Set(),
+  );
+  const [preferences, setPreferences] = useState<FileRailPreferences>(
+    initialFileRailPreferences,
+  );
+  const navigationDocuments = useNavigationDocuments(documents);
   const normalizedQuery = query.trim().toLocaleLowerCase();
   const filteredDocuments = useMemo(
     () =>
-      documents
+      navigationDocuments
         .filter((document) => documentMatchesQuery(document, normalizedQuery))
         .sort((left, right) => compareNames(left.name, right.name)),
-    [documents, normalizedQuery],
+    [navigationDocuments, normalizedQuery],
   );
   const documentsByFolder = useMemo(() => {
     const groups = new Map<string, AnchoredDocument[]>();
@@ -466,33 +661,182 @@ export function FileRail({
     normalizedQuery.length,
     visibleFolderMatches,
   ]);
-
-  function showContextMenu(event: MouseEvent, item: TreeRowData) {
-    event.preventDefault();
-    setSelectedKey(
-      item.kind === "folder" ? `folder:${item.path}` : item.document.id,
+  const collections = useMemo(
+    () => buildVaultCollections(navigationDocuments),
+    [navigationDocuments],
+  );
+  const filteredCollections = useMemo(
+    () =>
+      normalizedQuery.length === 0
+        ? collections
+        : buildVaultCollections(filteredDocuments),
+    [collections, filteredDocuments, normalizedQuery.length],
+  );
+  const duplicateNames = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const document of navigationDocuments) {
+      const key = document.name.toLocaleLowerCase();
+      counts.set(key, (counts.get(key) ?? 0) + 1);
+    }
+    return new Set(
+      Array.from(counts)
+        .filter(([, count]) => count > 1)
+        .map(([name]) => name),
     );
-    const menuWidth = 190;
-    const menuHeight = 124;
-    setContextMenu({
-      item,
-      x: Math.max(8, Math.min(event.clientX, window.innerWidth - menuWidth)),
-      y: Math.max(8, Math.min(event.clientY, window.innerHeight - menuHeight)),
-    });
-  }
+  }, [navigationDocuments]);
+  const collectionRows = useMemo(() => {
+    const nextRows: CollectionRowData[] = [];
+    const searching = normalizedQuery.length > 0;
+    const isExpanded = (key: string) =>
+      searching || !collapsedCollections.has(key);
+    const appendDocuments = (
+      collectionDocuments: AnchoredDocument[],
+      depth: number,
+    ) => {
+      for (const document of collectionDocuments) {
+        nextRows.push({ depth, document, kind: "file" });
+      }
+    };
+    const appendGroup = (
+      key: string,
+      label: string,
+      count: number,
+      depth: number,
+    ) => {
+      nextRows.push({ count, depth, key, kind: "collection", label });
+    };
 
-  function closeContextMenu() {
+    appendGroup("collection:inbox", "Inbox", collections.inbox.length, 0);
+    if (isExpanded("collection:inbox")) {
+      appendDocuments(filteredCollections.inbox, 1);
+    }
+
+    appendGroup(
+      "collection:workbench",
+      "Workbench",
+      collections.workbench.length,
+      0,
+    );
+    if (isExpanded("collection:workbench")) {
+      const fullCounts = new Map(
+        collections.workbenchGroups.map((group) => [
+          group.name.toLocaleLowerCase(),
+          group.documents.length,
+        ]),
+      );
+      for (const group of filteredCollections.workbenchGroups) {
+        const key = `collection:workbench:${group.name.toLocaleLowerCase()}`;
+        appendGroup(
+          key,
+          group.name,
+          fullCounts.get(group.name.toLocaleLowerCase()) ?? 0,
+          1,
+        );
+        if (isExpanded(key)) appendDocuments(group.documents, 2);
+      }
+    }
+
+    appendGroup("collection:archive", "Archive", collections.archive.length, 0);
+    if (isExpanded("collection:archive")) {
+      appendDocuments(filteredCollections.archive, 1);
+    }
+
+    appendGroup("collection:assets", "Assets", collections.assets.length, 0);
+    if (isExpanded("collection:assets")) {
+      if (preferences.assetListMode === "alphabetical") {
+        appendDocuments(filteredCollections.assets, 1);
+      } else {
+        const fullCounts = new Map(
+          collections.assetGroups.map((group) => [
+            group.name.toLocaleLowerCase(),
+            group.documents.length,
+          ]),
+        );
+        for (const group of filteredCollections.assetGroups) {
+          const key = `collection:assets:${group.name.toLocaleLowerCase()}`;
+          appendGroup(
+            key,
+            group.name,
+            fullCounts.get(group.name.toLocaleLowerCase()) ?? 0,
+            1,
+          );
+          if (isExpanded(key)) appendDocuments(group.documents, 2);
+        }
+      }
+    }
+
+    return nextRows;
+  }, [
+    collapsedCollections,
+    collections,
+    filteredCollections,
+    normalizedQuery.length,
+    preferences.assetListMode,
+  ]);
+  const navigationRows: NavigableRow[] =
+    preferences.mode === "collections" ? collectionRows : rows;
+
+  useEffect(() => {
+    persistFileRailPreferences(preferences);
+  }, [preferences]);
+
+  const closeContextMenu = useCallback(() => {
     setContextMenu(undefined);
-  }
+  }, []);
 
-  function selectDocument(documentId: string) {
-    setSelectedKey(documentId);
-    closeContextMenu();
-    onSelectDocument(documentId);
-  }
+  const showContextMenu = useCallback(
+    (event: MouseEvent, item: TreeRowData) => {
+      event.preventDefault();
+      setSelectedKey(
+        item.kind === "folder" ? `folder:${item.path}` : item.document.id,
+      );
+      const menuWidth = 190;
+      const menuHeight = 124;
+      setContextMenu({
+        item,
+        x: Math.max(8, Math.min(event.clientX, window.innerWidth - menuWidth)),
+        y: Math.max(
+          8,
+          Math.min(event.clientY, window.innerHeight - menuHeight),
+        ),
+      });
+    },
+    [],
+  );
+
+  const selectDocument = useCallback(
+    (documentId: string) => {
+      setSelectedKey(documentId);
+      closeContextMenu();
+      onSelectDocument(documentId);
+    },
+    [closeContextMenu, onSelectDocument],
+  );
 
   function selectFolder(folderPath: string) {
     setSelectedKey(`folder:${folderPath}`);
+  }
+
+  const selectCollection = useCallback((key: string) => {
+    setSelectedKey(key);
+  }, []);
+
+  const toggleCollection = useCallback(
+    (key: string) => {
+      closeContextMenu();
+      setCollapsedCollections((current) => {
+        const next = new Set(current);
+        if (next.has(key)) next.delete(key);
+        else next.add(key);
+        return next;
+      });
+    },
+    [closeContextMenu],
+  );
+
+  function updatePreferences(next: Partial<FileRailPreferences>) {
+    closeContextMenu();
+    setPreferences((current) => ({ ...current, ...next }));
   }
 
   function runContextAction(action: () => void) {
@@ -540,23 +884,37 @@ export function FileRail({
       closeContextMenu();
       return;
     }
-    if (rows.length === 0) return;
+    if (navigationRows.length === 0) return;
     const currentIndex = Math.max(
       0,
-      rows.findIndex((row) => treeRowKey(row) === selectedKey),
+      navigationRows.findIndex((row) => treeRowKey(row) === selectedKey),
     );
     let nextIndex: number | undefined;
     if (event.key === "Home") nextIndex = 0;
-    if (event.key === "End") nextIndex = rows.length - 1;
+    if (event.key === "End") nextIndex = navigationRows.length - 1;
     if (event.key === "ArrowDown")
-      nextIndex = Math.min(rows.length - 1, currentIndex + 1);
+      nextIndex = Math.min(navigationRows.length - 1, currentIndex + 1);
     if (event.key === "ArrowUp") nextIndex = Math.max(0, currentIndex - 1);
     if (nextIndex !== undefined) {
       event.preventDefault();
-      setSelectedKey(treeRowKey(rows[nextIndex]));
+      setSelectedKey(treeRowKey(navigationRows[nextIndex]));
       return;
     }
-    const currentRow = rows[currentIndex];
+    const currentRow = navigationRows[currentIndex];
+    if (currentRow.kind === "collection" && event.key === "ArrowRight") {
+      event.preventDefault();
+      if (collapsedCollections.has(currentRow.key)) {
+        toggleCollection(currentRow.key);
+      }
+      return;
+    }
+    if (currentRow.kind === "collection" && event.key === "ArrowLeft") {
+      event.preventDefault();
+      if (!collapsedCollections.has(currentRow.key)) {
+        toggleCollection(currentRow.key);
+      }
+      return;
+    }
     if (currentRow.kind === "folder" && event.key === "ArrowRight") {
       event.preventDefault();
       if (!expandedFolders.has(currentRow.path))
@@ -576,13 +934,16 @@ export function FileRail({
     if ((event.key === "Enter" || event.key === " ") && currentRow) {
       event.preventDefault();
       if (currentRow.kind === "folder") onToggleFolder(currentRow.path);
-      else selectDocument(currentRow.document.id);
+      else if (currentRow.kind === "collection") {
+        toggleCollection(currentRow.key);
+      } else selectDocument(currentRow.document.id);
       return;
     }
     if (
       (event.key === "ContextMenu" ||
         (event.shiftKey && event.key === "F10")) &&
-      currentRow
+      currentRow &&
+      currentRow.kind !== "collection"
     ) {
       event.preventDefault();
       setContextMenu({ item: currentRow, x: 120, y: 120 });
@@ -595,7 +956,7 @@ export function FileRail({
       className="file-rail"
       onKeyDown={handleTreeKeyDown}
     >
-      <div className="file-rail__tools">
+      <div className={`file-rail__tools file-rail__tools--${preferences.mode}`}>
         <label className="search-field">
           <span className="visually-hidden">Filter notes</span>
           <SearchIcon />
@@ -610,17 +971,19 @@ export function FileRail({
             onChange={(event) => onQueryChange(event.target.value)}
           />
         </label>
-        <IconButton
-          disabled={!vaultSelected}
-          label={
-            vaultSelected
-              ? "Create folder at vault root"
-              : "Open a vault before creating a folder"
-          }
-          onClick={() => onCreateFolder(undefined)}
-        >
-          <NewFolderIcon />
-        </IconButton>
+        {preferences.mode === "files" ? (
+          <IconButton
+            disabled={!vaultSelected}
+            label={
+              vaultSelected
+                ? "Create folder at vault root"
+                : "Open a vault before creating a folder"
+            }
+            onClick={() => onCreateFolder(undefined)}
+          >
+            <NewFolderIcon />
+          </IconButton>
+        ) : null}
         <IconButton
           disabled={!vaultSelected}
           label={
@@ -631,7 +994,64 @@ export function FileRail({
           <NewFileIcon />
         </IconButton>
       </div>
-      {rows.length > 0 ? (
+      <div className="file-rail__view-options">
+        <div aria-label="Sidebar view" className="file-rail__segmented">
+          <button
+            aria-pressed={preferences.mode === "collections"}
+            type="button"
+            onClick={() => updatePreferences({ mode: "collections" })}
+          >
+            Collections
+          </button>
+          <button
+            aria-pressed={preferences.mode === "files"}
+            type="button"
+            onClick={() => updatePreferences({ mode: "files" })}
+          >
+            Files
+          </button>
+        </div>
+        {preferences.mode === "collections" ? (
+          <div
+            aria-label="Asset list order"
+            className="file-rail__segmented file-rail__segmented--compact"
+          >
+            <button
+              aria-label="Group assets by type"
+              aria-pressed={preferences.assetListMode === "grouped"}
+              title="Group assets by type"
+              type="button"
+              onClick={() => updatePreferences({ assetListMode: "grouped" })}
+            >
+              Type
+            </button>
+            <button
+              aria-label="Sort assets alphabetically"
+              aria-pressed={preferences.assetListMode === "alphabetical"}
+              title="Sort assets alphabetically"
+              type="button"
+              onClick={() =>
+                updatePreferences({ assetListMode: "alphabetical" })
+              }
+            >
+              A–Z
+            </button>
+          </div>
+        ) : null}
+      </div>
+      {preferences.mode === "collections" ? (
+        <CollectionTree
+          activeDocumentId={activeDocumentId}
+          collapsedCollections={collapsedCollections}
+          duplicateNames={duplicateNames}
+          rows={collectionRows}
+          selectedKey={selectedKey}
+          onContextMenu={showContextMenu}
+          onSelectCollection={selectCollection}
+          onSelectDocument={selectDocument}
+          onToggleCollection={toggleCollection}
+        />
+      ) : rows.length > 0 ? (
         <PhysicalTree
           activeDocumentId={activeDocumentId}
           expandedFolders={expandedFolders}

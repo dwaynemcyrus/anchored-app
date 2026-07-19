@@ -8,10 +8,14 @@ Git commit. The format follows [Keep a Changelog], and releases follow
 
 ### Added
 
-- The file rail now virtualizes large vaults, keeps selection separate from
-  folder expansion, supports keyboard navigation and context menus, shows
-  Lucide file-type icons, and recognizes common non-Markdown assets such as
-  PDFs, images, audio, video, archives, and code files.
+- The file rail now handles large vaults with stable browser-native scrolling,
+  keeps selection separate from folder expansion, supports keyboard navigation
+  and context menus, shows Lucide file-type icons, and recognizes common
+  non-Markdown assets such as PDFs, images, audio, video, archives, and code.
+- The sidebar now defaults to derived Inbox, Workbench, Archive, and Assets
+  collections with live counts. Workbench puts Untyped first and sorts all
+  actual types alphabetically; Assets can be grouped by file type or sorted
+  alphabetically, while a persisted Files view preserves physical navigation.
 - Non-empty folder deletion now warns before proceeding and requires typing
   `delete folder`; confirmed folders move as one recoverable Trash entry.
 

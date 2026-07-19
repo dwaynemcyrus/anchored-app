@@ -231,6 +231,151 @@ describe("App", () => {
     expect(within(history).getByText("No notifications yet.")).toBeVisible();
   });
 
+  it("defaults to lifecycle Collections and retains the physical Files view", async () => {
+    const user = userEvent.setup();
+    mockedReadVaultFile.mockImplementation(async (relativePath) => ({
+      content: "# Note",
+      relativePath,
+      sizeBytes: 6,
+    }));
+    mockedSelectVault.mockResolvedValue({
+      assets: [
+        {
+          name: "Cover.jpg",
+          parent: "Media",
+          relativePath: "Media/Cover.jpg",
+        },
+        {
+          name: "Guide.pdf",
+          parent: "Media",
+          relativePath: "Media/Guide.pdf",
+        },
+      ],
+      files: [
+        {
+          name: "Inbox.md",
+          parent: "Notes",
+          relativePath: "Notes/Inbox.md",
+        },
+        {
+          name: "Untyped.md",
+          parent: "Notes",
+          relativePath: "Notes/Untyped.md",
+          status: "active",
+        },
+        {
+          name: "Project.md",
+          noteType: "Project",
+          parent: "Notes",
+          relativePath: "Notes/Project.md",
+          status: "active",
+        },
+        {
+          name: "Article.md",
+          noteType: "Article",
+          parent: "Notes",
+          relativePath: "Notes/Article.md",
+          status: "draft",
+        },
+        {
+          name: "Archived.md",
+          parent: "Archive",
+          relativePath: "Archive/Archived.md",
+          status: "archived",
+        },
+      ],
+      folders: ["Archive", "Media", "Notes"],
+      name: "My Vault",
+      warnings: noWarnings,
+    });
+    render(<App />);
+
+    await user.click(screen.getByRole("button", { name: "Open vault" }));
+    const collections = screen.getByRole("navigation", {
+      name: "Vault collections",
+    });
+    expect(
+      Array.from(
+        collections.querySelectorAll(
+          ".tree-row--collection > span:not(.tree-row__count)",
+        ),
+        (element) => element.textContent,
+      ),
+    ).toEqual([
+      "Inbox",
+      "Workbench",
+      "Untyped",
+      "Article",
+      "Project",
+      "Archive",
+      "Assets",
+      "Image",
+      "Pdf",
+    ]);
+    expect(
+      within(collections).getByRole("button", { name: "Workbench" }),
+    ).toHaveTextContent("3");
+    expect(
+      within(collections).getByRole("button", { name: "Assets" }),
+    ).toHaveTextContent("2");
+
+    await user.click(
+      within(collections).getByRole("button", { name: "Article.md" }),
+    );
+    expect(mockedReadVaultFile).toHaveBeenCalledWith("Notes/Article.md");
+
+    await user.click(
+      screen.getByRole("button", { name: "Sort assets alphabetically" }),
+    );
+    expect(
+      within(collections).queryByRole("button", { name: "Image" }),
+    ).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Files" }));
+    expect(
+      screen.getByRole("navigation", { name: "Vault files" }),
+    ).toBeVisible();
+    expect(screen.getByRole("button", { name: "Notes" })).toBeVisible();
+    expect(screen.getByRole("button", { name: "Article.md" })).toHaveAttribute(
+      "aria-current",
+      "page",
+    );
+  });
+
+  it("shows paths only where collection filenames collide", async () => {
+    const user = userEvent.setup();
+    mockedSelectVault.mockResolvedValue({
+      files: [
+        {
+          name: "Same.md",
+          parent: "Alpha",
+          relativePath: "Alpha/Same.md",
+        },
+        {
+          name: "Same.md",
+          parent: "Beta",
+          relativePath: "Beta/Same.md",
+        },
+        {
+          name: "Unique.md",
+          parent: "Beta",
+          relativePath: "Beta/Unique.md",
+        },
+      ],
+      name: "My Vault",
+      warnings: noWarnings,
+    });
+    render(<App />);
+
+    await user.click(screen.getByRole("button", { name: "Open vault" }));
+    const duplicateRows = screen.getAllByRole("button", { name: "Same.md" });
+    expect(duplicateRows[0]).toHaveTextContent("Alpha/Same.md");
+    expect(duplicateRows[1]).toHaveTextContent("Beta/Same.md");
+    expect(screen.getByRole("button", { name: "Unique.md" })).toHaveTextContent(
+      "Markdown",
+    );
+  });
+
   it("auto-dismisses minor notices after 12 seconds", async () => {
     vi.useFakeTimers();
     mockedSelectVault.mockResolvedValue({
@@ -347,6 +492,7 @@ describe("App", () => {
     render(<App />);
 
     await user.click(screen.getByRole("button", { name: "Open vault" }));
+    await user.click(screen.getByRole("button", { name: "Files" }));
     await user.click(
       screen.getByRole("button", { name: "Create folder at vault root" }),
     );
@@ -387,6 +533,7 @@ describe("App", () => {
     render(<App />);
 
     await user.click(screen.getByRole("button", { name: "Open vault" }));
+    await user.click(screen.getByRole("button", { name: "Files" }));
     fireEvent.contextMenu(screen.getByRole("button", { name: "Projects" }));
     await user.click(
       within(screen.getByRole("menu", { name: "File tree actions" })).getByRole(
@@ -429,6 +576,7 @@ describe("App", () => {
     render(<App />);
 
     await user.click(screen.getByRole("button", { name: "Open vault" }));
+    await user.click(screen.getByRole("button", { name: "Files" }));
     fireEvent.contextMenu(screen.getByRole("button", { name: "Projects" }));
     await user.click(
       within(screen.getByRole("menu", { name: "File tree actions" })).getByRole(
@@ -474,6 +622,7 @@ describe("App", () => {
     render(<App />);
 
     await user.click(screen.getByRole("button", { name: "Open vault" }));
+    await user.click(screen.getByRole("button", { name: "Files" }));
     fireEvent.contextMenu(screen.getByRole("button", { name: "Archive" }));
     await user.click(
       within(screen.getByRole("menu", { name: "File tree actions" })).getByRole(
@@ -760,6 +909,7 @@ describe("App", () => {
     render(<App />);
 
     await userEvent.click(screen.getByRole("button", { name: "Open vault" }));
+    await userEvent.click(screen.getByRole("button", { name: "Files" }));
     const note = await screen.findByRole("button", { name: "Leadership.md" });
     const archiveFolder = screen.getByRole("button", { name: "Archive" });
     fireEvent.dragStart(note, {

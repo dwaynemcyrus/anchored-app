@@ -1028,7 +1028,7 @@ and preserves link integrity across filename changes.
       rapid reversals. Folder actions are context-menu-only, menus use opaque
       tokens and viewport clamping, and focused App tests plus TypeScript pass.
 
-21F. [ ] **Chunk: Add virtual collection navigation**
+21F. [x] **Chunk: Add virtual collection navigation**
     - Expected files: collection classification/model modules, sidebar
       components and tests, `src/app/App.tsx`, settings persistence, styles,
       and `CHANGELOG.md`.
@@ -1048,6 +1048,13 @@ and preserves link integrity across filename changes.
       derived and can be reverted without changing vault contents.
     - Expected changelog: Add default Inbox, Workbench, Archive, and Assets
       navigation with counts and retain Files as a secondary view.
+    - Verification result: Collections is now the persisted default and shows
+      live Inbox, Workbench, Archive, and Assets counts without mutating vault
+      files. Workbench renders Untyped first and every actual type in locale-
+      aware alphabetical order; Assets supports grouped and A–Z lists. Tests
+      cover lifecycle classification, ordering, persistence failures,
+      duplicate-path labels, cross-view selection, and a 700-note model under
+      the 100 ms classification budget.
 
 21G. [ ] **Chunk: Add lifecycle timestamps and read-only Archive**
     - Expected files: `src-tauri/src/metadata.rs`, lifecycle mutation commands
