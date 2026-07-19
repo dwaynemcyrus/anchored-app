@@ -1085,7 +1085,7 @@ and preserves link integrity across filename changes.
       Rust and frontend tests cover atomic transitions, conflicts, read-only
       enforcement, creation/Save As plumbing, and the rendered restore flow.
 
-21H. [ ] **Chunk: Add the lightweight local Scratchpad**
+21H. [x] **Chunk: Add the lightweight local Scratchpad**
     - Expected files: a separate Scratchpad frontend entry and minimal styles,
       Tauri window/command configuration, shared wikilink picker adapter,
       lifecycle/native creation commands, shortcut wiring, and tests.
@@ -1110,6 +1110,15 @@ and preserves link integrity across filename changes.
     - Expected changelog: Add fast separate Scratchpad captures with Inbox
       metadata, local shortcuts, autosave, previous-capture access, and
       wikilinks. Global shortcuts remain deferred to issue #41.
+    - Verification result: Scratchpad now loads through a separate dynamic
+      frontend entry with a minimal textarea surface and a reusable always-on-
+      top Tauri window. Native commands create collision-safe Inbox notes only
+      after nonblank input, serialize expected-content atomic saves, retain
+      drafts when conflicts prevent hiding, select the newest editable capture,
+      and provide bounded cached link candidates. The Lucide toolbar action and
+      local Command-Option-N/P shortcuts are covered alongside blank capture,
+      Unicode/IME, close flush, conflict, wikilink, bridge, and native file
+      tests; system-wide shortcuts remain tracked by issue #41.
 
 21I. [ ] **Chunk: Complete performance, safety, and native QA**
     - Expected files: automated performance suites, manual QA checklist,

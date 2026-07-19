@@ -91,19 +91,20 @@ expected result, actual result, and whether any file bytes changed.
 - [ ] Type multiple paragraphs, headings, Unicode, links, and front matter.
 - [ ] Confirm the top bar changes from Unsaved to the correct save states.
 - [ ] Use Command-S; on first save, choose a new `.md` path inside the vault.
-- [ ] Confirm the saved file contains the typed content and one canonical
-  unprefixed 26-character `id`.
+- [ ] Confirm the saved file contains the typed content and a second-precision
+  UTC `created_at` value.
 - [ ] Edit the saved note, wait more than one second, close and reopen it;
   expect the edit to persist through autosave.
-- [ ] Use Command-Shift-S to save a copy; expect a fresh note identity in the
-  copy while the source identity remains unchanged.
+- [ ] Use Command-Shift-S to save a copy; expect a fresh `created_at` in the
+  copy while the source remains unchanged.
 - [ ] Try Save As over an existing note; expect refusal and no overwrite.
 - [ ] Try to choose a destination outside the vault; expect refusal.
 - [ ] Close a note with unfinished edits; expect Anchored to keep it open and
   explain what must be saved.
 - [ ] Create a new unsaved note, try to close the window, and then quit the app;
   expect an explicit save/discard/cancel guard.
-- [ ] Relaunch and reopen saved notes; content and identities are intact.
+- [ ] Relaunch and reopen saved notes; content and existing user metadata are
+  intact.
 
 ## 6. External changes and Finder indexing
 
@@ -115,26 +116,27 @@ expected result, actual result, and whether any file bytes changed.
   marked resolved.
 - [ ] Add a new `.md` file in Finder while Anchored is open.
 - [ ] Return focus to Anchored; expect the file to appear without restarting.
-- [ ] On a previously baselined vault, confirm a genuinely new safe note gains
-  one ID and its original content otherwise remains intact.
-- [ ] Rename an older ID-less note in Finder; confirm it is not mistaken for a
-  newly created note and rewritten automatically.
-- [ ] Add malformed or duplicate front-matter IDs; expect a visible identity
-  conflict and no silent rewrite.
+- [ ] Confirm Finder-added notes are indexed without automatic metadata writes.
+- [ ] Rename an older note in Finder; confirm Anchored does not rewrite its
+  front matter or announce an identity conflict.
+- [ ] Add malformed or duplicate front-matter IDs; expect Anchored to preserve
+  them as inert user metadata without periodic notifications.
 
-## 7. Existing-note identity migration
+## 7. Collections, Archive, Assets, and Scratchpad
 
-- [ ] Open a copy of a vault containing ID-less legacy notes.
-- [ ] Open the identity migration preview.
-- [ ] Confirm eligible notes and unsafe notes are listed separately.
-- [ ] Close the preview without applying; confirm no note changes.
-- [ ] Reopen and apply the preview.
-- [ ] Confirm eligible notes receive one canonical unprefixed ID.
-- [ ] Confirm comments, Unicode, BOM, line endings, headings, and body text are
-  otherwise byte-for-byte preserved.
-- [ ] Change a note externally after preview but before apply; expect that note
-  to be skipped.
-- [ ] Confirm malformed, duplicate, and invalid front matter remains untouched.
+- [ ] Confirm Collections is the default and Files remains available as a
+  persisted secondary view.
+- [ ] Confirm Inbox, Workbench, Archive, and Assets counts match the vault.
+- [ ] Confirm Workbench puts Untyped first and sorts all actual types
+  alphabetically.
+- [ ] Confirm non-Markdown files are recognized and grouped in Assets.
+- [ ] Archive a note; expect `status: archived`, `archived_at`, and read-only
+  Preview until an explicit restore to Inbox or Workbench.
+- [ ] Open Scratchpad with Command-Option-N, type immediately, and confirm one
+  separate Inbox note is created and autosaved.
+- [ ] Type `[[` in Scratchpad and insert a note suggestion.
+- [ ] Open the previous non-archived capture with Command-Option-P.
+- [ ] Close a blank Scratchpad and confirm no file is created.
 
 ## 8. Wikilink resolution
 
@@ -234,7 +236,7 @@ a heading, and references from several notes and quoted YAML values.
 - [ ] Repeat an identical event; expect deduplication rather than an unbounded
   stack.
 - [ ] Open the bell; expect timestamped history for the current vault.
-- [ ] Confirm vault, identity, link, rename, Trash, conflict, and error records
+- [ ] Confirm vault, link, rename, Trash, conflict, and error records
   use clear labels.
 - [ ] Confirm routine successful autosaves do not flood history.
 - [ ] Delete an ordinary record and clear resolved records.
@@ -253,7 +255,8 @@ a heading, and references from several notes and quoted YAML values.
   aliases, and backlinks.
 - [ ] Confirm references in other notes are not rewritten.
 - [ ] Open Trash; expect name, original path, and timestamp.
-- [ ] Restore the note; expect the same bytes, path, ID, links, and backlinks.
+- [ ] Restore the note; expect the same bytes, path, metadata, links, and
+  backlinks.
 - [ ] Trash a note from a nested folder, remove the now-empty folder externally,
   and restore; expect safe folder recreation.
 - [ ] Put another file at the original path and try restore; expect refusal with
@@ -285,8 +288,8 @@ a heading, and references from several notes and quoted YAML values.
 - [ ] Inspect representative edited files in another Markdown editor.
 - [ ] Confirm unsupported Obsidian syntax, tags, comments, and attachment links
   remain present.
-- [ ] Confirm Anchored does not render, index, or open attachments as though
-  that feature were supported.
+- [ ] Confirm Anchored indexes attachments as read-only Assets without
+  rendering or opening them as Markdown.
 - [ ] Confirm `.anchored` contains only bounded vault identity, Trash, and
   recovery metadata expected by the feature reference.
 - [ ] Confirm no absolute vault paths or note contents appear in notification

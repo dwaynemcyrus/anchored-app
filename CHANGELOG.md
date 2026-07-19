@@ -20,6 +20,10 @@ Git commit. The format follows [Keep a Changelog], and releases follow
   metadata. Archiving writes `status: archived` and `archived_at`, opens the
   note in sanitized read-only Preview, and offers explicit restore actions for
   Inbox or Workbench.
+- A lightweight floating Scratchpad now creates separate Inbox notes after the
+  first nonblank input, autosaves atomically, preserves drafts on conflicts,
+  completes wikilinks, and opens new or previous captures with local shortcuts.
+  System-wide shortcuts remain deferred.
 - Non-empty folder deletion now warns before proceeding and requires typing
   `delete folder`; confirmed folders move as one recoverable Trash entry.
 

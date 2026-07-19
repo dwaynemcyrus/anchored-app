@@ -52,16 +52,36 @@ const root = ReactDOM.createRoot(rootElement);
 
 root.render(<main className="startup-status">Starting Anchored…</main>);
 
-void import("./app/App")
-  .then(({ App }) => {
-    root.render(
-      <React.StrictMode>
-        <StartupBoundary>
-          <App />
-        </StartupBoundary>
-      </React.StrictMode>,
-    );
-  })
-  .catch((error: unknown) => {
-    root.render(<StartupFailure message={errorMessage(error)} />);
-  });
+const scratchpadWindow = new URLSearchParams(window.location.search).has(
+  "scratchpad",
+);
+
+if (scratchpadWindow) {
+  void import("./app/components/Scratchpad")
+    .then(({ Scratchpad }) => {
+      root.render(
+        <React.StrictMode>
+          <StartupBoundary>
+            <Scratchpad />
+          </StartupBoundary>
+        </React.StrictMode>,
+      );
+    })
+    .catch((error: unknown) => {
+      root.render(<StartupFailure message={errorMessage(error)} />);
+    });
+} else {
+  void import("./app/App")
+    .then(({ App }) => {
+      root.render(
+        <React.StrictMode>
+          <StartupBoundary>
+            <App />
+          </StartupBoundary>
+        </React.StrictMode>,
+      );
+    })
+    .catch((error: unknown) => {
+      root.render(<StartupFailure message={errorMessage(error)} />);
+    });
+}

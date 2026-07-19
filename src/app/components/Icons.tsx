@@ -13,6 +13,7 @@ import {
   Folder,
   FolderPlus,
   Menu,
+  NotebookPen,
   Pencil,
   Search,
   Settings,
@@ -62,6 +63,10 @@ export function NewFileIcon(props: IconProps) {
 
 export function NewFolderIcon(props: IconProps) {
   return <FolderPlus {...iconProps} {...props} />;
+}
+
+export function ScratchpadIcon(props: IconProps) {
+  return <NotebookPen {...iconProps} {...props} />;
 }
 
 export function RenameIcon(props: IconProps) {

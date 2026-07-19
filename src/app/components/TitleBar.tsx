@@ -3,6 +3,7 @@ import {
   MenuIcon,
   NewFileIcon,
   NotificationIcon,
+  ScratchpadIcon,
   SearchIcon,
   SettingsIcon,
 } from "./Icons";
@@ -18,6 +19,7 @@ type TitleBarProps = {
   vaultSelected: boolean;
   onCreateNote: () => void;
   onOpenNotifications: () => void;
+  onOpenScratchpad: () => void;
   onOpenSearch: () => void;
   onOpenSettings: () => void;
   onSelectVault: () => void;
@@ -34,6 +36,7 @@ export function TitleBar({
   vaultSelected,
   onCreateNote,
   onOpenNotifications,
+  onOpenScratchpad,
   onOpenSearch,
   onOpenSettings,
   onSelectVault,
@@ -107,6 +110,17 @@ export function TitleBar({
         </span>
         <IconButton label="Search vault" onClick={onOpenSearch}>
           <SearchIcon />
+        </IconButton>
+        <IconButton
+          disabled={!canCreateNote}
+          label={
+            canCreateNote
+              ? "Open Scratchpad"
+              : "Open a vault before using Scratchpad"
+          }
+          onClick={onOpenScratchpad}
+        >
+          <ScratchpadIcon />
         </IconButton>
         <IconButton label="Open settings" onClick={onOpenSettings}>
           <SettingsIcon />

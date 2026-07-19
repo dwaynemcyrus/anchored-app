@@ -11,7 +11,7 @@ use std::{
 
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
-use tauri::{AppHandle, Manager, State};
+use tauri::{AppHandle, Emitter, Manager, State, WebviewUrl, WebviewWindowBuilder};
 use tauri_plugin_dialog::DialogExt;
 
 use crate::continuity::{
@@ -24,7 +24,7 @@ use crate::continuity::{
 use crate::links::{plan_rename_link_rewrites_by_path, LinkNote, LinkSource};
 use crate::metadata::{
     archive_note, inspect_note_aliases, inspect_note_properties, inspect_wikilinks, restore_note,
-    stamp_note_created_at,
+    split_note_source, stamp_note_created_at,
 };
 
 const MAX_VAULT_ENTRIES: usize = 50_000;
@@ -137,6 +137,21 @@ pub struct VaultDocument {
     pub size_bytes: u64,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub status: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ScratchpadDocument {
+    pub body: String,
+    pub persisted_content: String,
+    pub relative_path: String,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ScratchpadLinkCandidate {
+    pub label: String,
+    pub target: String,
 }
 
 #[derive(Debug, PartialEq, Eq, Serialize)]
@@ -644,6 +659,192 @@ pub async fn restore_archived_vault_file(
         &expected_content,
         LifecycleTransition::Restore(destination_status),
     )
+}
+
+#[tauri::command]
+pub async fn open_scratchpad(
+    app: AppHandle,
+    state: State<'_, VaultState>,
+    mode: String,
+) -> Result<(), VaultError> {
+    if !matches!(mode.as_str(), "new" | "previous") {
+        return Err(VaultError::invalid_file("Unsupported Scratchpad mode."));
+    }
+    selected_vault_root(&state, "opening Scratchpad")?;
+    if let Some(window) = app.get_webview_window("scratchpad") {
+        window
+            .show()
+            .map_err(|error| VaultError::state(format!("Scratchpad could not open: {error}")))?;
+        window
+            .set_focus()
+            .map_err(|error| VaultError::state(format!("Scratchpad could not focus: {error}")))?;
+        app.emit_to("scratchpad", "scratchpad-mode", &mode)
+            .map_err(|error| VaultError::state(format!("Scratchpad could not reset: {error}")))?;
+        return Ok(());
+    }
+
+    WebviewWindowBuilder::new(
+        &app,
+        "scratchpad",
+        WebviewUrl::App(format!("index.html?scratchpad=1&mode={mode}").into()),
+    )
+    .title("Anchored Scratchpad")
+    .inner_size(520.0, 360.0)
+    .min_inner_size(380.0, 240.0)
+    .always_on_top(true)
+    .center()
+    .build()
+    .map_err(|error| VaultError::state(format!("Scratchpad could not open: {error}")))?;
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn create_scratchpad_note(
+    state: State<'_, VaultState>,
+    body: String,
+) -> Result<ScratchpadDocument, VaultError> {
+    let root = selected_vault_root(&state, "creating a Scratchpad note")?;
+    let timestamp = Utc::now().format("%Y-%m-%d %H%M%S").to_string();
+    create_scratchpad_markdown_file(&root, &body, &timestamp)
+}
+
+fn create_scratchpad_markdown_file(
+    root: &Path,
+    body: &str,
+    filename_timestamp: &str,
+) -> Result<ScratchpadDocument, VaultError> {
+    if body.trim().is_empty() {
+        return Err(VaultError::invalid_file(
+            "Scratchpad does not create blank notes.",
+        ));
+    }
+    let source = format!("---\ntype: scratchpad\nstatus: inbox\n---\n{body}");
+    for count in 1..=10_000 {
+        let suffix = if count == 1 {
+            String::new()
+        } else {
+            format!(" {count}")
+        };
+        let destination = root.join(format!("Scratchpad {filename_timestamp}{suffix}.md"));
+        match create_markdown_file(root, &destination, &source) {
+            Ok(document) => return scratchpad_document(document),
+            Err(error) if error.code == "vaultFileExists" => continue,
+            Err(error) => return Err(error),
+        }
+    }
+    Err(VaultError::state(
+        "Anchored could not find an available Scratchpad filename.",
+    ))
+}
+
+#[tauri::command]
+pub async fn save_scratchpad_note(
+    state: State<'_, VaultState>,
+    relative_path: String,
+    body: String,
+    expected_content: String,
+) -> Result<ScratchpadDocument, VaultError> {
+    let root = selected_vault_root(&state, "saving a Scratchpad note")?;
+    save_scratchpad_markdown_file(&root, &relative_path, &body, &expected_content)
+}
+
+fn save_scratchpad_markdown_file(
+    root: &Path,
+    relative_path: &str,
+    body: &str,
+    expected_content: &str,
+) -> Result<ScratchpadDocument, VaultError> {
+    let properties = inspect_note_properties(expected_content);
+    if properties.note_type.as_deref() != Some("scratchpad")
+        || properties.status.as_deref() == Some("archived")
+    {
+        return Err(VaultError::invalid_file(
+            "Only editable Scratchpad notes can be saved here.",
+        ));
+    }
+    let (prefix, _) = split_note_source(expected_content).ok_or_else(|| {
+        VaultError::lifecycle("Scratchpad front matter could not be read safely.")
+    })?;
+    let updated = format!("{prefix}{body}");
+    scratchpad_document(save_markdown_file(
+        root,
+        relative_path,
+        &updated,
+        expected_content,
+    )?)
+}
+
+#[tauri::command]
+pub async fn latest_scratchpad_note(
+    app: AppHandle,
+    state: State<'_, VaultState>,
+) -> Result<Option<ScratchpadDocument>, VaultError> {
+    let root = selected_vault_root(&state, "opening the previous Scratchpad note")?;
+    let snapshot = build_vault_snapshot(&app, &root, state.metadata_cache.as_ref())?;
+    let latest = snapshot
+        .files
+        .iter()
+        .filter(|file| {
+            file.note_type.as_deref() == Some("scratchpad")
+                && file.status.as_deref() != Some("archived")
+        })
+        .max_by(|left, right| {
+            left.created_at
+                .cmp(&right.created_at)
+                .then_with(|| {
+                    left.signature
+                        .map(|signature| signature.modified_millis)
+                        .cmp(&right.signature.map(|signature| signature.modified_millis))
+                })
+                .then_with(|| {
+                    scratchpad_filename_sequence(&left.name)
+                        .cmp(&scratchpad_filename_sequence(&right.name))
+                })
+        });
+    latest
+        .map(|file| read_markdown_file(&root, &file.relative_path).and_then(scratchpad_document))
+        .transpose()
+}
+
+#[tauri::command]
+pub async fn scratchpad_link_candidates(
+    app: AppHandle,
+    state: State<'_, VaultState>,
+) -> Result<Vec<ScratchpadLinkCandidate>, VaultError> {
+    let root = selected_vault_root(&state, "loading Scratchpad links")?;
+    let snapshot = build_vault_snapshot(&app, &root, state.metadata_cache.as_ref())?;
+    Ok(snapshot
+        .files
+        .into_iter()
+        .filter(|file| file.status.as_deref() != Some("archived"))
+        .map(|file| ScratchpadLinkCandidate {
+            label: file.name.trim_end_matches(".md").to_owned(),
+            target: file.relative_path.trim_end_matches(".md").to_owned(),
+        })
+        .collect())
+}
+
+fn scratchpad_document(document: VaultDocument) -> Result<ScratchpadDocument, VaultError> {
+    let (_, body) = split_note_source(&document.content).ok_or_else(|| {
+        VaultError::lifecycle("Scratchpad front matter could not be read safely.")
+    })?;
+    Ok(ScratchpadDocument {
+        body: body.to_owned(),
+        persisted_content: document.content,
+        relative_path: document.relative_path,
+    })
+}
+
+fn scratchpad_filename_sequence(name: &str) -> u32 {
+    name.strip_suffix(".md")
+        .and_then(|stem| stem.rsplit_once(' '))
+        .and_then(|(prefix, suffix)| {
+            let has_timestamp = prefix.rsplit_once(' ').is_some_and(|(_, time)| {
+                time.len() == 6 && time.bytes().all(|byte| byte.is_ascii_digit())
+            });
+            has_timestamp.then(|| suffix.parse().ok()).flatten()
+        })
+        .unwrap_or(1)
 }
 
 #[tauri::command]
@@ -2493,10 +2694,11 @@ mod tests {
 
     use super::{
         canonical_vault_root, create_folder, create_markdown_file, create_named_vault,
-        create_untitled_markdown_file, delete_empty_folder, enrich_vault_metadata,
-        enrich_vault_metadata_cached, move_markdown_file_to_folder, read_markdown_file,
-        recover_rename_transaction, rename_folder, rename_markdown_file,
-        resolve_new_vault_markdown_file, save_markdown_file, scan_vault, search_markdown_files,
+        create_scratchpad_markdown_file, create_untitled_markdown_file, delete_empty_folder,
+        enrich_vault_metadata, enrich_vault_metadata_cached, move_markdown_file_to_folder,
+        read_markdown_file, recover_rename_transaction, rename_folder, rename_markdown_file,
+        resolve_new_vault_markdown_file, save_markdown_file, save_scratchpad_markdown_file,
+        scan_vault, scratchpad_filename_sequence, search_markdown_files,
         transition_markdown_lifecycle, validate_folder_name, validate_new_vault_name,
         write_rename_journal, LifecycleTransition, RenameJournal, RenameJournalEntry,
         RenameJournalPhase, RenameOutcome, VaultMetadataCache, MAX_MARKDOWN_FILE_BYTES,
@@ -3025,6 +3227,68 @@ mod tests {
             fs::read_to_string(vault.path().join("Untitled 2.md")).expect("read second note"),
             "# Second\n"
         );
+    }
+
+    #[test]
+    fn creates_separate_collision_safe_scratchpad_notes() {
+        let vault = tempdir().expect("create fixture vault");
+
+        let first = create_scratchpad_markdown_file(
+            vault.path(),
+            "First capture with [[Linked note]]",
+            "2026-11-28 164832",
+        )
+        .expect("create first Scratchpad note");
+        let second =
+            create_scratchpad_markdown_file(vault.path(), "Second capture", "2026-11-28 164832")
+                .expect("create second Scratchpad note");
+
+        assert_eq!(first.relative_path, "Scratchpad 2026-11-28 164832.md");
+        assert_eq!(second.relative_path, "Scratchpad 2026-11-28 164832 2.md");
+        assert_eq!(first.body, "First capture with [[Linked note]]");
+        assert!(first.persisted_content.contains("type: scratchpad\n"));
+        assert!(first.persisted_content.contains("status: inbox\n"));
+        assert!(first.persisted_content.contains("created_at:"));
+        assert_eq!(scratchpad_filename_sequence(&first.relative_path), 1);
+        assert_eq!(scratchpad_filename_sequence(&second.relative_path), 2);
+    }
+
+    #[test]
+    fn saves_only_the_scratchpad_body_with_conflict_protection() {
+        let vault = tempdir().expect("create fixture vault");
+        let created = create_scratchpad_markdown_file(vault.path(), "Initial", "2026-11-28 164832")
+            .expect("create Scratchpad note");
+
+        let saved = save_scratchpad_markdown_file(
+            vault.path(),
+            &created.relative_path,
+            "Updated Zürich 🚀",
+            &created.persisted_content,
+        )
+        .expect("save Scratchpad note");
+        let conflict = save_scratchpad_markdown_file(
+            vault.path(),
+            &created.relative_path,
+            "Stale update",
+            &created.persisted_content,
+        )
+        .expect_err("reject stale Scratchpad update");
+
+        assert_eq!(saved.body, "Updated Zürich 🚀");
+        assert!(saved.persisted_content.contains("type: scratchpad\n"));
+        assert!(saved.persisted_content.contains("status: inbox\n"));
+        assert_eq!(conflict.code, "vaultConflict");
+    }
+
+    #[test]
+    fn discards_blank_scratchpad_captures() {
+        let vault = tempdir().expect("create fixture vault");
+
+        let error = create_scratchpad_markdown_file(vault.path(), " \n\t ", "2026-11-28 164832")
+            .expect_err("reject blank Scratchpad note");
+
+        assert_eq!(error.code, "invalidVaultFile");
+        assert_eq!(fs::read_dir(vault.path()).expect("read vault").count(), 0);
     }
 
     #[test]

@@ -32,6 +32,7 @@ import {
   restoreVaultFileFromTrash,
   restoreArchivedVaultFile,
 } from "../lib/tauri/vault";
+import { openScratchpad } from "../lib/tauri/scratchpad";
 import { App } from "./App";
 import { saveSessionState } from "./sessionState";
 import { reloadAnchoredWindow } from "./windowActions";
@@ -60,6 +61,10 @@ vi.mock("../lib/tauri/vault", () => ({
   restoreArchivedVaultFile: vi.fn(),
 }));
 
+vi.mock("../lib/tauri/scratchpad", () => ({
+  openScratchpad: vi.fn(),
+}));
+
 vi.mock("./windowActions", () => ({
   reloadAnchoredWindow: vi.fn(),
 }));
@@ -86,6 +91,7 @@ const mockedRestoreVaultFileFromTrash = vi.mocked(restoreVaultFileFromTrash);
 const mockedArchiveVaultFile = vi.mocked(archiveVaultFile);
 const mockedRestoreArchivedVaultFile = vi.mocked(restoreArchivedVaultFile);
 const mockedReloadAnchoredWindow = vi.mocked(reloadAnchoredWindow);
+const mockedOpenScratchpad = vi.mocked(openScratchpad);
 const noWarnings = {
   skippedNonUtf8Paths: 0,
   skippedSymlinks: 0,
@@ -120,6 +126,8 @@ describe("App", () => {
     mockedArchiveVaultFile.mockReset();
     mockedRestoreArchivedVaultFile.mockReset();
     mockedReloadAnchoredWindow.mockReset();
+    mockedOpenScratchpad.mockReset();
+    mockedOpenScratchpad.mockResolvedValue(undefined);
     mockedCreateUntitledVaultFile.mockImplementation(
       () => new Promise(() => {}),
     );
@@ -154,6 +162,17 @@ describe("App", () => {
       })[0],
     ).toBeDisabled();
     expect(screen.queryByText("Saved")).not.toBeInTheDocument();
+  });
+
+  it("keeps Scratchpad unavailable until a vault is open", () => {
+    render(<App />);
+
+    fireEvent.keyDown(window, { altKey: true, key: "n", metaKey: true });
+
+    expect(mockedOpenScratchpad).not.toHaveBeenCalled();
+    expect(
+      screen.getByText("Open a vault before using Scratchpad."),
+    ).toBeVisible();
   });
 
   it("renders when local activity storage is unavailable", () => {
@@ -237,6 +256,28 @@ describe("App", () => {
       name: "Notification history",
     });
     expect(within(history).getByText("No notifications yet.")).toBeVisible();
+  });
+
+  it("opens new and previous Scratchpad captures with local shortcuts", async () => {
+    const user = userEvent.setup();
+    mockedSelectVault.mockResolvedValue({
+      files: [],
+      name: "My Vault",
+      warnings: noWarnings,
+    });
+    render(<App />);
+    await user.click(screen.getByRole("button", { name: "Open vault" }));
+    await screen.findByRole("button", { name: "Switch vault: My Vault" });
+
+    fireEvent.keyDown(window, { altKey: true, key: "n", metaKey: true });
+    fireEvent.keyDown(window, { altKey: true, key: "p", metaKey: true });
+    await user.click(screen.getByRole("button", { name: "Open Scratchpad" }));
+
+    expect(mockedOpenScratchpad.mock.calls).toEqual([
+      ["new"],
+      ["previous"],
+      ["new"],
+    ]);
   });
 
   it("defaults to lifecycle Collections and retains the physical Files view", async () => {

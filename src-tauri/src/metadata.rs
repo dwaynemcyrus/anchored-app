@@ -177,6 +177,19 @@ pub fn inspect_note_properties(content: &str) -> NoteProperties {
     }
 }
 
+pub fn split_note_source(content: &str) -> Option<(&str, &str)> {
+    let bounds = match front_matter_bounds(content) {
+        Ok(Some(bounds)) => bounds,
+        Ok(None) => return Some(("", content)),
+        Err(()) => return None,
+    };
+    let closing = &content[bounds.body_end..];
+    let body_start = closing
+        .find('\n')
+        .map_or(content.len(), |line_end| bounds.body_end + line_end + 1);
+    Some((&content[..body_start], &content[body_start..]))
+}
+
 pub fn stamp_note_created_at(
     content: &str,
     timestamp: &str,
@@ -776,7 +789,8 @@ mod tests {
         add_note_identity, archive_note, assign_new_note_identity, generate_note_id,
         inspect_note_aliases, inspect_note_identity, inspect_note_properties,
         inspect_wikilink_occurrences, inspect_wikilinks, restore_note, rewrite_wikilink_targets,
-        stamp_note_created_at, IdentityMutationError, LifecycleMutationError, NoteIdentityStatus,
+        split_note_source, stamp_note_created_at, IdentityMutationError, LifecycleMutationError,
+        NoteIdentityStatus,
     };
 
     const ID: &str = "01JZQ7K8P4A6F2M9V3C5T7X1BY";
@@ -893,6 +907,22 @@ mod tests {
                 "Body\n",
             )
         );
+    }
+
+    #[test]
+    fn splits_note_front_matter_without_rewriting_source() {
+        let source = "\u{feff}---\r\ntype: scratchpad\r\nstatus: inbox\r\n---\r\nBody\r\n";
+
+        let (prefix, body) = split_note_source(source).expect("split safe front matter");
+
+        assert_eq!(
+            prefix,
+            "\u{feff}---\r\ntype: scratchpad\r\nstatus: inbox\r\n---\r\n"
+        );
+        assert_eq!(body, "Body\r\n");
+        assert_eq!(format!("{prefix}{body}"), source);
+        assert_eq!(split_note_source("Body\n"), Some(("", "Body\n")));
+        assert_eq!(split_note_source("---\ntype: [broken\n"), None);
     }
 
     #[test]

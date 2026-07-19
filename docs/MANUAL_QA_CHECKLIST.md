@@ -113,6 +113,23 @@ starting.
 
 ## File tree usage tests
 
+### Collections and Files views
+
+- [ ] Confirm Collections is the default after a clean launch.
+- [ ] Toggle between Collections and Files and confirm the choice persists after relaunch.
+- [ ] Confirm Inbox, Workbench, Archive, and Assets show accurate live counts.
+- [ ] Confirm every Markdown note appears in exactly one top-level lifecycle collection.
+- [ ] Confirm missing, blank, malformed, and `inbox` status values appear in Inbox.
+- [ ] Confirm nonblank statuses other than `inbox` and `archived` appear in Workbench.
+- [ ] Confirm Workbench displays Untyped first and every actual type alphabetically after it.
+- [ ] Confirm Workbench type groups and their note counts expand and collapse independently.
+- [ ] Confirm `status: archived` notes appear only in Archive.
+- [ ] Confirm all non-Markdown files appear in Assets regardless of physical folder.
+- [ ] Toggle Assets between grouped-by-type and A–Z modes.
+- [ ] Confirm duplicate filenames show enough relative path to distinguish them.
+- [ ] Confirm selection remains stable when switching between Collections and Files.
+- [ ] Confirm system collections have no rename, delete, drag-destination, or physical-folder actions.
+
 ### Navigation and selection
 
 - [ ] Open a vault and confirm the tree loads without stalling.
@@ -227,7 +244,7 @@ starting.
 - [ ] Confirm selection and cursor survive opening and closing Preview.
 - [ ] Confirm selection and cursor survive changing editor font size.
 - [ ] Confirm selection and cursor survive a harmless vault rescan.
-- [ ] Confirm the editor does not duplicate input during autosave or identity assignment.
+- [ ] Confirm the editor does not duplicate input during autosave or background indexing.
 - [ ] Confirm IME/composition input is not interrupted if applicable.
 - [ ] Confirm undo and redo preserve cursor and selection behavior.
 
@@ -249,6 +266,42 @@ starting.
 - [ ] Confirm unsupported front matter and Obsidian syntax remain intact.
 - [ ] Confirm attachments are not deleted or rewritten by Markdown edits.
 - [ ] Confirm `.anchored` metadata is additive and does not expose vault content in logs.
+
+## Lifecycle and Archive
+
+- [ ] Create a note and confirm `created_at` is UTC ISO 8601 with seconds and a trailing `Z`.
+- [ ] Confirm existing or externally imported notes are not backfilled automatically.
+- [ ] Archive an editable saved note and confirm `status: archived` and a fresh `archived_at` are written atomically.
+- [ ] Confirm archived notes open directly in sanitized Preview with no editor or ordinary save action.
+- [ ] Attempt an archived native save path and confirm it is refused without changing the file.
+- [ ] Restore an archived note to Inbox and confirm `status: inbox` with no `archived_at`.
+- [ ] Restore an archived note to Workbench and confirm `status: active` with no `archived_at`.
+- [ ] Archive the restored note again and confirm a new `archived_at` value is written.
+- [ ] Confirm comments, key order, quotes, BOM, line endings, and unrelated front matter survive every transition.
+- [ ] Create malformed or duplicate lifecycle fields and confirm mutation is refused safely.
+- [ ] Edit the file externally before archive or restore and confirm the expected-content conflict preserves both versions.
+
+## Scratchpad usage and safety
+
+- [ ] Open a new Scratchpad from the Lucide toolbar button.
+- [ ] Open a new Scratchpad with Command-Option-N while Anchored is active.
+- [ ] Confirm the warm Scratchpad window focuses within 250 ms.
+- [ ] Confirm the Scratchpad uses the lightweight capture surface rather than loading the full editor.
+- [ ] Close a blank Scratchpad and confirm no file is created.
+- [ ] Type one nonblank character and confirm a new collision-safe Markdown file is created.
+- [ ] Confirm each new capture is a separate note with `type: scratchpad`, `status: inbox`, and `created_at`.
+- [ ] Confirm Scratchpad captures appear in Inbox and remain visible in Files.
+- [ ] Type continuously, paste large text, and use Unicode and IME composition without dropped or partial saves.
+- [ ] Confirm autosave reaches Saved after a short idle interval.
+- [ ] Close immediately after typing and confirm the complete draft is flushed before the window hides.
+- [ ] Trigger an external-edit conflict and confirm the Scratchpad remains visible with the local draft intact.
+- [ ] Type `[[`, filter suggestions, navigate with arrow keys, insert with Return, and dismiss with Escape.
+- [ ] Confirm a completed wikilink remains ordinary portable Markdown source.
+- [ ] Use Command-Option-P and confirm the newest non-archived Scratchpad note opens.
+- [ ] Archive the newest capture and confirm Previous skips it.
+- [ ] Invoke New and Previous rapidly and confirm stale loads never replace newer typing.
+- [ ] Confirm Scratchpad shortcuts explain that a vault must be opened when no vault is selected.
+- [ ] Confirm system-wide shortcuts are not expected in this build.
 
 ## Search, links, and Preview
 
@@ -286,6 +339,12 @@ starting.
 - [ ] Confirm no gradual slowdown, growing lag, or visual corruption.
 - [ ] Confirm the app remains responsive while Preview loads large content.
 - [ ] Confirm a recoverable error never leaves a permanent loading state.
+- [ ] Confirm a warm note up to 1 MiB is editable within 200 ms at p95.
+- [ ] Confirm a cold note open completes within 500 ms at p95.
+- [ ] Confirm link topology for 700 notes and 3,500 links builds within 100 ms.
+- [ ] Confirm rapid Files scrolling and direction reversals show no black gaps or missed input.
+- [ ] Confirm no measured main-thread interaction task exceeds 50 ms during rapid tree use.
+- [ ] Confirm focus refresh reads bodies only for new or signature-changed Markdown files.
 
 ## Accessibility and input methods
 
@@ -314,6 +373,8 @@ starting.
 - [ ] Follow a link.
 - [ ] Open Preview.
 - [ ] Create a note.
+- [ ] Create, autosave, close, and reopen a Scratchpad note.
+- [ ] Archive and restore a note.
 - [ ] Rename a note.
 - [ ] Move a note.
 - [ ] Delete and restore a note.

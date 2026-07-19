@@ -108,6 +108,7 @@ import {
   type VaultDocument,
   type VaultSnapshot,
 } from "../lib/tauri/vault";
+import { openScratchpad } from "../lib/tauri/scratchpad";
 
 const ACTIVITY_REFRESH_INTERVAL_MS = 60_000;
 const MINOR_NOTICE_DURATION_MS = 12_000;
@@ -1063,9 +1064,34 @@ export function App() {
     return () => window.clearTimeout(timeout);
   }, [vaultSearchQuery, vaultSearchVisible, vaultSelected]);
 
+  const openScratchpadWindow = useCallback(
+    (mode: "new" | "previous") => {
+      if (!vaultSelected) {
+        addVaultNotice("Open a vault before using Scratchpad.");
+        return;
+      }
+      void openScratchpad(mode).catch((error: unknown) => {
+        addVaultNotice(readErrorMessage(error), { persistent: true });
+      });
+    },
+    [addVaultNotice, vaultSelected],
+  );
+
   useEffect(() => {
     function handleKeyboardShortcut(event: KeyboardEvent) {
       const commandKey = event.metaKey || event.ctrlKey;
+
+      if (commandKey && event.altKey && event.key.toLowerCase() === "n") {
+        event.preventDefault();
+        openScratchpadWindow("new");
+        return;
+      }
+
+      if (commandKey && event.altKey && event.key.toLowerCase() === "p") {
+        event.preventDefault();
+        openScratchpadWindow("previous");
+        return;
+      }
 
       if (commandKey && event.key.toLowerCase() === "n") {
         event.preventDefault();
@@ -1110,7 +1136,13 @@ export function App() {
 
     window.addEventListener("keydown", handleKeyboardShortcut);
     return () => window.removeEventListener("keydown", handleKeyboardShortcut);
-  }, [activeDocumentId, createNote, saveDocument, saveDocumentAs]);
+  }, [
+    activeDocumentId,
+    createNote,
+    openScratchpadWindow,
+    saveDocument,
+    saveDocumentAs,
+  ]);
 
   useEffect(() => {
     if (sessionRestoreStatusRef.current !== "done" && !vaultSelected) {
@@ -1961,6 +1993,7 @@ export function App() {
         vaultName={vaultName}
         onCreateNote={createNote}
         onOpenNotifications={() => setNotificationHistoryVisible(true)}
+        onOpenScratchpad={() => openScratchpadWindow("new")}
         onOpenSearch={() => {
           setVaultSearchQuery("");
           setVaultSearchVisible(true);

@@ -3,7 +3,7 @@
 This document records what Anchored `0.1.0-alpha` currently implements. It is a
 pre-release reference for testers, not a promise of full Obsidian parity.
 The inventory was checked against the application source, automated tests, and
-rendered interface on 2026-07-17.
+rendered interface on 2026-07-19.
 
 > **Testing status:** The ad-hoc-signed Intel build is ready for Dwayne's
 > private in-house alpha on a disposable or verified backup vault. It is not
@@ -26,9 +26,15 @@ rendered interface on 2026-07-17.
 ## Vaults and file navigation
 
 - Select a local folder containing Markdown files.
-- Discover nested `.md` files and show them in a folder-based file explorer.
-- Expand and collapse folders.
-- Filter the explorer by filename or front-matter alias.
+- Default to virtual Inbox, Workbench, Archive, and Assets collections with
+  live counts. Each Markdown note appears in one lifecycle collection.
+- Group Workbench notes by front-matter `type`, with Untyped first and all
+  actual type values alphabetized.
+- Group non-Markdown Assets by recognized file type or show one alphabetical
+  list.
+- Retain the physical folder tree as a secondary persisted Files view with
+  stable native scrolling, keyboard navigation, and opaque context menus.
+- Filter navigation by filename or front-matter alias.
 - Detect Markdown files added in Finder when Anchored regains focus.
 - Remember up to 50 opened vaults for quick switching.
 - Mark remembered vaults whose folders are unavailable.
@@ -53,7 +59,10 @@ rendered interface on 2026-07-17.
 - Refuse to overwrite a file that changed outside Anchored; local edits remain
   visible as a conflict.
 - Refuse to create or rename over an existing Markdown file.
-- Preserve the established permanent note ID during later saves.
+- Add second-precision UTC `created_at` metadata to notes created by Anchored
+  without backfilling externally imported notes.
+- Archive through a dedicated atomic transition that writes `status: archived`
+  and `archived_at`; archived notes open in read-only Preview until restored.
 - Close a note without closing its vault. A note with unfinished edits is
   kept open and reported instead of being silently discarded.
 - Protect unfinished drafts, unsaved edits, conflicts, and failed saves when a
@@ -71,9 +80,9 @@ rendered interface on 2026-07-17.
 - Render heading IDs, definition lists, subscript, superscript, highlights,
   emoji shortcodes, LaTeX math, Mermaid diagrams, and the twelve standard
   admonition types with custom titles.
-- Resolve rendered wikilinks through the existing stable-ID, filename, path,
-  and alias resolver. Ambiguous or missing targets remain unopened and are
-  reported through the normal vault notices.
+- Resolve rendered wikilinks through cached filename, path, and alias maps.
+  Ambiguous or missing targets remain unopened and are reported through the
+  normal vault notices.
 - Keep Preview render-only: it never serializes an AST back to disk, executes
   code, loads remote diagram resources, or enables raw executable HTML.
 - Configure automatic URL linking, smart typography, syntax highlighting,
@@ -81,27 +90,29 @@ rendered interface on 2026-07-17.
   stored outside user Markdown.
 - Return to source editing with the Preview button or `Command-Shift-P`.
 
-## Permanent note identities
+## Lifecycle collections and note IDs
 
-- Use a canonical, unprefixed 26-character ULID in top-level YAML front matter:
+- Inbox contains notes with missing, blank, unusable, or `inbox` status.
+- Workbench contains other non-archived statuses and groups notes by `type`.
+- Archive contains `status: archived` notes and exposes explicit Restore to
+  Inbox and Restore to Workbench actions.
+- Existing front-matter `id` values are preserved as ordinary user metadata.
+  Anchored does not generate, migrate, validate, warn about, or depend on note
+  IDs in normal vault use.
 
-  ```yaml
-  ---
-  id: 01JZQ7K8P4A6F2M9V3C5T7X1BY
-  ---
-  ```
+## Scratchpad
 
-- Give every note created through Anchored a fresh ID on first save.
-- Establish a read-only baseline the first time an existing vault is opened.
-- On later scans, add an ID to a genuinely new Finder-added note when its front
-  matter can be changed safely.
-- Treat likely Finder renames as existing notes instead of automatically
-  assigning a new identity.
-- Offer a preview before adding IDs to existing ID-less notes.
-- Skip malformed, duplicate, invalid, changed, or otherwise unsafe notes
-  instead of reformatting their front matter.
-- Preserve comments, Unicode, UTF-8 BOMs, and LF or CRLF line endings when an ID
-  is inserted.
+- Open a reusable lightweight floating capture window from the Lucide toolbar
+  action or `Command-Option-N`.
+- Create the Markdown file only after the first non-whitespace input; a blank
+  capture leaves no file behind.
+- Give each capture `type: scratchpad`, `status: inbox`, and `created_at`.
+- Autosave through serialized atomic writes, flush before hiding, and keep the
+  visible draft when an external edit conflict prevents saving.
+- Open the newest non-archived capture with `Command-Option-P`.
+- Complete bounded wikilink suggestions from the cached vault index.
+- Keep system-wide shortcuts deferred; the current shortcuts work while
+  Anchored is active.
 
 ## Wikilinks, aliases, and backlinks
 
@@ -147,7 +158,7 @@ Behavior:
 
 ## Rename and move
 
-- Rename or move an identified, saved note through the **Rename** action and a
+- Rename or move a saved note through the **Rename** action and a
   native save dialog.
 - Update uniquely resolved references when the filename or folder changes.
 - Update supported references in Markdown bodies and supported quoted YAML
@@ -185,7 +196,7 @@ Behavior:
   stack that does not cover note actions.
 - Deduplicate repeated identical messages.
 - Keep a timestamped notification history behind the top-bar bell.
-- Record meaningful vault, identity, link, rename, Trash, conflict, and error
+- Record meaningful vault, link, rename, Trash, conflict, and error
   events without recording every successful autosave.
 - Retain ordinary records for 28 days and at most 250 records per vault.
 - Keep unresolved conflicts beyond 28 days until they are resolved.
@@ -209,6 +220,8 @@ Behavior:
 | Action | Shortcut |
 |---|---|
 | New note | Command-N |
+| New Scratchpad capture | Command-Option-N |
+| Previous Scratchpad capture | Command-Option-P |
 | Quick Open | Command-P |
 | Search all note content | Command-Shift-F |
 | Find in the active note | Command-F |
@@ -229,7 +242,7 @@ Behavior:
 - Symlinks are skipped during scans and refused for file mutations.
 - Relative-path traversal and writes outside the selected vault are refused.
 - The frontend receives relative paths, not unrestricted filesystem access.
-- Rename, Trash, restore, registry, and identity metadata use bounded,
+- Rename, Trash, restore, vault-registry, and cache metadata use bounded,
   validated, crash-aware formats.
 
 ## Preserved but not interpreted
@@ -239,7 +252,7 @@ The following are not active features:
 
 - Obsidian plugins, Canvas, Dataview, graph view, or plugin APIs.
 - Rendered embeds or attachment preview/opening. Markdown attachment syntax is
-  preserved as text, but attachments are not indexed or navigated by Anchored.
+  preserved as text; attachment files are indexed as read-only Assets.
 - Standard Markdown-link navigation such as `[label](file.md)`.
 - Heading/block autocomplete or heading/block existence validation.
 - Automatic creation of a note from an unresolved wikilink.
