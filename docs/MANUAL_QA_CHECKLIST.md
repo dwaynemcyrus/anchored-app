@@ -118,6 +118,14 @@ starting.
 - [ ] Confirm Collections is the default after a clean launch.
 - [ ] Toggle between Collections and Files and confirm the choice persists after relaunch.
 - [ ] Confirm Inbox, Workbench, Archive, and Assets show accurate live counts.
+- [ ] On first use, confirm Workbench starts expanded as a flat list sorted by Last Edited, newest first.
+- [ ] Switch Workbench between Flat and Group by Type and confirm the preference persists after relaunch.
+- [ ] Sort flat Workbench by Name A–Z and Z–A.
+- [ ] Sort flat Workbench by Last Edited newest/oldest.
+- [ ] Sort flat Workbench by Created newest/oldest.
+- [ ] Confirm notes missing `created_at` remain last in both Created directions.
+- [ ] Confirm equal timestamps use a deterministic vault-relative-path tie-breaker.
+- [ ] Confirm Workbench view/sort commands are available from both a visible menu and its right-click menu.
 - [ ] Confirm every Markdown note appears in exactly one top-level lifecycle collection.
 - [ ] Confirm missing, blank, malformed, and `inbox` status values appear in Inbox.
 - [ ] Confirm nonblank statuses other than `inbox` and `archived` appear in Workbench.
@@ -190,6 +198,22 @@ starting.
 - [ ] Rename a folder from a folder context menu.
 - [ ] Delete a folder from a folder context menu.
 - [ ] Confirm an action closes the menu and opens the correct dialog or state.
+- [ ] Confirm folder menus contain New Note, New Subfolder, Move Folder To…, Search in Folder, Rename, and Delete.
+- [ ] Confirm Markdown menus contain Open, Preview, Move To…, Search in Note, Rename, Archive/Restore, and Delete as applicable.
+- [ ] Confirm Asset menus contain Reveal in Finder, Move To…, Rename, and Delete.
+- [ ] Confirm unsafe, unsaved, archived, or unsupported actions are disabled with an explanation.
+
+### Hidden paths and expansion controls
+
+- [ ] Confirm root dotfiles do not appear anywhere in Anchored.
+- [ ] Confirm every file below `.obsidian`, `.git`, and another nested dot-prefixed folder is excluded.
+- [ ] Confirm a visible `schema.json` appears in Assets while the same file inside a hidden folder does not.
+- [ ] Confirm hidden paths are excluded from Collections, Assets, Files, counts, search, Quick Open, links, and backlinks.
+- [ ] Confirm moving or deleting a visible parent containing hidden descendants is refused without moving any bytes.
+- [ ] Use the Lucide expand-all control in Collections and confirm every collection and type group expands.
+- [ ] Use collapse-all in Collections and confirm every collection and type group collapses.
+- [ ] Repeat expand/collapse-all in Files for every physical folder.
+- [ ] Filter while groups are collapsed, confirm matches remain visible, then clear the filter and confirm prior expansion state returns.
 
 ### Drag and drop
 

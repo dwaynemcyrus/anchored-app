@@ -841,11 +841,16 @@ and preserves link integrity across filename changes.
         vault folder.
       - Files: the existing physical folder structure, exposed by a persisted
         Collections/Files toggle rather than as the default view.
-      - Each item appears in exactly one top-level collection. Workbench groups
-        by normalized front-matter `type`; Untyped appears first and every
-        actual type value follows alphabetically. Assets group by file type and
-        sort alphabetically within groups, with an optional flat alphabetical
-        view.
+      - Each item appears in exactly one top-level collection. Workbench
+        defaults to an expanded flat list sorted by filesystem modification
+        time, newest first. It can instead group by normalized front-matter
+        `type`; in grouped mode Untyped appears first and every actual type
+        value follows alphabetically. Assets group by file type and sort
+        alphabetically within groups, with an optional flat alphabetical view.
+      - Workbench view and sort preferences persist after the user changes
+        them. Flat sorting supports Name A–Z/Z–A, Last Edited newest/oldest,
+        and Created newest/oldest. Missing creation dates always sort last,
+        and vault-relative path provides a deterministic final tie-breaker.
     - Sidebar rules: Inbox, Workbench, every expanded Workbench type, Archive,
       and Assets display counts. System collections cannot be renamed,
       deleted, or treated as physical drag destinations. Physical folder
@@ -1120,7 +1125,60 @@ and preserves link integrity across filename changes.
       Unicode/IME, close flush, conflict, wikilink, bridge, and native file
       tests; system-wide shortcuts remain tracked by issue #41.
 
-21I. [ ] **Chunk: Complete performance, safety, and native QA**
+21I. [ ] **Chunk: Restore safe tree operations and Workbench controls**
+    - Expected files: native vault traversal and folder mutation modules,
+      typed snapshot contracts, collection/file-rail models and preferences,
+      context-menu components, Lucide controls, focused tests,
+      `docs/MANUAL_QA_CHECKLIST.md`, and `CHANGELOG.md` when implemented.
+    - Change: Exclude every path with a dot-prefixed component from all user-
+      facing indexing and operations. Hidden files and hidden-folder
+      descendants must not appear in Collections, Assets, Files, counts,
+      search, Quick Open, links, backlinks, or context menus. Prune hidden
+      directories before traversal for performance. Refuse folder move/delete
+      when the visible folder contains hidden descendants so Anchored never
+      moves application-specific data as a side effect.
+    - Change: Restore opaque, viewport-clamped right-click menus for physical
+      files and folders in Files view. Folder actions are New Note, New
+      Subfolder, Move Folder To…, Search in Folder, Rename, and Delete. Markdown
+      file actions are Open, Preview, Move To…, Search in Note, Rename,
+      Archive/Restore as applicable, and Delete. Asset actions are Reveal in
+      Finder, Move To…, Rename, and Delete. Unsupported, unsafe, archived, or
+      unsaved actions remain disabled with an explanation rather than being
+      attempted.
+    - Change: Add one Lucide expand/collapse-all control to the shared rail
+      toolbar beside the view controls. In Collections it affects lifecycle,
+      Workbench-type, and Asset-type groups; in Files it affects all physical
+      folders. Active filtering temporarily exposes matches without replacing
+      the saved expansion preference.
+    - Change: Start Workbench expanded and, on first use, show a flat list
+      sorted by Last Edited newest first. Preserve the user's later choice.
+      Provide Flat and Group by Type views plus Name A–Z/Z–A, Last Edited
+      newest/oldest, and Created newest/oldest sorting. Expose the same commands
+      through a visible Workbench view/sort menu and the Workbench row's right-
+      click menu; context menus supplement rather than replace discoverable,
+      keyboard-accessible controls. Last Edited comes from native filesystem
+      metadata without opening note bodies; Created uses `created_at`, with
+      missing values last in both directions.
+    - Verify: Root and nested dotfiles, hidden folders, `.obsidian`, `.git`,
+      hidden files inside visible parents, visible `schema.json` assets,
+      traversal pruning, search/link exclusion, parent move/delete refusal,
+      every file/folder menu action, menu keyboard behavior and viewport
+      clamping, expand/collapse-all in both views, filter restoration,
+      Workbench first-run defaults, preference persistence, all sort directions,
+      equal/missing timestamps, external modification updates, 200% zoom, and
+      the generated 700-note/56-folder performance budgets.
+    - Risk/rollback: Hidden application data can be damaged if a parent folder
+      is moved as one filesystem operation, so native mutation validation is
+      mandatory even when the UI has already filtered hidden paths. Exposing
+      modification timestamps must extend the cached scan contract rather than
+      adding per-render metadata calls. Keep menu actions narrow and
+      independently test destructive boundaries.
+    - Expected changelog: Hidden and dot-prefixed vault content is excluded;
+      file/folder context menus and expand/collapse-all controls return; and
+      Workbench defaults to an expanded newest-edited flat list with persistent
+      view and bidirectional sorting.
+
+21J. [ ] **Chunk: Complete performance, safety, and native QA**
     - Expected files: automated performance suites, manual QA checklist,
       `docs/FEATURES.md`, `PROJECT.md`, `PLANS.md`, and `CHANGELOG.md`.
     - Change: Run the complete Collections/Files, lifecycle, Archive, Assets,
@@ -1139,7 +1197,7 @@ and preserves link integrity across filename changes.
       diffs, stale-cache behavior, or lost Scratchpad drafts as release
       blockers and revert the responsible focused chunk.
     - Expected changelog: Reconcile all user-visible entries from chunks 21B
-      through 21H under `[Unreleased]`; do not change version without an
+      through 21I under `[Unreleased]`; do not change version without an
       explicit release request.
     - Automated verification result (2026-07-19): Formatting, ESLint,
       TypeScript, all 145 frontend tests, Rust formatting, strict Clippy, all
@@ -1151,7 +1209,8 @@ and preserves link integrity across filename changes.
       release signing remains owned by the dedicated alpha packaging workflow.
       Native interaction timing, representative-vault byte diffs, VoiceOver,
       and 2015 MacBook Pro measurements remain manual release blockers, so this
-      chunk and Epic 21 stay open until those checklist results are recorded.
+      chunk and Epic 21 stay open until Chunk 21I lands and those checklist
+      results are recorded.
 
 ## Requirements for future large plans
 
