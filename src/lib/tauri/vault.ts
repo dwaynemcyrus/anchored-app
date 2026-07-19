@@ -2,7 +2,6 @@ import { invoke } from "@tauri-apps/api/core";
 
 export type VaultFile = {
   aliases?: string[];
-  id?: string;
   name: string;
   outgoingLinks?: string[];
   parent: string;
@@ -16,9 +15,6 @@ export type VaultAsset = {
 };
 
 export type VaultWarnings = {
-  addedIdentities: number;
-  identityConflicts: number;
-  needsIdentity: number;
   skippedNonUtf8Paths: number;
   skippedSymlinks: number;
 };
@@ -98,24 +94,6 @@ export type RenameVaultFileResult = {
   relativePath: string;
   updatedFiles: number;
   updatedLinks: number;
-};
-
-export type IdentityMigrationPreview = {
-  eligibleFiles: string[];
-  issues: Array<{
-    reason:
-      | "duplicateIdentity"
-      | "duplicateIdField"
-      | "invalidIdentity"
-      | "malformedFrontMatter";
-    relativePath: string;
-  }>;
-};
-
-export type IdentityMigrationResult = {
-  migrated: number;
-  skipped: number;
-  snapshot: VaultSnapshot;
 };
 
 export function selectVault(): Promise<VaultSnapshot | null> {
@@ -240,12 +218,4 @@ export function renameVaultFile(
   return invoke<RenameVaultFileResult | null>("rename_vault_file", {
     relativePath,
   });
-}
-
-export function previewIdentityMigration(): Promise<IdentityMigrationPreview> {
-  return invoke<IdentityMigrationPreview>("preview_identity_migration");
-}
-
-export function applyIdentityMigration(): Promise<IdentityMigrationResult> {
-  return invoke<IdentityMigrationResult>("apply_identity_migration");
 }

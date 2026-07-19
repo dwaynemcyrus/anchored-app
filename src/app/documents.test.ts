@@ -4,20 +4,16 @@ import type { VaultSnapshot } from "../lib/tauri/vault";
 import { documentsFromVault, mergeDocumentsFromVault } from "./documents";
 
 const warnings = {
-  addedIdentities: 0,
-  identityConflicts: 0,
-  needsIdentity: 0,
   skippedNonUtf8Paths: 0,
   skippedSymlinks: 0,
 };
 
 describe("vault documents", () => {
-  it("indexes an identified note by stable ID and Obsidian aliases", () => {
+  it("indexes a note by path and keeps Obsidian aliases", () => {
     const snapshot: VaultSnapshot = {
       files: [
         {
           aliases: ["Leading Well"],
-          id: "01JZQ7K8P4A6F2M9V3C5T7X1BY",
           name: "Leadership.md",
           parent: "Notes",
           relativePath: "Notes/Leadership.md",
@@ -29,20 +25,19 @@ describe("vault documents", () => {
 
     expect(documentsFromVault(snapshot)[0]).toMatchObject({
       aliases: ["Leading Well"],
-      id: "vault-id:01JZQ7K8P4A6F2M9V3C5T7X1BY",
+      id: "vault-path:Notes/Leadership.md",
       relativePath: "Notes/Leadership.md",
     });
   });
 
-  it("retains local edits when an identified note moves or is renamed", () => {
+  it("retains local edits when indexed metadata refreshes", () => {
     const original: VaultSnapshot = {
       files: [
         {
           aliases: ["Old alias"],
-          id: "01JZQ7K8P4A6F2M9V3C5T7X1BY",
-          name: "Before.md",
+          name: "Leadership.md",
           parent: "Notes",
-          relativePath: "Notes/Before.md",
+          relativePath: "Notes/Leadership.md",
         },
       ],
       name: "Personal",
@@ -53,28 +48,27 @@ describe("vault documents", () => {
       saveState: "unsaved" as const,
       sourceText: "Local edit",
     }));
-    const renamed: VaultSnapshot = {
+    const refreshed: VaultSnapshot = {
       files: [
         {
           aliases: ["New alias"],
-          id: "01JZQ7K8P4A6F2M9V3C5T7X1BY",
-          name: "After.md",
-          parent: "Archive",
-          relativePath: "Archive/After.md",
+          name: "Leadership.md",
+          parent: "Notes",
+          relativePath: "Notes/Leadership.md",
         },
       ],
       name: "Personal",
       warnings,
     };
 
-    const merged = mergeDocumentsFromVault(current, renamed);
+    const merged = mergeDocumentsFromVault(current, refreshed);
 
     expect(merged).toHaveLength(1);
     expect(merged[0]).toMatchObject({
       aliases: ["New alias"],
-      id: "vault-id:01JZQ7K8P4A6F2M9V3C5T7X1BY",
-      name: "After.md",
-      relativePath: "Archive/After.md",
+      id: "vault-path:Notes/Leadership.md",
+      name: "Leadership.md",
+      relativePath: "Notes/Leadership.md",
       saveState: "unsaved",
       sourceText: "Local edit",
     });

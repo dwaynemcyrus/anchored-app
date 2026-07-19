@@ -842,10 +842,10 @@ and preserves link integrity across filename changes.
       - Files: the existing physical folder structure, exposed by a persisted
         Collections/Files toggle rather than as the default view.
       - Each item appears in exactly one top-level collection. Workbench groups
-        by normalized front-matter `type`; Article, Project, Reference, and
-        Untyped use the canonical order, and additional values follow
-        alphabetically. Assets group by file type and sort alphabetically
-        within groups, with an optional flat alphabetical view.
+        by normalized front-matter `type`; Untyped appears first and every
+        actual type value follows alphabetically. Assets group by file type and
+        sort alphabetically within groups, with an optional flat alphabetical
+        view.
     - Sidebar rules: Inbox, Workbench, every expanded Workbench type, Archive,
       and Assets display counts. System collections cannot be renamed,
       deleted, or treated as physical drag destinations. Physical folder
@@ -914,7 +914,7 @@ and preserves link integrity across filename changes.
       test harnesses are independently reversible.
     - Expected changelog: None; this chunk changes contracts and tests only.
 
-21B. [ ] **Chunk: Retire active note-ID behavior safely**
+21B. [x] **Chunk: Retire active note-ID behavior safely**
     - Expected files: `src-tauri/src/metadata.rs`, `src-tauri/src/vault.rs`,
       `src-tauri/src/lib.rs`, `src/lib/tauri/vault.ts`, `src/app/App.tsx`,
       identity migration components/tests, `PROJECT.md`, and `CHANGELOG.md`.
@@ -936,6 +936,11 @@ and preserves link integrity across filename changes.
       Rollback restores behavior without touching existing note contents.
     - Expected changelog: Note IDs are deferred; existing IDs remain preserved
       but no longer affect normal use.
+    - Verification result: Native scans, creation, saves, rename/link rewrites,
+      frontend document keys, recent activity, drag/move/rename/Trash actions,
+      and notifications no longer inspect or require note IDs. Existing `id`
+      frontmatter is preserved on untouched saves and behaves like any other
+      user-editable property.
 
 21C. [ ] **Chunk: Build one incremental native vault index**
     - Expected files: a focused native index module, `src-tauri/src/vault.rs`,
@@ -1365,6 +1370,9 @@ Every future large plan must identify:
   behavior before building the cached index, then adds virtual lifecycle
   collections, archive timestamps and read-only behavior, and a lightweight
   Scratchpad. No Epic 21 implementation has started.
+- 2026-07-19: Completed Epic 21B. Active note-ID generation, migration,
+  validation, save guards, warnings, and runtime keys were removed without
+  rewriting existing notes. Vault and Trash identities remain unchanged.
 
 ## Completion
 

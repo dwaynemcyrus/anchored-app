@@ -10,7 +10,6 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
-  applyIdentityMigration,
   createVault,
   createVaultFolder,
   createUntitledVaultFile,
@@ -22,7 +21,6 @@ import {
   moveVaultFileToFolder,
   moveVaultFileToTrash,
   openRememberedVault,
-  previewIdentityMigration,
   readVaultFile,
   renameVaultFolder,
   renameVaultFile,
@@ -37,7 +35,6 @@ import { saveSessionState } from "./sessionState";
 import { reloadAnchoredWindow } from "./windowActions";
 
 vi.mock("../lib/tauri/vault", () => ({
-  applyIdentityMigration: vi.fn(),
   createVault: vi.fn(),
   createVaultFolder: vi.fn(),
   createUntitledVaultFile: vi.fn(),
@@ -49,7 +46,6 @@ vi.mock("../lib/tauri/vault", () => ({
   moveVaultFileToFolder: vi.fn(),
   moveVaultFileToTrash: vi.fn(),
   openRememberedVault: vi.fn(),
-  previewIdentityMigration: vi.fn(),
   readVaultFile: vi.fn(),
   renameVaultFolder: vi.fn(),
   renameVaultFile: vi.fn(),
@@ -65,7 +61,6 @@ vi.mock("./windowActions", () => ({
 }));
 
 const mockedSelectVault = vi.mocked(selectVault);
-const mockedApplyIdentityMigration = vi.mocked(applyIdentityMigration);
 const mockedCreateVault = vi.mocked(createVault);
 const mockedCreateVaultFolder = vi.mocked(createVaultFolder);
 const mockedCreateUntitledVaultFile = vi.mocked(createUntitledVaultFile);
@@ -77,7 +72,6 @@ const mockedListVaultTrash = vi.mocked(listVaultTrash);
 const mockedMoveVaultFileToFolder = vi.mocked(moveVaultFileToFolder);
 const mockedMoveVaultFileToTrash = vi.mocked(moveVaultFileToTrash);
 const mockedOpenRememberedVault = vi.mocked(openRememberedVault);
-const mockedPreviewIdentityMigration = vi.mocked(previewIdentityMigration);
 const mockedReadVaultFile = vi.mocked(readVaultFile);
 const mockedRenameVaultFolder = vi.mocked(renameVaultFolder);
 const mockedRenameVaultFile = vi.mocked(renameVaultFile);
@@ -87,9 +81,6 @@ const mockedSearchVault = vi.mocked(searchVault);
 const mockedRestoreVaultFileFromTrash = vi.mocked(restoreVaultFileFromTrash);
 const mockedReloadAnchoredWindow = vi.mocked(reloadAnchoredWindow);
 const noWarnings = {
-  addedIdentities: 0,
-  identityConflicts: 0,
-  needsIdentity: 0,
   skippedNonUtf8Paths: 0,
   skippedSymlinks: 0,
 };
@@ -101,7 +92,6 @@ describe("App", () => {
 
   beforeEach(() => {
     window.localStorage.clear();
-    mockedApplyIdentityMigration.mockReset();
     mockedCreateVault.mockReset();
     mockedCreateVaultFolder.mockReset();
     mockedCreateUntitledVaultFile.mockReset();
@@ -113,7 +103,6 @@ describe("App", () => {
     mockedMoveVaultFileToFolder.mockReset();
     mockedMoveVaultFileToTrash.mockReset();
     mockedOpenRememberedVault.mockReset();
-    mockedPreviewIdentityMigration.mockReset();
     mockedSelectVault.mockReset();
     mockedReadVaultFile.mockReset();
     mockedRenameVaultFolder.mockReset();
@@ -189,7 +178,6 @@ describe("App", () => {
     mockedOpenRememberedVault.mockResolvedValue({
       files: [
         {
-          id: "01JZQ91T3AA6F2M9V3C5T7X1BZ",
           name: "Leadership.md",
           parent: "Notes",
           relativePath: "Notes/Leadership.md",
@@ -248,7 +236,7 @@ describe("App", () => {
     mockedSelectVault.mockResolvedValue({
       files: [],
       name: "My Vault",
-      warnings: { ...noWarnings, addedIdentities: 1 },
+      warnings: { ...noWarnings, skippedSymlinks: 1 },
     });
     render(<App />);
 
@@ -256,37 +244,17 @@ describe("App", () => {
       fireEvent.click(screen.getByRole("button", { name: "Open vault" }));
       await Promise.resolve();
     });
-    expect(screen.getByText("1 new note identity was added.")).toBeVisible();
+    expect(
+      screen.getByText("1 symlink entry was skipped for safety."),
+    ).toBeVisible();
 
     await act(async () => {
       await vi.advanceTimersByTimeAsync(12_000);
     });
 
     expect(
-      screen.queryByText("1 new note identity was added."),
+      screen.queryByText("1 symlink entry was skipped for safety."),
     ).not.toBeInTheDocument();
-  });
-
-  it("keeps action-required notices visible after 12 seconds", async () => {
-    vi.useFakeTimers();
-    mockedSelectVault.mockResolvedValue({
-      files: [],
-      name: "My Vault",
-      warnings: { ...noWarnings, needsIdentity: 1 },
-    });
-    render(<App />);
-
-    await act(async () => {
-      fireEvent.click(screen.getByRole("button", { name: "Open vault" }));
-      await Promise.resolve();
-    });
-    expect(screen.getByText("1 existing note needs identities.")).toBeVisible();
-
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(12_000);
-    });
-
-    expect(screen.getByText("1 existing note needs identities.")).toBeVisible();
   });
 
   it("opens and forgets a remembered vault from the switcher", async () => {
@@ -519,7 +487,6 @@ describe("App", () => {
     mockedSelectVault.mockResolvedValue({
       files: [
         {
-          id: "01JZQ7K8P4A6F2M9V3C5T7X1BY",
           name: "Leadership.md",
           parent: "Notes",
           relativePath: "Notes/Leadership.md",
@@ -636,7 +603,6 @@ describe("App", () => {
     mockedSelectVault.mockResolvedValue({
       files: [
         {
-          id: "01JZQ7K8P4A6F2M9V3C5T7X1BY",
           name: "Leadership.md",
           parent: "Notes",
           relativePath: "Notes/Leadership.md",
@@ -748,7 +714,6 @@ describe("App", () => {
     mockedSelectVault.mockResolvedValue({
       files: [
         {
-          id: "01JZQ91T3AA6F2M9V3C5T7X1BZ",
           name: "Leadership.md",
           parent: "Notes",
           relativePath: "Notes/Leadership.md",
@@ -770,7 +735,6 @@ describe("App", () => {
     mockedRescanVault.mockResolvedValue({
       files: [
         {
-          id: "01JZQ91T3AA6F2M9V3C5T7X1BZ",
           name: "Leadership.md",
           parent: "Archive",
           relativePath: moved.relativePath,
@@ -824,7 +788,6 @@ describe("App", () => {
     mockedSelectVault.mockResolvedValue({
       files: [
         {
-          id: "01JZQ91T3AA6F2M9V3C5T7X1BZ",
           name: "Leadership.md",
           parent: "Notes",
           relativePath: "Notes/Leadership.md",
@@ -846,7 +809,6 @@ describe("App", () => {
     mockedRescanVault.mockResolvedValue({
       files: [
         {
-          id: "01JZQ91T3AA6F2M9V3C5T7X1BZ",
           name: "Leadership.md",
           parent: "Archive",
           relativePath: moved.relativePath,
@@ -971,7 +933,6 @@ describe("App", () => {
     mockedSelectVault.mockResolvedValue({
       files: [
         {
-          id: "01JZQ7K8P4A6F2M9V3C5T7X1BY",
           name: "Leadership.md",
           parent: "Notes",
           relativePath: "Notes/Leadership.md",
@@ -1068,13 +1029,11 @@ describe("App", () => {
       files: [
         {
           aliases: ["Leading Well"],
-          id: "01JZQ7K8P4A6F2M9V3C5T7X1BY",
           name: "Leadership.md",
           parent: "Notes",
           relativePath: "Notes/Leadership.md",
         },
         {
-          id: "01JZQ91T3AA6F2M9V3C5T7X1BZ",
           name: "Reading.md",
           parent: "Writing",
           relativePath: "Writing/Reading.md",
@@ -1200,7 +1159,7 @@ describe("App", () => {
   });
 
   it("starts saving an empty new note immediately", async () => {
-    const identifiedContent = "---\nid: 01JZQ7K8P4A6F2M9V3C5T7X1BY\n---\n";
+    const createdContent = "";
     let finishCreatingNote:
       | ((value: {
           content: string;
@@ -1233,9 +1192,9 @@ describe("App", () => {
 
     await act(async () => {
       finishCreatingNote?.({
-        content: identifiedContent,
+        content: createdContent,
         relativePath: "Untitled.md",
-        sizeBytes: identifiedContent.length,
+        sizeBytes: createdContent.length,
       });
     });
 
@@ -1243,9 +1202,9 @@ describe("App", () => {
     expect(screen.getByText("1 Markdown file")).toBeInTheDocument();
   });
 
-  it("keeps typing safe while the first note identity is assigned", async () => {
+  it("keeps typing safe while the first note file is created", async () => {
     const user = userEvent.setup();
-    const identifiedContent = "---\nid: 01JZQ7K8P4A6F2M9V3C5T7X1BY\n---\n";
+    const createdContent = "";
     let finishCreatingNote:
       | ((value: {
           content: string;
@@ -1264,20 +1223,11 @@ describe("App", () => {
           finishCreatingNote = resolve;
         }),
     );
-    mockedSaveVaultFile.mockImplementation(async (request) => {
-      if (!request.content.includes("id: 01JZQ7K8P4A6F2M9V3C5T7X1BY")) {
-        throw {
-          code: "identityConflict",
-          message:
-            "This save would remove or change the note's permanent identity.",
-        };
-      }
-      return {
-        content: request.content,
-        relativePath: request.relativePath,
-        sizeBytes: request.content.length,
-      };
-    });
+    mockedSaveVaultFile.mockImplementation(async (request) => ({
+      content: request.content,
+      relativePath: request.relativePath,
+      sizeBytes: request.content.length,
+    }));
     render(<App />);
 
     await user.click(screen.getByRole("button", { name: "Open vault" }));
@@ -1290,20 +1240,14 @@ describe("App", () => {
 
     await act(async () => {
       finishCreatingNote?.({
-        content: identifiedContent,
+        content: createdContent,
         relativePath: "Untitled.md",
-        sizeBytes: identifiedContent.length,
+        sizeBytes: createdContent.length,
       });
     });
 
-    await waitFor(() => expect(editor).toHaveTextContent("01JZQ7K8P4"));
     await waitFor(() => expect(mockedSaveVaultFile).toHaveBeenCalled());
     expect(mockedSaveVaultFile.mock.calls[0][0].content).toContain("# Draft");
-    expect(
-      screen.queryByText(
-        "This save would remove or change the note's permanent identity.",
-      ),
-    ).not.toBeInTheDocument();
   });
 
   it("finds text within the active Markdown note with Command-F", async () => {
@@ -1340,14 +1284,12 @@ describe("App", () => {
     mockedSelectVault.mockResolvedValue({
       files: [
         {
-          id: "01JZQ7K8P4A6F2M9V3C5T7X1BY",
           name: "Source.md",
           parent: "Notes",
           relativePath: "Notes/Source.md",
         },
         {
           aliases: ["Leading Well"],
-          id: "01JZQ91T3AA6F2M9V3C5T7X1BZ",
           name: "Leadership.md",
           outgoingLinks: ["Future Idea"],
           parent: "Notes",
@@ -1522,7 +1464,7 @@ describe("App", () => {
         },
       ],
       name: "My Vault",
-      warnings: { ...noWarnings, addedIdentities: 1 },
+      warnings: noWarnings,
     });
     render(<App />);
 
@@ -1533,65 +1475,7 @@ describe("App", () => {
       await screen.findByRole("button", { name: "Finder Note.md" }),
     ).toBeInTheDocument();
     expect(screen.getByText("1 Markdown file")).toBeInTheDocument();
-    const notifications = screen.getByLabelText("Notifications");
-    expect(
-      within(notifications).getByText("1 new note identity was added."),
-    ).toBeInTheDocument();
-    expect(within(notifications).getAllByText("Dismiss")).toHaveLength(1);
-
-    await user.click(
-      within(notifications).getByRole("button", {
-        name: "Dismiss notification: 1 new note identity was added.",
-      }),
-    );
     expect(screen.queryByLabelText("Notifications")).not.toBeInTheDocument();
-  });
-
-  it("previews and explicitly applies existing-note identities", async () => {
-    const user = userEvent.setup();
-    const initialSnapshot = {
-      files: [
-        { name: "Legacy.md", parent: "", relativePath: "Legacy.md" },
-        { name: "Unsafe.md", parent: "", relativePath: "Unsafe.md" },
-      ],
-      name: "My Vault",
-      warnings: { ...noWarnings, identityConflicts: 1, needsIdentity: 1 },
-    };
-    mockedSelectVault.mockResolvedValue(initialSnapshot);
-    mockedPreviewIdentityMigration.mockResolvedValue({
-      eligibleFiles: ["Legacy.md"],
-      issues: [{ reason: "malformedFrontMatter", relativePath: "Unsafe.md" }],
-    });
-    mockedApplyIdentityMigration.mockResolvedValue({
-      migrated: 1,
-      skipped: 0,
-      snapshot: { ...initialSnapshot, warnings: noWarnings },
-    });
-    render(<App />);
-
-    await user.click(screen.getByRole("button", { name: "Open vault" }));
-    await user.click(
-      screen.getByRole("button", { name: "Review identity migration" }),
-    );
-
-    const dialog = await screen.findByRole("dialog", {
-      name: "Add permanent note identities",
-    });
-    expect(dialog).toBeInTheDocument();
-    expect(within(dialog).getByText("Legacy.md")).toBeInTheDocument();
-    expect(within(dialog).getByText(/Unsafe.md/)).toHaveTextContent(
-      "Malformed front matter",
-    );
-
-    await user.click(
-      screen.getByRole("button", { name: "Add IDs to 1 notes" }),
-    );
-
-    expect(mockedApplyIdentityMigration).toHaveBeenCalledTimes(1);
-    expect(
-      await screen.findByText("1 existing note identities added."),
-    ).toBeInTheDocument();
-    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
 
   it("shows a recoverable error when a vault note cannot be read", async () => {
@@ -1669,7 +1553,6 @@ describe("App", () => {
     mockedSelectVault.mockResolvedValue({
       files: [
         {
-          id: "01JZQ7K8P4A6F2M9V3C5T7X1BY",
           name: "Opening.md",
           parent: "Notes",
           relativePath: "Notes/Opening.md",
@@ -1690,13 +1573,11 @@ describe("App", () => {
     expect(screen.getByText("Opening Markdown…")).toBeInTheDocument();
   });
 
-  it("renames an identified note and reloads updated vault content", async () => {
+  it("renames a note and reloads updated vault content", async () => {
     const user = userEvent.setup();
-    const identity = "01JZQ7K8P4A6F2M9V3C5T7X1BY";
     mockedSelectVault.mockResolvedValue({
       files: [
         {
-          id: identity,
           name: "Old Name.md",
           parent: "Notes",
           relativePath: "Notes/Old Name.md",
@@ -1724,7 +1605,6 @@ describe("App", () => {
     mockedRescanVault.mockResolvedValue({
       files: [
         {
-          id: identity,
           name: "New Name.md",
           parent: "Writing",
           relativePath: "Writing/New Name.md",

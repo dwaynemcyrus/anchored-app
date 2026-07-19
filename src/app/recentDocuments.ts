@@ -12,7 +12,7 @@ type StoredActivity = DocumentActivity & {
 };
 
 function persistentDocumentId(documentId: string): boolean {
-  return documentId.startsWith("vault-id:");
+  return documentId.startsWith("vault-path:");
 }
 
 function validTimestamp(value: unknown): value is number {

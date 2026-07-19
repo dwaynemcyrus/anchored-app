@@ -12,7 +12,6 @@ import { CreateVaultDialog } from "./components/CreateVaultDialog";
 import { DeleteFolderDialog } from "./components/DeleteFolderDialog";
 import { FileRail } from "./components/FileRail";
 import { FolderDialog } from "./components/FolderDialog";
-import { IdentityMigrationPanel } from "./components/IdentityMigrationPanel";
 import { MoveNoteDialog } from "./components/MoveNoteDialog";
 import { NotificationCenter } from "./components/NotificationCenter";
 import { QuickOpenPalette } from "./components/QuickOpenPalette";
@@ -77,7 +76,6 @@ import {
   type NewNotificationHistoryEntry,
 } from "./notificationHistory";
 import {
-  applyIdentityMigration,
   createVault,
   createVaultFolder,
   createUntitledVaultFile,
@@ -90,7 +88,6 @@ import {
   moveVaultFileToTrash,
   moveVaultFolderToTrash,
   openRememberedVault,
-  previewIdentityMigration,
   readVaultFile,
   renameVaultFolder,
   renameVaultFile,
@@ -103,7 +100,6 @@ import {
   type RememberedVault,
   type TrashEntry,
   type VaultSnapshot,
-  type IdentityMigrationPreview,
 } from "../lib/tauri/vault";
 
 const ACTIVITY_REFRESH_INTERVAL_MS = 60_000;
@@ -116,14 +112,12 @@ type DocumentLoadState =
 
 type VaultNotice = {
   id: number;
-  identityAction: boolean;
   persistent: boolean;
   text: string;
 };
 
 type VaultNoticeOptions = {
   history?: Omit<NewNotificationHistoryEntry, "id" | "message" | "scopeId">;
-  identityAction?: boolean;
   persistent?: boolean;
 };
 
@@ -142,26 +136,10 @@ function readErrorMessage(error: unknown): string {
 
 function vaultSummaryMessage(snapshot: VaultSnapshot): string {
   const notices: string[] = [];
-  if (snapshot.warnings.addedIdentities > 0) {
-    const count = snapshot.warnings.addedIdentities;
-    notices.push(
-      `${count} new note identit${count === 1 ? "y was" : "ies were"} added.`,
-    );
-  }
-  if (snapshot.warnings.needsIdentity > 0) {
-    const count = snapshot.warnings.needsIdentity;
-    notices.push(
-      `${count} existing note${count === 1 ? " needs" : "s need"} identities.`,
-    );
-  }
-  if (snapshot.warnings.identityConflicts > 0) {
-    notices.push(
-      `${snapshot.warnings.identityConflicts} identity metadata issues detected; normal editing remains available.`,
-    );
-  }
   if (snapshot.warnings.skippedSymlinks > 0) {
+    const count = snapshot.warnings.skippedSymlinks;
     notices.push(
-      `${snapshot.warnings.skippedSymlinks} symlink entries were skipped for safety.`,
+      `${count} symlink ${count === 1 ? "entry was" : "entries were"} skipped for safety.`,
     );
   }
   return notices.join(" ");
@@ -290,13 +268,6 @@ export function App() {
       return [];
     }
   });
-  const [notesNeedingIdentity, setNotesNeedingIdentity] = useState(0);
-  const [migrationPreview, setMigrationPreview] =
-    useState<IdentityMigrationPreview | null>(null);
-  const [migrationStatus, setMigrationStatus] = useState<
-    "idle" | "previewing" | "ready" | "applying"
-  >("idle");
-  const [migrationError, setMigrationError] = useState<string | undefined>();
   const [documentLoad, setDocumentLoad] = useState<DocumentLoadState>({
     status: "idle",
   });
@@ -415,8 +386,7 @@ export function App() {
       vaultNoticeIdRef.current += 1;
       const notice = {
         id: vaultNoticeIdRef.current,
-        identityAction: options.identityAction ?? false,
-        persistent: options.persistent ?? options.identityAction ?? false,
+        persistent: options.persistent ?? false,
         text,
       };
       setVaultNotices((currentNotices) => {
@@ -693,7 +663,7 @@ export function App() {
                   name,
                   relativePath: savedDocument.relativePath,
                   saveMessage: hasNewerEdit
-                    ? "The file was created with a permanent identity. Newer local edits were kept and need to be reconciled before saving."
+                    ? "The file was created, but newer local edits still need to be reconciled before saving."
                     : hasNonUnixLineEndings(sourceAtSave)
                       ? "Saved with Unix (LF) line endings."
                       : undefined,
@@ -857,27 +827,6 @@ export function App() {
 
   const recordSnapshotEvents = useCallback(
     (snapshot: VaultSnapshot) => {
-      if (snapshot.warnings.addedIdentities > 0) {
-        addHistoryEntry(
-          `${snapshot.warnings.addedIdentities} new note identit${
-            snapshot.warnings.addedIdentities === 1 ? "y was" : "ies were"
-          } added safely.`,
-          { kind: "identity" },
-        );
-      }
-      if (snapshot.warnings.identityConflicts > 0) {
-        const count = snapshot.warnings.identityConflicts;
-        addHistoryEntry(
-          `${count} identity metadata issue${count === 1 ? "" : "s"} detected; repair is optional and normal editing remains available.`,
-          {
-            kind: "identity",
-            requiresAction: false,
-            sourceId: "vault:identity-conflicts",
-          },
-        );
-      } else {
-        resolveHistorySource("vault:identity-conflicts");
-      }
       if (snapshot.warnings.skippedSymlinks > 0) {
         addHistoryEntry(
           `${snapshot.warnings.skippedSymlinks} symlink entr${
@@ -887,7 +836,7 @@ export function App() {
         );
       }
     },
-    [addHistoryEntry, resolveHistorySource],
+    [addHistoryEntry],
   );
 
   const activateVaultSnapshot = useCallback(
@@ -901,10 +850,6 @@ export function App() {
       setVaultId(snapshot.vaultId ?? "");
       setVaultName(snapshot.name);
       setVaultSelected(true);
-      setMigrationPreview(null);
-      setMigrationStatus("idle");
-      setMigrationError(undefined);
-      setNotesNeedingIdentity(snapshot.warnings.needsIdentity);
       setDocuments(nextDocuments);
       setDocumentActivity((current) =>
         reconcileDocumentActivity(current, nextDocuments, Date.now()),
@@ -921,11 +866,7 @@ export function App() {
       setNotificationHistoryVisible(false);
       recordSnapshotEvents(snapshot);
       const summary = vaultSummaryMessage(snapshot);
-      if (summary) {
-        addVaultNotice(summary, {
-          identityAction: snapshot.warnings.needsIdentity > 0,
-        });
-      }
+      if (summary) addVaultNotice(summary);
     },
     [addVaultNotice, recordSnapshotEvents],
   );
@@ -952,14 +893,9 @@ export function App() {
         nextFolders.forEach((folder) => nextExpanded.add(folder));
         return nextExpanded;
       });
-      setNotesNeedingIdentity(snapshot.warnings.needsIdentity);
       recordSnapshotEvents(snapshot);
       const summary = vaultSummaryMessage(snapshot);
-      if (summary) {
-        addVaultNotice(summary, {
-          identityAction: snapshot.warnings.needsIdentity > 0,
-        });
-      }
+      if (summary) addVaultNotice(summary);
     },
     [addVaultNotice, recordSnapshotEvents],
   );
@@ -986,48 +922,6 @@ export function App() {
       rescanInFlightRef.current = false;
     }
   }, [addHistoryEntry, addVaultNotice, adoptVaultSnapshot, vaultSelected]);
-
-  async function reviewIdentityMigration() {
-    setMigrationStatus("previewing");
-    setMigrationError(undefined);
-    try {
-      setMigrationPreview(await previewIdentityMigration());
-      setMigrationStatus("ready");
-    } catch (error) {
-      const message = readErrorMessage(error);
-      setMigrationError(message);
-      addVaultNotice(message, { persistent: true });
-      addHistoryEntry("Identity migration could not be reviewed.", {
-        kind: "error",
-      });
-      setMigrationStatus("idle");
-    }
-  }
-
-  async function confirmIdentityMigration() {
-    if (!migrationPreview) return;
-    setMigrationStatus("applying");
-    setMigrationError(undefined);
-    try {
-      const result = await applyIdentityMigration();
-      adoptVaultSnapshot(result.snapshot);
-      const message = `${result.migrated} existing note identities added.${
-        result.skipped > 0
-          ? ` ${result.skipped} changed notes were skipped.`
-          : ""
-      }`;
-      addVaultNotice(message, { history: { kind: "identity" } });
-      setMigrationPreview(null);
-      setMigrationStatus("idle");
-    } catch (error) {
-      const message = readErrorMessage(error);
-      setMigrationError(message);
-      addHistoryEntry("Identity migration could not be completed.", {
-        kind: "error",
-      });
-      setMigrationStatus("ready");
-    }
-  }
 
   useEffect(() => {
     try {
@@ -1321,7 +1215,6 @@ export function App() {
   }
 
   async function finishRelocatedDocument(
-    documentId: string,
     outcome: {
       relativePath: string;
       updatedFiles: number;
@@ -1339,9 +1232,10 @@ export function App() {
     const localDrafts = documentsRef.current.filter(
       (candidate) => !candidate.relativePath,
     );
+    const relocatedDocumentId = `vault-path:${outcome.relativePath}`;
     const nextDocuments = [
       ...documentsFromVault(snapshot).map((candidate) =>
-        candidate.id === documentId
+        candidate.relativePath === outcome.relativePath
           ? {
               ...candidate,
               savedSourceText: openedDocument.content,
@@ -1365,8 +1259,7 @@ export function App() {
       nextFolders.forEach((folder) => nextExpanded.add(folder));
       return nextExpanded;
     });
-    setNotesNeedingIdentity(snapshot.warnings.needsIdentity);
-    setActiveDocumentId(documentId);
+    setActiveDocumentId(relocatedDocumentId);
     setDocumentLoad({ status: "idle" });
     addVaultNotice(message, { history: { kind: "rename" } });
   }
@@ -1375,7 +1268,7 @@ export function App() {
     const document = documentsRef.current.find(
       (candidate) => candidate.id === documentId,
     );
-    if (!document?.relativePath || !document.id.startsWith("vault-id:")) {
+    if (!document?.relativePath || document.isMarkdown === false) {
       return;
     }
     if (hasUnfinishedEdits()) {
@@ -1396,7 +1289,7 @@ export function App() {
       } updated across ${outcome.updatedFiles} note${
         outcome.updatedFiles === 1 ? "" : "s"
       }.`;
-      await finishRelocatedDocument(documentId, outcome, message);
+      await finishRelocatedDocument(outcome, message);
     } catch (error) {
       addVaultNotice(
         renameCompleted
@@ -1422,7 +1315,7 @@ export function App() {
     const document = documentsRef.current.find(
       (candidate) => candidate.id === documentId,
     );
-    if (!document?.relativePath || !document.id.startsWith("vault-id:")) {
+    if (!document?.relativePath || document.isMarkdown === false) {
       return;
     }
     if ((document.folderPath ?? "") === destinationFolderPath) {
@@ -1447,7 +1340,7 @@ export function App() {
       } link${outcome.updatedLinks === 1 ? "" : "s"} updated across ${
         outcome.updatedFiles
       } note${outcome.updatedFiles === 1 ? "" : "s"}.`;
-      await finishRelocatedDocument(documentId, outcome, message);
+      await finishRelocatedDocument(outcome, message);
       setMoveDocumentVisible(false);
       setMoveDocumentId(undefined);
     } catch (error) {
@@ -1474,7 +1367,7 @@ export function App() {
     );
     if (
       !document?.relativePath ||
-      !document.id.startsWith("vault-id:") ||
+      document.isMarkdown === false ||
       document.saveState !== "saved" ||
       (document.sourceText !== undefined &&
         document.sourceText !== document.savedSourceText)
@@ -1993,7 +1886,7 @@ export function App() {
           onOpenMoveDocument={() => {
             if (
               activeDocument?.relativePath &&
-              activeDocument.id.startsWith("vault-id:")
+              activeDocument.isMarkdown !== false
             ) {
               setMoveDocumentId(activeDocument.id);
               setMoveDocumentVisible(true);
@@ -2043,20 +1936,6 @@ export function App() {
                   Dismiss
                 </button>
               </div>
-              {notice.identityAction &&
-              vaultSelected &&
-              notesNeedingIdentity > 0 ? (
-                <button
-                  className="vault-message__action"
-                  disabled={migrationStatus === "previewing"}
-                  type="button"
-                  onClick={() => void reviewIdentityMigration()}
-                >
-                  {migrationStatus === "previewing"
-                    ? "Reviewing…"
-                    : "Review identity migration"}
-                </button>
-              ) : null}
             </div>
           ))}
           {activeDocument?.saveMessage ? (
@@ -2270,19 +2149,6 @@ export function App() {
           onClose={() => setVaultSearchVisible(false)}
           onOpen={(relativePath) => void openVaultSearchResult(relativePath)}
           onQueryChange={setVaultSearchQuery}
-        />
-      ) : null}
-      {migrationPreview ? (
-        <IdentityMigrationPanel
-          error={migrationError}
-          preview={migrationPreview}
-          status={migrationStatus === "applying" ? "applying" : "ready"}
-          onApply={() => void confirmIdentityMigration()}
-          onClose={() => {
-            setMigrationPreview(null);
-            setMigrationStatus("idle");
-            setMigrationError(undefined);
-          }}
         />
       ) : null}
       <StatusBar

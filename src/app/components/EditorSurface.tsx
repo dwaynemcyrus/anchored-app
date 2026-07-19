@@ -122,11 +122,6 @@ export function EditorSurface({
 
   const frontMatter = [
     "---",
-    `id: ${
-      document.id.startsWith("draft-")
-        ? "Pending save"
-        : "01JZQ7K8P4A6F2M9V3C5T7X1BY"
-    }`,
     `aliases: [${document.aliases.join(", ")}]`,
     `tags: [${document.tags.join(", ")}]`,
     "---",
@@ -141,7 +136,7 @@ export function EditorSurface({
           <span>{document.name}</span>
         </span>
         <div className="editor-surface__actions">
-          {document.relativePath && document.id.startsWith("vault-id:") ? (
+          {document.relativePath ? (
             <button
               aria-label={`Move ${document.name}`}
               className="editor-surface__action"
@@ -158,7 +153,7 @@ export function EditorSurface({
               {moving ? "Moving…" : "Move"}
             </button>
           ) : null}
-          {document.relativePath && document.id.startsWith("vault-id:") ? (
+          {document.relativePath ? (
             <button
               aria-label={`Rename ${document.name}`}
               className="editor-surface__action"
@@ -199,7 +194,7 @@ export function EditorSurface({
               Save as
             </button>
           ) : null}
-          {document.relativePath && document.id.startsWith("vault-id:") ? (
+          {document.relativePath ? (
             <button
               aria-label={`Move ${document.name} to Trash`}
               className="editor-surface__action"

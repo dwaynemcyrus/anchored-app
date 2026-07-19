@@ -52,7 +52,7 @@ export function documentsFromVault(
   snapshot: VaultSnapshot,
 ): AnchoredDocument[] {
   const notes = snapshot.files.map((file) => ({
-    id: file.id ? `vault-id:${file.id}` : `vault-path:${file.relativePath}`,
+    id: `vault-path:${file.relativePath}`,
     name: file.name,
     outgoingLinks: file.outgoingLinks ?? [],
     folder: file.parent || snapshot.name,
@@ -91,20 +91,14 @@ export function mergeDocumentsFromVault(
       document.relativePath ? [[document.relativePath, document]] : [],
     ),
   );
-  const currentById = new Map(
-    currentDocuments.map((document) => [document.id, document]),
-  );
   const scannedPaths = new Set(
     [...snapshot.files, ...(snapshot.assets ?? [])].map(
       (file) => file.relativePath,
     ),
   );
   const incomingDocuments = documentsFromVault(snapshot);
-  const scannedIds = new Set(incomingDocuments.map((document) => document.id));
   const scannedDocuments = incomingDocuments.map((document) => {
-    const current =
-      currentById.get(document.id) ??
-      currentByPath.get(document.relativePath as string);
+    const current = currentByPath.get(document.relativePath as string);
     return current
       ? {
           ...current,
@@ -122,8 +116,7 @@ export function mergeDocumentsFromVault(
   const localOrDirtyMissingDocuments = currentDocuments.filter(
     (document) =>
       !document.relativePath ||
-      (!scannedIds.has(document.id) &&
-        !scannedPaths.has(document.relativePath) &&
+      (!scannedPaths.has(document.relativePath) &&
         document.saveState !== undefined &&
         document.saveState !== "saved"),
   );

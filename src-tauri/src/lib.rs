@@ -29,9 +29,7 @@ pub fn run() {
             vault::create_vault_file,
             vault::create_untitled_vault_file,
             vault::move_vault_file_to_folder,
-            vault::rename_vault_file,
-            vault::preview_identity_migration,
-            vault::apply_identity_migration
+            vault::rename_vault_file
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

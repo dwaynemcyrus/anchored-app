@@ -36,12 +36,12 @@ function note(id: string, relativePath?: string): AnchoredDocument {
 }
 
 describe("recent document activity", () => {
-  it("ignores malformed, obsolete, and path-based stored entries", () => {
+  it("loads path-based entries and ignores malformed or obsolete data", () => {
     const storage = new MemoryStorage();
     storage.value = JSON.stringify({
       entries: [
         {
-          documentId: "vault-id:valid",
+          documentId: "vault-path:valid",
           firstSeenAt: 10,
           lastActiveAt: 20,
         },
@@ -55,7 +55,8 @@ describe("recent document activity", () => {
     });
 
     expect(Array.from(loadDocumentActivity(storage))).toEqual([
-      ["vault-id:valid", { firstSeenAt: 10, lastActiveAt: 20 }],
+      ["vault-path:valid", { firstSeenAt: 10, lastActiveAt: 20 }],
+      ["vault-path:Notes/Private.md", { firstSeenAt: 10, lastActiveAt: 20 }],
     ]);
     storage.value = JSON.stringify({ entries: [], version: 0 });
     expect(loadDocumentActivity(storage).size).toBe(0);
@@ -66,32 +67,32 @@ describe("recent document activity", () => {
   it("records first-seen time once and includes Finder-added files", () => {
     const initial = registerFirstSeenDocuments(
       new Map(),
-      [note("vault-id:one", "Notes/One.md"), note("draft-one")],
+      [note("vault-path:one", "Notes/One.md"), note("draft-one")],
       100,
     );
     const rescanned = registerFirstSeenDocuments(
       initial,
       [
-        note("vault-id:one", "Writing/One.md"),
-        note("vault-id:two", "Notes/Two.md"),
+        note("vault-path:one", "Writing/One.md"),
+        note("vault-path:two", "Notes/Two.md"),
       ],
       200,
     );
 
     expect(Array.from(rescanned)).toEqual([
-      ["vault-id:one", { firstSeenAt: 100, lastActiveAt: 0 }],
-      ["vault-id:two", { firstSeenAt: 200, lastActiveAt: 0 }],
+      ["vault-path:one", { firstSeenAt: 100, lastActiveAt: 0 }],
+      ["vault-path:two", { firstSeenAt: 200, lastActiveAt: 0 }],
     ]);
   });
 
   it("marks opened, edited, or created notes as active without moving first seen", () => {
     const activity = markDocumentActive(
-      new Map([["vault-id:one", { firstSeenAt: 10, lastActiveAt: 20 }]]),
-      "vault-id:one",
+      new Map([["vault-path:one", { firstSeenAt: 10, lastActiveAt: 20 }]]),
+      "vault-path:one",
       30,
     );
 
-    expect(activity.get("vault-id:one")).toEqual({
+    expect(activity.get("vault-path:one")).toEqual({
       firstSeenAt: 10,
       lastActiveAt: 30,
     });
@@ -99,8 +100,8 @@ describe("recent document activity", () => {
 
   it("drops stale activity while registering newly discovered notes", () => {
     const activity = new Map([
-      ["vault-id:kept", { firstSeenAt: 10, lastActiveAt: 20 }],
-      ["vault-id:missing", { firstSeenAt: 5, lastActiveAt: 30 }],
+      ["vault-path:kept", { firstSeenAt: 10, lastActiveAt: 20 }],
+      ["vault-path:missing", { firstSeenAt: 5, lastActiveAt: 30 }],
     ]);
 
     expect(
@@ -108,23 +109,23 @@ describe("recent document activity", () => {
         reconcileDocumentActivity(
           activity,
           [
-            note("vault-id:kept", "Writing/Kept.md"),
-            note("vault-id:new", "Notes/New.md"),
+            note("vault-path:kept", "Writing/Kept.md"),
+            note("vault-path:new", "Notes/New.md"),
           ],
           40,
         ),
       ),
     ).toEqual([
-      ["vault-id:kept", { firstSeenAt: 10, lastActiveAt: 20 }],
-      ["vault-id:new", { firstSeenAt: 40, lastActiveAt: 0 }],
+      ["vault-path:kept", { firstSeenAt: 10, lastActiveAt: 20 }],
+      ["vault-path:new", { firstSeenAt: 40, lastActiveAt: 0 }],
     ]);
   });
 
-  it("persists only bounded stable identifiers without filenames or paths", () => {
+  it("persists a bounded set of path-based runtime keys", () => {
     const storage = new MemoryStorage();
     const activity = new Map(
       Array.from({ length: 520 }, (_, index) => [
-        `vault-id:${index}`,
+        `vault-path:${index}`,
         { firstSeenAt: index, lastActiveAt: index },
       ]),
     );
@@ -135,9 +136,9 @@ describe("recent document activity", () => {
 
     saveDocumentActivity(storage, activity);
 
-    expect(storage.value).not.toContain("Private.md");
+    expect(storage.value).toContain("vault-path:Notes/Private.md");
     expect(loadDocumentActivity(storage).size).toBe(500);
-    expect(loadDocumentActivity(storage).has("vault-id:519")).toBe(true);
-    expect(loadDocumentActivity(storage).has("vault-id:0")).toBe(false);
+    expect(loadDocumentActivity(storage).has("vault-path:519")).toBe(true);
+    expect(loadDocumentActivity(storage).has("vault-path:0")).toBe(false);
   });
 });

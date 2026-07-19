@@ -2,7 +2,6 @@ import { invoke } from "@tauri-apps/api/core";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
-  applyIdentityMigration,
   createVault,
   createVaultFolder,
   createVaultFile,
@@ -13,7 +12,6 @@ import {
   moveVaultFileToFolder,
   moveVaultFileToTrash,
   openRememberedVault,
-  previewIdentityMigration,
   readVaultFile,
   renameVaultFolder,
   renameVaultFile,
@@ -44,9 +42,6 @@ const snapshot: VaultSnapshot = {
   name: "Personal",
   vaultId: "01JZQ7K8P4A6F2M9V3C5T7X1BY",
   warnings: {
-    addedIdentities: 0,
-    identityConflicts: 0,
-    needsIdentity: 0,
     skippedNonUtf8Paths: 0,
     skippedSymlinks: 0,
   },
@@ -280,26 +275,5 @@ describe("vault bridge", () => {
       destinationFolder: "Archive",
       relativePath: "Notes/Leadership.md",
     });
-  });
-
-  it("previews and applies the Rust-held identity migration plan", async () => {
-    const preview = { eligibleFiles: ["Legacy.md"], issues: [] };
-    mockedInvoke.mockResolvedValueOnce(preview).mockResolvedValueOnce({
-      migrated: 1,
-      skipped: 0,
-      snapshot,
-    });
-
-    await expect(previewIdentityMigration()).resolves.toEqual(preview);
-    await expect(applyIdentityMigration()).resolves.toEqual({
-      migrated: 1,
-      skipped: 0,
-      snapshot,
-    });
-    expect(mockedInvoke).toHaveBeenNthCalledWith(
-      1,
-      "preview_identity_migration",
-    );
-    expect(mockedInvoke).toHaveBeenNthCalledWith(2, "apply_identity_migration");
   });
 });

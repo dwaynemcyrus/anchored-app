@@ -107,8 +107,8 @@ function documentMatchesQuery(
 
 function documentIsDraggable(document: AnchoredDocument): boolean {
   return (
-    document.id.startsWith("vault-id:") &&
     Boolean(document.relativePath) &&
+    document.isMarkdown !== false &&
     document.saveState === "saved"
   );
 }
