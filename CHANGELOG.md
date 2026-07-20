@@ -12,6 +12,7 @@ Git commit. The format follows [Keep a Changelog], and releases follow
   with the existing safe, link-preserving rename transaction.
 - Inline renaming now saves pending edits in the active untitled note first,
   instead of leaving the filename action blocked while the draft is unsaved.
+- The Markdown editor now uses a centered 64-character reading column.
 - The file rail now handles large vaults with stable browser-native scrolling,
   keeps selection separate from folder expansion, supports keyboard navigation
   and context menus, shows Lucide file-type icons, and recognizes common

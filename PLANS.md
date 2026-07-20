@@ -1564,6 +1564,8 @@ Every future large plan must identify:
 - 2026-07-20: Inline rename now saves pending edits in the active untitled
   note before renaming, including edits made while the initial file creation
   is completing. A regression test covers the save-then-rename sequence.
+- 2026-07-20: Centered the Markdown editor on a 64-character reading column
+  across desktop and narrow layouts. Frontend formatting and build checks pass.
 
 ## Completion
 
