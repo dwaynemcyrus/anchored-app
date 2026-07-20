@@ -21,6 +21,7 @@ import {
   frontMatterEditorDecorations,
   markdownEditorDecorations,
 } from "../markdown/editorDecorations";
+import { markdownBodyStartOffset } from "../markdown/source";
 import {
   anchoredMarkdownLanguage,
   anchoredMarkdownSyntaxHighlighting,
@@ -48,6 +49,7 @@ type MarkdownEditorProps = {
   onPreview: () => void;
   onSave: () => void;
   onSaveAs: () => void;
+  placeCursorAfterFrontMatter?: boolean;
 };
 
 export default function MarkdownEditor({
@@ -64,6 +66,7 @@ export default function MarkdownEditor({
   onPreview,
   onSave,
   onSaveAs,
+  placeCursorAfterFrontMatter = false,
 }: MarkdownEditorProps) {
   const hostRef = useRef<HTMLDivElement>(null);
   const editorRef = useRef<EditorView | null>(null);
@@ -77,6 +80,8 @@ export default function MarkdownEditor({
   const onCursorPositionRef = useRef(onCursorPosition);
   const syncingValueRef = useRef(false);
   const composingRef = useRef(false);
+  const userEditedRef = useRef(false);
+  const initialCursorPlacedRef = useRef(false);
   const localValueHistoryRef = useRef(new Set([value]));
 
   valueRef.current = value;
@@ -258,6 +263,7 @@ export default function MarkdownEditor({
             }
             if (update.docChanged) {
               if (!syncingValueRef.current) {
+                userEditedRef.current = true;
                 const nextValue = update.state.doc.toString();
                 localValueHistoryRef.current.add(nextValue);
                 if (localValueHistoryRef.current.size > 64) {
@@ -288,6 +294,26 @@ export default function MarkdownEditor({
       view.destroy();
     };
   }, [autoFocus, documentId, label]);
+
+  useEffect(() => {
+    const view = editorRef.current;
+    if (
+      !view ||
+      !autoFocus ||
+      !placeCursorAfterFrontMatter ||
+      initialCursorPlacedRef.current ||
+      userEditedRef.current
+    ) {
+      return;
+    }
+
+    const bodyStart = markdownBodyStartOffset(value);
+    if (bodyStart === null) return;
+
+    view.dispatch({ selection: { anchor: bodyStart } });
+    initialCursorPlacedRef.current = true;
+    view.focus();
+  }, [autoFocus, placeCursorAfterFrontMatter, value]);
 
   useEffect(() => {
     const view = editorRef.current;

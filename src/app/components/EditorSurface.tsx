@@ -413,7 +413,9 @@ export function EditorSurface({
               }
             >
               <MarkdownEditor
-                autoFocus={focusEditorOnOpen}
+                autoFocus={
+                  focusEditorOnOpen || document.id.startsWith("draft-")
+                }
                 documentId={document.id}
                 editorFontSize={markdownSettings.editorFontSize}
                 findRequest={findRequest}
@@ -426,6 +428,7 @@ export function EditorSurface({
                 onPreview={() => setPreviewVisible(true)}
                 onSave={onSaveDocument}
                 onSaveAs={onSaveDocumentAs}
+                placeCursorAfterFrontMatter={document.id.startsWith("draft-")}
               />
             </Suspense>
           )

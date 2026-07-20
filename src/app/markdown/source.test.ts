@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   hasNonUnixLineEndings,
+  markdownBodyStartOffset,
   mergeCreatedMarkdownSource,
   normalizeMarkdownLineEndings,
 } from "./source";
@@ -28,5 +29,12 @@ describe("Markdown source policies", () => {
         "# Draft\nUpdated",
       ),
     ).toBe(`${persisted}# Draft\nUpdated`);
+  });
+
+  it("places new-note editing after front matter", () => {
+    const source = "---\ncreated_at: now\n---\n# Heading";
+
+    expect(markdownBodyStartOffset(source)).toBe(source.indexOf("# Heading"));
+    expect(markdownBodyStartOffset("# Heading")).toBeNull();
   });
 });

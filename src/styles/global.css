@@ -736,7 +736,7 @@ input:focus-visible,
 }
 
 .document {
-  width: min(calc(100% - 88px), 64ch);
+  width: min(calc(100% - 88px), 48ch);
   min-height: calc(100% - 52px);
   margin: 0 auto;
   padding: 28px 0 160px;
@@ -1862,7 +1862,7 @@ input:focus-visible,
   }
 
   .document {
-    width: min(calc(100% - 56px), 64ch);
+    width: min(calc(100% - 56px), 48ch);
     margin-right: auto;
     margin-left: auto;
   }
