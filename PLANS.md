@@ -1561,6 +1561,9 @@ Every future large plan must identify:
   the existing atomic rename transaction continues to update supported links.
   Frontend and Rust tests, formatting, lint, type-check, and production build
   pass.
+- 2026-07-20: Inline rename now saves pending edits in the active untitled
+  note before renaming, including edits made while the initial file creation
+  is completing. A regression test covers the save-then-rename sequence.
 
 ## Completion
 

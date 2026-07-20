@@ -1401,13 +1401,18 @@ export function App() {
   }
 
   async function renameDocument(documentId: string, name: string) {
-    const document = documentsRef.current.find(
+    let document = documentsRef.current.find(
       (candidate) => candidate.id === documentId,
     );
     if (!document?.relativePath || document.isMarkdown === false) {
       return;
     }
-    if (hasUnfinishedEdits()) {
+    let relativePath = document.relativePath;
+    const otherDocumentsHaveUnfinishedEdits = documentsRef.current.some(
+      (candidate) =>
+        candidate.id !== documentId && documentHasUnfinishedEdits(candidate),
+    );
+    if (otherDocumentsHaveUnfinishedEdits) {
       addVaultNotice("Save all open note changes before renaming a note.");
       return;
     }
@@ -1419,9 +1424,29 @@ export function App() {
     let renameCompleted = false;
     setRenamingDocumentId(documentId);
     try {
+      if (documentHasUnfinishedEdits(document)) {
+        await saveDocument(documentId);
+        await new Promise<void>((resolve) => {
+          window.setTimeout(resolve, 0);
+        });
+        document = documentsRef.current.find(
+          (candidate) => candidate.id === documentId,
+        );
+        if (
+          !document ||
+          documentHasUnfinishedEdits(document) ||
+          !document.relativePath
+        ) {
+          addVaultNotice("Save the note successfully before renaming it.", {
+            persistent: true,
+          });
+          return;
+        }
+        relativePath = document.relativePath;
+      }
       const outcome = await renameVaultFile({
         name: name.trim(),
-        relativePath: document.relativePath,
+        relativePath,
       });
       if (!outcome) return;
       renameCompleted = true;

@@ -10,6 +10,8 @@ Git commit. The format follows [Keep a Changelog], and releases follow
 
 - Note filenames in the editor breadcrumb can now be edited inline and saved
   with the existing safe, link-preserving rename transaction.
+- Inline renaming now saves pending edits in the active untitled note first,
+  instead of leaving the filename action blocked while the draft is unsaved.
 - The file rail now handles large vaults with stable browser-native scrolling,
   keeps selection separate from folder expansion, supports keyboard navigation
   and context menus, shows Lucide file-type icons, and recognizes common

@@ -231,7 +231,7 @@ export function EditorSurface({
                 lifecycleChanging ||
                 renaming ||
                 trashing ||
-                document.saveState !== "saved" ||
+                document.saveState === "saving" ||
                 loadState.status === "loading"
               }
               type="button"
@@ -251,7 +251,7 @@ export function EditorSurface({
                 lifecycleChanging ||
                 renaming ||
                 trashing ||
-                document.saveState !== "saved" ||
+                document.saveState === "saving" ||
                 loadState.status === "loading"
               }
               type="button"

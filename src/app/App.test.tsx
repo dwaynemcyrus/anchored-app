@@ -1570,6 +1570,77 @@ describe("App", () => {
     expect(mockedSaveVaultFile.mock.calls[0][0].content).toContain("# Draft");
   });
 
+  it("saves an untitled draft before inline renaming", async () => {
+    const user = userEvent.setup();
+    mockedSelectVault.mockResolvedValue({
+      files: [],
+      name: "My Vault",
+      warnings: noWarnings,
+    });
+    mockedCreateUntitledVaultFile.mockResolvedValue({
+      content: "",
+      relativePath: "Untitled.md",
+      sizeBytes: 0,
+    });
+    mockedSaveVaultFile.mockImplementation(async (request) => ({
+      content: request.content,
+      relativePath: request.relativePath,
+      sizeBytes: request.content.length,
+    }));
+    mockedRenameVaultFile.mockResolvedValue({
+      relativePath: "Renamed.md",
+      updatedFiles: 0,
+      updatedLinks: 0,
+    });
+    mockedRescanVault.mockResolvedValue({
+      files: [
+        {
+          name: "Renamed.md",
+          parent: "",
+          relativePath: "Renamed.md",
+        },
+      ],
+      name: "My Vault",
+      warnings: noWarnings,
+    });
+    mockedReadVaultFile.mockResolvedValue({
+      content: "# Draft",
+      relativePath: "Renamed.md",
+      sizeBytes: 7,
+    });
+    render(<App />);
+
+    await user.click(screen.getByRole("button", { name: "Open vault" }));
+    await user.click(screen.getAllByRole("button", { name: "New note" })[0]);
+    const editor = await screen.findByRole("textbox", {
+      name: "Untitled.md Markdown editor",
+    });
+    await user.click(editor);
+    await user.keyboard("# Draft");
+    await user.click(
+      screen.getByRole("button", { name: "Edit filename: Untitled.md" }),
+    );
+    const filenameInput = screen.getByRole("textbox", {
+      name: "Edit filename: Untitled.md",
+    });
+    await user.clear(filenameInput);
+    await user.type(filenameInput, "Renamed.md");
+    await user.keyboard("{Enter}");
+
+    await waitFor(() =>
+      expect(mockedRenameVaultFile).toHaveBeenCalledWith({
+        name: "Renamed.md",
+        relativePath: "Untitled.md",
+      }),
+    );
+    expect(mockedSaveVaultFile).toHaveBeenCalledWith(
+      expect.objectContaining({
+        content: "# Draft",
+        relativePath: "Untitled.md",
+      }),
+    );
+  });
+
   it("finds text within the active Markdown note with Command-F", async () => {
     const user = userEvent.setup();
     mockedSelectVault.mockResolvedValue({
