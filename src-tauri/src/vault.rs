@@ -9,7 +9,7 @@ use std::{
     },
 };
 
-use chrono::Utc;
+use chrono::{Duration, Utc};
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, Manager, State, WebviewUrl, WebviewWindowBuilder};
 use tauri_plugin_dialog::DialogExt;
@@ -1023,12 +1023,12 @@ fn create_untitled_markdown_file(
     content: &str,
 ) -> Result<VaultDocument, VaultError> {
     let parent = resolve_vault_directory(root, parent_path.unwrap_or_default())?;
-    for count in 1..=10_000 {
-        let name = if count == 1 {
-            "Untitled.md".to_owned()
-        } else {
-            format!("Untitled {count}.md")
-        };
+    let timestamp = Utc::now();
+    for offset in 0..=10_000 {
+        let name = format!(
+            "{}.md",
+            (timestamp + Duration::milliseconds(offset)).format("%Y%m%d%H%M%S%3f")
+        );
         let destination = parent.join(name);
         match create_markdown_file(root, &destination, content) {
             Ok(document) => return Ok(document),
@@ -1038,7 +1038,7 @@ fn create_untitled_markdown_file(
     }
 
     Err(VaultError::state(
-        "Anchored could not find an available Untitled filename in this vault.",
+        "Anchored could not find an available timestamp filename in this vault.",
     ))
 }
 
@@ -3565,7 +3565,7 @@ mod tests {
     }
 
     #[test]
-    fn creates_a_numbered_untitled_file_without_replacing_existing_notes() {
+    fn creates_a_timestamped_file_without_replacing_existing_notes() {
         let vault = tempdir().expect("create fixture vault");
         fs::write(vault.path().join("Untitled.md"), "# First\n").expect("write first note");
         fs::write(vault.path().join("Untitled 2.md"), "# Second\n").expect("write second note");
@@ -3573,7 +3573,12 @@ mod tests {
         let document = create_untitled_markdown_file(vault.path(), None, "")
             .expect("create numbered untitled note");
 
-        assert_eq!(document.relative_path, "Untitled 3.md");
+        let filename = document
+            .relative_path
+            .strip_suffix(".md")
+            .expect("timestamped Markdown filename");
+        assert_eq!(filename.len(), 17);
+        assert!(filename.bytes().all(|byte| byte.is_ascii_digit()));
         assert!(document.content.contains("created_at:"));
         assert!(document.created_at.is_some());
         assert_eq!(

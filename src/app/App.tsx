@@ -631,7 +631,7 @@ export function App() {
       addVaultNotice("Open a vault before creating a note.");
       return;
     }
-    const nextDocument = createUntitledDocument(documentsRef.current);
+    const nextDocument = createUntitledDocument();
     const nextDocuments = [...documentsRef.current, nextDocument];
 
     loadRequestRef.current += 1;

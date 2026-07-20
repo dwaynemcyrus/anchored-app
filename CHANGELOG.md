@@ -15,6 +15,8 @@ Git commit. The format follows [Keep a Changelog], and releases follow
 - The Markdown editor now uses a centered 48-character reading column.
 - New notes now focus the editor automatically and place the caret on the first
   editable line after front matter is added.
+- New notes now use collision-safe UTC timestamp filenames with millisecond
+  precision, such as `20260219233541123.md`.
 - The file rail now handles large vaults with stable browser-native scrolling,
   keeps selection separate from folder expansion, supports keyboard navigation
   and context menus, shows Lucide file-type icons, and recognizes common
