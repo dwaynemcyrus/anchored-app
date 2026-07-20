@@ -1510,7 +1510,9 @@ describe("App", () => {
     expect(mockedCreateUntitledVaultFile).toHaveBeenCalledWith("");
     expect(screen.getByText("Saving…")).toBeInTheDocument();
     expect(
-      screen.getByRole("textbox", { name: "Untitled.md Markdown editor" }),
+      await screen.findByRole("textbox", {
+        name: "Untitled.md Markdown editor",
+      }),
     ).toHaveFocus();
 
     await act(async () => {

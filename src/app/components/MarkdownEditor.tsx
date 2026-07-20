@@ -97,6 +97,10 @@ export default function MarkdownEditor({
     const host = hostRef.current;
     if (!host) return;
 
+    userEditedRef.current = false;
+    initialCursorPlacedRef.current = false;
+    localValueHistoryRef.current = new Set([valueRef.current]);
+
     function completeWikilink(
       context: CompletionContext,
     ): CompletionResult | null {
@@ -297,26 +301,6 @@ export default function MarkdownEditor({
 
   useEffect(() => {
     const view = editorRef.current;
-    if (
-      !view ||
-      !autoFocus ||
-      !placeCursorAfterFrontMatter ||
-      initialCursorPlacedRef.current ||
-      userEditedRef.current
-    ) {
-      return;
-    }
-
-    const bodyStart = markdownBodyStartOffset(value);
-    if (bodyStart === null) return;
-
-    view.dispatch({ selection: { anchor: bodyStart } });
-    initialCursorPlacedRef.current = true;
-    view.focus();
-  }, [autoFocus, placeCursorAfterFrontMatter, value]);
-
-  useEffect(() => {
-    const view = editorRef.current;
     if (!view) return;
 
     valueRef.current = value;
@@ -339,6 +323,27 @@ export default function MarkdownEditor({
     localValueHistoryRef.current.clear();
     localValueHistoryRef.current.add(value);
   }, [value]);
+
+  useEffect(() => {
+    const view = editorRef.current;
+    if (
+      !view ||
+      !autoFocus ||
+      !placeCursorAfterFrontMatter ||
+      initialCursorPlacedRef.current ||
+      userEditedRef.current ||
+      view.state.doc.toString() !== value
+    ) {
+      return;
+    }
+
+    const bodyStart = markdownBodyStartOffset(value);
+    if (bodyStart === null || bodyStart > view.state.doc.length) return;
+
+    view.dispatch({ selection: { anchor: bodyStart } });
+    initialCursorPlacedRef.current = true;
+    view.focus();
+  }, [autoFocus, placeCursorAfterFrontMatter, value]);
 
   useEffect(() => {
     if (findRequest <= 0 || !editorRef.current) return;
