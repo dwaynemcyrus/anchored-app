@@ -5,7 +5,7 @@ import {
 } from "./types";
 
 const STORAGE_KEY = "anchored.markdown-settings.v1";
-const STORAGE_VERSION = 2;
+const STORAGE_VERSION = 3;
 
 type SettingsStorage = Pick<Storage, "getItem" | "setItem">;
 
@@ -21,7 +21,9 @@ function parseSettings(value: unknown): MarkdownSettings | null {
   if (!value || typeof value !== "object") return null;
   const candidate = value as Partial<MarkdownSettings> & { version?: unknown };
   if (
-    (candidate.version !== 1 && candidate.version !== STORAGE_VERSION) ||
+    (candidate.version !== 1 &&
+      candidate.version !== 2 &&
+      candidate.version !== STORAGE_VERSION) ||
     !isBoolean(candidate.autoLinkUrls) ||
     !isBoolean(candidate.emoji) ||
     !isBoolean(candidate.mermaid) ||
@@ -41,6 +43,10 @@ function parseSettings(value: unknown): MarkdownSettings | null {
     editorFontSize,
     emoji: candidate.emoji,
     mermaid: candidate.mermaid,
+    showFileExtensions:
+      candidate.version === STORAGE_VERSION
+        ? candidate.showFileExtensions === true
+        : DEFAULT_MARKDOWN_SETTINGS.showFileExtensions,
     smartTypography: candidate.smartTypography,
     syntaxHighlighting: candidate.syntaxHighlighting,
   };

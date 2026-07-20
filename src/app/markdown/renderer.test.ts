@@ -110,6 +110,7 @@ describe("Anchored Markdown renderer", () => {
       editorFontSize: 14,
       emoji: false,
       mermaid: false,
+      showFileExtensions: false,
       smartTypography: false,
       syntaxHighlighting: false,
     });
@@ -123,6 +124,7 @@ describe("Anchored Markdown renderer", () => {
         editorFontSize: 14,
         emoji: true,
         mermaid: true,
+        showFileExtensions: false,
         smartTypography: true,
         syntaxHighlighting: false,
       }).html,

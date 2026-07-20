@@ -104,6 +104,19 @@ describe("App", () => {
 
   beforeEach(() => {
     window.localStorage.clear();
+    window.localStorage.setItem(
+      "anchored.markdown-settings.v1",
+      JSON.stringify({
+        version: 3,
+        autoLinkUrls: true,
+        editorFontSize: 14,
+        emoji: true,
+        mermaid: true,
+        showFileExtensions: true,
+        smartTypography: true,
+        syntaxHighlighting: true,
+      }),
+    );
     mockedCreateVault.mockReset();
     mockedCreateVaultFolder.mockReset();
     mockedCreateUntitledVaultFile.mockReset();

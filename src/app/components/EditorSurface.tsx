@@ -9,6 +9,7 @@ import {
 } from "react";
 
 import type { AnchoredDocument } from "../documents";
+import { displayFileName } from "../fileTypes";
 import type { WikilinkCandidate } from "../linkCandidates";
 import type { MarkdownSettings } from "../markdown/types";
 import { Backlinks } from "./Backlinks";
@@ -86,6 +87,7 @@ export function EditorSurface({
   const [draftName, setDraftName] = useState(document?.name ?? "");
   const nameInputRef = useRef<HTMLInputElement>(null);
   const submittedNameRef = useRef<string | undefined>(undefined);
+  const documentName = document?.name;
 
   useEffect(() => {
     const showPreview = () => setPreviewVisible(true);
@@ -102,10 +104,14 @@ export function EditorSurface({
   }, []);
 
   useEffect(() => {
-    setDraftName(document?.name ?? "");
+    setDraftName(
+      documentName
+        ? displayFileName(documentName, markdownSettings.showFileExtensions)
+        : "",
+    );
     setEditingName(false);
     submittedNameRef.current = undefined;
-  }, [document?.id, document?.name]);
+  }, [document?.id, documentName, markdownSettings.showFileExtensions]);
 
   useEffect(() => {
     if (!editingName) return;
@@ -117,7 +123,9 @@ export function EditorSurface({
 
   function beginRename() {
     if (!document?.relativePath || renaming) return;
-    setDraftName(document.name);
+    setDraftName(
+      displayFileName(document.name, markdownSettings.showFileExtensions),
+    );
     submittedNameRef.current = undefined;
     setEditingName(true);
   }
@@ -138,6 +146,9 @@ export function EditorSurface({
     submittedNameRef.current = undefined;
   }
   const [focusEditorOnOpen, setFocusEditorOnOpen] = useState(false);
+  const displayName = document
+    ? displayFileName(document.name, markdownSettings.showFileExtensions)
+    : "";
   if (!document) {
     return (
       <main className="editor-surface">
@@ -179,7 +190,7 @@ export function EditorSurface({
       <main className="editor-surface">
         <header className="editor-surface__header">{vaultName}</header>
         <section className="document document--empty">
-          <h1>{document.name}</h1>
+          <h1>{displayName}</h1>
           <p>
             This file type is recognized in the tree but is not editable in
             Anchored yet.
@@ -208,7 +219,7 @@ export function EditorSurface({
             <form onSubmit={submitRename}>
               <input
                 ref={nameInputRef}
-                aria-label={`Edit filename: ${document.name}`}
+                aria-label={`Edit filename: ${displayName}`}
                 autoComplete="off"
                 className="editor-surface__filename-input"
                 disabled={renaming}
@@ -224,7 +235,7 @@ export function EditorSurface({
             </form>
           ) : (
             <button
-              aria-label={`Edit filename: ${document.name}`}
+              aria-label={`Edit filename: ${displayName}`}
               className="editor-surface__filename"
               disabled={
                 moving ||
@@ -237,14 +248,14 @@ export function EditorSurface({
               type="button"
               onClick={beginRename}
             >
-              {document.name}
+              {displayName}
             </button>
           )}
         </span>
         <div className="editor-surface__actions">
           {document.relativePath && !archived ? (
             <button
-              aria-label={`Move ${document.name}`}
+              aria-label={`Move ${displayName}`}
               className="editor-surface__action"
               disabled={
                 moving ||
@@ -262,7 +273,7 @@ export function EditorSurface({
           ) : null}
           {document.relativePath && !archived ? (
             <button
-              aria-label={`Rename ${document.name}`}
+              aria-label={`Rename ${displayName}`}
               className="editor-surface__action"
               disabled={
                 moving ||
@@ -293,7 +304,7 @@ export function EditorSurface({
           ) : null}
           {document.sourceText !== undefined && !archived ? (
             <button
-              aria-label={`Save ${document.name} as`}
+              aria-label={`Save ${displayName} as`}
               className="editor-surface__action"
               disabled={moving || lifecycleChanging || renaming || trashing}
               type="button"
@@ -304,7 +315,7 @@ export function EditorSurface({
           ) : null}
           {document.relativePath && !archived ? (
             <button
-              aria-label={`Archive ${document.name}`}
+              aria-label={`Archive ${displayName}`}
               className="editor-surface__action"
               disabled={
                 lifecycleChanging ||
@@ -342,7 +353,7 @@ export function EditorSurface({
           ) : null}
           {document.relativePath ? (
             <button
-              aria-label={`Move ${document.name} to Trash`}
+              aria-label={`Move ${displayName} to Trash`}
               className="editor-surface__action"
               disabled={
                 moving ||
@@ -359,7 +370,7 @@ export function EditorSurface({
             </button>
           ) : null}
           <button
-            aria-label={`Close ${document.name}`}
+            aria-label={`Close ${displayName}`}
             className="editor-surface__action"
             disabled={moving || lifecycleChanging || renaming || trashing}
             type="button"
@@ -398,7 +409,7 @@ export function EditorSurface({
               }
             >
               <MarkdownPreview
-                label={`${document.name} Markdown preview`}
+                label={`${displayName} Markdown preview`}
                 onOpenWikilink={onOpenWikilink}
                 settings={markdownSettings}
                 source={document.sourceText}
@@ -419,7 +430,7 @@ export function EditorSurface({
                 documentId={document.id}
                 editorFontSize={markdownSettings.editorFontSize}
                 findRequest={findRequest}
-                label={`${document.name} Markdown editor`}
+                label={`${displayName} Markdown editor`}
                 value={document.sourceText}
                 wikilinkCandidates={wikilinkCandidates}
                 onChange={onDocumentChange}
@@ -460,7 +471,11 @@ export function EditorSurface({
             </div>
           </>
         )}
-        <Backlinks documents={backlinks} onOpen={onOpenLinkedDocument} />
+        <Backlinks
+          documents={backlinks}
+          onOpen={onOpenLinkedDocument}
+          showFileExtensions={markdownSettings.showFileExtensions}
+        />
       </section>
     </main>
   );

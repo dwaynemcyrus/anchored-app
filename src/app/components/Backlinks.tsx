@@ -1,11 +1,17 @@
 import type { AnchoredDocument } from "../documents";
+import { displayFilePath } from "../fileTypes";
 
 type BacklinksProps = {
   documents: AnchoredDocument[];
   onOpen: (documentId: string) => void;
+  showFileExtensions: boolean;
 };
 
-export function Backlinks({ documents, onOpen }: BacklinksProps) {
+export function Backlinks({
+  documents,
+  onOpen,
+  showFileExtensions,
+}: BacklinksProps) {
   return (
     <aside aria-labelledby="backlinks-title" className="backlinks">
       <h2 id="backlinks-title">Backlinks ({documents.length})</h2>
@@ -16,7 +22,10 @@ export function Backlinks({ documents, onOpen }: BacklinksProps) {
           {documents.map((document) => (
             <li key={document.id}>
               <button type="button" onClick={() => onOpen(document.id)}>
-                {document.relativePath ?? document.name}
+                {displayFilePath(
+                  document.relativePath ?? document.name,
+                  showFileExtensions,
+                )}
               </button>
             </li>
           ))}

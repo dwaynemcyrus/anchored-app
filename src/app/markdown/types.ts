@@ -24,6 +24,7 @@ export type MarkdownSettings = {
   editorFontSize: EditorFontSize;
   emoji: boolean;
   mermaid: boolean;
+  showFileExtensions: boolean;
   smartTypography: boolean;
   syntaxHighlighting: boolean;
 };
@@ -33,6 +34,7 @@ export const DEFAULT_MARKDOWN_SETTINGS: MarkdownSettings = {
   editorFontSize: 14,
   emoji: true,
   mermaid: true,
+  showFileExtensions: false,
   smartTypography: true,
   syntaxHighlighting: true,
 };

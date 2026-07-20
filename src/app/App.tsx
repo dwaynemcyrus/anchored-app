@@ -39,6 +39,7 @@ import {
   buildDocumentLinkIndex,
   resolveWikilink,
 } from "./links";
+import { fileExtension } from "./fileTypes";
 import {
   buildWikilinkCandidates,
   type DocumentActivity,
@@ -1444,8 +1445,10 @@ export function App() {
         }
         relativePath = document.relativePath;
       }
+      const extension = fileExtension(document.name) || "md";
+      const stem = name.trim().replace(/\.(md|markdown|mdown|mkdn|mdwn)$/i, "");
       const outcome = await renameVaultFile({
-        name: name.trim(),
+        name: `${stem}.${extension}`,
         relativePath,
       });
       if (!outcome) return;
@@ -2196,6 +2199,7 @@ export function App() {
           trashCount={trashEntries.length}
           vaultName={vaultName}
           vaultSelected={vaultSelected}
+          showFileExtensions={markdownSettings.showFileExtensions}
           onArchiveDocument={requestArchiveDocument}
           onCreateNote={createNote}
           onCreateNoteInFolder={(folderPath) =>
@@ -2601,6 +2605,7 @@ export function App() {
         <QuickOpenPalette
           query={quickOpenQuery}
           results={quickOpenResults}
+          showFileExtensions={markdownSettings.showFileExtensions}
           onClose={() => setQuickOpenVisible(false)}
           onOpen={(documentId) => {
             setQuickOpenVisible(false);
@@ -2614,6 +2619,7 @@ export function App() {
           query={vaultSearchQuery}
           searchState={vaultSearchState}
           vaultSelected={vaultSelected}
+          showFileExtensions={markdownSettings.showFileExtensions}
           onClose={() => setVaultSearchVisible(false)}
           onOpen={(relativePath) => void openVaultSearchResult(relativePath)}
           onQueryChange={setVaultSearchQuery}
@@ -2622,6 +2628,7 @@ export function App() {
       <StatusBar
         cursorPosition={cursorPosition}
         document={activeDocument}
+        showFileExtensions={markdownSettings.showFileExtensions}
         vaultFileCount={
           vaultSelected
             ? documents.filter(

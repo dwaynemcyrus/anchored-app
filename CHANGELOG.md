@@ -17,6 +17,10 @@ Git commit. The format follows [Keep a Changelog], and releases follow
   editable line after front matter is added.
 - New notes now use collision-safe UTC timestamp filenames with millisecond
   precision, such as `20260219233541123.md`.
+- File extensions are now hidden throughout the interface by default, with a
+  persisted setting to show them in file lists, breadcrumbs, paths, and search.
+- Markdown rename fields now edit only the filename stem and preserve the
+  underlying Markdown extension automatically.
 - The file rail now handles large vaults with stable browser-native scrolling,
   keeps selection separate from folder expansion, supports keyboard navigation
   and context menus, shows Lucide file-type icons, and recognizes common
