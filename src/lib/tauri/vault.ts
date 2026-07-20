@@ -114,6 +114,11 @@ export type RenameVaultFolderRequest = {
   name: string;
 };
 
+export type RenameVaultFileRequest = {
+  name: string;
+  relativePath: string;
+};
+
 export type RenameVaultFileResult = {
   relativePath: string;
   updatedFiles: number;
@@ -269,9 +274,7 @@ export function moveVaultFileToFolder(
 }
 
 export function renameVaultFile(
-  relativePath: string,
+  request: RenameVaultFileRequest,
 ): Promise<RenameVaultFileResult | null> {
-  return invoke<RenameVaultFileResult | null>("rename_vault_file", {
-    relativePath,
-  });
+  return invoke<RenameVaultFileResult | null>("rename_vault_file", request);
 }

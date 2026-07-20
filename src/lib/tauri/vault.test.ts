@@ -269,7 +269,7 @@ describe("vault bridge", () => {
     );
   });
 
-  it("renames a Markdown file through the Rust-owned dialog", async () => {
+  it("renames a Markdown file through the Rust command", async () => {
     const result = {
       relativePath: "Notes/Leading.md",
       updatedFiles: 2,
@@ -277,11 +277,13 @@ describe("vault bridge", () => {
     };
     mockedInvoke.mockResolvedValue(result);
 
-    await expect(renameVaultFile("Notes/Leadership.md")).resolves.toEqual(
-      result,
-    );
-    expect(mockedInvoke).toHaveBeenCalledWith("rename_vault_file", {
+    const request = {
+      name: "Leading.md",
       relativePath: "Notes/Leadership.md",
+    };
+    await expect(renameVaultFile(request)).resolves.toEqual(result);
+    expect(mockedInvoke).toHaveBeenCalledWith("rename_vault_file", {
+      ...request,
     });
   });
 

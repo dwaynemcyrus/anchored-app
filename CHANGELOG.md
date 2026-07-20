@@ -8,6 +8,8 @@ Git commit. The format follows [Keep a Changelog], and releases follow
 
 ### Added
 
+- Note filenames in the editor breadcrumb can now be edited inline and saved
+  with the existing safe, link-preserving rename transaction.
 - The file rail now handles large vaults with stable browser-native scrolling,
   keeps selection separate from folder expansion, supports keyboard navigation
   and context menus, shows Lucide file-type icons, and recognizes common

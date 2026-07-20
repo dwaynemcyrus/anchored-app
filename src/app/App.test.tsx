@@ -1941,10 +1941,19 @@ describe("App", () => {
       name: "Old Name.md Markdown editor",
     });
     await user.click(
-      screen.getByRole("button", { name: "Rename Old Name.md" }),
+      screen.getByRole("button", { name: "Edit filename: Old Name.md" }),
     );
+    const filenameInput = screen.getByRole("textbox", {
+      name: "Edit filename: Old Name.md",
+    });
+    await user.clear(filenameInput);
+    await user.type(filenameInput, "New Name.md");
+    await user.keyboard("{Enter}");
 
-    expect(mockedRenameVaultFile).toHaveBeenCalledWith("Notes/Old Name.md");
+    expect(mockedRenameVaultFile).toHaveBeenCalledWith({
+      name: "New Name.md",
+      relativePath: "Notes/Old Name.md",
+    });
     expect(mockedRescanVault).toHaveBeenCalledTimes(1);
     expect(mockedReadVaultFile).toHaveBeenLastCalledWith("Writing/New Name.md");
     expect(

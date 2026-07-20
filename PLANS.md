@@ -1556,6 +1556,11 @@ Every future large plan must identify:
   document-array scans for supported link resolution, backlinks, candidate
   creation, and Quick Open, and the representative topology passes its 100 ms
   automated budget.
+- 2026-07-20: Note filenames can now be edited directly from the editor
+  breadcrumb. Enter or blur submits the requested name, Escape cancels, and
+  the existing atomic rename transaction continues to update supported links.
+  Frontend and Rust tests, formatting, lint, type-check, and production build
+  pass.
 
 ## Completion
 

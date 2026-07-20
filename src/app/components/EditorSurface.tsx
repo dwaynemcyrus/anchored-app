@@ -1,4 +1,12 @@
-import { lazy, Suspense, useEffect, useState } from "react";
+import {
+  lazy,
+  Suspense,
+  useEffect,
+  useRef,
+  useState,
+  type FormEvent,
+  type KeyboardEvent,
+} from "react";
 
 import type { AnchoredDocument } from "../documents";
 import type { WikilinkCandidate } from "../linkCandidates";
@@ -32,7 +40,7 @@ type EditorSurfaceProps = {
   onOpenMoveDocument: () => void;
   onOpenWikilink: (target: string) => void;
   onRetryDocument: () => void;
-  onRenameDocument: () => void;
+  onRenameDocument: (name: string) => void;
   onRestoreDocument: (destinationStatus: "active" | "inbox") => void;
   onSaveDocument: () => void;
   onSaveDocumentAs: () => void;
@@ -74,6 +82,10 @@ export function EditorSurface({
   trashing,
 }: EditorSurfaceProps) {
   const [previewVisible, setPreviewVisible] = useState(false);
+  const [editingName, setEditingName] = useState(false);
+  const [draftName, setDraftName] = useState(document?.name ?? "");
+  const nameInputRef = useRef<HTMLInputElement>(null);
+  const submittedNameRef = useRef<string | undefined>(undefined);
 
   useEffect(() => {
     const showPreview = () => setPreviewVisible(true);
@@ -81,6 +93,50 @@ export function EditorSurface({
     return () =>
       window.removeEventListener("anchored:show-preview", showPreview);
   }, []);
+
+  useEffect(() => {
+    const startRename = () => setEditingName(true);
+    window.addEventListener("anchored:begin-rename", startRename);
+    return () =>
+      window.removeEventListener("anchored:begin-rename", startRename);
+  }, []);
+
+  useEffect(() => {
+    setDraftName(document?.name ?? "");
+    setEditingName(false);
+    submittedNameRef.current = undefined;
+  }, [document?.id, document?.name]);
+
+  useEffect(() => {
+    if (!editingName) return;
+    window.requestAnimationFrame(() => {
+      nameInputRef.current?.focus();
+      nameInputRef.current?.select();
+    });
+  }, [editingName]);
+
+  function beginRename() {
+    if (!document?.relativePath || renaming) return;
+    setDraftName(document.name);
+    submittedNameRef.current = undefined;
+    setEditingName(true);
+  }
+
+  function submitRename(event?: FormEvent<HTMLFormElement>) {
+    event?.preventDefault();
+    if (!document) return;
+    const name = draftName.trim();
+    if (submittedNameRef.current === name) return;
+    submittedNameRef.current = name;
+    onRenameDocument(name);
+  }
+
+  function handleNameKeyDown(event: KeyboardEvent<HTMLInputElement>) {
+    if (event.key !== "Escape") return;
+    event.preventDefault();
+    setEditingName(false);
+    submittedNameRef.current = undefined;
+  }
   const [focusEditorOnOpen, setFocusEditorOnOpen] = useState(false);
   if (!document) {
     return (
@@ -148,7 +204,42 @@ export function EditorSurface({
         <span className="editor-surface__path">
           <span>{document.folder}</span>
           <span aria-hidden="true">/</span>
-          <span>{document.name}</span>
+          {editingName ? (
+            <form onSubmit={submitRename}>
+              <input
+                ref={nameInputRef}
+                aria-label={`Edit filename: ${document.name}`}
+                autoComplete="off"
+                className="editor-surface__filename-input"
+                disabled={renaming}
+                type="text"
+                value={draftName}
+                onBlur={() => submitRename()}
+                onChange={(event) => {
+                  setDraftName(event.target.value);
+                  submittedNameRef.current = undefined;
+                }}
+                onKeyDown={handleNameKeyDown}
+              />
+            </form>
+          ) : (
+            <button
+              aria-label={`Edit filename: ${document.name}`}
+              className="editor-surface__filename"
+              disabled={
+                moving ||
+                lifecycleChanging ||
+                renaming ||
+                trashing ||
+                document.saveState !== "saved" ||
+                loadState.status === "loading"
+              }
+              type="button"
+              onClick={beginRename}
+            >
+              {document.name}
+            </button>
+          )}
         </span>
         <div className="editor-surface__actions">
           {document.relativePath && !archived ? (
@@ -181,7 +272,7 @@ export function EditorSurface({
                 loadState.status === "loading"
               }
               type="button"
-              onClick={onRenameDocument}
+              onClick={beginRename}
             >
               {renaming ? "Renaming…" : "Rename"}
             </button>

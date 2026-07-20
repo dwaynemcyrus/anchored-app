@@ -1400,7 +1400,7 @@ export function App() {
     addVaultNotice(message, { history: { kind: "rename" } });
   }
 
-  async function renameDocument(documentId: string) {
+  async function renameDocument(documentId: string, name: string) {
     const document = documentsRef.current.find(
       (candidate) => candidate.id === documentId,
     );
@@ -1411,11 +1411,18 @@ export function App() {
       addVaultNotice("Save all open note changes before renaming a note.");
       return;
     }
+    if (!name.trim()) {
+      addVaultNotice("Enter a filename before renaming this note.");
+      return;
+    }
 
     let renameCompleted = false;
     setRenamingDocumentId(documentId);
     try {
-      const outcome = await renameVaultFile(document.relativePath);
+      const outcome = await renameVaultFile({
+        name: name.trim(),
+        relativePath: document.relativePath,
+      });
       if (!outcome) return;
       renameCompleted = true;
       const filename =
@@ -2202,9 +2209,9 @@ export function App() {
             });
           }}
           onRenameDocument={(documentId) => {
-            void selectDocument(documentId).then(() =>
-              renameDocument(documentId),
-            );
+            void selectDocument(documentId).then(() => {
+              window.dispatchEvent(new Event("anchored:begin-rename"));
+            });
           }}
           onRenameFolder={(folderPath) => {
             setRenamingFolderPath(folderPath);
@@ -2276,8 +2283,8 @@ export function App() {
           onRetryDocument={() => {
             if (activeDocument) void selectDocument(activeDocument.id);
           }}
-          onRenameDocument={() => {
-            if (activeDocument) void renameDocument(activeDocument.id);
+          onRenameDocument={(name) => {
+            if (activeDocument) void renameDocument(activeDocument.id, name);
           }}
           onRestoreDocument={(destinationStatus) => {
             if (activeDocument) {

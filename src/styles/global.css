@@ -669,6 +669,47 @@ input:focus-visible,
   text-overflow: ellipsis;
 }
 
+.editor-surface__filename,
+.editor-surface__filename-input {
+  min-width: 0;
+  overflow: hidden;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.editor-surface__filename {
+  max-width: min(36vw, 360px);
+  padding: 3px 4px;
+  cursor: text;
+}
+
+.editor-surface__filename:hover,
+.editor-surface__filename:focus-visible {
+  background: var(--color-surface-raised);
+  color: var(--color-text);
+}
+
+.editor-surface__filename:disabled {
+  cursor: default;
+}
+
+.editor-surface__filename-input {
+  width: min(36vw, 360px);
+  padding: 3px 4px;
+  outline: 1px solid var(--color-accent);
+  color: var(--color-text);
+}
+
+.editor-surface__path form {
+  min-width: 0;
+}
+
 .editor-surface__actions {
   display: flex;
   align-items: center;
