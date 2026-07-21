@@ -8,6 +8,11 @@ Git commit. The format follows [Keep a Changelog], and releases follow
 
 ### Added
 
+- Lifecycle moves now route Inbox notes into a lower-case folder derived from
+  their `type` front matter, create that folder when needed, and return notes
+  to the physical `inbox` folder when moved back to Inbox. Untyped notes use
+  `inbox`; Archive ↔ Workbench transitions remain in place and only change
+  lifecycle status.
 - Added persisted color themes for Anchored, Ayu, Dracula, Catppuccin, Nord,
   and a black-on-white Light palette. Themes apply to the application shell,
   source syntax highlighting, Markdown Preview code, decorations, and Mermaid

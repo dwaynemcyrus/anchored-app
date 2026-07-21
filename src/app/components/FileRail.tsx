@@ -777,6 +777,15 @@ function ContextMenu({
           ) : null}
           {editableFile && !archivedFile ? (
             <>
+              {!inboxFile ? (
+                <button
+                  role="menuitem"
+                  type="button"
+                  onClick={() => onRestoreDocument(item.document.id, "inbox")}
+                >
+                  Move to Inbox
+                </button>
+              ) : null}
               {inboxFile &&
               item.document.noteType?.toLocaleLowerCase() !== "scratchpad" ? (
                 <button

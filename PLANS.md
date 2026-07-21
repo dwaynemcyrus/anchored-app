@@ -1678,6 +1678,13 @@ Every future large plan must identify:
   document-array scans for supported link resolution, backlinks, candidate
   creation, and Quick Open, and the representative topology passes its 100 ms
   automated budget.
+- 2026-07-22: Lifecycle collection moves now coordinate frontmatter status,
+  lower-case type-folder routing, physical Inbox placement, and existing
+  rename-safe link updates. Inbox ↔ Workbench/Archive moves files; Archive ↔
+  Workbench remains status-only. Untyped notes use `inbox`, and filesystem
+  type-folder names preserve spaces and other visible characters accepted by
+  the existing single-folder safety validation. Rust and TypeScript coverage
+  protects typed, untyped, link-updating, and status-only transitions.
 
 ## Follow-up plan: named color themes
 
