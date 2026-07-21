@@ -506,6 +506,10 @@ export function App() {
     persistMarkdownSettings(markdownSettings);
   }, [markdownSettings]);
 
+  useEffect(() => {
+    applyTheme(markdownSettings.theme);
+  }, [markdownSettings.theme]);
+
   const hasUnfinishedEdits = useCallback(
     () => documentsRef.current.some(documentHasUnfinishedEdits),
     [],
