@@ -411,7 +411,12 @@ export function buildDocumentLinkIndex(
   const filenameCounts = new Map<string, number>();
 
   for (const document of documents) {
-    if (!document.relativePath || document.isMarkdown === false) continue;
+    if (
+      !document.relativePath ||
+      document.isMarkdown === false ||
+      document.isRecoveryCopy
+    )
+      continue;
     const filename = normalized(withoutMarkdownExtension(document.name));
     const path = normalized(
       withoutMarkdownExtension(document.relativePath),
@@ -434,7 +439,7 @@ export function buildDocumentLinkIndex(
   };
   const backlinksByTargetId = new Map<string, AnchoredDocument[]>();
   for (const source of documents) {
-    if (source.isMarkdown === false) continue;
+    if (source.isMarkdown === false || source.isRecoveryCopy) continue;
     const outgoingLinks =
       source.sourceText !== undefined &&
       !source.sourceText.replace(/^\ufeff/, "").startsWith("---")

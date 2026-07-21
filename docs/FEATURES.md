@@ -58,10 +58,20 @@ rendered interface on 2026-07-19.
 - Save a copy or choose a new location with Command-Shift-S or **Save as**.
 - Autosave an already saved note after one second without edits.
 - Show Saved, Unsaved, Saving, Conflict, and Save failed states.
+- Serialize manual and idle saves per note so overlapping save requests do not
+  race each other.
 - Write through a sibling temporary file, flush it, and atomically replace the
   destination.
-- Refuse to overwrite a file that changed outside Anchored; local edits remain
-  visible as a conflict.
+- Detect changes to the open file while Anchored is running. Clean notes reload
+  the external version automatically; notes with local edits remain visible as
+  conflicts and stop autosaving.
+- Preserve local edits in one visible, same-folder recovery copy named with an
+  `Anchored conflict` suffix. Recovery copies never replace an existing file,
+  are labeled in the Files view, and are excluded from lifecycle collections,
+  wikilink resolution, backlinks, and automatic link rewrites.
+- Offer explicit actions to open the recovery copy or reload the external
+  version. The original external file remains untouched until the user chooses
+  a subsequent save action.
 - Refuse to create or rename over an existing Markdown file.
 - Add second-precision UTC `created_at` metadata to notes created by Anchored
   without backfilling externally imported notes.

@@ -5,6 +5,7 @@ export type VaultFile = {
   archivedAt?: string;
   createdAt?: string;
   modifiedMillis?: number;
+  isRecoveryCopy?: boolean;
   name: string;
   noteType?: string;
   outgoingLinks?: string[];
@@ -58,6 +59,7 @@ export type TrashMutationResult = {
 export type VaultDocument = {
   archivedAt?: string;
   content: string;
+  isRecoveryCopy?: boolean;
   createdAt?: string;
   modifiedMillis?: number;
   noteType?: string;
@@ -82,6 +84,13 @@ export type SaveVaultFileRequest = {
   content: string;
   expectedContent: string;
   relativePath: string;
+};
+
+export type VaultFileChangedEvent = {
+  exists: boolean;
+  modifiedMillis?: number;
+  relativePath: string;
+  sizeBytes?: number;
 };
 
 export type CreateVaultFileRequest = {
@@ -214,6 +223,14 @@ export function readVaultFile(relativePath: string): Promise<VaultDocument> {
   return invoke<VaultDocument>("read_vault_file", { relativePath });
 }
 
+export function watchVaultFile(relativePath: string): Promise<void> {
+  return invoke<void>("watch_vault_file", { relativePath });
+}
+
+export function stopVaultFileWatch(): Promise<void> {
+  return invoke<void>("stop_vault_file_watch");
+}
+
 export function searchVault(query: string): Promise<VaultSearchResult> {
   return invoke<VaultSearchResult>("search_vault", { query });
 }
@@ -222,6 +239,16 @@ export function saveVaultFile(
   request: SaveVaultFileRequest,
 ): Promise<VaultDocument> {
   return invoke<VaultDocument>("save_vault_file", request);
+}
+
+export function createVaultConflictCopy(
+  relativePath: string,
+  content: string,
+): Promise<VaultDocument> {
+  return invoke<VaultDocument>("create_vault_conflict_copy", {
+    content,
+    relativePath,
+  });
 }
 
 export function archiveVaultFile(

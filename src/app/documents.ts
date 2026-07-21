@@ -17,12 +17,14 @@ export type AnchoredDocument = {
   relativePath?: string;
   sourceText?: string;
   savedSourceText?: string;
+  conflictCopyPath?: string;
   saveMessage?: string;
   saveState?: DocumentSaveState;
   sizeBytes?: number;
   relatedDocumentId?: string;
   relatedLabel?: string;
   isMarkdown?: boolean;
+  isRecoveryCopy?: boolean;
   createdAt?: string;
   modifiedMillis?: number;
   noteType?: string;
@@ -59,6 +61,7 @@ export function documentsFromVault(
 ): AnchoredDocument[] {
   const notes = snapshot.files.map((file) => ({
     id: `vault-path:${file.relativePath}`,
+    isRecoveryCopy: file.isRecoveryCopy,
     archivedAt: file.archivedAt,
     name: file.name,
     outgoingLinks: file.outgoingLinks ?? [],
@@ -122,6 +125,7 @@ export function mergeDocumentsFromVault(
           folder: document.folder,
           folderPath: document.folderPath,
           id: document.id,
+          isRecoveryCopy: document.isRecoveryCopy,
           name: document.name,
           noteType: document.noteType,
           outgoingLinks: document.outgoingLinks,

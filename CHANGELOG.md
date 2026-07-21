@@ -53,6 +53,10 @@ Git commit. The format follows [Keep a Changelog], and releases follow
   saves the current note first, reloads the window safely, and restores the
   remembered vault plus the previously open note on startup when both are
   still available.
+- Anchored now detects changes to the active Markdown file while it is open,
+  reloads clean external edits, serializes overlapping saves, and preserves
+  dirty local edits in a visible same-folder recovery copy when a conflict
+  occurs. Recovery copies are labeled and kept out of the active link graph.
 
 ### Changed
 

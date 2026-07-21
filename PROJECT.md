@@ -191,8 +191,11 @@ These scripts must exist in `package.json` after the scaffold chunk.
 - **Write safety:** Write to a sibling temporary file, flush where supported,
   and atomically replace the destination. Preserve original content when a
   parse or rewrite cannot be proven safe.
-- **Concurrency:** Detect external modification before overwriting and surface
-  a recoverable conflict instead of silently choosing a version.
+- **Concurrency:** Monitor the active Markdown file for external changes,
+  reload clean notes, serialize Anchored saves, and surface dirty-file
+  conflicts with a visible same-folder recovery copy instead of silently
+  choosing or overwriting a version. Recovery copies remain outside the active
+  lifecycle/link graph.
 - **Backup/migration approach:** Develop and verify only against a disposable
   or backed-up vault copy. Bulk metadata and link rewrites require preview,
   recoverability, targeted tests, and a separate verified plan chunk. Existing

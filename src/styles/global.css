@@ -1249,6 +1249,23 @@ input:focus-visible,
   gap: 14px;
 }
 
+.vault-message__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 8px;
+}
+
+.vault-message__actions button {
+  padding: 0;
+  background: transparent;
+  color: var(--color-text);
+  cursor: pointer;
+  font: inherit;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
 .vault-message__dismiss {
   flex: 0 0 auto;
   padding: 0;

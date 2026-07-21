@@ -366,6 +366,18 @@ bytes changed.
 - [ ] Change only YAML `title` and confirm links do not rewrite.
 - [ ] Edit the same file externally and confirm the app shows a conflict instead of overwriting silently.
 - [ ] Resolve or recover from a conflict without losing the newer content.
+- [ ] Change a clean open file externally and confirm Anchored reloads it
+      without creating a conflict or recovery copy.
+- [ ] Change a dirty open file externally and confirm Anchored stops autosave,
+      keeps the local draft, leaves the external file unchanged, and creates
+      one visible same-folder `Anchored conflict` recovery copy.
+- [ ] Trigger repeated external changes and confirm the same unresolved
+      conflict does not create duplicate recovery copies; a later conflict gets
+      a unique filename.
+- [ ] Open the recovery copy from the conflict notice and reload the external
+      version from the explicit conflict actions.
+- [ ] Press Command-S while autosave is pending and confirm only one serialized
+      save is issued and the newest local edit remains available.
 - [ ] Close and reopen the app after saving.
 - [ ] Quit during or immediately after a save and verify the saved content.
 - [ ] Confirm CRLF/legacy line endings are normalized only on intentional save.

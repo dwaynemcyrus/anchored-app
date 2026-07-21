@@ -60,7 +60,12 @@ export function shortestWikilinkTarget(
   documents: AnchoredDocument[],
   index = buildDocumentLinkIndex(documents),
 ): string | null {
-  if (!document.relativePath || document.isMarkdown === false) return null;
+  if (
+    !document.relativePath ||
+    document.isMarkdown === false ||
+    document.isRecoveryCopy
+  )
+    return null;
 
   const stem = filenameStem(document);
   const duplicateCount = index.filenameCounts.get(normalized(stem)) ?? 0;

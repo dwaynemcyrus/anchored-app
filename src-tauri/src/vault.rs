@@ -4,9 +4,11 @@ use std::{
     fs::OpenOptions,
     path::{Component, Path, PathBuf},
     sync::{
-        atomic::{AtomicU64, Ordering},
+        atomic::{AtomicBool, AtomicU64, Ordering},
         Arc, Mutex, RwLock,
     },
+    thread,
+    time::Duration,
 };
 
 use chrono::Utc;
@@ -42,6 +44,7 @@ pub struct VaultState {
     metadata_cache: Arc<Mutex<VaultMetadataCache>>,
     rename_transaction: Mutex<()>,
     root: RwLock<Option<PathBuf>>,
+    file_watch: Mutex<Option<Arc<AtomicBool>>>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -53,6 +56,7 @@ pub struct VaultFile {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub created_at: Option<String>,
     pub modified_millis: u64,
+    pub is_recovery_copy: bool,
     #[serde(skip)]
     signature: Option<FileSignature>,
     pub outgoing_links: Vec<String>,
@@ -135,6 +139,7 @@ pub struct VaultDocument {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub archived_at: Option<String>,
     pub content: String,
+    pub is_recovery_copy: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub created_at: Option<String>,
     pub modified_millis: u64,
@@ -154,6 +159,15 @@ pub struct ScratchpadDocument {
     pub body: String,
     pub persisted_content: String,
     pub relative_path: String,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct VaultFileChangedEvent {
+    pub exists: bool,
+    pub modified_millis: Option<u64>,
+    pub relative_path: String,
+    pub size_bytes: Option<u64>,
 }
 
 #[derive(Debug, Serialize)]
@@ -336,6 +350,10 @@ impl VaultError {
             message: message.into(),
         }
     }
+}
+
+fn is_recovery_copy_name(name: &str) -> bool {
+    name.contains(" (Anchored conflict ") && name.ends_with(".md")
 }
 
 #[tauri::command]
@@ -580,6 +598,14 @@ fn selected_vault_root(
         .ok_or_else(|| VaultError::state(format!("Select a vault before {operation}.")))
 }
 
+fn stop_file_watch(state: &VaultState) {
+    if let Ok(mut current) = state.file_watch.lock() {
+        if let Some(stop) = current.take() {
+            stop.store(true, Ordering::Relaxed);
+        }
+    }
+}
+
 fn activate_vault(
     app: &AppHandle,
     state: &State<'_, VaultState>,
@@ -632,6 +658,55 @@ pub async fn read_vault_file(
 }
 
 #[tauri::command]
+pub async fn watch_vault_file(
+    app: AppHandle,
+    state: State<'_, VaultState>,
+    relative_path: String,
+) -> Result<(), VaultError> {
+    let root = selected_vault_root(&state, "watching a Markdown file")?;
+    let path = resolve_vault_markdown_file(&root, &relative_path)?;
+    stop_file_watch(&state);
+
+    let stop = Arc::new(AtomicBool::new(false));
+    if let Ok(mut current) = state.file_watch.lock() {
+        *current = Some(Arc::clone(&stop));
+    }
+
+    thread::spawn(move || {
+        let mut previous = fs::metadata(&path)
+            .ok()
+            .map(|metadata| file_signature_from_metadata(&metadata));
+        while !stop.load(Ordering::Relaxed) {
+            thread::sleep(Duration::from_millis(400));
+            let current = fs::metadata(&path)
+                .ok()
+                .map(|metadata| file_signature_from_metadata(&metadata));
+            if current == previous {
+                continue;
+            }
+            previous = current;
+            let event = VaultFileChangedEvent {
+                exists: current.is_some(),
+                modified_millis: current.map(|signature| signature.modified_millis),
+                relative_path: relative_path.clone(),
+                size_bytes: current.map(|signature| signature.size_bytes),
+            };
+            if app.emit("vault-file-changed", event).is_err() {
+                break;
+            }
+        }
+    });
+
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn stop_vault_file_watch(state: State<'_, VaultState>) -> Result<(), VaultError> {
+    stop_file_watch(&state);
+    Ok(())
+}
+
+#[tauri::command]
 pub async fn search_vault(
     state: State<'_, VaultState>,
     query: String,
@@ -663,6 +738,16 @@ pub async fn save_vault_file(
         .ok_or_else(|| VaultError::state("Select a vault before saving a Markdown file."))?;
 
     save_markdown_file(&root, &relative_path, &content, &expected_content)
+}
+
+#[tauri::command]
+pub async fn create_vault_conflict_copy(
+    state: State<'_, VaultState>,
+    relative_path: String,
+    content: String,
+) -> Result<VaultDocument, VaultError> {
+    let root = selected_vault_root(&state, "creating a conflict copy")?;
+    create_conflict_copy(&root, &relative_path, &content)
 }
 
 #[tauri::command]
@@ -1600,6 +1685,7 @@ fn scan_vault(root: &Path) -> Result<VaultSnapshot, VaultError> {
                     archived_at: None,
                     created_at: None,
                     modified_millis: signature.modified_millis,
+                    is_recovery_copy: is_recovery_copy_name(&name),
                     signature: Some(signature),
                     outgoing_links: Vec::new(),
                     name,
@@ -1981,6 +2067,10 @@ fn vault_document(
     VaultDocument {
         archived_at: properties.archived_at,
         content,
+        is_recovery_copy: relative_path
+            .rsplit('/')
+            .next()
+            .is_some_and(is_recovery_copy_name),
         created_at: properties.created_at,
         modified_millis,
         note_type: properties.note_type,
@@ -1989,6 +2079,56 @@ fn vault_document(
         status: properties.status,
         updated_at: properties.updated_at,
     }
+}
+
+fn create_conflict_copy(
+    root: &Path,
+    relative_path: &str,
+    content: &str,
+) -> Result<VaultDocument, VaultError> {
+    if content.len() as u64 > MAX_MARKDOWN_FILE_BYTES {
+        return Err(VaultError::file_too_large());
+    }
+    let original = Path::new(relative_path);
+    let parent_relative = original.parent().and_then(Path::to_str).unwrap_or_default();
+    let parent = resolve_vault_directory(root, parent_relative)?;
+    let stem = original
+        .file_stem()
+        .and_then(|value| value.to_str())
+        .ok_or_else(|| VaultError::invalid_file("The Markdown filename is not valid UTF-8."))?;
+    let timestamp = Utc::now().format("%Y%m%d-%H%M%S");
+
+    for suffix in 0..10_000_u32 {
+        let suffix = if suffix == 0 {
+            String::new()
+        } else {
+            format!("-{suffix}")
+        };
+        let name = format!("{stem} (Anchored conflict {timestamp}){suffix}.md");
+        let destination = parent.join(name);
+        if destination.exists() {
+            continue;
+        }
+        let (destination, relative_path) = resolve_new_vault_markdown_file(root, &destination)?;
+        let temporary_path = temporary_sibling_path(&destination)?;
+        let write_result = write_new_atomically(&temporary_path, &destination, content);
+        if write_result.is_err() {
+            let _ = fs::remove_file(&temporary_path);
+        }
+        write_result?;
+        let metadata = fs::metadata(&destination)
+            .map_err(|error| VaultError::io("The conflict copy could not be inspected", error))?;
+        return Ok(vault_document(
+            content.to_owned(),
+            relative_path,
+            metadata.len(),
+            file_signature_from_metadata(&metadata).modified_millis,
+        ));
+    }
+
+    Err(VaultError::state(
+        "Anchored could not find an available conflict-copy filename.",
+    ))
 }
 
 fn read_markdown_file(root: &Path, relative_path: &str) -> Result<VaultDocument, VaultError> {
@@ -2967,9 +3107,9 @@ mod tests {
     use tempfile::tempdir;
 
     use super::{
-        canonical_vault_root, create_folder, create_markdown_file, create_named_vault,
-        create_scratchpad_markdown_file, create_untitled_markdown_file, delete_empty_folder,
-        enrich_vault_metadata, enrich_vault_metadata_cached, move_folder,
+        canonical_vault_root, create_conflict_copy, create_folder, create_markdown_file,
+        create_named_vault, create_scratchpad_markdown_file, create_untitled_markdown_file,
+        delete_empty_folder, enrich_vault_metadata, enrich_vault_metadata_cached, move_folder,
         move_markdown_file_to_folder, read_markdown_file, recover_rename_transaction,
         rename_folder, rename_markdown_file, resolve_new_vault_markdown_file, save_markdown_file,
         save_scratchpad_markdown_file, scan_vault, scratchpad_filename_sequence,
@@ -3520,6 +3660,32 @@ mod tests {
             fs::read_to_string(&note).expect("read externally changed note"),
             "# External revision\n"
         );
+    }
+
+    #[test]
+    fn creates_unique_visible_conflict_copies_without_changing_original() {
+        let vault = tempdir().expect("create fixture vault");
+        let note = vault.path().join("Note.md");
+        fs::write(&note, "# External revision\n").expect("write note");
+
+        let first = create_conflict_copy(vault.path(), "Note.md", "# Local revision\n")
+            .expect("create first conflict copy");
+        let second = create_conflict_copy(vault.path(), "Note.md", "# Local revision 2\n")
+            .expect("create second conflict copy");
+
+        assert!(first.is_recovery_copy);
+        assert!(second.is_recovery_copy);
+        assert_ne!(first.relative_path, second.relative_path);
+        assert!(first.relative_path.contains(" (Anchored conflict "));
+        assert_eq!(
+            fs::read_to_string(vault.path().join(&first.relative_path)).unwrap(),
+            "# Local revision\n"
+        );
+        assert_eq!(
+            fs::read_to_string(vault.path().join(&second.relative_path)).unwrap(),
+            "# Local revision 2\n"
+        );
+        assert_eq!(fs::read_to_string(&note).unwrap(), "# External revision\n");
     }
 
     #[test]

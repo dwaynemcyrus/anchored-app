@@ -87,6 +87,7 @@ export function buildVaultCollections(
   const scratchpad: AnchoredDocument[] = [];
 
   for (const document of documents) {
+    if (document.isRecoveryCopy) continue;
     if (document.isMarkdown === false) {
       assets.push(document);
       continue;
