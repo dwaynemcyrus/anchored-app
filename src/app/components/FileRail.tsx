@@ -544,7 +544,10 @@ const FileTreeRow = memo(function FileTreeRow({
       onDragEnd={onDragEnd}
     >
       <FileTypeIcon fileName={document.name} />
-      <span>{document.name}</span>
+      <span>
+        {document.name}
+        {document.isRecoveryCopy ? " · Recovery copy" : ""}
+      </span>
       <span className="tree-row__type" aria-hidden="true">
         {rowDetail}
       </span>

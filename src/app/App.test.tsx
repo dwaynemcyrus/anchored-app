@@ -11,6 +11,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
   archiveVaultFile,
+  createVaultConflictCopy,
   createVault,
   createVaultFolder,
   createUntitledVaultFile,
@@ -29,6 +30,8 @@ import {
   saveVaultFile,
   searchVault,
   selectVault,
+  stopVaultFileWatch,
+  watchVaultFile,
   restoreVaultFileFromTrash,
   restoreArchivedVaultFile,
 } from "../lib/tauri/vault";
@@ -39,6 +42,7 @@ import { reloadAnchoredWindow } from "./windowActions";
 
 vi.mock("../lib/tauri/vault", () => ({
   archiveVaultFile: vi.fn(),
+  createVaultConflictCopy: vi.fn(),
   createVault: vi.fn(),
   createVaultFolder: vi.fn(),
   createUntitledVaultFile: vi.fn(),
@@ -57,8 +61,14 @@ vi.mock("../lib/tauri/vault", () => ({
   saveVaultFile: vi.fn(),
   searchVault: vi.fn(),
   selectVault: vi.fn(),
+  stopVaultFileWatch: vi.fn(),
+  watchVaultFile: vi.fn(),
   restoreVaultFileFromTrash: vi.fn(),
   restoreArchivedVaultFile: vi.fn(),
+}));
+
+vi.mock("@tauri-apps/api/event", () => ({
+  listen: vi.fn().mockResolvedValue(vi.fn()),
 }));
 
 vi.mock("../lib/tauri/scratchpad", () => ({
@@ -89,7 +99,10 @@ const mockedSaveVaultFile = vi.mocked(saveVaultFile);
 const mockedSearchVault = vi.mocked(searchVault);
 const mockedRestoreVaultFileFromTrash = vi.mocked(restoreVaultFileFromTrash);
 const mockedArchiveVaultFile = vi.mocked(archiveVaultFile);
+const mockedCreateVaultConflictCopy = vi.mocked(createVaultConflictCopy);
 const mockedRestoreArchivedVaultFile = vi.mocked(restoreArchivedVaultFile);
+const mockedStopVaultFileWatch = vi.mocked(stopVaultFileWatch);
+const mockedWatchVaultFile = vi.mocked(watchVaultFile);
 const mockedReloadAnchoredWindow = vi.mocked(reloadAnchoredWindow);
 const mockedOpenScratchpad = vi.mocked(openScratchpad);
 const noWarnings = {
@@ -105,6 +118,7 @@ describe("App", () => {
   beforeEach(() => {
     window.localStorage.clear();
     mockedCreateVault.mockReset();
+    mockedCreateVaultConflictCopy.mockReset();
     mockedCreateVaultFolder.mockReset();
     mockedCreateUntitledVaultFile.mockReset();
     mockedCreateVaultFile.mockReset();
@@ -125,9 +139,20 @@ describe("App", () => {
     mockedRestoreVaultFileFromTrash.mockReset();
     mockedArchiveVaultFile.mockReset();
     mockedRestoreArchivedVaultFile.mockReset();
+    mockedStopVaultFileWatch.mockReset();
+    mockedWatchVaultFile.mockReset();
     mockedReloadAnchoredWindow.mockReset();
     mockedOpenScratchpad.mockReset();
     mockedOpenScratchpad.mockResolvedValue(undefined);
+    mockedCreateVaultConflictCopy.mockResolvedValue({
+      content: "# Local copy\n",
+      isRecoveryCopy: true,
+      modifiedMillis: 1,
+      relativePath: "Notes/Note (Anchored conflict 20260722-120000).md",
+      sizeBytes: 14,
+    });
+    mockedStopVaultFileWatch.mockResolvedValue(undefined);
+    mockedWatchVaultFile.mockResolvedValue(undefined);
     mockedCreateUntitledVaultFile.mockImplementation(
       () => new Promise(() => {}),
     );
@@ -952,7 +977,7 @@ describe("App", () => {
     await user.keyboard(" updated");
     await user.keyboard("{Meta>}s{/Meta}");
 
-    await screen.findByText("The file changed outside Anchored.");
+    await screen.findByText(/The file changed outside Anchored\./);
     await user.click(screen.getByRole("button", { name: "Open settings" }));
     await user.click(
       within(screen.getByRole("dialog", { name: "Settings" })).getByRole(
@@ -2087,6 +2112,13 @@ describe("App", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent(
       "The file changed outside Anchored. Your edits were kept.",
     );
+    expect(mockedCreateVaultConflictCopy).toHaveBeenCalledWith(
+      "Notes/Conflict.md",
+      " updated# Before\n",
+    );
+    expect(
+      screen.getByRole("button", { name: "Open recovery copy" }),
+    ).toBeInTheDocument();
     expect(screen.getByText("Conflict")).toBeInTheDocument();
     expect(editor.textContent).toBe(" updated# Before");
 

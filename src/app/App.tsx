@@ -6,6 +6,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { listen } from "@tauri-apps/api/event";
 
 import { EditorSurface } from "./components/EditorSurface";
 import { CreateVaultDialog } from "./components/CreateVaultDialog";
@@ -82,6 +83,7 @@ import {
 } from "./notificationHistory";
 import {
   archiveVaultFile,
+  createVaultConflictCopy,
   createVault,
   createVaultFolder,
   createUntitledVaultFile,
@@ -103,6 +105,9 @@ import {
   saveVaultFile,
   searchVault,
   selectVault,
+  stopVaultFileWatch,
+  watchVaultFile,
+  type VaultFileChangedEvent,
   restoreVaultFileFromTrash,
   restoreVaultFolderFromTrash,
   restoreArchivedVaultFile,
@@ -313,6 +318,10 @@ export function App() {
   const loadRequestRef = useRef(0);
   const searchRequestRef = useRef(0);
   const rescanInFlightRef = useRef(false);
+  const saveInFlightRef = useRef(new Set<string>());
+  const externalCheckInFlightRef = useRef(new Set<string>());
+  const externalCheckPendingRef = useRef(new Set<string>());
+  const conflictCopyInFlightRef = useRef(new Set<string>());
   const focusRefreshTimeoutRef = useRef<number | undefined>(undefined);
   const vaultNoticeIdRef = useRef(0);
   const vaultNoticeTimeoutsRef = useRef<Map<number, number>>(new Map());
@@ -357,6 +366,9 @@ export function App() {
     };
   }, [deletingFolderPath, documents, folderPaths]);
   const saveState: DocumentSaveState = activeDocument?.saveState ?? "saved";
+  const activeDocumentIdForWatch = activeDocument?.id;
+  const activeDocumentPathForWatch = activeDocument?.relativePath;
+  const activeDocumentLoaded = activeDocument?.sourceText !== undefined;
   const deferredDocuments = useDeferredValue(documents);
   const linkIndex = useMemo(
     () => buildDocumentLinkIndex(deferredDocuments),
@@ -789,6 +801,154 @@ export function App() {
     [addHistoryEntry, addVaultNotice, resolveHistorySource, vaultName],
   );
 
+  const createConflictCopyForDocument = useCallback(
+    async (
+      documentId: string,
+      content: string,
+    ): Promise<string | undefined> => {
+      const document = documentsRef.current.find(
+        (candidate) => candidate.id === documentId,
+      );
+      if (!document?.relativePath) return undefined;
+      if (document.conflictCopyPath) return document.conflictCopyPath;
+      if (conflictCopyInFlightRef.current.has(documentId)) return undefined;
+
+      conflictCopyInFlightRef.current.add(documentId);
+      try {
+        const copy = await createVaultConflictCopy(
+          document.relativePath,
+          content,
+        );
+        setDocuments((currentDocuments) =>
+          currentDocuments.map((current) =>
+            current.id === documentId
+              ? { ...current, conflictCopyPath: copy.relativePath }
+              : current,
+          ),
+        );
+        return copy.relativePath;
+      } catch (error) {
+        addVaultNotice(
+          `Anchored could not create a recovery copy: ${readErrorMessage(error)}`,
+          { persistent: true },
+        );
+        return undefined;
+      } finally {
+        conflictCopyInFlightRef.current.delete(documentId);
+      }
+    },
+    [addVaultNotice],
+  );
+
+  const checkExternalDocument = useCallback(
+    async (documentId: string) => {
+      const document = documentsRef.current.find(
+        (candidate) => candidate.id === documentId,
+      );
+      if (
+        !document?.relativePath ||
+        document.sourceText === undefined ||
+        document.savedSourceText === undefined
+      ) {
+        return;
+      }
+      if (saveInFlightRef.current.has(documentId)) {
+        externalCheckPendingRef.current.add(documentId);
+        return;
+      }
+      if (externalCheckInFlightRef.current.has(documentId)) return;
+
+      externalCheckInFlightRef.current.add(documentId);
+      try {
+        const external = await readVaultFile(document.relativePath);
+        const current = documentsRef.current.find(
+          (candidate) => candidate.id === documentId,
+        );
+        if (!current || current.savedSourceText === external.content) return;
+
+        if (current.sourceText === current.savedSourceText) {
+          setDocuments((currentDocuments) =>
+            currentDocuments.map((candidate) =>
+              candidate.id === documentId
+                ? {
+                    ...candidate,
+                    archivedAt: external.archivedAt,
+                    conflictCopyPath: undefined,
+                    createdAt: external.createdAt,
+                    modifiedMillis: external.modifiedMillis,
+                    noteType: external.noteType,
+                    saveMessage: undefined,
+                    saveState: "saved",
+                    savedSourceText: external.content,
+                    sizeBytes: external.sizeBytes,
+                    sourceText: external.content,
+                    status: external.status,
+                    updatedAt: external.updatedAt,
+                  }
+                : candidate,
+            ),
+          );
+          resolveHistorySource(documentId);
+          return;
+        }
+
+        if (current.sourceText === undefined) return;
+        const copyPath = await createConflictCopyForDocument(
+          documentId,
+          current.sourceText,
+        );
+        const message = copyPath
+          ? `This Markdown file changed outside Anchored. Your local edits were kept. Recovery copy: ${copyPath}`
+          : "This Markdown file changed outside Anchored. Your local edits were kept and were not saved over the external version.";
+        const wasAlreadyConflicted = current.saveState === "conflict";
+        setDocuments((currentDocuments) =>
+          currentDocuments.map((candidate) =>
+            candidate.id === documentId
+              ? { ...candidate, saveMessage: message, saveState: "conflict" }
+              : candidate,
+          ),
+        );
+        if (!wasAlreadyConflicted) {
+          addHistoryEntry(
+            `${current.name} has unsaved changes because its file changed outside Anchored.`,
+            {
+              kind: "conflict",
+              requiresAction: true,
+              sourceId: current.id,
+            },
+          );
+        }
+      } catch (error) {
+        const current = documentsRef.current.find(
+          (candidate) => candidate.id === documentId,
+        );
+        if (
+          !current ||
+          current.sourceText === undefined ||
+          current.sourceText === current.savedSourceText
+        )
+          return;
+        const copyPath = await createConflictCopyForDocument(
+          documentId,
+          current.sourceText,
+        );
+        const message = copyPath
+          ? `The external Markdown file could not be read. Your local edits were kept. Recovery copy: ${copyPath}`
+          : readErrorMessage(error);
+        setDocuments((currentDocuments) =>
+          currentDocuments.map((candidate) =>
+            candidate.id === documentId
+              ? { ...candidate, saveMessage: message, saveState: "conflict" }
+              : candidate,
+          ),
+        );
+      } finally {
+        externalCheckInFlightRef.current.delete(documentId);
+      }
+    },
+    [addHistoryEntry, createConflictCopyForDocument, resolveHistorySource],
+  );
+
   const saveDocument = useCallback(
     async (documentId: string) => {
       const document = documentsRef.current.find(
@@ -807,6 +967,7 @@ export function App() {
         await saveDocumentAs(documentId);
         return;
       }
+      if (saveInFlightRef.current.has(documentId)) return;
       const sourceAtSave = document.sourceText;
       const contentAtSave = normalizeMarkdownLineEndings(sourceAtSave);
       if (
@@ -831,6 +992,7 @@ export function App() {
             : current,
         ),
       );
+      saveInFlightRef.current.add(documentId);
 
       try {
         const savedDocument = await saveVaultFile({
@@ -860,6 +1022,7 @@ export function App() {
                       ? "Saved with Unix (LF) line endings."
                       : undefined,
                   saveState: hasNewerEdit ? "unsaved" : "saved",
+                  conflictCopyPath: undefined,
                   savedSourceText: savedDocument.content,
                   sizeBytes: savedDocument.sizeBytes,
                   status: savedDocument.status,
@@ -881,10 +1044,22 @@ export function App() {
           error.code === "vaultConflict"
             ? "conflict"
             : "error";
+        const conflictCopyPath =
+          nextSaveState === "conflict"
+            ? await createConflictCopyForDocument(documentId, sourceAtSave)
+            : undefined;
+        const saveMessage = conflictCopyPath
+          ? `${message} Recovery copy: ${conflictCopyPath}`
+          : message;
         setDocuments((currentDocuments) =>
           currentDocuments.map((current) =>
             current.id === documentId
-              ? { ...current, saveMessage: message, saveState: nextSaveState }
+              ? {
+                  ...current,
+                  conflictCopyPath,
+                  saveMessage,
+                  saveState: nextSaveState,
+                }
               : current,
           ),
         );
@@ -898,9 +1073,21 @@ export function App() {
             sourceId: document.id,
           },
         );
+      } finally {
+        saveInFlightRef.current.delete(documentId);
+        if (externalCheckPendingRef.current.delete(documentId)) {
+          window.setTimeout(() => void checkExternalDocument(documentId), 50);
+        }
       }
     },
-    [addHistoryEntry, addVaultNotice, resolveHistorySource, saveDocumentAs],
+    [
+      addHistoryEntry,
+      addVaultNotice,
+      checkExternalDocument,
+      createConflictCopyForDocument,
+      resolveHistorySource,
+      saveDocumentAs,
+    ],
   );
 
   const recordSnapshotEvents = useCallback(
@@ -1235,6 +1422,45 @@ export function App() {
     };
   }, [refreshVault]);
 
+  useEffect(() => {
+    const relativePath = activeDocumentPathForWatch;
+    if (
+      !vaultSelected ||
+      !relativePath ||
+      !activeDocumentLoaded ||
+      !activeDocumentIdForWatch
+    ) {
+      void stopVaultFileWatch().catch(() => undefined);
+      return;
+    }
+
+    let disposed = false;
+    const unlistenPromise = listen<VaultFileChangedEvent>(
+      "vault-file-changed",
+      (event) => {
+        if (!disposed && event.payload.relativePath === relativePath) {
+          void checkExternalDocument(activeDocumentIdForWatch);
+        }
+      },
+    );
+    void watchVaultFile(relativePath).catch((error) => {
+      if (!disposed) addVaultNotice(readErrorMessage(error));
+    });
+
+    return () => {
+      disposed = true;
+      void unlistenPromise.then((unlisten) => unlisten());
+      void stopVaultFileWatch().catch(() => undefined);
+    };
+  }, [
+    activeDocumentIdForWatch,
+    activeDocumentLoaded,
+    activeDocumentPathForWatch,
+    addVaultNotice,
+    checkExternalDocument,
+    vaultSelected,
+  ]);
+
   const selectDocument = useCallback(async (documentId: string) => {
     const document = documentsRef.current.find(
       (candidate) => candidate.id === documentId,
@@ -1277,6 +1503,7 @@ export function App() {
             ? {
                 ...currentDocument,
                 archivedAt: openedDocument.archivedAt,
+                conflictCopyPath: undefined,
                 createdAt: openedDocument.createdAt,
                 modifiedMillis: openedDocument.modifiedMillis,
                 noteType: openedDocument.noteType,
@@ -1301,6 +1528,60 @@ export function App() {
       });
     }
   }, []);
+
+  async function reloadExternalDocument(documentId: string) {
+    const document = documentsRef.current.find(
+      (candidate) => candidate.id === documentId,
+    );
+    if (!document?.relativePath) return;
+
+    try {
+      const external = await readVaultFile(document.relativePath);
+      setDocuments((currentDocuments) =>
+        currentDocuments.map((current) =>
+          current.id === documentId
+            ? {
+                ...current,
+                archivedAt: external.archivedAt,
+                conflictCopyPath: undefined,
+                createdAt: external.createdAt,
+                modifiedMillis: external.modifiedMillis,
+                noteType: external.noteType,
+                saveMessage: undefined,
+                saveState: "saved",
+                savedSourceText: external.content,
+                sizeBytes: external.sizeBytes,
+                sourceText: external.content,
+                status: external.status,
+                updatedAt: external.updatedAt,
+              }
+            : current,
+        ),
+      );
+      resolveHistorySource(documentId);
+    } catch (error) {
+      addVaultNotice(readErrorMessage(error), { persistent: true });
+    }
+  }
+
+  async function openConflictCopy(documentId: string) {
+    const document = documentsRef.current.find(
+      (candidate) => candidate.id === documentId,
+    );
+    if (!document?.conflictCopyPath) return;
+
+    try {
+      const snapshot = await rescanVault();
+      if (!snapshot) return;
+      adoptVaultSnapshot(snapshot);
+      const copy = documentsRef.current.find(
+        (candidate) => candidate.relativePath === document.conflictCopyPath,
+      );
+      if (copy) await selectDocument(copy.id);
+    } catch (error) {
+      addVaultNotice(readErrorMessage(error), { persistent: true });
+    }
+  }
 
   useEffect(() => {
     const pendingRelativePath = pendingSessionRelativePathRef.current;
@@ -2346,6 +2627,26 @@ export function App() {
                   Dismiss
                 </button>
               </div>
+              {activeDocument.saveState === "conflict" ? (
+                <div className="vault-message__actions">
+                  {activeDocument.conflictCopyPath ? (
+                    <button
+                      type="button"
+                      onClick={() => void openConflictCopy(activeDocument.id)}
+                    >
+                      Open recovery copy
+                    </button>
+                  ) : null}
+                  <button
+                    type="button"
+                    onClick={() =>
+                      void reloadExternalDocument(activeDocument.id)
+                    }
+                  >
+                    Reload external version
+                  </button>
+                </div>
+              ) : null}
             </div>
           ) : null}
         </div>
