@@ -22,7 +22,7 @@ describe("SettingsModal Markdown options", () => {
 
     const dialog = screen.getByRole("dialog", { name: "Settings" });
     const toggles = screen.getAllByRole("checkbox");
-    expect(toggles).toHaveLength(6);
+    expect(toggles).toHaveLength(7);
     const extensionToggle = screen.getByRole("checkbox", {
       name: "Show file extensions",
     });
@@ -43,6 +43,11 @@ describe("SettingsModal Markdown options", () => {
       ...DEFAULT_MARKDOWN_SETTINGS,
       autoLinkUrls: false,
     });
+    expect(
+      screen.getByRole("checkbox", {
+        name: "Use backslash for hard line breaks",
+      }),
+    ).toBeChecked();
     await user.selectOptions(
       screen.getByRole("combobox", { name: "Editor text size" }),
       "12",

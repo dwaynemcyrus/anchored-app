@@ -107,6 +107,7 @@ describe("Anchored Markdown renderer", () => {
     const source = 'https://example.com "quotes" -- … :warning: ==mark==';
     const rendered = renderMarkdown(source, {
       autoLinkUrls: false,
+      backslashLineBreaks: true,
       editorFontSize: 14,
       emoji: false,
       mermaid: false,
@@ -121,6 +122,7 @@ describe("Anchored Markdown renderer", () => {
     expect(
       renderMarkdown("```rust\nfn main() {}\n```", {
         autoLinkUrls: true,
+        backslashLineBreaks: true,
         editorFontSize: 14,
         emoji: true,
         mermaid: true,

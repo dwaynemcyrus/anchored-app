@@ -21,6 +21,7 @@ export type EditorFontSize = (typeof EDITOR_FONT_SIZES)[number];
 
 export type MarkdownSettings = {
   autoLinkUrls: boolean;
+  backslashLineBreaks: boolean;
   editorFontSize: EditorFontSize;
   emoji: boolean;
   mermaid: boolean;
@@ -31,6 +32,7 @@ export type MarkdownSettings = {
 
 export const DEFAULT_MARKDOWN_SETTINGS: MarkdownSettings = {
   autoLinkUrls: true,
+  backslashLineBreaks: true,
   editorFontSize: 14,
   emoji: true,
   mermaid: true,

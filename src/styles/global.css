@@ -878,6 +878,11 @@ input:focus-visible,
   color: #d7a85b;
 }
 
+.markdown-editor .cm-anchored-hard-break {
+  color: #d7a85b;
+  font-weight: 700;
+}
+
 .markdown-editor .cm-anchored-math {
   color: #b59cff;
 }

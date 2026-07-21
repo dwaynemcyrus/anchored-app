@@ -47,6 +47,9 @@ Git commit. The format follows [Keep a Changelog], and releases follow
   emoji, Mermaid diagrams, and an explicit sanitized Preview view. URL
   autolinking, smart typography, code highlighting, emoji, and Mermaid can be
   configured in Settings without changing Markdown source.
+- Backslashes at the ends of Markdown lines now render as configurable hard
+  line breaks and receive matching source-editor syntax highlighting outside
+  code.
 - Markdown source editing now decorates supported wikilinks, heading IDs,
   admonitions, math, tasks, highlights, emoji, and fenced code markers while
   keeping the underlying source unchanged. Intentional saves normalize CRLF

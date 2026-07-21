@@ -30,6 +30,8 @@ function parseSettings(value: unknown): MarkdownSettings | null {
     !isBoolean(candidate.smartTypography) ||
     !isBoolean(candidate.syntaxHighlighting) ||
     (candidate.version === STORAGE_VERSION &&
+      !isBoolean(candidate.backslashLineBreaks)) ||
+    (candidate.version === STORAGE_VERSION &&
       !isEditorFontSize(candidate.editorFontSize))
   ) {
     return null;
@@ -40,6 +42,10 @@ function parseSettings(value: unknown): MarkdownSettings | null {
       : candidate.editorFontSize;
   return {
     autoLinkUrls: candidate.autoLinkUrls,
+    backslashLineBreaks:
+      candidate.version === STORAGE_VERSION
+        ? candidate.backslashLineBreaks === true
+        : DEFAULT_MARKDOWN_SETTINGS.backslashLineBreaks,
     editorFontSize,
     emoji: candidate.emoji,
     mermaid: candidate.mermaid,

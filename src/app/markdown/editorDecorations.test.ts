@@ -36,6 +36,18 @@ describe("Markdown editor decorations", () => {
     expect(source.slice(ranges[0].from, ranges[0].to)).toBe("[[One]]");
   });
 
+  it("highlights hard-break backslashes outside code", () => {
+    const source =
+      "normal\\\n`inline\\`\\n\n```md\nfenced\\\n```\n\n    indented\\";
+    const ranges = findMarkdownDecorationRanges(source).filter(
+      (range) => range.className === "cm-anchored-hard-break",
+    );
+
+    expect(ranges.map((range) => source.slice(range.from, range.to))).toEqual([
+      "\\",
+    ]);
+  });
+
   it("styles YAML front matter keys, values, comments, and delimiters", () => {
     const source =
       "---\nid: 01JZQ7K8P4A6F2M9V3C5T7X1BY\ntags:\n  - writing\n# metadata\n---\n# Heading";

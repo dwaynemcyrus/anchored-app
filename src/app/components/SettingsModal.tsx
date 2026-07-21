@@ -118,6 +118,19 @@ export function SettingsModal({
           </label>
           <label className="settings-toggle">
             <input
+              checked={markdownSettings.backslashLineBreaks}
+              type="checkbox"
+              onChange={(event) =>
+                onMarkdownSettingsChange({
+                  ...markdownSettings,
+                  backslashLineBreaks: event.target.checked,
+                })
+              }
+            />
+            <span>Use backslash for hard line breaks</span>
+          </label>
+          <label className="settings-toggle">
+            <input
               checked={markdownSettings.smartTypography}
               type="checkbox"
               onChange={(event) =>
