@@ -249,6 +249,18 @@ export function EditorSurface({
               </button>
             </>
           ) : null}
+          {document.relativePath &&
+          !archived &&
+          document.status?.trim().toLocaleLowerCase() !== "inbox" ? (
+            <button
+              className="editor-surface__action"
+              disabled={lifecycleChanging || trashing}
+              type="button"
+              onClick={() => onRestoreDocument("inbox")}
+            >
+              {lifecycleChanging ? "Moving…" : "Move to Inbox"}
+            </button>
+          ) : null}
           {document.relativePath ? (
             <button
               aria-label={`Move ${document.name} to Trash`}

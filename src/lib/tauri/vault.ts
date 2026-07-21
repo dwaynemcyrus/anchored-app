@@ -67,6 +67,8 @@ export type VaultDocument = {
   sizeBytes: number;
   status?: string;
   updatedAt?: string;
+  updatedFiles?: number;
+  updatedLinks?: number;
 };
 
 export type VaultSearchResult = {

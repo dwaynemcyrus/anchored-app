@@ -151,6 +151,10 @@ pub struct VaultDocument {
     pub status: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub updated_at: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub updated_files: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub updated_links: Option<usize>,
 }
 
 #[derive(Debug, Serialize)]
@@ -758,6 +762,10 @@ pub async fn archive_vault_file(
     note_type: Option<String>,
     update_type: Option<bool>,
 ) -> Result<VaultDocument, VaultError> {
+    let _rename_guard = state
+        .rename_transaction
+        .lock()
+        .map_err(|_| VaultError::state("The note lifecycle lock could not be acquired."))?;
     let root = selected_vault_root(&state, "archiving a Markdown file")?;
     transition_markdown_lifecycle(
         &root,
@@ -779,6 +787,10 @@ pub async fn restore_archived_vault_file(
     note_type: Option<String>,
     update_type: Option<bool>,
 ) -> Result<VaultDocument, VaultError> {
+    let _rename_guard = state
+        .rename_transaction
+        .lock()
+        .map_err(|_| VaultError::state("The note lifecycle lock could not be acquired."))?;
     let root = selected_vault_root(&state, "restoring an archived Markdown file")?;
     transition_markdown_lifecycle(
         &root,
@@ -799,6 +811,10 @@ pub async fn move_vault_file_to_workbench(
     expected_content: String,
     note_type: Option<String>,
 ) -> Result<VaultDocument, VaultError> {
+    let _rename_guard = state
+        .rename_transaction
+        .lock()
+        .map_err(|_| VaultError::state("The note lifecycle lock could not be acquired."))?;
     let root = selected_vault_root(&state, "moving a Markdown file to Workbench")?;
     transition_markdown_lifecycle(
         &root,
@@ -2078,6 +2094,8 @@ fn vault_document(
         size_bytes,
         status: properties.status,
         updated_at: properties.updated_at,
+        updated_files: None,
+        updated_links: None,
     }
 }
 
@@ -2248,19 +2266,23 @@ fn transition_markdown_lifecycle(
             note_type,
             update_type,
         } => {
-            if current_status.as_deref() != Some("archived") {
-                return Err(VaultError::lifecycle(
-                    "Only archived notes can be restored to an editable collection.",
-                ));
-            }
-            if update_type && current_properties.note_type.as_deref() != Some("scratchpad") {
-                restore_note_with_type(
-                    &current_content,
-                    &destination_status,
-                    validated_note_type(note_type.as_deref())?,
-                )
-            } else {
+            if destination_status == "inbox" && current_status.as_deref() == Some("active") {
                 restore_note(&current_content, &destination_status)
+            } else {
+                if current_status.as_deref() != Some("archived") {
+                    return Err(VaultError::lifecycle(
+                        "Only archived notes can be restored to an editable collection.",
+                    ));
+                }
+                if update_type && current_properties.note_type.as_deref() != Some("scratchpad") {
+                    restore_note_with_type(
+                        &current_content,
+                        &destination_status,
+                        validated_note_type(note_type.as_deref())?,
+                    )
+                } else {
+                    restore_note(&current_content, &destination_status)
+                }
             }
         }
         LifecycleTransition::Workbench { note_type } => {
@@ -2290,6 +2312,39 @@ fn transition_markdown_lifecycle(
         return Err(VaultError::file_too_large());
     }
 
+    let updated_properties = inspect_note_properties(&updated);
+    let target_status = updated_properties.status.as_deref();
+    let current_is_inbox = matches!(current_status.as_deref(), None | Some("inbox"));
+    let should_move_to_collection = match target_status {
+        Some("inbox") => !current_is_inbox,
+        Some("active") | Some("archived") => current_is_inbox,
+        _ => false,
+    };
+
+    if should_move_to_collection {
+        let destination_folder = lifecycle_destination_folder(
+            root,
+            target_status,
+            updated_properties.note_type.as_deref(),
+        )?;
+        let destination_directory = resolve_vault_directory(root, &destination_folder)?;
+        let file_name = Path::new(relative_path).file_name().ok_or_else(|| {
+            VaultError::invalid_file("Only relative Markdown file paths can be moved.")
+        })?;
+        let destination = destination_directory.join(file_name);
+        let outcome = rename_markdown_file_with_content(
+            root,
+            relative_path,
+            &destination,
+            Some(&updated),
+            None,
+        )?;
+        let mut document = read_markdown_file(root, &outcome.relative_path)?;
+        document.updated_files = Some(outcome.updated_files);
+        document.updated_links = Some(outcome.updated_links);
+        return Ok(document);
+    }
+
     let metadata = fs::metadata(&canonical_file)
         .map_err(|error| VaultError::io("The Markdown file could not be inspected", error))?;
     let temporary_path = temporary_sibling_path(&canonical_file)?;
@@ -2307,6 +2362,32 @@ fn transition_markdown_lifecycle(
         metadata.len(),
         file_signature_from_metadata(&metadata).modified_millis,
     ))
+}
+
+fn lifecycle_destination_folder(
+    root: &Path,
+    target_status: Option<&str>,
+    note_type: Option<&str>,
+) -> Result<String, VaultError> {
+    let folder = if target_status == Some("inbox") {
+        "inbox".to_owned()
+    } else if let Some(note_type) = note_type {
+        let folder = note_type.to_lowercase();
+        validate_folder_name(&folder)?;
+        folder
+    } else {
+        "inbox".to_owned()
+    };
+
+    let root = canonical_vault_root(root)?;
+    let directory = root.join(&folder);
+    if !directory.exists() {
+        fs::create_dir(&directory)
+            .map_err(|error| VaultError::io("The lifecycle folder could not be created", error))?;
+        sync_parent_directory(&directory)?;
+    }
+    resolve_vault_directory(&root, &folder)?;
+    Ok(folder)
 }
 
 fn create_markdown_file(
@@ -2364,6 +2445,22 @@ fn rename_markdown_file(
     destination: &Path,
     fail_after_installations: Option<usize>,
 ) -> Result<RenameOutcome, VaultError> {
+    rename_markdown_file_with_content(
+        root,
+        relative_path,
+        destination,
+        None,
+        fail_after_installations,
+    )
+}
+
+fn rename_markdown_file_with_content(
+    root: &Path,
+    relative_path: &str,
+    destination: &Path,
+    replacement_content: Option<&str>,
+    fail_after_installations: Option<usize>,
+) -> Result<RenameOutcome, VaultError> {
     let root = canonical_vault_root(root)?;
     let original_path = resolve_vault_markdown_file(&root, relative_path)?;
     let (destination_path, new_relative_path) =
@@ -2407,6 +2504,19 @@ fn rename_markdown_file(
             relative_path: file.relative_path.clone(),
         });
     }
+    let planning_sources = sources
+        .iter()
+        .map(|source| LinkSource {
+            content: if source.relative_path == relative_path {
+                replacement_content
+                    .map(ToOwned::to_owned)
+                    .unwrap_or_else(|| source.content.clone())
+            } else {
+                source.content.clone()
+            },
+            relative_path: source.relative_path.clone(),
+        })
+        .collect::<Vec<_>>();
     let notes = snapshot
         .files
         .iter()
@@ -2416,8 +2526,12 @@ fn rename_markdown_file(
             relative_path: file.relative_path.clone(),
         })
         .collect::<Vec<_>>();
-    let rewrites =
-        plan_rename_link_rewrites_by_path(&notes, &sources, relative_path, &new_relative_path);
+    let rewrites = plan_rename_link_rewrites_by_path(
+        &notes,
+        &planning_sources,
+        relative_path,
+        &new_relative_path,
+    );
     let updated_links = rewrites
         .iter()
         .map(|rewrite| rewrite.replacement_count)
@@ -2427,7 +2541,7 @@ fn rename_markdown_file(
         .into_iter()
         .map(|rewrite| (rewrite.relative_path, rewrite.content))
         .collect::<BTreeMap<_, _>>();
-    let target_content = sources
+    let target_content = planning_sources
         .iter()
         .find(|source| source.relative_path == relative_path)
         .expect("the scanned target has loaded content")
@@ -3616,6 +3730,86 @@ mod tests {
         )
         .expect("save restored note");
         assert!(saved.content.ends_with("Edited\n"));
+    }
+
+    #[test]
+    fn moves_inbox_notes_by_type_but_restores_archive_to_workbench_in_place() {
+        let vault = tempdir().expect("create fixture vault");
+        fs::create_dir(vault.path().join("inbox")).expect("create inbox folder");
+        let original = "---\nstatus: inbox\ntype: Daily Note\n---\n# Note\n";
+        fs::write(vault.path().join("Note.md"), original).expect("write note");
+        fs::write(vault.path().join("Reference.md"), "[[Note]]\n").expect("write reference");
+
+        let archived = transition_markdown_lifecycle(
+            vault.path(),
+            "Note.md",
+            original,
+            LifecycleTransition::Archive {
+                note_type: Some("Daily Note".to_owned()),
+                update_type: true,
+            },
+        )
+        .expect("archive inbox note");
+        assert_eq!(archived.relative_path, "daily note/Note.md");
+        assert_eq!(archived.updated_files, Some(1));
+        assert_eq!(archived.updated_links, Some(1));
+        assert!(!vault.path().join("Note.md").exists());
+        assert!(vault.path().join("daily note/Note.md").exists());
+        assert_eq!(
+            fs::read_to_string(vault.path().join("Reference.md")).expect("read reference"),
+            "[[daily note/Note]]\n"
+        );
+
+        let restored_to_workbench = transition_markdown_lifecycle(
+            vault.path(),
+            &archived.relative_path,
+            &archived.content,
+            LifecycleTransition::Restore {
+                destination_status: "active".to_owned(),
+                note_type: None,
+                update_type: false,
+            },
+        )
+        .expect("restore to Workbench");
+        assert_eq!(restored_to_workbench.relative_path, "daily note/Note.md");
+        assert_eq!(restored_to_workbench.status.as_deref(), Some("active"));
+
+        let restored_to_inbox = transition_markdown_lifecycle(
+            vault.path(),
+            &restored_to_workbench.relative_path,
+            &restored_to_workbench.content,
+            LifecycleTransition::Restore {
+                destination_status: "inbox".to_owned(),
+                note_type: None,
+                update_type: false,
+            },
+        )
+        .expect("restore to Inbox");
+        assert_eq!(restored_to_inbox.relative_path, "inbox/Note.md");
+        assert_eq!(restored_to_inbox.status.as_deref(), Some("inbox"));
+        assert!(vault.path().join("inbox/Note.md").exists());
+    }
+
+    #[test]
+    fn moves_untyped_inbox_notes_into_the_inbox_folder() {
+        let vault = tempdir().expect("create fixture vault");
+        fs::write(
+            vault.path().join("Note.md"),
+            "---\nstatus: inbox\n---\n# Note\n",
+        )
+        .expect("write note");
+
+        let moved = transition_markdown_lifecycle(
+            vault.path(),
+            "Note.md",
+            "---\nstatus: inbox\n---\n# Note\n",
+            LifecycleTransition::Workbench { note_type: None },
+        )
+        .expect("move untyped note to Workbench");
+
+        assert_eq!(moved.relative_path, "inbox/Note.md");
+        assert_eq!(moved.status.as_deref(), Some("active"));
+        assert!(vault.path().join("inbox/Note.md").exists());
     }
 
     #[test]

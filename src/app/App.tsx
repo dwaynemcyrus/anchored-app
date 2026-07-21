@@ -1806,6 +1806,29 @@ export function App() {
     );
   }
 
+  async function applyLifecycleResult(
+    documentId: string,
+    result: VaultDocument,
+    message: string,
+  ) {
+    const document = documentsRef.current.find(
+      (candidate) => candidate.id === documentId,
+    );
+    if (document?.relativePath && result.relativePath !== document.relativePath) {
+      await finishRelocatedDocument(
+        {
+          relativePath: result.relativePath,
+          updatedFiles: result.updatedFiles ?? 0,
+          updatedLinks: result.updatedLinks ?? 0,
+        },
+        message,
+      );
+      return;
+    }
+    applyLifecycleDocument(documentId, result);
+    addVaultNotice(message, { history: { kind: "vault" } });
+  }
+
   async function lifecycleExpectedContent(document: AnchoredDocument) {
     if (document.savedSourceText !== undefined) return document.savedSourceText;
     if (!document.relativePath) {
@@ -1839,10 +1862,11 @@ export function App() {
         relativePath: document.relativePath,
         updateType: true,
       });
-      applyLifecycleDocument(documentId, result);
-      addVaultNotice(`${document.name} moved to Archive.`, {
-        history: { kind: "vault" },
-      });
+      await applyLifecycleResult(
+        documentId,
+        result,
+        `${document.name} moved to Archive.`,
+      );
     } catch (error) {
       addVaultNotice(readErrorMessage(error), { persistent: true });
       addHistoryEntry(`${document.name} could not be archived safely.`, {
@@ -1883,12 +1907,12 @@ export function App() {
         relativePath: document.relativePath,
         updateType: destinationStatus === "active",
       });
-      applyLifecycleDocument(documentId, result);
-      addVaultNotice(
+      await applyLifecycleResult(
+        documentId,
+        result,
         `${document.name} restored to ${
           destinationStatus === "inbox" ? "Inbox" : "Workbench"
         }.`,
-        { history: { kind: "vault" } },
       );
     } catch (error) {
       addVaultNotice(readErrorMessage(error), { persistent: true });
@@ -1927,10 +1951,11 @@ export function App() {
         relativePath: document.relativePath,
         updateType: true,
       });
-      applyLifecycleDocument(documentId, result);
-      addVaultNotice(`${document.name} moved to Workbench.`, {
-        history: { kind: "vault" },
-      });
+      await applyLifecycleResult(
+        documentId,
+        result,
+        `${document.name} moved to Workbench.`,
+      );
     } catch (error) {
       addVaultNotice(readErrorMessage(error), { persistent: true });
     } finally {
