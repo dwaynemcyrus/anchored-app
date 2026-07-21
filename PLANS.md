@@ -1299,7 +1299,7 @@ and preserves link integrity across filename changes.
       the document and external revision so autosave cannot create duplicates
       while the user is deciding what to do.
 
-    22A. [ ] **Define the conflict contract and recovery artifact**
+    22A. [x] **Define the conflict contract and recovery artifact**
         - Expected files: `PROJECT.md`, `docs/FEATURES.md`,
           `docs/MARKDOWN_SPEC.md`, `src-tauri/src/vault.rs`,
           `src/lib/tauri/vault.ts`, and focused Rust/bridge tests.
@@ -1318,16 +1318,16 @@ and preserves link integrity across filename changes.
           link rewrites, and retain the recovery record until the user resolves
           or deletes the copy explicitly.
 
-    22B. [ ] **Detect external changes and serialize Anchored saves**
+    22B. [x] **Detect external changes and serialize Anchored saves**
         - Expected files: `src-tauri/Cargo.toml`, `src-tauri/src/lib.rs`,
           `src-tauri/src/vault.rs`, frontend save/state modules, and native
           integration tests.
-        - Change: Watch the selected file's parent directory so atomic
-          replacement is observable, debounce events, suppress only verified
-          Anchored writes, and emit relative-path plus revision events to the
-          WebView. Add a per-document save gate so manual Save and one-second
-          autosave coalesce instead of issuing concurrent writes. Recheck the
-          file immediately before every mutation and after a watcher event.
+        - Change: Run a native active-file signature watcher so atomic
+          replacement is observable, debounce changes, and emit relative-path
+          plus revision events to the WebView. Add a per-document save gate so
+          manual Save and one-second autosave coalesce instead of issuing
+          concurrent writes. Recheck the file immediately before every
+          mutation and after a watcher event.
         - Verify: Native tests cover atomic replacement, Obsidian-style writes,
           rapid successive writes, watcher startup/shutdown, vault switching,
           own-write suppression, and save/manual-save races. Use a disposable
@@ -1337,7 +1337,7 @@ and preserves link integrity across filename changes.
           content/revision rechecks remain authoritative, and watcher failure
           must fall back to the existing save refusal rather than weakening it.
 
-    22C. [ ] **Add frontend conflict state and recovery actions**
+    22C. [x] **Add frontend conflict state and recovery actions**
         - Expected files: `src/app/documents.ts`, `src/app/App.tsx`,
           `src/app/components/TitleBar.tsx`, relevant notification/editor
           components, bridge types, and frontend tests.
@@ -1390,6 +1390,13 @@ and preserves link integrity across filename changes.
           serialized saves, and recoverable conflict copies under
           `[Unreleased]`; mention automatic merging only if it ships. No
           version change is authorized by this plan.
+
+    - Implementation result (2026-07-22): Chunks 22A–22C are implemented.
+      Anchored now watches the active file natively, reloads clean external
+      changes, serializes per-note saves, creates visible same-folder recovery
+      copies for dirty conflicts, labels those copies in Files, excludes them
+      from lifecycle/link indexes, and exposes recovery/reload actions. Three-
+      way merging remains intentionally deferred to 22D.
 
 ## Requirements for future large plans
 
