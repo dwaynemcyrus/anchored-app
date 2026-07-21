@@ -1,6 +1,8 @@
 /* eslint-disable react-refresh/only-export-components */
 import React from "react";
 import ReactDOM from "react-dom/client";
+import { loadMarkdownSettings } from "./app/markdown/settings";
+import { applyTheme } from "./app/theme/apply";
 import "./styles/global.css";
 
 type StartupBoundaryState = {
@@ -49,6 +51,12 @@ class StartupBoundary extends React.Component<
 
 const rootElement = document.getElementById("root") as HTMLElement;
 const root = ReactDOM.createRoot(rootElement);
+
+try {
+  applyTheme(loadMarkdownSettings(window.localStorage).theme);
+} catch {
+  applyTheme("anchored");
+}
 
 root.render(<main className="startup-status">Starting Anchored…</main>);
 

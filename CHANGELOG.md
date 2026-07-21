@@ -8,6 +8,10 @@ Git commit. The format follows [Keep a Changelog], and releases follow
 
 ### Added
 
+- Added persisted color themes for Anchored, Ayu, Dracula, Catppuccin, Nord,
+  and a black-on-white Light palette. Themes apply to the application shell,
+  source syntax highlighting, Markdown Preview code, decorations, and Mermaid
+  diagrams.
 - The file rail now handles large vaults with stable browser-native scrolling,
   keeps selection separate from folder expansion, supports keyboard navigation
   and context menus, shows Lucide file-type icons, and recognizes common

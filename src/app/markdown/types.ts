@@ -1,3 +1,5 @@
+import type { ThemeId } from "../theme/types";
+
 export const ADMONITION_TYPES = [
   "note",
   "abstract",
@@ -26,6 +28,7 @@ export type MarkdownSettings = {
   mermaid: boolean;
   smartTypography: boolean;
   syntaxHighlighting: boolean;
+  theme: ThemeId;
 };
 
 export const DEFAULT_MARKDOWN_SETTINGS: MarkdownSettings = {
@@ -35,6 +38,7 @@ export const DEFAULT_MARKDOWN_SETTINGS: MarkdownSettings = {
   mermaid: true,
   smartTypography: true,
   syntaxHighlighting: true,
+  theme: "anchored",
 };
 
 export type MarkdownRenderResult = {

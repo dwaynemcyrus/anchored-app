@@ -3,9 +3,10 @@ import {
   type EditorFontSize,
   type MarkdownSettings,
 } from "./types";
+import { isThemeId } from "../theme/types";
 
 const STORAGE_KEY = "anchored.markdown-settings.v1";
-const STORAGE_VERSION = 2;
+const STORAGE_VERSION = 3;
 
 type SettingsStorage = Pick<Storage, "getItem" | "setItem">;
 
@@ -21,14 +22,17 @@ function parseSettings(value: unknown): MarkdownSettings | null {
   if (!value || typeof value !== "object") return null;
   const candidate = value as Partial<MarkdownSettings> & { version?: unknown };
   if (
-    (candidate.version !== 1 && candidate.version !== STORAGE_VERSION) ||
+    (candidate.version !== 1 &&
+      candidate.version !== 2 &&
+      candidate.version !== STORAGE_VERSION) ||
     !isBoolean(candidate.autoLinkUrls) ||
     !isBoolean(candidate.emoji) ||
     !isBoolean(candidate.mermaid) ||
     !isBoolean(candidate.smartTypography) ||
     !isBoolean(candidate.syntaxHighlighting) ||
     (candidate.version === STORAGE_VERSION &&
-      !isEditorFontSize(candidate.editorFontSize))
+      !isEditorFontSize(candidate.editorFontSize)) ||
+    (candidate.theme !== undefined && !isThemeId(candidate.theme))
   ) {
     return null;
   }
@@ -43,6 +47,9 @@ function parseSettings(value: unknown): MarkdownSettings | null {
     mermaid: candidate.mermaid,
     smartTypography: candidate.smartTypography,
     syntaxHighlighting: candidate.syntaxHighlighting,
+    theme: isThemeId(candidate.theme)
+      ? candidate.theme
+      : DEFAULT_MARKDOWN_SETTINGS.theme,
   };
 }
 

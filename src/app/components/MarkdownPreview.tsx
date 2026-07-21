@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef } from "react";
 import "katex/dist/katex.min.css";
 
 import { renderMarkdown } from "../markdown/renderer";
+import { THEME_DEFINITIONS } from "../theme/palettes";
 import type { MarkdownSettings } from "../markdown/types";
 
 type MarkdownPreviewProps = {
@@ -57,7 +58,8 @@ export default function MarkdownPreview({
       mermaid.initialize({
         securityLevel: "strict",
         startOnLoad: false,
-        theme: "dark",
+        theme: "base",
+        themeVariables: THEME_DEFINITIONS[settings.theme].mermaid,
       });
       diagrams.forEach((diagram, index) => {
         const code = diagram.querySelector("code")?.textContent ?? "";
@@ -83,7 +85,7 @@ export default function MarkdownPreview({
     return () => {
       disposed = true;
     };
-  }, [rendered.html, settings.mermaid]);
+  }, [rendered.html, settings.mermaid, settings.theme]);
 
   return (
     <article

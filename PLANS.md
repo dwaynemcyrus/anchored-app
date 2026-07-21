@@ -1679,6 +1679,102 @@ Every future large plan must identify:
   creation, and Quick Open, and the representative topology passes its 100 ms
   automated budget.
 
+## Follow-up plan: named color themes
+
+### Outcome
+
+Add persisted theme choices to Settings for Ayu, Dracula, Catppuccin, Nord,
+and a black-on-white Light theme. Each choice must recolor the Anchored shell,
+source editor syntax, Markdown preview code, editor decorations, and Mermaid
+output consistently.
+
+### Decisions and assumptions
+
+- “Dracul” is interpreted as Dracula.
+- The named options use dark variants: Ayu Dark, Dracula, Catppuccin Mocha,
+  and Nord. If a different Ayu or Catppuccin variant is intended, update the
+  palette before implementation.
+- The Light option is intentionally black on white for long-form reading and
+  writing.
+- Existing white-on-black behavior remains the default so current users do
+  not see an unexpected appearance change; no authored Markdown or vault data
+  changes.
+- Theme selection remains local and optional. Invalid or unavailable stored
+  values fall back to the default theme.
+
+### Implementation sequence
+
+1. **Define the theme contract**
+   - Add a typed `ThemeId`, ordered theme metadata for the Settings menu, and
+     semantic tokens covering canvas, text, borders, focus, states, editor
+     syntax, decorations, code blocks, and Mermaid surfaces.
+   - Keep the theme contract separate from Markdown rendering behavior where
+     practical; preserve the existing versioned settings migration path.
+
+2. **Create the four palettes and CSS token layer**
+   - Add the four verified palettes and map them to root-level custom
+     properties using a `data-theme` attribute.
+   - Replace theme-dependent fixed colors in `global.css`, including editor
+     selection, front matter, decorations, fenced code, marks, admonitions,
+     preview code, and Mermaid containers.
+   - Audit `scratchpad.css` and all remaining literal colors so the separate
+     Scratchpad window follows the selected theme or explicitly documents any
+     intentional fixed color.
+
+3. **Thread the theme through editor and preview rendering**
+   - Replace fixed CodeMirror `HighlightStyle` values with semantic CSS
+     variables so Markdown and YAML syntax use the active palette immediately.
+   - Add theme-aware classes for `highlight.js` output in Markdown Preview.
+   - Pass the selected theme to Mermaid initialization and map the four dark
+     palettes to Mermaid-compatible variables, with a safe dark fallback.
+   - Ensure changing themes does not recreate or disturb the active document,
+     cursor, undo history, or unsaved edits.
+
+4. **Add Settings selection and persistence**
+   - Add an accessible theme combobox under an Appearance section in
+     `SettingsModal`.
+   - Load the theme at startup, apply it to `document.documentElement`, and
+     persist changes through the existing storage boundary.
+   - Bump the settings schema version only as needed; migrate existing users
+     to the default theme without changing their Markdown options.
+
+5. **Verify and document**
+   - Add unit tests for palette IDs, fallback behavior, settings migration,
+     Settings interaction, CodeMirror token usage, and rendered preview theme
+     classes.
+   - Run formatting, lint, type-check, frontend tests, and production build.
+   - Verify each theme at desktop and narrow window sizes, including the main
+     editor, Preview, Settings, notifications, autocomplete/search panels,
+     keyboard focus, reduced motion, and the Scratchpad window.
+   - Add a concise user-visible entry under `CHANGELOG.md`.
+
+### Expected files
+
+- `src/app/theme/types.ts` and `src/app/theme/palettes.ts` or equivalent
+  theme modules
+- `src/app/markdown/types.ts`, `src/app/markdown/settings.ts`, and related
+  settings tests
+- `src/app/App.tsx`
+- `src/app/components/SettingsModal.tsx` and its test
+- `src/app/components/MarkdownEditor.tsx`
+- `src/app/components/MarkdownPreview.tsx`
+- `src/app/markdown/editorLanguage.ts`
+- `src/app/markdown/renderer.ts`
+- `src/styles/global.css` and possibly `src/styles/scratchpad.css`
+- `CHANGELOG.md`
+
+### Risks and rollback
+
+- Poorly matched syntax colors can reduce readability even when shell colors
+  look correct; each palette needs contrast review across source and Preview.
+- Mermaid uses its own renderer variables and may not perfectly reproduce each
+  palette; failures must retain a readable dark fallback.
+- The existing settings object is named for Markdown settings. Prefer a small,
+  compatible extension first; split it into broader app settings only if the
+  theme field makes the existing contract misleading or difficult to test.
+- The change is reversible because themes affect presentation and local
+  settings only; it must never rewrite vault files.
+
 ## Completion
 
 - **Checks run:** Documentation diff checks; Prettier check; ESLint;

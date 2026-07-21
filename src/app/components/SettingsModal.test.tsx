@@ -29,6 +29,9 @@ describe("SettingsModal Markdown options", () => {
     expect(
       screen.getByRole("combobox", { name: "Editor text size" }),
     ).toHaveValue("14");
+    expect(screen.getByRole("combobox", { name: "Color theme" })).toHaveValue(
+      "anchored",
+    );
 
     await user.click(toggles[0]);
     expect(onMarkdownSettingsChange).toHaveBeenLastCalledWith({
@@ -42,6 +45,14 @@ describe("SettingsModal Markdown options", () => {
     expect(onMarkdownSettingsChange).toHaveBeenLastCalledWith({
       ...DEFAULT_MARKDOWN_SETTINGS,
       editorFontSize: 12,
+    });
+    await user.selectOptions(
+      screen.getByRole("combobox", { name: "Color theme" }),
+      "light",
+    );
+    expect(onMarkdownSettingsChange).toHaveBeenLastCalledWith({
+      ...DEFAULT_MARKDOWN_SETTINGS,
+      theme: "light",
     });
     expect(dialog).toHaveTextContent("Rendering options never rewrite");
     expect(dialog).toHaveTextContent("Typography");

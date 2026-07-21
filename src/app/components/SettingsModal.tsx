@@ -5,6 +5,8 @@ import {
   type EditorFontSize,
   type MarkdownSettings,
 } from "../markdown/types";
+import { THEME_OPTIONS } from "../theme/palettes";
+import type { ThemeId } from "../theme/types";
 import { useModalDialog } from "./useModalDialog";
 
 type SettingsModalProps = {
@@ -72,6 +74,32 @@ export function SettingsModal({
               {EDITOR_FONT_SIZES.map((size) => (
                 <option key={size} value={size}>
                   {size}px
+                </option>
+              ))}
+            </select>
+          </label>
+        </section>
+        <section className="settings-section">
+          <h3>Appearance</h3>
+          <p>
+            Choose a named color palette for the interface, source editor, and
+            Markdown preview.
+          </p>
+          <label className="settings-select">
+            <span>Color theme</span>
+            <select
+              aria-label="Color theme"
+              value={markdownSettings.theme}
+              onChange={(event) =>
+                onMarkdownSettingsChange({
+                  ...markdownSettings,
+                  theme: event.target.value as ThemeId,
+                })
+              }
+            >
+              {THEME_OPTIONS.map((theme) => (
+                <option key={theme.id} value={theme.id}>
+                  {theme.label}
                 </option>
               ))}
             </select>
