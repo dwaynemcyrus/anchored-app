@@ -1288,6 +1288,11 @@ and preserves link integrity across filename changes.
       later phase and is allowed only when a conservative three-way merge can
       prove that edits do not overlap. The existing refusal remains the final
       fallback.
+    - Recovery-copy decision: Copies live visibly beside the original file so
+      they are easy to find in both Anchored and Obsidian. They receive a
+      unique conflict suffix, never replace an existing path, are excluded
+      from automatic link rewrites, and are clearly labeled as recovery files
+      in the Anchored index and UI.
     - Shared invariants: Conflict copies are written atomically, never replace
       an existing path, preserve the local Markdown source without adding
       Anchored metadata, and do not log vault content. A conflict is keyed to
@@ -1298,20 +1303,20 @@ and preserves link integrity across filename changes.
         - Expected files: `PROJECT.md`, `docs/FEATURES.md`,
           `docs/MARKDOWN_SPEC.md`, `src-tauri/src/vault.rs`,
           `src/lib/tauri/vault.ts`, and focused Rust/bridge tests.
-        - Change: Specify the external revision payload, conflict-copy naming
-          and placement, lifecycle of unresolved conflicts, explicit user
-          actions, and behavior for missing, renamed, or repeatedly changed
-          files. Keep the external file authoritative until the user chooses
-          otherwise. Prefer a visible, same-folder recovery copy only if it
-          can be excluded from normal link/index behavior; otherwise use the
-          existing hidden `.anchored` recovery area with an explicit UI entry.
+        - Change: Specify the external revision payload, visible same-folder
+          conflict-copy naming, lifecycle of unresolved conflicts, explicit
+          user actions, and behavior for missing, renamed, or repeatedly
+          changed files. Keep the external file authoritative until the user
+          chooses otherwise. Recovery copies must be labeled and excluded from
+          automatic link rewrites so they remain recoverable without silently
+          changing the active vault graph.
         - Verify: Contract tests cover unique names, existing-name collisions,
           exact local bytes, malformed/large input, path containment, and a
           second conflict for the same document and revision.
         - Risk/rollback: A visible Markdown copy can appear as a duplicate note
-          or alter link resolution; a hidden copy can be hard to discover.
-          Decide and document this before implementation, and keep the native
-          recovery record until the user resolves it.
+          or alter link resolution. Keep it clearly labeled, exclude it from
+          link rewrites, and retain the recovery record until the user resolves
+          or deletes the copy explicitly.
 
     22B. [ ] **Detect external changes and serialize Anchored saves**
         - Expected files: `src-tauri/Cargo.toml`, `src-tauri/src/lib.rs`,
