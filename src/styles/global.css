@@ -13,8 +13,30 @@
   --color-row-active: #151515;
   --color-focus: #fff;
   --color-danger: #ffb4ab;
+  --color-success: #82c7a5;
   --color-menu: #111;
   --color-menu-border: #333;
+  --color-selection: #2c2c2c;
+  --color-surface: #080808;
+  --color-surface-alt: #101010;
+  --color-code-text: #e5e5e5;
+  --color-mark: #5a4b12;
+  --color-backdrop: rgb(0 0 0 / 60%);
+  --syntax-meta: #8d8d8d;
+  --syntax-heading: #f1f1f1;
+  --syntax-emphasis: #dedede;
+  --syntax-strong: #ffffff;
+  --syntax-link: #8db7ff;
+  --syntax-quote: #c4c4c4;
+  --syntax-list: #d7a85b;
+  --syntax-rule: #777777;
+  --syntax-monospace: #d6c29a;
+  --syntax-character: #82c7a5;
+  --syntax-comment: #777777;
+  --syntax-property: #d7a85b;
+  --syntax-string: #b9d69c;
+  --syntax-atom: #b59cff;
+  --syntax-invalid: #ff8f8f;
 }
 
 * {
@@ -325,7 +347,7 @@ input:focus-visible,
   padding: 2px;
   border: 1px solid var(--color-rule);
   border-radius: 6px;
-  background: #080808;
+  background: var(--color-surface);
 }
 
 .file-rail__segmented button {
@@ -372,7 +394,7 @@ input:focus-visible,
   border: 1px solid var(--color-rule);
   border-radius: 6px;
   outline-offset: -1px;
-  background: #080808;
+  background: var(--color-surface);
   font-size: 13px;
 }
 
@@ -704,7 +726,7 @@ input:focus-visible,
 
 .front-matter {
   margin: 0 0 42px;
-  color: #d2d2d2;
+  color: var(--syntax-string);
   font-family: "SFMono-Regular", Consolas, monospace;
   font-size: 14px;
   line-height: 1.65;
@@ -798,7 +820,7 @@ input:focus-visible,
 
 .markdown-editor .cm-selectionBackground,
 .markdown-editor .cm-content ::selection {
-  background: #2c2c2c;
+  background: var(--color-selection);
 }
 
 .markdown-editor .cm-anchored-wikilink {
@@ -806,54 +828,54 @@ input:focus-visible,
 }
 
 .markdown-editor .cm-anchored-footnote {
-  color: #b59cff;
+  color: var(--syntax-atom);
 }
 
 .markdown-editor .cm-anchored-frontmatter-delimiter {
-  color: #8d8d8d;
+  color: var(--syntax-meta);
 }
 
 .markdown-editor .cm-anchored-frontmatter-key {
-  color: #d7a85b;
+  color: var(--syntax-property);
   font-weight: 600;
 }
 
 .markdown-editor .cm-anchored-frontmatter-value {
-  color: #b9d69c;
+  color: var(--syntax-string);
 }
 
 .markdown-editor .cm-anchored-frontmatter-list-marker {
-  color: #d7a85b;
+  color: var(--syntax-list);
 }
 
 .markdown-editor .cm-anchored-frontmatter-comment {
-  color: #777777;
+  color: var(--syntax-comment);
   font-style: italic;
 }
 
 .markdown-editor .cm-anchored-heading-id,
 .markdown-editor .cm-anchored-admonition,
 .markdown-editor .cm-anchored-fence {
-  color: #d7a85b;
+  color: var(--syntax-list);
 }
 
 .markdown-editor .cm-anchored-math {
-  color: #b59cff;
+  color: var(--syntax-atom);
 }
 
 .markdown-editor .cm-anchored-mark {
-  background: #5a4b12;
+  background: var(--color-mark);
   color: var(--color-text);
 }
 
 .markdown-editor .cm-anchored-emoji,
 .markdown-editor .cm-anchored-task {
-  color: #82c7a5;
+  color: var(--syntax-character);
 }
 
 .markdown-editor .cm-panels {
   border: 1px solid var(--color-rule);
-  background: #080808;
+  background: var(--color-surface);
   color: var(--color-text);
   font-family: "SFMono-Regular", Consolas, monospace;
   font-size: 11px;
@@ -895,7 +917,7 @@ input:focus-visible,
 .markdown-editor .cm-tooltip.cm-tooltip-autocomplete {
   border: 1px solid var(--color-rule);
   border-radius: 6px;
-  background: #080808;
+  background: var(--color-surface);
   color: var(--color-text);
   box-shadow: 0 12px 32px rgb(0 0 0 / 45%);
 }
@@ -1046,7 +1068,7 @@ input:focus-visible,
   padding: 2px 4px;
   border: 1px solid var(--color-rule);
   border-radius: 3px;
-  background: #101010;
+  background: var(--color-surface-alt);
   font-size: 0.82em;
 }
 
@@ -1054,10 +1076,65 @@ input:focus-visible,
   overflow: auto;
   padding: 16px;
   border: 1px solid var(--color-rule);
-  background: #080808;
-  color: #e5e5e5;
+  background: var(--color-surface);
+  color: var(--color-code-text);
   font-size: 13px;
   line-height: 1.6;
+}
+
+.markdown-preview pre .hljs-comment,
+.markdown-preview pre .hljs-quote,
+.markdown-preview pre .hljs-meta {
+  color: var(--syntax-comment);
+}
+
+.markdown-preview pre .hljs-keyword,
+.markdown-preview pre .hljs-selector-tag,
+.markdown-preview pre .hljs-literal,
+.markdown-preview pre .hljs-number {
+  color: var(--syntax-atom);
+}
+
+.markdown-preview pre .hljs-string,
+.markdown-preview pre .hljs-regexp,
+.markdown-preview pre .hljs-addition {
+  color: var(--syntax-string);
+}
+
+.markdown-preview pre .hljs-title,
+.markdown-preview pre .hljs-section,
+.markdown-preview pre .hljs-name,
+.markdown-preview pre .hljs-selector-id,
+.markdown-preview pre .hljs-selector-class {
+  color: var(--syntax-heading);
+}
+
+.markdown-preview pre .hljs-attr,
+.markdown-preview pre .hljs-attribute,
+.markdown-preview pre .hljs-built_in,
+.markdown-preview pre .hljs-type,
+.markdown-preview pre .hljs-variable,
+.markdown-preview pre .hljs-template-variable {
+  color: var(--syntax-property);
+}
+
+.markdown-preview pre .hljs-symbol,
+.markdown-preview pre .hljs-bullet,
+.markdown-preview pre .hljs-link {
+  color: var(--syntax-link);
+}
+
+.markdown-preview pre .hljs-deletion,
+.markdown-preview pre .hljs-emphasis {
+  color: var(--syntax-emphasis);
+}
+
+.markdown-preview pre .hljs-strong {
+  color: var(--syntax-strong);
+}
+
+.markdown-preview pre .hljs-invalid {
+  color: var(--syntax-invalid);
 }
 
 .markdown-preview .markdown-math {
@@ -1068,7 +1145,7 @@ input:focus-visible,
 .markdown-preview .markdown-admonition {
   padding: 16px 20px;
   border-left: 3px solid var(--color-focus);
-  background: #101010;
+  background: var(--color-surface-alt);
 }
 
 .markdown-preview .markdown-admonition__title {
@@ -1097,7 +1174,7 @@ input:focus-visible,
 
 .markdown-preview mark {
   padding: 0 2px;
-  background: #5a4b12;
+  background: var(--color-mark);
   color: var(--color-text);
 }
 
@@ -1105,7 +1182,7 @@ input:focus-visible,
   overflow: auto;
   padding: 20px;
   border: 1px solid var(--color-rule);
-  background: #080808;
+  background: var(--color-surface);
   text-align: center;
 }
 
@@ -1558,7 +1635,7 @@ input:focus-visible,
   height: 42px;
   padding: 0 12px;
   border: 1px solid var(--color-rule);
-  background: #080808;
+  background: var(--color-surface);
   color: var(--color-text);
   font-size: 13px;
 }
@@ -1696,7 +1773,7 @@ input:focus-visible,
   align-items: start;
   justify-items: center;
   padding: max(64px, 10vh) 16px 16px;
-  background: rgb(0 0 0 / 60%);
+  background: var(--color-backdrop);
 }
 
 .retrieval-palette {
@@ -1704,7 +1781,7 @@ input:focus-visible,
   overflow: hidden;
   border: 1px solid var(--color-rule);
   border-radius: 8px;
-  background: #080808;
+  background: var(--color-surface);
   box-shadow: 0 24px 80px rgb(0 0 0 / 70%);
 }
 

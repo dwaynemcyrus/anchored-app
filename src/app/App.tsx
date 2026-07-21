@@ -59,6 +59,7 @@ import {
   DEFAULT_MARKDOWN_SETTINGS,
   type MarkdownSettings,
 } from "./markdown/types";
+import { applyTheme } from "./theme/apply";
 import {
   hasNonUnixLineEndings,
   mergeCreatedMarkdownSource,

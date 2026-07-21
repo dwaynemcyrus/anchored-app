@@ -112,6 +112,7 @@ describe("Anchored Markdown renderer", () => {
       mermaid: false,
       smartTypography: false,
       syntaxHighlighting: false,
+      theme: "anchored",
     });
 
     expect(rendered.body).toBe(source);
@@ -125,6 +126,7 @@ describe("Anchored Markdown renderer", () => {
         mermaid: true,
         smartTypography: true,
         syntaxHighlighting: false,
+        theme: "anchored",
       }).html,
     ).not.toContain("hljs-");
   });

@@ -30,6 +30,43 @@ describe("Markdown settings", () => {
     expect(loadMarkdownSettings(target)).toEqual(settings);
   });
 
+  it("migrates older settings to the default theme", () => {
+    const target = storage();
+    target.setItem(
+      "anchored.markdown-settings.v1",
+      JSON.stringify({
+        version: 2,
+        autoLinkUrls: true,
+        editorFontSize: 14,
+        emoji: true,
+        mermaid: true,
+        smartTypography: true,
+        syntaxHighlighting: true,
+      }),
+    );
+
+    expect(loadMarkdownSettings(target).theme).toBe("anchored");
+  });
+
+  it("rejects an unknown theme and falls back to the default", () => {
+    const target = storage();
+    target.setItem(
+      "anchored.markdown-settings.v1",
+      JSON.stringify({
+        version: 3,
+        autoLinkUrls: true,
+        editorFontSize: 14,
+        emoji: true,
+        mermaid: true,
+        smartTypography: true,
+        syntaxHighlighting: true,
+        theme: "unknown",
+      }),
+    );
+
+    expect(loadMarkdownSettings(target)).toEqual(DEFAULT_MARKDOWN_SETTINGS);
+  });
+
   it("rejects malformed and unknown versions", () => {
     const target = storage();
     target.setItem("anchored.markdown-settings.v1", '{"version":99}');
