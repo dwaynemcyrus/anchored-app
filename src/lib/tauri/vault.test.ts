@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   archiveVaultFile,
   createVault,
+  createVaultConflictCopy,
   createVaultFolder,
   createVaultFile,
   deleteVaultFolder,
@@ -22,6 +23,8 @@ import {
   saveVaultFile,
   searchVault,
   selectVault,
+  stopVaultFileWatch,
+  watchVaultFile,
   type SaveVaultFileRequest,
   type VaultDocument,
   type VaultSnapshot,
@@ -192,6 +195,31 @@ describe("vault bridge", () => {
       document,
     );
     expect(mockedInvoke).toHaveBeenCalledWith("read_vault_file", {
+      relativePath: "Notes/Leadership.md",
+    });
+  });
+
+  it("starts and stops the active-file watcher", async () => {
+    mockedInvoke.mockResolvedValue(undefined);
+
+    await expect(
+      watchVaultFile("Notes/Leadership.md"),
+    ).resolves.toBeUndefined();
+    await expect(stopVaultFileWatch()).resolves.toBeUndefined();
+    expect(mockedInvoke).toHaveBeenNthCalledWith(1, "watch_vault_file", {
+      relativePath: "Notes/Leadership.md",
+    });
+    expect(mockedInvoke).toHaveBeenNthCalledWith(2, "stop_vault_file_watch");
+  });
+
+  it("creates a conflict copy through the narrow native bridge", async () => {
+    mockedInvoke.mockResolvedValue(document);
+
+    await expect(
+      createVaultConflictCopy("Notes/Leadership.md", "# Local draft\n"),
+    ).resolves.toEqual(document);
+    expect(mockedInvoke).toHaveBeenCalledWith("create_vault_conflict_copy", {
+      content: "# Local draft\n",
       relativePath: "Notes/Leadership.md",
     });
   });
