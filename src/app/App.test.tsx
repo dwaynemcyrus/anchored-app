@@ -1748,6 +1748,8 @@ describe("App", () => {
         selector: ".cm-completionLabel",
       }),
     ).toBeInTheDocument();
+    await new Promise((resolve) => window.setTimeout(resolve, 150));
+    expect(screen.getByRole("listbox", { name: "Completions" })).toBeVisible();
     await user.keyboard("Lea");
     await within(
       await screen.findByRole("listbox", { name: "Completions" }),

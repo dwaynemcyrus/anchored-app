@@ -72,6 +72,9 @@ Git commit. The format follows [Keep a Changelog], and releases follow
 
 ### Changed
 
+- Wikilink completion now remains available while an unclosed link is being
+  edited, including during typing pauses, and closes on the expected link and
+  editor boundaries.
 - Newly created notes now include a blank line after YAML front matter so the
   editor can place the caret at the first writing line.
 - Creating a note now keeps it selected through filesystem refreshes and puts

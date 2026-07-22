@@ -110,26 +110,40 @@ export default function MarkdownEditor({
         partial.query,
         documentId,
       );
-      if (candidates.length === 0) return null;
+
+      const options = candidates.length
+        ? candidates.map((candidate) => ({
+            apply: (
+              editor: EditorView,
+              _completion: unknown,
+              from: number,
+              to: number,
+            ) => {
+              const inserted = `${candidate.target}]]`;
+              editor.dispatch({
+                changes: { from, insert: inserted, to },
+                selection: {
+                  anchor: from + inserted.length,
+                  head: from + inserted.length,
+                },
+              });
+            },
+            detail: candidate.detail,
+            displayLabel: candidate.label,
+            label: candidate.target,
+          }))
+        : [
+            {
+              apply: () => undefined,
+              detail: "No matching notes",
+              label: "No matching notes",
+            },
+          ];
 
       return {
         filter: false,
         from: partial.from,
-        options: candidates.map((candidate) => ({
-          apply: (editor, _completion, from, to) => {
-            const inserted = `${candidate.target}]]`;
-            editor.dispatch({
-              changes: { from, insert: inserted, to },
-              selection: {
-                anchor: from + inserted.length,
-                head: from + inserted.length,
-              },
-            });
-          },
-          detail: candidate.detail,
-          displayLabel: candidate.label,
-          label: candidate.target,
-        })),
+        options,
         // Rerank synchronously as the query grows instead of briefly showing
         // stale recent-note results while a new async query is scheduled.
         update: (_current, _from, _to, nextContext) =>
@@ -170,6 +184,7 @@ export default function MarkdownEditor({
           placeholder("Start writing…"),
           autocompletion({
             activateOnTyping: true,
+            activateOnTypingDelay: 0,
             icons: false,
             interactionDelay: 0,
             maxRenderedOptions: 24,
