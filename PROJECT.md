@@ -82,7 +82,8 @@ Product scope remains governed by `OVERVIEW.md`.
   changing references merely because YAML `title` changed.
 - Front matter, tags, linked attachments, and unsupported Obsidian syntax are
   preserved without silent damage.
-- App-created notes receive a UTC `created_at` value with second precision;
+- App-created notes receive a local-timezone RFC 3339 `created_at` value with
+  second precision;
   archived notes receive `status: archived` plus `archived_at` and become
   read-only until restored to Inbox or Workbench.
 - All configured checks pass, and the core workflow remains stable for seven
@@ -307,5 +308,5 @@ These scripts must exist in `package.json` after the scaffold chunk.
 | 2026-07-17 | Release the source under MIT | Keeps Anchored permissive for use, modification, and redistribution while preserving copyright notice requirements |
 | 2026-07-19 | Defer note IDs and preserve existing values as inert metadata | Removes identity errors and scan work now while leaving a future reviewed Supabase UID migration possible; supersedes the three 2026-07-16 note-ID decisions |
 | 2026-07-19 | Use virtual lifecycle collections as the default navigation | Inbox, Workbench, Archive, and Assets reflect note meaning while Files preserves physical-vault access and portability |
-| 2026-07-19 | Write lifecycle timestamps as UTC ISO 8601 values | Values such as `2026-11-28T15:48:32Z` remain unambiguous across time zones, daylight-saving changes, and future databases |
+| 2026-07-22 | Write lifecycle timestamps with the Mac's local offset | Values such as `2026-11-28T15:48:32+01:00` match the user's local time while remaining RFC 3339 timestamps; existing `Z` values remain readable |
 | 2026-07-19 | Keep global Scratchpad shortcuts and asset copying deferred | Local capture ships only after performance work; GitHub issues #41 and #40 own the later operating-system and import workflows |

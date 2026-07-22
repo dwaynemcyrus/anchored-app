@@ -12,7 +12,7 @@ use std::{
     time::Duration,
 };
 
-use chrono::Utc;
+use chrono::{Local, Utc};
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, Manager, State, WebviewUrl, WebviewWindowBuilder};
 use tauri_plugin_dialog::DialogExt;
@@ -2185,8 +2185,8 @@ fn validated_note_type(note_type: Option<&str>) -> Result<Option<&str>, VaultErr
     Ok(Some(value))
 }
 
-fn current_utc_timestamp() -> String {
-    Utc::now().format("%Y-%m-%dT%H:%M:%SZ").to_string()
+fn current_local_timestamp() -> String {
+    Local::now().format("%Y-%m-%dT%H:%M:%S%:z").to_string()
 }
 
 fn vault_document(
@@ -2308,7 +2308,7 @@ fn save_markdown_file(
         ));
     }
     let content = if content != current_content {
-        stamp_note_updated_at(content, &current_utc_timestamp()).map_err(|error| {
+        stamp_note_updated_at(content, &current_local_timestamp()).map_err(|error| {
             VaultError::lifecycle(format!(
                 "Anchored could not update authored metadata safely: {error}."
             ))
@@ -2366,15 +2366,15 @@ fn transition_markdown_lifecycle(
                 return Err(VaultError::archived_read_only());
             }
             if current_properties.note_type.as_deref() == Some("scratchpad") {
-                archive_note(&current_content, &current_utc_timestamp())
+                archive_note(&current_content, &current_local_timestamp())
             } else if update_type {
                 archive_note_with_type(
                     &current_content,
-                    &current_utc_timestamp(),
+                    &current_local_timestamp(),
                     validated_note_type(note_type.as_deref())?,
                 )
             } else {
-                archive_note(&current_content, &current_utc_timestamp())
+                archive_note(&current_content, &current_local_timestamp())
             }
         }
         LifecycleTransition::Restore {
@@ -2511,7 +2511,7 @@ fn create_markdown_file(
     destination: &Path,
     content: &str,
 ) -> Result<VaultDocument, VaultError> {
-    let timestamp = current_utc_timestamp();
+    let timestamp = current_local_timestamp();
     let has_authored_content = !content.trim().is_empty();
     let mut content = stamp_note_created_at(content, &timestamp).map_err(|error| {
         VaultError::lifecycle(format!(

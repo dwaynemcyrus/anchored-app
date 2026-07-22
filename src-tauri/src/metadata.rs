@@ -32,7 +32,7 @@ impl fmt::Display for LifecycleMutationError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         let message = match self {
             Self::InvalidStatus => "the requested note status is not supported",
-            Self::InvalidTimestamp => "the lifecycle timestamp is not canonical UTC",
+            Self::InvalidTimestamp => "the lifecycle timestamp is not canonical RFC 3339",
             Self::UnsafeFrontMatter => "the note front matter cannot be changed safely",
         };
         formatter.write_str(message)
@@ -269,10 +269,9 @@ pub fn restore_note_with_type(
 fn validate_lifecycle_timestamp(timestamp: &str) -> Result<(), LifecycleMutationError> {
     let parsed = chrono::DateTime::parse_from_rfc3339(timestamp)
         .map_err(|_| LifecycleMutationError::InvalidTimestamp)?;
-    if timestamp.len() != 20
-        || !timestamp.ends_with('Z')
-        || parsed.format("%Y-%m-%dT%H:%M:%SZ").to_string() != timestamp
-    {
+    let is_canonical = timestamp == parsed.format("%Y-%m-%dT%H:%M:%SZ").to_string()
+        || timestamp == parsed.format("%Y-%m-%dT%H:%M:%S%:z").to_string();
+    if !is_canonical {
         return Err(LifecycleMutationError::InvalidTimestamp);
     }
     Ok(())
@@ -1003,9 +1002,22 @@ mod tests {
             Err(LifecycleMutationError::InvalidTimestamp)
         );
         assert_eq!(
+            stamp_note_created_at("Body", "2026-11-28T15:48:32.123+01:00"),
+            Err(LifecycleMutationError::InvalidTimestamp)
+        );
+        assert_eq!(
             restore_note("Body", "draft"),
             Err(LifecycleMutationError::InvalidStatus)
         );
+    }
+
+    #[test]
+    fn accepts_local_offset_lifecycle_timestamps() {
+        let timestamp = "2026-11-28T15:48:32+01:00";
+
+        let updated = stamp_note_created_at("Body", timestamp).expect("stamp local time");
+
+        assert!(updated.contains("created_at: 2026-11-28T15:48:32+01:00"));
     }
 
     #[test]

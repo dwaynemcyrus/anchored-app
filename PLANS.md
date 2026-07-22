@@ -856,10 +856,11 @@ and preserves link integrity across filename changes.
       deleted, or treated as physical drag destinations. Physical folder
       actions remain available only in Files view through an opaque right-click
       menu; inline folder action icons are removed.
-    - Timestamp rules: App-created Markdown files receive `created_at` in UTC,
-      ISO 8601, second precision, with no fractional seconds, for example
-      `2026-11-28T15:48:32Z`. Transitioning to Archive writes
-      `status: archived` and a fresh `archived_at` in the same format.
+    - Timestamp rules: App-created Markdown files receive `created_at` in the
+      Mac's local timezone, RFC 3339, second precision, with no fractional
+      seconds, for example `2026-11-28T15:48:32+01:00`. Transitioning to
+      Archive writes `status: archived` and a fresh `archived_at` in the same
+      format. Existing `Z` UTC values remain readable.
       Transitioning out removes `archived_at` and writes either
       `status: inbox` or `status: active`. Existing and externally imported
       Markdown files are never backfilled automatically.
@@ -1207,8 +1208,9 @@ and preserves link integrity across filename changes.
       default while allowing Type/Untyped selection. Restoring to Workbench
       asks again; restoring to Inbox preserves the existing type. Scratchpad
       notes keep `type: scratchpad`.
-    - Change: Store canonical lifecycle timestamps as UTC ISO 8601 with second
-      precision and display them in the Mac's local timezone in UI. Continue
+    - Change: Store canonical lifecycle timestamps with the Mac's local RFC
+      3339 offset and second precision, and display them in the Mac's local
+      timezone in UI. Continue
       writing `created_at` once and `archived_at` only for Archive transitions.
       Add `updated_at` for authored Markdown changes: write it alongside
       `created_at` when an Anchored-created note initially contains authored
@@ -1223,7 +1225,7 @@ and preserves link integrity across filename changes.
       in flight, Workbench/Archive type choices, new-type validation, Untyped
       property removal, source-preserving `updated_at` insertion/replacement,
       creation with blank/nonblank content, autosave, external conflicts,
-      lifecycle-only changes, UTC storage, DST/local display, missing dates,
+      lifecycle-only changes, local-offset storage, DST/local display, missing dates,
       cached modification-time sorting, and large-vault responsiveness.
     - Risk/rollback: A duplicate Scratchpad saved view must not violate the
       one-lifecycle-collection invariant or load the full App/CodeMirror bundle.
