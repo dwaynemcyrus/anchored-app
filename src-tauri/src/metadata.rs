@@ -32,7 +32,7 @@ impl fmt::Display for LifecycleMutationError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         let message = match self {
             Self::InvalidStatus => "the requested note status is not supported",
-            Self::InvalidTimestamp => "the lifecycle timestamp is not canonical UTC",
+            Self::InvalidTimestamp => "the lifecycle timestamp is not canonical RFC 3339",
             Self::UnsafeFrontMatter => "the note front matter cannot be changed safely",
         };
         formatter.write_str(message)
@@ -208,6 +208,41 @@ pub fn stamp_note_updated_at(
     mutate_lifecycle_properties(content, &[("updated_at", Some(timestamp))])
 }
 
+pub fn backfill_local_lifecycle_timestamps(
+    content: &str,
+) -> Result<Option<String>, LifecycleMutationError> {
+    let properties = inspect_note_properties(content);
+    let mut changes = Vec::new();
+    for (key, value) in [
+        ("created_at", properties.created_at),
+        ("updated_at", properties.updated_at),
+        ("archived_at", properties.archived_at),
+    ] {
+        let Some(value) = value else { continue };
+        let Ok(parsed) = chrono::DateTime::parse_from_rfc3339(&value) else {
+            continue;
+        };
+        if value != parsed.format("%Y-%m-%dT%H:%M:%SZ").to_string() {
+            continue;
+        }
+        changes.push((
+            key,
+            parsed
+                .with_timezone(&chrono::Local)
+                .format("%Y-%m-%dT%H:%M:%S%:z")
+                .to_string(),
+        ));
+    }
+    if changes.is_empty() {
+        return Ok(None);
+    }
+    let changes = changes
+        .iter()
+        .map(|(key, value)| (*key, Some(value.as_str())))
+        .collect::<Vec<_>>();
+    mutate_lifecycle_properties(content, &changes).map(Some)
+}
+
 pub fn archive_note(content: &str, timestamp: &str) -> Result<String, LifecycleMutationError> {
     validate_lifecycle_timestamp(timestamp)?;
     mutate_lifecycle_properties(
@@ -269,10 +304,9 @@ pub fn restore_note_with_type(
 fn validate_lifecycle_timestamp(timestamp: &str) -> Result<(), LifecycleMutationError> {
     let parsed = chrono::DateTime::parse_from_rfc3339(timestamp)
         .map_err(|_| LifecycleMutationError::InvalidTimestamp)?;
-    if timestamp.len() != 20
-        || !timestamp.ends_with('Z')
-        || parsed.format("%Y-%m-%dT%H:%M:%SZ").to_string() != timestamp
-    {
+    let is_canonical = timestamp == parsed.format("%Y-%m-%dT%H:%M:%SZ").to_string()
+        || timestamp == parsed.format("%Y-%m-%dT%H:%M:%S%:z").to_string();
+    if !is_canonical {
         return Err(LifecycleMutationError::InvalidTimestamp);
     }
     Ok(())
@@ -830,10 +864,11 @@ fn find_top_level_id_value(yaml: &str, id: &str) -> Option<std::ops::Range<usize
 #[cfg(test)]
 mod tests {
     use super::{
-        add_note_identity, archive_note, assign_new_note_identity, generate_note_id,
-        inspect_note_aliases, inspect_note_identity, inspect_note_properties,
-        inspect_wikilink_occurrences, inspect_wikilinks, restore_note, rewrite_wikilink_targets,
-        split_note_source, stamp_note_created_at, stamp_note_updated_at, IdentityMutationError,
+        add_note_identity, archive_note, assign_new_note_identity,
+        backfill_local_lifecycle_timestamps, generate_note_id, inspect_note_aliases,
+        inspect_note_identity, inspect_note_properties, inspect_wikilink_occurrences,
+        inspect_wikilinks, restore_note, rewrite_wikilink_targets, split_note_source,
+        stamp_note_created_at, stamp_note_updated_at, IdentityMutationError,
         LifecycleMutationError, NoteIdentityStatus,
     };
 
@@ -1003,9 +1038,62 @@ mod tests {
             Err(LifecycleMutationError::InvalidTimestamp)
         );
         assert_eq!(
+            stamp_note_created_at("Body", "2026-11-28T15:48:32.123+01:00"),
+            Err(LifecycleMutationError::InvalidTimestamp)
+        );
+        assert_eq!(
             restore_note("Body", "draft"),
             Err(LifecycleMutationError::InvalidStatus)
         );
+    }
+
+    #[test]
+    fn accepts_local_offset_lifecycle_timestamps() {
+        let timestamp = "2026-11-28T15:48:32+01:00";
+
+        let updated = stamp_note_created_at("Body", timestamp).expect("stamp local time");
+
+        assert!(updated.contains("created_at: 2026-11-28T15:48:32+01:00"));
+    }
+
+    #[test]
+    fn backfills_utc_lifecycle_timestamps_without_changing_their_instant() {
+        let original = concat!(
+            "---\n",
+            "title: Note # keep\n",
+            "created_at: '2026-01-02T03:04:05Z'\n",
+            "updated_at: 2026-01-02T04:05:06Z # keep\n",
+            "---\n",
+            "Body\n",
+        );
+
+        let updated = backfill_local_lifecycle_timestamps(original)
+            .expect("backfill timestamps")
+            .expect("timestamps should change");
+
+        for (before, after) in [
+            ("2026-01-02T03:04:05Z", "created_at"),
+            ("2026-01-02T04:05:06Z", "updated_at"),
+        ] {
+            let before = chrono::DateTime::parse_from_rfc3339(before).expect("parse UTC");
+            let line = updated
+                .lines()
+                .find(|line| line.starts_with(&format!("{after}:")))
+                .expect("find backfilled property");
+            let value = line
+                .split_once(':')
+                .expect("property separator")
+                .1
+                .trim()
+                .split(" #")
+                .next()
+                .expect("property value")
+                .trim_matches('\'');
+            let after = chrono::DateTime::parse_from_rfc3339(value).expect("parse local time");
+            assert_eq!(before, after);
+        }
+        assert!(updated.contains("title: Note # keep"));
+        assert!(updated.contains(" # keep"));
     }
 
     #[test]

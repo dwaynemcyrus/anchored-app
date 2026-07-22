@@ -93,10 +93,16 @@ Git commit. The format follows [Keep a Changelog], and releases follow
 - Physical file and folder menus now expose creation, preview, move, scoped
   filter/search, rename, lifecycle, and deletion actions as applicable, with a
   shared Lucide expand/collapse-all control in Collections and Files.
-- Successful authored saves now maintain source-preserving `updated_at` UTC
-  metadata, while lifecycle/type changes and filesystem moves do not. Cached
+- Successful authored saves now maintain source-preserving local-offset
+  `updated_at` metadata, while lifecycle/type changes and filesystem moves do not. Cached
   filesystem modification times drive Last Edited, and timestamps display in
   the Mac's local timezone.
+- New lifecycle timestamps are now written in the Mac's local timezone with a
+  numeric RFC 3339 offset instead of `Z` UTC notation. Existing UTC timestamps
+  remain readable.
+- When a vault is selected or reopened, existing canonical UTC lifecycle
+  timestamps across its Markdown documents are backfilled to local offsets
+  without changing the represented date and time.
 - Vault refresh now reuses a versioned native metadata index keyed by relative
   path, size, and modification time. Unchanged notes are not reread, malformed
   caches rebuild automatically, and focus refresh runs off the UI thread.
