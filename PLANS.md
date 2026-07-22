@@ -1690,6 +1690,9 @@ Every future large plan must identify:
   Finder adds, deletes, renames, and moves while the app is open, emits a
   debounced refresh event, and updates the Files view without disturbing
   dirty editor state. Focus refresh remains as a fallback.
+- 2026-07-22: Renamed the Settings reload action to Restart Anchored, clarified
+  its recovery purpose, and constrained the compact Settings panel so long
+  content scrolls inside the available window height.
 
 ## Follow-up plan: named color themes
 

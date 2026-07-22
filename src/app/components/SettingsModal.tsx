@@ -178,10 +178,11 @@ export function SettingsModal({
           </label>
         </section>
         <section className="settings-section">
-          <h3>Reload Anchored</h3>
+          <h3>Restart Anchored</h3>
           <p>
-            Save the current note, reload this window, and restore the current
-            vault and open note.
+            Save the current note, restart this window, and restore the current
+            vault and open note. Finder changes update automatically while the
+            app is open.
           </p>
         </section>
       </div>
@@ -195,7 +196,7 @@ export function SettingsModal({
           type="button"
           onClick={onReload}
         >
-          {reloading ? "Reloading…" : "Reload Anchored"}
+          {reloading ? "Restarting…" : "Restart Anchored"}
         </button>
       </footer>
     </aside>

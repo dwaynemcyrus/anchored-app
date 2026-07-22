@@ -1501,6 +1501,8 @@ input:focus-visible,
   top: 92px;
   right: max(24px, calc((100vw - 460px) / 2));
   bottom: auto;
+  max-height: calc(100vh - 112px);
+  overflow: hidden;
 }
 
 .continuity-panel button {

@@ -72,6 +72,10 @@ Git commit. The format follows [Keep a Changelog], and releases follow
 
 ### Changed
 
+- Settings now labels the window reload action as “Restart Anchored,” clarifies
+  that it is a recovery action, and keeps long Settings content inside a
+  scrollable viewport instead of allowing the modal to extend below the
+  window.
 - The physical Files tree now uses browser-native scrolling with contained
   lightweight rows, removing the blank regions and stalls caused by its
   previous JavaScript scroll window. Folder actions now live only in an opaque,
