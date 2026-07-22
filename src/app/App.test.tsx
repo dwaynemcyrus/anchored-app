@@ -876,7 +876,7 @@ describe("App", () => {
     await user.click(screen.getByRole("button", { name: "Open settings" }));
     const settings = screen.getByRole("dialog", { name: "Settings" });
     await user.click(
-      within(settings).getByRole("button", { name: "Reload Anchored" }),
+      within(settings).getByRole("button", { name: "Restart Anchored" }),
     );
 
     await waitFor(() => expect(mockedSaveVaultFile).toHaveBeenCalled());
@@ -893,7 +893,7 @@ describe("App", () => {
     await user.click(
       within(screen.getByRole("dialog", { name: "Settings" })).getByRole(
         "button",
-        { name: "Reload Anchored" },
+        { name: "Restart Anchored" },
       ),
     );
 
@@ -996,7 +996,7 @@ describe("App", () => {
     await user.click(
       within(screen.getByRole("dialog", { name: "Settings" })).getByRole(
         "button",
-        { name: "Reload Anchored" },
+        { name: "Restart Anchored" },
       ),
     );
 

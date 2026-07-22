@@ -56,5 +56,9 @@ describe("SettingsModal Markdown options", () => {
     });
     expect(dialog).toHaveTextContent("Rendering options never rewrite");
     expect(dialog).toHaveTextContent("Typography");
+    expect(dialog).toHaveTextContent("Finder changes update automatically");
+    expect(
+      screen.getByRole("button", { name: "Restart Anchored" }),
+    ).toBeInTheDocument();
   });
 });
