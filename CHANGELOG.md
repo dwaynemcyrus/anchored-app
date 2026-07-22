@@ -32,6 +32,10 @@ Git commit. The format follows [Keep a Changelog], and releases follow
   metadata. Archiving writes `status: archived` and `archived_at`, opens the
   note in sanitized read-only Preview, and offers explicit restore actions for
   Inbox or Workbench.
+- Opening a simple unresolved wikilink with Command-click or Command-Enter
+  now offers to create a blank note in the physical `inbox/` folder and opens
+  it after creation. Existing links are preserved and are not created merely
+  by typing completion text.
 - A lightweight floating Scratchpad now creates separate Inbox notes after the
   first nonblank input, autosaves atomically, preserves drafts on conflicts,
   completes wikilinks, and browses active captures in a newest-edited side list

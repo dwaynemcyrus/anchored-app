@@ -477,7 +477,16 @@ bytes changed.
       target.
 - [ ] Confirm duplicate filename and alias links report ambiguity rather than
       opening an arbitrary note.
-- [ ] Confirm missing links report no match and create no file.
+- [ ] Open a simple missing wikilink with Command-click and confirm a Create
+      note dialog explains that the note will be created in physical Inbox.
+- [ ] Cancel the missing-link dialog and confirm no file is created.
+- [ ] Confirm Create note writes the target as `inbox/<target>.md`, creates the
+      physical folder when needed, opens the blank note, and leaves the source
+      wikilink unchanged.
+- [ ] Confirm a stale or duplicate creation attempt never overwrites an
+      existing note and shows a recoverable error.
+- [ ] Confirm path-style unresolved targets remain reported without silently
+      rewriting the source link.
 - [ ] Confirm escaped links and links inside inline, fenced, and indented code
       do not navigate or create backlinks.
 - [ ] Type `[[`; confirm recent notes appear, excluding the active note.

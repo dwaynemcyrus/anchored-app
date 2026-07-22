@@ -6,6 +6,7 @@ import {
   createVault,
   createVaultConflictCopy,
   createVaultFolder,
+  createInboxVaultFile,
   createVaultFile,
   deleteVaultFolder,
   forgetVault,
@@ -305,6 +306,18 @@ describe("vault bridge", () => {
       "create_vault_file",
       createRequest,
     );
+  });
+
+  it("creates a named Markdown file through the Inbox command", async () => {
+    mockedInvoke.mockResolvedValue(document);
+
+    await expect(
+      createInboxVaultFile({ content: "", name: "Missing note" }),
+    ).resolves.toEqual(document);
+    expect(mockedInvoke).toHaveBeenCalledWith("create_inbox_vault_file", {
+      content: "",
+      name: "Missing note",
+    });
   });
 
   it("renames a Markdown file through the Rust-owned dialog", async () => {
