@@ -157,6 +157,21 @@ export function wikilinkCompletionAtOffset(
   return null;
 }
 
+export function wikilinkCreationName(rawTarget: string): string | null {
+  const noteTarget = rawTarget.trim().split("#", 1)[0].trim();
+  if (!noteTarget || noteTarget.startsWith("#") || noteTarget.includes("/")) {
+    return null;
+  }
+
+  const name = withoutMarkdownExtension(noteTarget).trim();
+  return /[|`\n\r]/.test(name) ||
+    name.includes("[") ||
+    name.includes("]") ||
+    name.startsWith(".")
+    ? null
+    : name || null;
+}
+
 function completionFromQuery(
   query: string,
   from: number,

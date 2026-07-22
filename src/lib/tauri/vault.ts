@@ -104,6 +104,11 @@ export type CreateVaultFileRequest = {
   suggestedName: string;
 };
 
+export type CreateInboxVaultFileRequest = {
+  content: string;
+  name: string;
+};
+
 export type LifecycleVaultFileRequest = {
   expectedContent: string;
   noteType?: string;
@@ -287,6 +292,12 @@ export function createVaultFile(
   request: CreateVaultFileRequest,
 ): Promise<VaultDocument | null> {
   return invoke<VaultDocument | null>("create_vault_file", request);
+}
+
+export function createInboxVaultFile(
+  request: CreateInboxVaultFileRequest,
+): Promise<VaultDocument> {
+  return invoke<VaultDocument>("create_inbox_vault_file", request);
 }
 
 export function createUntitledVaultFile(

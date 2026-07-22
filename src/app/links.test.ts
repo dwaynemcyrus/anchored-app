@@ -6,6 +6,7 @@ import {
   resolveWikilink,
   wikilinkAtOffset,
   wikilinkCompletionAtOffset,
+  wikilinkCreationName,
   wikilinksInContent,
 } from "./links";
 
@@ -172,6 +173,14 @@ describe("wikilinks", () => {
     expect(resolveWikilink("Unknown", documents, "reading")).toEqual({
       status: "missing",
     });
+  });
+
+  it("derives safe Inbox note names from simple missing targets", () => {
+    expect(wikilinkCreationName("Future idea")).toBe("Future idea");
+    expect(wikilinkCreationName("Future idea.md#Next")).toBe("Future idea");
+    expect(wikilinkCreationName("Future idea|Shown label")).toBeNull();
+    expect(wikilinkCreationName("Folder/Future idea")).toBeNull();
+    expect(wikilinkCreationName("#Heading")).toBeNull();
   });
 
   it("builds backlinks only from unique resolved targets", () => {

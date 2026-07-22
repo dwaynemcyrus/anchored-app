@@ -1860,6 +1860,122 @@ output consistently.
 - The change is reversible because themes affect presentation and local
   settings only; it must never rewrite vault files.
 
+## Follow-up plan: create notes from missing wikilinks
+
+### Outcome
+
+When the user Command-clicks or Command-Enter's a missing wikilink, Anchored
+will show an accessible confirmation dialog with a Create note action. Creating
+the note will write a collision-safe Markdown file in the physical `inbox/`
+folder, preserve the existing wikilink source, refresh the vault index, and
+open the new note immediately.
+
+### Investigation findings
+
+- `MarkdownEditor` handles both Command-click and Command-Enter and sends the
+  target to the shared `openWikilink` callback in `App`.
+- `openWikilink` currently reports `missing` resolutions through a transient
+  notice and notification history, so there is no user decision point.
+- `createUntitledVaultFile` already provides safe, atomic, collision-safe
+  creation in a requested folder, but its native command only generates an
+  `Untitled*.md` filename. The Save As command is intentionally dialog-based.
+- The regular New note flow calls `createUntitledVaultFile` without a parent,
+  so it currently creates `Untitled*.md` at the vault root.
+- Scratchpad notes are stamped `status: inbox` but are currently created at
+  the vault root; their physical path does not match the requested Inbox
+  filesystem invariant.
+- File-rail “New note in this folder” and Save As are explicit location
+  choices. The plan keeps those user-selected destinations unless the product
+  requirement is intended to override them as well.
+- Native lifecycle routing already creates and validates the lower-case
+  `inbox` folder. New creation should stay behind the Rust boundary and reuse
+  the same path and atomic-write validation.
+- Creating the note does not need to rewrite the source link: a plain missing
+  target, optional heading, or display alias will resolve by the new filename
+  after the vault snapshot is refreshed.
+
+### Implementation sequence
+
+1. Route default New note creation and Scratchpad creation through the
+   physical `inbox/` folder, creating that folder safely when it does not yet
+   exist. Preserve the existing explicit folder and Save As location choices.
+2. Add a Rust-owned named-note creation command and typed frontend bridge. It
+   should accept a validated note stem, create `inbox/` when needed, append
+   `.md`, stamp the same creation metadata as other Anchored-created notes,
+   avoid replacing an existing file, and return the persisted document.
+3. Add a small `CreateMissingWikilinkDialog` using the existing modal and
+   focus-trap conventions. Show the missing target, explain that the note will
+   be created in Inbox, expose Create note and Cancel, and render recoverable
+   validation or filesystem errors without losing the original editor state.
+4. Thread the dialog state through `App`, replace the missing-link notice path
+   with the dialog, and on confirmation rescan/adopt the snapshot before
+   selecting and focusing the created document. Keep ambiguous links as a
+   non-creating warning.
+5. Add frontend tests for default New note and Scratchpad paths, Command-click
+   and Command-Enter, cancel, successful creation and selection, duplicate/
+   stale targets, native errors, focus return, and heading/display-label
+   targets. Add Rust and bridge tests for Inbox creation, missing-folder
+   creation, collision handling, invalid names, and atomic persisted content.
+6. Update the feature docs and manual checklist to make automatic creation and
+   the physical Inbox invariant explicit, then run format, lint, type-check,
+   targeted tests, the full test suite, production build, and Rust checks.
+   Verify the native flows at desktop and narrow sizes with keyboard-only
+   input.
+
+### Expected files
+
+- `src-tauri/src/vault.rs`
+- `src-tauri/src/lib.rs`
+- `src/lib/tauri/vault.ts`
+- `src/lib/tauri/vault.test.ts`
+- `src/app/App.tsx`
+- `src/app/App.test.tsx`
+- `src/app/components/CreateMissingWikilinkDialog.tsx`
+- `src/app/components/CreateMissingWikilinkDialog.test.tsx`
+- `src/styles/global.css` if the existing panel styles need a narrowly scoped
+  addition
+- `src/app/links.ts` and `src/app/links.test.ts` if target-stem normalization
+  is extracted and unit-tested
+- `docs/FEATURES.md`
+- `docs/TEST_CHECKLIST.md`
+- `CHANGELOG.md` after the implementation is verified
+
+### Risks and decisions
+
+- The initial plan assumes a missing target is created from its note stem;
+  heading fragments and display aliases are not part of the filename. Path
+  targets such as `[[Folder/Missing]]` need an explicit decision: preserving
+  that path conflicts with the requirement that creation happen under the
+  physical Inbox folder, while silently rewriting the source link would be a
+  separate authored-content mutation.
+- A stale missing resolution can race with Finder or another app creating the
+  same note. The native command must return a visible conflict/error and must
+  never overwrite the existing file.
+- The new note should remain blank and untyped, matching the existing New note
+  behavior; physical placement in `inbox/` makes it appear in the Inbox view.
+- Scratchpad notes retain their `type: scratchpad` and `status: inbox` metadata
+  and should additionally live at `inbox/Scratchpad … .md`.
+- Explicit “New note in this folder” and Save As remain location-directed
+  actions. If “whenever” is meant literally with no exceptions, those flows
+  need a separate product decision because it would negate their current UI
+  contract.
+- The old automatic-creation non-goal and checklist item must be updated in
+  the same verified chunk so product documentation does not contradict the
+  shipped behavior.
+
+### Implementation result
+
+- Completed in `49db60c` (plan), `caf2a75` (default Inbox routing), and
+  `897a689` (missing-wikilink creation, tests, and documentation).
+- Default New note drafts and Scratchpad captures now use physical `inbox/`;
+  explicit folder creation and Save As remain location-directed exceptions.
+- Simple missing targets can be created as named Inbox notes after explicit
+  Command-click or Command-Enter confirmation. Path-style unresolved targets
+  remain conservative notices and are not silently rewritten.
+- Full frontend tests, Rust tests, TypeScript, lint, formatting, build,
+  `cargo check`, and strict Clippy passed. Rendered native desktop verification
+  remains pending because the browser runtime is not exposed in this session.
+
 ## Completion
 
 - **Checks run:** Documentation diff checks; Prettier check; ESLint;
