@@ -1694,6 +1694,69 @@ Every future large plan must identify:
   its recovery purpose, and constrained the compact Settings panel so long
   content scrolls inside the available window height.
 
+## Follow-up plan: persistent wikilink completion
+
+### Outcome
+
+Keep the wikilink candidate picker open while the caret remains inside an
+unclosed `[[...` target. Closing `]]`, deleting back through the opening
+delimiter, moving outside the active link, or entering a syntax context where
+completion is not valid should close it predictably, matching the expected
+Obsidian/Bear authoring flow.
+
+### Investigation findings
+
+- The main Markdown editor owns completion through CodeMirror in
+  `src/app/components/MarkdownEditor.tsx`; Scratchpad has a separate React
+  suggestion list and is not the primary reported surface.
+- `completeWikilink` returns `null` both when no partial link is active and when
+  the current partial cannot produce candidates. CodeMirror treats that as a
+  source deactivation, so it cannot distinguish a transient empty/invalid
+  query from a deliberately closed wikilink.
+- The current tests cover immediate opening and selection only. They do not
+  cover an idle pause, backspacing through `[[`, typing `]]`, caret movement,
+  or parser boundaries while the picker is open.
+
+### Implementation sequence
+
+1. Extend the link-completion state contract in `src/app/links.ts` so the
+   parser reports an active unclosed wikilink separately from closed links and
+   unsupported contexts. Preserve existing body/front-matter, escape, code,
+   fence, indentation, newline, alias, and CRLF rules.
+2. Update `src/app/components/MarkdownEditor.tsx` to keep one completion
+   session alive while the caret remains in the active target, refresh its
+   candidates as the query changes, and close only on explicit close or
+   boundary conditions. Define the no-match presentation rather than allowing
+   a `null` source result to silently dismiss the picker.
+3. Add focused parser tests in `src/app/links.test.ts` and rendered editor/App
+   regressions in `src/app/App.test.tsx` for pause retention, continued
+   typing, backspace-out, `]]` closure, cursor movement, Escape/blur, and
+   unsupported Markdown contexts. Add Scratchpad coverage only if the same
+   symptom is reproduced there.
+4. Run formatting, lint, type-check, the targeted link/App tests, the full
+   frontend test suite, and the production build. Exercise the interaction in
+   the native/debug editor at desktop and narrow sizes with keyboard-only
+   input, checking focus return and no console errors.
+
+### Expected files
+
+- `src/app/links.ts`
+- `src/app/links.test.ts`
+- `src/app/components/MarkdownEditor.tsx`
+- `src/app/App.test.tsx`
+- `CHANGELOG.md` only if the verified implementation is user-visible
+
+### Risks and decisions
+
+- Do not keep completion open across a newline, escaped or code-formatted
+  delimiter, a completed `]]`, or a caret outside the active target.
+- Avoid a timer-based workaround; idle time must not be the close condition.
+- Preserve the current candidate ranking and insertion format, including
+  shortest targets, aliases, unresolved placeholders, and automatic `]]`.
+- Use the existing CodeMirror lifecycle unless a small explicit session state
+  is required to prevent stale selections or accepting a candidate after the
+  link has closed.
+
 ## Follow-up plan: named color themes
 
 ### Outcome
