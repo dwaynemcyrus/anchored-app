@@ -41,7 +41,9 @@ export const autoPairState = StateField.define<readonly AutoPairRange[]>({
       .map((pair) => ({
         ...pair,
         closeFrom: transaction.changes.mapPos(pair.closeFrom, 1),
-        from: transaction.changes.mapPos(pair.from, -1),
+        // An external save can insert front matter at the document start.
+        // Keep the pair on the document side of that insertion boundary.
+        from: transaction.changes.mapPos(pair.from, 1),
       }))
       .filter((pair) => isValidPair(transaction, pair));
 

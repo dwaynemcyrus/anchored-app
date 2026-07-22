@@ -1795,6 +1795,59 @@ describe("App", () => {
     );
   });
 
+  it("keeps wikilink suggestions open through autosave metadata updates", async () => {
+    const user = userEvent.setup();
+    const savedContent =
+      "---\nupdated_at: 2026-07-22T16:00:00+02:00\n---\n\n[[]]";
+    mockedSelectVault.mockResolvedValue({
+      files: [
+        {
+          name: "Source.md",
+          parent: "Notes",
+          relativePath: "Notes/Source.md",
+        },
+        {
+          name: "Future idea.md",
+          parent: "Notes",
+          relativePath: "Notes/Future idea.md",
+        },
+      ],
+      name: "My Vault",
+      warnings: noWarnings,
+    });
+    mockedReadVaultFile.mockResolvedValue({
+      content: "",
+      relativePath: "Notes/Source.md",
+      sizeBytes: 0,
+    });
+    mockedSaveVaultFile.mockResolvedValue({
+      content: savedContent,
+      relativePath: "Notes/Source.md",
+      sizeBytes: savedContent.length,
+    });
+    render(<App />);
+
+    await user.click(screen.getByRole("button", { name: "Open vault" }));
+    await user.click(screen.getByRole("button", { name: "Source.md" }));
+    const editor = await screen.findByRole("textbox", {
+      name: "Source.md Markdown editor",
+    });
+    await user.click(editor);
+    await user.keyboard("[[[[");
+    await screen.findByRole("listbox", { name: "Completions" });
+
+    await waitFor(() => expect(mockedSaveVaultFile).toHaveBeenCalled(), {
+      timeout: 2_000,
+    });
+    await screen.findByText("Saved");
+    expect(screen.getByRole("listbox", { name: "Completions" })).toBeVisible();
+
+    await user.click(
+      screen.getByText("Future idea", { selector: ".cm-completionLabel" }),
+    );
+    expect(editor).toHaveTextContent("[[Future idea]]");
+  });
+
   it("offers to create a missing Command-Enter wikilink in Inbox", async () => {
     const user = userEvent.setup();
     const source = "See [[Future idea]]";
