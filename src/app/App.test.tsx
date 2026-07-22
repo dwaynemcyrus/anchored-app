@@ -1561,6 +1561,68 @@ describe("App", () => {
     expect(screen.getByText("1 Markdown file")).toBeInTheDocument();
   });
 
+  it("keeps a created note open through a tree refresh and focuses its body", async () => {
+    const user = userEvent.setup();
+    const createdContent = "---\ncreated_at: 2026-07-22T03:00:00Z\n---\n\n";
+    mockedSelectVault.mockResolvedValue({
+      files: [],
+      name: "My Vault",
+      vaultId: "vault-1",
+      warnings: noWarnings,
+    });
+    mockedCreateUntitledVaultFile.mockResolvedValue({
+      content: createdContent,
+      relativePath: "Untitled.md",
+      sizeBytes: createdContent.length,
+    });
+    mockedRescanVault.mockResolvedValue({
+      files: [
+        {
+          name: "Untitled.md",
+          parent: "",
+          relativePath: "Untitled.md",
+        },
+      ],
+      name: "My Vault",
+      vaultId: "vault-1",
+      warnings: noWarnings,
+    });
+    render(<App />);
+
+    await user.click(screen.getByRole("button", { name: "Open vault" }));
+    await user.click(screen.getAllByRole("button", { name: "New note" })[0]);
+
+    const editor = await screen.findByRole("textbox", {
+      name: "Untitled.md Markdown editor",
+    });
+    await waitFor(() => expect(screen.getByText("Saved")).toBeInTheDocument());
+    expect(editor).toHaveFocus();
+    expect(screen.getByText("Ln 5, Col 1")).toBeInTheDocument();
+
+    await waitFor(() =>
+      expect(eventHandlers.has("vault-tree-changed")).toBe(true),
+    );
+    await act(async () => {
+      eventHandlers.get("vault-tree-changed")?.({
+        payload: { vaultId: "vault-1" },
+      });
+    });
+
+    await waitFor(() => expect(mockedRescanVault).toHaveBeenCalled());
+    expect(
+      screen.queryByRole("heading", { level: 1, name: "No note open" }),
+    ).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Untitled.md" })).toHaveAttribute(
+      "aria-current",
+      "page",
+    );
+    expect(
+      await screen.findByRole("textbox", {
+        name: "Untitled.md Markdown editor",
+      }),
+    ).toHaveFocus();
+  });
+
   it("keeps typing safe while the first note file is created", async () => {
     const user = userEvent.setup();
     const createdContent = "";

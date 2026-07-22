@@ -2,11 +2,32 @@ import { describe, expect, it } from "vitest";
 
 import {
   hasNonUnixLineEndings,
+  markdownBodyStart,
   mergeCreatedMarkdownSource,
   normalizeMarkdownLineEndings,
 } from "./source";
 
 describe("Markdown source policies", () => {
+  it("starts the body on the line after the required blank separator", () => {
+    const source = [
+      "---",
+      "one: 1",
+      "two: 2",
+      "three: 3",
+      "four: 4",
+      "five: 5",
+      "six: 6",
+      "---",
+      "",
+      "",
+    ].join("\n");
+
+    expect(markdownBodyStart(source)).toBe(source.length);
+    expect(
+      source.slice(0, markdownBodyStart(source) ?? 0).split("\n"),
+    ).toHaveLength(10);
+  });
+
   it("normalizes CRLF and legacy CR endings to LF", () => {
     expect(normalizeMarkdownLineEndings("one\r\ntwo\rthree\nfour")).toBe(
       "one\ntwo\nthree\nfour",

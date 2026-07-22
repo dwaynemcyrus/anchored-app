@@ -206,6 +206,7 @@ function persistMarkdownSettings(settings: MarkdownSettings): void {
 export function App() {
   const [documents, setDocuments] = useState<AnchoredDocument[]>([]);
   const [activeDocumentId, setActiveDocumentId] = useState("");
+  const [focusDocumentId, setFocusDocumentId] = useState<string>();
   const [cursorPosition, setCursorPosition] = useState<EditorCursorPosition>({
     line: 1,
     column: 1,
@@ -332,6 +333,8 @@ export function App() {
   const vaultNoticeTimeoutsRef = useRef<Map<number, number>>(new Map());
   const notificationIdRef = useRef(0);
   const documentsRef = useRef(documents);
+  const activeDocumentIdRef = useRef("");
+  const focusDocumentIdRef = useRef<string | undefined>(undefined);
   const pendingSessionRelativePathRef = useRef<string | undefined>(undefined);
   const sessionRestoreStatusRef = useRef<"pending" | "restoring" | "done">(
     "pending",
@@ -339,6 +342,18 @@ export function App() {
   const vaultIdRef = useRef("");
 
   documentsRef.current = documents;
+  activeDocumentIdRef.current = activeDocumentId;
+  focusDocumentIdRef.current = focusDocumentId;
+
+  const setActiveDocument = useCallback((documentId: string) => {
+    activeDocumentIdRef.current = documentId;
+    setActiveDocumentId(documentId);
+  }, []);
+
+  const setFocusDocument = useCallback((documentId?: string) => {
+    focusDocumentIdRef.current = documentId;
+    setFocusDocumentId(documentId);
+  }, []);
 
   const activeDocument = documents.find(
     (document) => document.id === activeDocumentId,
@@ -571,6 +586,7 @@ export function App() {
 
       try {
         const savedDocument = await createUntitledVaultFile(contentAtSave);
+        const persistedDocumentId = `vault-path:${savedDocument.relativePath}`;
         const pathParts = savedDocument.relativePath.split("/");
         const name = pathParts.pop() ?? document.name;
         const folderPath = pathParts.join("/");
@@ -579,6 +595,8 @@ export function App() {
           (candidate) => candidate.id === documentId,
         );
         const hasNewerEdit = currentDocument?.sourceText !== sourceAtSave;
+        const wasActive = activeDocumentIdRef.current === documentId;
+        const shouldFocus = focusDocumentIdRef.current === documentId;
 
         setDocuments((currentDocuments) =>
           currentDocuments.map((current) =>
@@ -590,6 +608,7 @@ export function App() {
                   modifiedMillis: savedDocument.modifiedMillis,
                   folder,
                   folderPath,
+                  id: persistedDocumentId,
                   name,
                   noteType: savedDocument.noteType,
                   relativePath: savedDocument.relativePath,
@@ -612,6 +631,10 @@ export function App() {
               : current,
           ),
         );
+        if (wasActive) setActiveDocument(persistedDocumentId);
+        if (shouldFocus) {
+          setFocusDocument(hasNewerEdit ? undefined : persistedDocumentId);
+        }
         if (folderPath) {
           setExpandedFolders((currentFolders) =>
             new Set(currentFolders).add(folderPath),
@@ -644,7 +667,13 @@ export function App() {
         });
       }
     },
-    [addHistoryEntry, resolveHistorySource, vaultName],
+    [
+      addHistoryEntry,
+      resolveHistorySource,
+      setActiveDocument,
+      setFocusDocument,
+      vaultName,
+    ],
   );
 
   const createNote = useCallback(() => {
@@ -658,7 +687,8 @@ export function App() {
     loadRequestRef.current += 1;
     documentsRef.current = nextDocuments;
     setDocuments(nextDocuments);
-    setActiveDocumentId(nextDocument.id);
+    setActiveDocument(nextDocument.id);
+    setFocusDocument(nextDocument.id);
     if (nextDocument.folderPath) {
       setExpandedFolders((currentFolders) =>
         new Set(currentFolders).add(nextDocument.folderPath ?? ""),
@@ -679,7 +709,13 @@ export function App() {
       markDocumentActive(current, nextDocument.id, Date.now()),
     );
     void saveUntitledDocument(nextDocument.id);
-  }, [addVaultNotice, saveUntitledDocument, vaultSelected]);
+  }, [
+    addVaultNotice,
+    saveUntitledDocument,
+    setActiveDocument,
+    setFocusDocument,
+    vaultSelected,
+  ]);
 
   const saveDocumentAs = useCallback(
     async (documentId: string) => {
@@ -1130,7 +1166,8 @@ export function App() {
       );
       setFolderPaths(nextFolders);
       setExpandedFolders(new Set(nextFolders));
-      setActiveDocumentId("");
+      setActiveDocument("");
+      setFocusDocument(undefined);
       setQuery("");
       setDocumentLoad({ status: "idle" });
       setVaultNotices([]);
@@ -1142,11 +1179,15 @@ export function App() {
       const summary = vaultSummaryMessage(snapshot);
       if (summary) addVaultNotice(summary);
     },
-    [addVaultNotice, recordSnapshotEvents],
+    [addVaultNotice, recordSnapshotEvents, setActiveDocument, setFocusDocument],
   );
 
   const adoptVaultSnapshot = useCallback(
     (snapshot: VaultSnapshot) => {
+      const activeDocumentBeforeRefresh = documentsRef.current.find(
+        (document) => document.id === activeDocumentIdRef.current,
+      );
+      const activeRelativePath = activeDocumentBeforeRefresh?.relativePath;
       if (snapshot.vaultId) {
         vaultIdRef.current = snapshot.vaultId;
         setVaultId(snapshot.vaultId);
@@ -1155,9 +1196,17 @@ export function App() {
         documentsRef.current,
         snapshot,
       );
+      const nextActiveDocumentId = activeRelativePath
+        ? (nextDocuments.find(
+            (document) => document.relativePath === activeRelativePath,
+          )?.id ?? "")
+        : activeDocumentIdRef.current;
       const nextFolders = folderPathsFromVault(snapshot);
       documentsRef.current = nextDocuments;
       setDocuments(nextDocuments);
+      if (nextActiveDocumentId !== activeDocumentIdRef.current) {
+        setActiveDocument(nextActiveDocumentId);
+      }
       setDocumentActivity((current) =>
         reconcileDocumentActivity(current, nextDocuments, Date.now()),
       );
@@ -1172,7 +1221,7 @@ export function App() {
       const summary = vaultSummaryMessage(snapshot);
       if (summary) addVaultNotice(summary);
     },
-    [addVaultNotice, recordSnapshotEvents],
+    [addVaultNotice, recordSnapshotEvents, setActiveDocument],
   );
 
   const refreshVault = useCallback(async () => {
@@ -1511,73 +1560,82 @@ export function App() {
     vaultSelected,
   ]);
 
-  const selectDocument = useCallback(async (documentId: string) => {
-    const document = documentsRef.current.find(
-      (candidate) => candidate.id === documentId,
-    );
-    if (!document) return;
+  const selectDocument = useCallback(
+    async (documentId: string) => {
+      const document = documentsRef.current.find(
+        (candidate) => candidate.id === documentId,
+      );
+      if (!document) return;
 
-    setDocumentActivity((current) =>
-      markDocumentActive(current, documentId, Date.now()),
-    );
-    setActiveDocumentId(documentId);
-    setCursorPosition({ line: 1, column: 1 });
-    setSidebarOpen(false);
+      if (
+        focusDocumentIdRef.current &&
+        focusDocumentIdRef.current !== documentId
+      ) {
+        setFocusDocument(undefined);
+      }
+      setDocumentActivity((current) =>
+        markDocumentActive(current, documentId, Date.now()),
+      );
+      setActiveDocument(documentId);
+      setCursorPosition({ line: 1, column: 1 });
+      setSidebarOpen(false);
 
-    if (document.isMarkdown === false) {
-      loadRequestRef.current += 1;
-      setDocumentLoad({ status: "idle" });
-      return;
-    }
-
-    if (!document.relativePath || document.sourceText !== undefined) {
-      loadRequestRef.current += 1;
-      setDocumentLoad({ status: "idle" });
-      return;
-    }
-
-    const requestId = loadRequestRef.current + 1;
-    loadRequestRef.current = requestId;
-    setDocumentLoad({ status: "loading", documentId });
-
-    try {
-      const openedDocument = await readVaultFile(document.relativePath);
-      if (loadRequestRef.current !== requestId) return;
-      if (openedDocument.relativePath !== document.relativePath) {
-        throw new Error("The opened file did not match the requested note.");
+      if (document.isMarkdown === false) {
+        loadRequestRef.current += 1;
+        setDocumentLoad({ status: "idle" });
+        return;
       }
 
-      setDocuments((currentDocuments) =>
-        currentDocuments.map((currentDocument) =>
-          currentDocument.id === documentId
-            ? {
-                ...currentDocument,
-                archivedAt: openedDocument.archivedAt,
-                conflictCopyPath: undefined,
-                createdAt: openedDocument.createdAt,
-                modifiedMillis: openedDocument.modifiedMillis,
-                noteType: openedDocument.noteType,
-                sizeBytes: openedDocument.sizeBytes,
-                saveMessage: undefined,
-                saveState: "saved",
-                savedSourceText: openedDocument.content,
-                sourceText: openedDocument.content,
-                status: openedDocument.status,
-                updatedAt: openedDocument.updatedAt,
-              }
-            : currentDocument,
-        ),
-      );
-      setDocumentLoad({ status: "idle" });
-    } catch (error) {
-      if (loadRequestRef.current !== requestId) return;
-      setDocumentLoad({
-        status: "error",
-        documentId,
-        message: readErrorMessage(error),
-      });
-    }
-  }, []);
+      if (!document.relativePath || document.sourceText !== undefined) {
+        loadRequestRef.current += 1;
+        setDocumentLoad({ status: "idle" });
+        return;
+      }
+
+      const requestId = loadRequestRef.current + 1;
+      loadRequestRef.current = requestId;
+      setDocumentLoad({ status: "loading", documentId });
+
+      try {
+        const openedDocument = await readVaultFile(document.relativePath);
+        if (loadRequestRef.current !== requestId) return;
+        if (openedDocument.relativePath !== document.relativePath) {
+          throw new Error("The opened file did not match the requested note.");
+        }
+
+        setDocuments((currentDocuments) =>
+          currentDocuments.map((currentDocument) =>
+            currentDocument.id === documentId
+              ? {
+                  ...currentDocument,
+                  archivedAt: openedDocument.archivedAt,
+                  conflictCopyPath: undefined,
+                  createdAt: openedDocument.createdAt,
+                  modifiedMillis: openedDocument.modifiedMillis,
+                  noteType: openedDocument.noteType,
+                  sizeBytes: openedDocument.sizeBytes,
+                  saveMessage: undefined,
+                  saveState: "saved",
+                  savedSourceText: openedDocument.content,
+                  sourceText: openedDocument.content,
+                  status: openedDocument.status,
+                  updatedAt: openedDocument.updatedAt,
+                }
+              : currentDocument,
+          ),
+        );
+        setDocumentLoad({ status: "idle" });
+      } catch (error) {
+        if (loadRequestRef.current !== requestId) return;
+        setDocumentLoad({
+          status: "error",
+          documentId,
+          message: readErrorMessage(error),
+        });
+      }
+    },
+    [setActiveDocument, setFocusDocument],
+  );
 
   async function reloadExternalDocument(documentId: string) {
     const document = documentsRef.current.find(
@@ -1726,7 +1784,8 @@ export function App() {
       nextFolders.forEach((folder) => nextExpanded.add(folder));
       return nextExpanded;
     });
-    setActiveDocumentId(relocatedDocumentId);
+    setActiveDocument(relocatedDocumentId);
+    setFocusDocument(undefined);
     setDocumentLoad({ status: "idle" });
     addVaultNotice(message, { history: { kind: "rename" } });
   }
@@ -2030,7 +2089,8 @@ export function App() {
     try {
       const result = await moveVaultFileToTrash(document.relativePath);
       loadRequestRef.current += 1;
-      setActiveDocumentId("");
+      setActiveDocument("");
+      setFocusDocument(undefined);
       setDocumentLoad({ status: "idle" });
       adoptVaultSnapshot(result.snapshot);
       setTrashEntries((current) => [
@@ -2110,7 +2170,8 @@ export function App() {
 
   function closeDocument() {
     loadRequestRef.current += 1;
-    setActiveDocumentId("");
+    setActiveDocument("");
+    setFocusDocument(undefined);
     setCursorPosition({ line: 1, column: 1 });
     setDocumentLoad({ status: "idle" });
   }
@@ -2460,7 +2521,8 @@ export function App() {
         ),
       );
       setExpandedFolders((current) => new Set(current).add(folderPath));
-      setActiveDocumentId(documentId);
+      setFocusDocument(documentId);
+      setActiveDocument(documentId);
       setDocumentLoad({ status: "idle" });
     } catch (error) {
       addVaultNotice(readErrorMessage(error), { persistent: true });
@@ -2596,6 +2658,7 @@ export function App() {
         <EditorSurface
           backlinks={backlinks}
           document={activeDocument}
+          focusDocumentId={focusDocumentId}
           hasDocuments={documents.some(
             (document) => document.isMarkdown !== false,
           )}

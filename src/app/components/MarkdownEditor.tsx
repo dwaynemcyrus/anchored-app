@@ -26,6 +26,7 @@ import {
   anchoredMarkdownSyntaxHighlighting,
 } from "../markdown/editorLanguage";
 import type { EditorFontSize } from "../markdown/types";
+import { markdownBodyStart } from "../markdown/source";
 import { wikilinkAtOffset, wikilinkCompletionAtOffset } from "../links";
 import { describeExternalDocumentChange } from "./editorSync";
 
@@ -36,6 +37,7 @@ export type EditorCursorPosition = {
 
 type MarkdownEditorProps = {
   autoFocus?: boolean;
+  focusAtBodyStart?: boolean;
   documentId: string;
   editorFontSize: EditorFontSize;
   findRequest: number;
@@ -52,6 +54,7 @@ type MarkdownEditorProps = {
 
 export default function MarkdownEditor({
   autoFocus = false,
+  focusAtBodyStart = false,
   documentId,
   editorFontSize,
   findRequest,
@@ -78,6 +81,7 @@ export default function MarkdownEditor({
   const syncingValueRef = useRef(false);
   const composingRef = useRef(false);
   const localValueHistoryRef = useRef(new Set([value]));
+  const bodyFocusAppliedRef = useRef(false);
 
   valueRef.current = value;
   onChangeRef.current = onChange;
@@ -91,6 +95,7 @@ export default function MarkdownEditor({
   useEffect(() => {
     const host = hostRef.current;
     if (!host) return;
+    bodyFocusAppliedRef.current = false;
 
     function completeWikilink(
       context: CompletionContext,
@@ -282,12 +287,22 @@ export default function MarkdownEditor({
       column: view.state.selection.main.head - initialLine.from + 1,
     });
     if (autoFocus) view.focus();
+    if (focusAtBodyStart) {
+      const bodyStart = markdownBodyStart(view.state.doc.toString());
+      if (bodyStart !== null) {
+        view.dispatch({
+          selection: { anchor: bodyStart, head: bodyStart },
+        });
+        view.focus();
+        bodyFocusAppliedRef.current = true;
+      }
+    }
 
     return () => {
       editorRef.current = null;
       view.destroy();
     };
-  }, [autoFocus, documentId, label]);
+  }, [autoFocus, documentId, focusAtBodyStart, label]);
 
   useEffect(() => {
     const view = editorRef.current;
@@ -312,7 +327,18 @@ export default function MarkdownEditor({
     syncingValueRef.current = false;
     localValueHistoryRef.current.clear();
     localValueHistoryRef.current.add(value);
-  }, [value]);
+
+    if (focusAtBodyStart && !bodyFocusAppliedRef.current) {
+      const bodyStart = markdownBodyStart(value);
+      if (bodyStart !== null) {
+        view.dispatch({
+          selection: { anchor: bodyStart, head: bodyStart },
+        });
+        view.focus();
+        bodyFocusAppliedRef.current = true;
+      }
+    }
+  }, [focusAtBodyStart, value]);
 
   useEffect(() => {
     if (findRequest <= 0 || !editorRef.current) return;

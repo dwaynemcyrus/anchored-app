@@ -37,6 +37,7 @@ type EditorSurfaceProps = {
   onSaveDocument: () => void;
   onSaveDocumentAs: () => void;
   onTrashDocument: () => void;
+  focusDocumentId?: string;
   moving: boolean;
   markdownSettings: MarkdownSettings;
   renaming: boolean;
@@ -68,6 +69,7 @@ export function EditorSurface({
   onSaveDocument,
   onSaveDocumentAs,
   onTrashDocument,
+  focusDocumentId,
   moving,
   markdownSettings,
   renaming,
@@ -334,10 +336,11 @@ export function EditorSurface({
               }
             >
               <MarkdownEditor
-                autoFocus={focusEditorOnOpen}
+                autoFocus={focusEditorOnOpen || focusDocumentId === document.id}
                 documentId={document.id}
                 editorFontSize={markdownSettings.editorFontSize}
                 findRequest={findRequest}
+                focusAtBodyStart={focusDocumentId === document.id}
                 label={`${document.name} Markdown editor`}
                 value={document.sourceText}
                 wikilinkCandidates={wikilinkCandidates}
