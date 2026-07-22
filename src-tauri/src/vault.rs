@@ -2,6 +2,7 @@ use std::{
     collections::{BTreeMap, HashMap, HashSet},
     fs,
     fs::OpenOptions,
+    hash::{Hash, Hasher},
     path::{Component, Path, PathBuf},
     sync::{
         atomic::{AtomicBool, AtomicU64, Ordering},
@@ -45,6 +46,7 @@ pub struct VaultState {
     rename_transaction: Mutex<()>,
     root: RwLock<Option<PathBuf>>,
     file_watch: Mutex<Option<Arc<AtomicBool>>>,
+    vault_watch: Mutex<Option<Arc<AtomicBool>>>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -172,6 +174,12 @@ pub struct VaultFileChangedEvent {
     pub modified_millis: Option<u64>,
     pub relative_path: String,
     pub size_bytes: Option<u64>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct VaultTreeChangedEvent {
+    pub vault_id: String,
 }
 
 #[derive(Debug, Serialize)]
@@ -610,6 +618,73 @@ fn stop_file_watch(state: &VaultState) {
     }
 }
 
+fn stop_vault_tree_watch_signal(state: &VaultState) {
+    if let Ok(mut current) = state.vault_watch.lock() {
+        if let Some(stop) = current.take() {
+            stop.store(true, Ordering::Relaxed);
+        }
+    }
+}
+
+fn vault_tree_signature(root: &Path) -> Result<u64, VaultError> {
+    let root = canonical_vault_root(root)?;
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    let mut stack = vec![(root.clone(), 0_usize)];
+    let mut visited_entries = 0_usize;
+
+    while let Some((directory, depth)) = stack.pop() {
+        if depth > MAX_VAULT_DEPTH {
+            return Err(VaultError::invalid(format!(
+                "The selected vault exceeds the safe directory depth of {MAX_VAULT_DEPTH}."
+            )));
+        }
+
+        let mut entries = fs::read_dir(&directory)
+            .map_err(|error| VaultError::io("A vault directory could not be read", error))?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|error| VaultError::io("A vault entry could not be read", error))?;
+        entries.sort_by_key(|entry| entry.file_name());
+
+        for entry in entries {
+            if is_internal_component(&entry.file_name()) {
+                continue;
+            }
+            visited_entries += 1;
+            if visited_entries > MAX_VAULT_ENTRIES {
+                return Err(VaultError::too_large());
+            }
+
+            let file_type = entry
+                .file_type()
+                .map_err(|error| VaultError::io("A vault entry could not be inspected", error))?;
+            if file_type.is_symlink() {
+                continue;
+            }
+
+            let entry_path = entry.path();
+            let relative = entry_path
+                .strip_prefix(&root)
+                .map_err(|_| VaultError::invalid("A vault path could not be inspected."))?;
+            relative.to_string_lossy().hash(&mut hasher);
+            if file_type.is_dir() {
+                0_u8.hash(&mut hasher);
+                stack.push((entry_path, depth + 1));
+                continue;
+            }
+            if file_type.is_file() {
+                1_u8.hash(&mut hasher);
+                let metadata = fs::metadata(entry_path).map_err(|error| {
+                    VaultError::io("A vault entry could not be inspected", error)
+                })?;
+                let signature = file_signature_from_metadata(&metadata);
+                signature.hash(&mut hasher);
+            }
+        }
+    }
+
+    Ok(hasher.finish())
+}
+
 fn activate_vault(
     app: &AppHandle,
     state: &State<'_, VaultState>,
@@ -707,6 +782,47 @@ pub async fn watch_vault_file(
 #[tauri::command]
 pub async fn stop_vault_file_watch(state: State<'_, VaultState>) -> Result<(), VaultError> {
     stop_file_watch(&state);
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn watch_vault_tree(
+    app: AppHandle,
+    state: State<'_, VaultState>,
+) -> Result<(), VaultError> {
+    let root = selected_vault_root(&state, "watching the vault")?;
+    let vault_id = ensure_vault_identity(&root)?;
+    stop_vault_tree_watch_signal(&state);
+
+    let stop = Arc::new(AtomicBool::new(false));
+    if let Ok(mut current) = state.vault_watch.lock() {
+        *current = Some(Arc::clone(&stop));
+    }
+
+    thread::spawn(move || {
+        let mut previous = vault_tree_signature(&root).ok();
+        while !stop.load(Ordering::Relaxed) {
+            thread::sleep(Duration::from_millis(750));
+            let current = vault_tree_signature(&root).ok();
+            if current == previous {
+                continue;
+            }
+            previous = current;
+            let event = VaultTreeChangedEvent {
+                vault_id: vault_id.clone(),
+            };
+            if app.emit("vault-tree-changed", event).is_err() {
+                break;
+            }
+        }
+    });
+
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn stop_vault_tree_watch(state: State<'_, VaultState>) -> Result<(), VaultError> {
+    stop_vault_tree_watch_signal(&state);
     Ok(())
 }
 
@@ -3228,8 +3344,8 @@ mod tests {
         rename_folder, rename_markdown_file, resolve_new_vault_markdown_file, save_markdown_file,
         save_scratchpad_markdown_file, scan_vault, scratchpad_filename_sequence,
         search_markdown_files, transition_markdown_lifecycle, validate_folder_name,
-        validate_new_vault_name, write_rename_journal, LifecycleTransition, RenameJournal,
-        RenameJournalEntry, RenameJournalPhase, RenameOutcome, VaultMetadataCache,
+        validate_new_vault_name, vault_tree_signature, write_rename_journal, LifecycleTransition,
+        RenameJournal, RenameJournalEntry, RenameJournalPhase, RenameOutcome, VaultMetadataCache,
         MAX_MARKDOWN_FILE_BYTES, MAX_SEARCH_RESULTS, RENAME_JOURNAL_NAME,
     };
 
@@ -3647,6 +3763,26 @@ mod tests {
         assert!(document.content.is_empty());
         assert_eq!(document.relative_path, "Empty.md");
         assert_eq!(document.size_bytes, 0);
+    }
+
+    #[test]
+    fn vault_tree_signature_changes_for_nested_finder_mutations() {
+        let vault = tempdir().expect("create fixture vault");
+        let nested = vault.path().join("Notes");
+        fs::create_dir(&nested).expect("create Notes folder");
+
+        let initial = vault_tree_signature(vault.path()).expect("signature before mutation");
+        fs::write(nested.join("Added.md"), "# Added\n").expect("add note");
+        let added = vault_tree_signature(vault.path()).expect("signature after add");
+        assert_ne!(initial, added);
+
+        fs::rename(&nested, vault.path().join("Moved")).expect("move folder");
+        let moved = vault_tree_signature(vault.path()).expect("signature after move");
+        assert_ne!(added, moved);
+
+        fs::remove_dir_all(vault.path().join("Moved")).expect("delete folder");
+        let deleted = vault_tree_signature(vault.path()).expect("signature after delete");
+        assert_ne!(moved, deleted);
     }
 
     #[test]

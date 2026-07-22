@@ -107,8 +107,11 @@ import {
   searchVault,
   selectVault,
   stopVaultFileWatch,
+  stopVaultTreeWatch,
   watchVaultFile,
+  watchVaultTree,
   type VaultFileChangedEvent,
+  type VaultTreeChangedEvent,
   restoreVaultFileFromTrash,
   restoreVaultFolderFromTrash,
   restoreArchivedVaultFile,
@@ -324,6 +327,7 @@ export function App() {
   const externalCheckPendingRef = useRef(new Set<string>());
   const conflictCopyInFlightRef = useRef(new Set<string>());
   const focusRefreshTimeoutRef = useRef<number | undefined>(undefined);
+  const vaultTreeRefreshTimeoutRef = useRef<number | undefined>(undefined);
   const vaultNoticeIdRef = useRef(0);
   const vaultNoticeTimeoutsRef = useRef<Map<number, number>>(new Map());
   const notificationIdRef = useRef(0);
@@ -1428,6 +1432,47 @@ export function App() {
   }, [refreshVault]);
 
   useEffect(() => {
+    if (!vaultSelected) {
+      void stopVaultTreeWatch().catch(() => undefined);
+      return;
+    }
+
+    let disposed = false;
+    const unlistenPromise = listen<VaultTreeChangedEvent>(
+      "vault-tree-changed",
+      (event) => {
+        if (
+          disposed ||
+          (event.payload.vaultId &&
+            event.payload.vaultId !== vaultIdRef.current)
+        ) {
+          return;
+        }
+        if (vaultTreeRefreshTimeoutRef.current !== undefined) {
+          window.clearTimeout(vaultTreeRefreshTimeoutRef.current);
+        }
+        vaultTreeRefreshTimeoutRef.current = window.setTimeout(() => {
+          vaultTreeRefreshTimeoutRef.current = undefined;
+          void refreshVault();
+        }, 250);
+      },
+    );
+    void watchVaultTree().catch((error) => {
+      if (!disposed) addVaultNotice(readErrorMessage(error));
+    });
+
+    return () => {
+      disposed = true;
+      void unlistenPromise.then((unlisten) => unlisten());
+      void stopVaultTreeWatch().catch(() => undefined);
+      if (vaultTreeRefreshTimeoutRef.current !== undefined) {
+        window.clearTimeout(vaultTreeRefreshTimeoutRef.current);
+        vaultTreeRefreshTimeoutRef.current = undefined;
+      }
+    };
+  }, [addVaultNotice, refreshVault, vaultSelected, vaultId]);
+
+  useEffect(() => {
     const relativePath = activeDocumentPathForWatch;
     if (
       !vaultSelected ||
@@ -1814,7 +1859,10 @@ export function App() {
     const document = documentsRef.current.find(
       (candidate) => candidate.id === documentId,
     );
-    if (document?.relativePath && result.relativePath !== document.relativePath) {
+    if (
+      document?.relativePath &&
+      result.relativePath !== document.relativePath
+    ) {
       await finishRelocatedDocument(
         {
           relativePath: result.relativePath,

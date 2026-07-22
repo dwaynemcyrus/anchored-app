@@ -95,6 +95,10 @@ export type VaultFileChangedEvent = {
   sizeBytes?: number;
 };
 
+export type VaultTreeChangedEvent = {
+  vaultId: string;
+};
+
 export type CreateVaultFileRequest = {
   content: string;
   suggestedName: string;
@@ -231,6 +235,14 @@ export function watchVaultFile(relativePath: string): Promise<void> {
 
 export function stopVaultFileWatch(): Promise<void> {
   return invoke<void>("stop_vault_file_watch");
+}
+
+export function watchVaultTree(): Promise<void> {
+  return invoke<void>("watch_vault_tree");
+}
+
+export function stopVaultTreeWatch(): Promise<void> {
+  return invoke<void>("stop_vault_tree_watch");
 }
 
 export function searchVault(query: string): Promise<VaultSearchResult> {

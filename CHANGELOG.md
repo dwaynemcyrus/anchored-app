@@ -8,6 +8,9 @@ Git commit. The format follows [Keep a Changelog], and releases follow
 
 ### Added
 
+- Anchored now watches the selected vault tree while open, so Finder-created,
+  renamed, moved, and deleted folders and files refresh the physical Files
+  view automatically without requiring focus or another app action.
 - Lifecycle moves now route Inbox notes into a lower-case folder derived from
   their `type` front matter, create that folder when needed, and return notes
   to the physical `inbox` folder when moved back to Inbox. Untyped notes use

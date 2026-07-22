@@ -28,6 +28,8 @@ pub fn run() {
             vault::read_vault_file,
             vault::watch_vault_file,
             vault::stop_vault_file_watch,
+            vault::watch_vault_tree,
+            vault::stop_vault_tree_watch,
             vault::save_vault_file,
             vault::create_vault_conflict_copy,
             vault::archive_vault_file,

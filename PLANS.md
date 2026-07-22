@@ -1685,6 +1685,11 @@ Every future large plan must identify:
   type-folder names preserve spaces and other visible characters accepted by
   the existing single-folder safety validation. Rust and TypeScript coverage
   protects typed, untyped, link-updating, and status-only transitions.
+- 2026-07-22: Replaced focus-only physical tree refresh with a native vault
+  tree watcher. A bounded, hidden-file-safe filesystem signature detects
+  Finder adds, deletes, renames, and moves while the app is open, emits a
+  debounced refresh event, and updates the Files view without disturbing
+  dirty editor state. Focus refresh remains as a fallback.
 
 ## Follow-up plan: named color themes
 

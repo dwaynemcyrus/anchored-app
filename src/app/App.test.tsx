@@ -31,7 +31,9 @@ import {
   searchVault,
   selectVault,
   stopVaultFileWatch,
+  stopVaultTreeWatch,
   watchVaultFile,
+  watchVaultTree,
   restoreVaultFileFromTrash,
   restoreArchivedVaultFile,
 } from "../lib/tauri/vault";
@@ -39,6 +41,8 @@ import { openScratchpad } from "../lib/tauri/scratchpad";
 import { App } from "./App";
 import { saveSessionState } from "./sessionState";
 import { reloadAnchoredWindow } from "./windowActions";
+
+const eventHandlers = vi.hoisted(() => new Map());
 
 vi.mock("../lib/tauri/vault", () => ({
   archiveVaultFile: vi.fn(),
@@ -62,13 +66,18 @@ vi.mock("../lib/tauri/vault", () => ({
   searchVault: vi.fn(),
   selectVault: vi.fn(),
   stopVaultFileWatch: vi.fn(),
+  stopVaultTreeWatch: vi.fn(),
   watchVaultFile: vi.fn(),
+  watchVaultTree: vi.fn(),
   restoreVaultFileFromTrash: vi.fn(),
   restoreArchivedVaultFile: vi.fn(),
 }));
 
 vi.mock("@tauri-apps/api/event", () => ({
-  listen: vi.fn().mockResolvedValue(vi.fn()),
+  listen: vi.fn(async (event, handler) => {
+    eventHandlers.set(event, handler);
+    return () => eventHandlers.delete(event);
+  }),
 }));
 
 vi.mock("../lib/tauri/scratchpad", () => ({
@@ -102,7 +111,9 @@ const mockedArchiveVaultFile = vi.mocked(archiveVaultFile);
 const mockedCreateVaultConflictCopy = vi.mocked(createVaultConflictCopy);
 const mockedRestoreArchivedVaultFile = vi.mocked(restoreArchivedVaultFile);
 const mockedStopVaultFileWatch = vi.mocked(stopVaultFileWatch);
+const mockedStopVaultTreeWatch = vi.mocked(stopVaultTreeWatch);
 const mockedWatchVaultFile = vi.mocked(watchVaultFile);
+const mockedWatchVaultTree = vi.mocked(watchVaultTree);
 const mockedReloadAnchoredWindow = vi.mocked(reloadAnchoredWindow);
 const mockedOpenScratchpad = vi.mocked(openScratchpad);
 const noWarnings = {
@@ -117,6 +128,7 @@ describe("App", () => {
 
   beforeEach(() => {
     window.localStorage.clear();
+    eventHandlers.clear();
     mockedCreateVault.mockReset();
     mockedCreateVaultConflictCopy.mockReset();
     mockedCreateVaultFolder.mockReset();
@@ -141,6 +153,8 @@ describe("App", () => {
     mockedRestoreArchivedVaultFile.mockReset();
     mockedStopVaultFileWatch.mockReset();
     mockedWatchVaultFile.mockReset();
+    mockedStopVaultTreeWatch.mockReset().mockResolvedValue(undefined);
+    mockedWatchVaultTree.mockReset().mockResolvedValue(undefined);
     mockedReloadAnchoredWindow.mockReset();
     mockedOpenScratchpad.mockReset();
     mockedOpenScratchpad.mockResolvedValue(undefined);
@@ -1821,6 +1835,42 @@ describe("App", () => {
     ).toBeInTheDocument();
     expect(screen.getByText("1 Markdown file")).toBeInTheDocument();
     expect(screen.queryByLabelText("Notifications")).not.toBeInTheDocument();
+  });
+
+  it("rescans the physical tree when the native vault watcher reports a change", async () => {
+    const user = userEvent.setup();
+    mockedSelectVault.mockResolvedValue({
+      files: [],
+      folders: [],
+      name: "My Vault",
+      vaultId: "vault-1",
+      warnings: noWarnings,
+    });
+    mockedRescanVault.mockResolvedValue({
+      files: [],
+      folders: ["Finder", "Finder/Moved"],
+      name: "My Vault",
+      vaultId: "vault-1",
+      warnings: noWarnings,
+    });
+    render(<App />);
+
+    await user.click(screen.getByRole("button", { name: "Open vault" }));
+    await user.click(
+      screen.getByRole("button", { name: "Open file explorer" }),
+    );
+    await user.click(screen.getByRole("button", { name: "Files" }));
+    await waitFor(() =>
+      expect(eventHandlers.has("vault-tree-changed")).toBe(true),
+    );
+    await act(async () => {
+      eventHandlers.get("vault-tree-changed")?.({
+        payload: { vaultId: "vault-1" },
+      });
+    });
+
+    await waitFor(() => expect(mockedRescanVault).toHaveBeenCalled());
+    expect(await screen.findByRole("button", { name: "Finder" })).toBeVisible();
   });
 
   it("shows a recoverable error when a vault note cannot be read", async () => {

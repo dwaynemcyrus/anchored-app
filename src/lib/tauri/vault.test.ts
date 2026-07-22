@@ -24,8 +24,10 @@ import {
   searchVault,
   selectVault,
   stopVaultFileWatch,
+  stopVaultTreeWatch,
   watchVaultFile,
   type SaveVaultFileRequest,
+  watchVaultTree,
   type VaultDocument,
   type VaultSnapshot,
 } from "./vault";
@@ -153,6 +155,14 @@ describe("vault bridge", () => {
 
     await expect(rescanVault()).resolves.toEqual(snapshot);
     expect(mockedInvoke).toHaveBeenCalledWith("rescan_vault");
+  });
+
+  it("starts and stops the native vault tree watcher", async () => {
+    mockedInvoke.mockResolvedValue(undefined);
+    await expect(watchVaultTree()).resolves.toBeUndefined();
+    await expect(stopVaultTreeWatch()).resolves.toBeUndefined();
+    expect(mockedInvoke).toHaveBeenNthCalledWith(1, "watch_vault_tree");
+    expect(mockedInvoke).toHaveBeenNthCalledWith(2, "stop_vault_tree_watch");
   });
 
   it("lists, trashes, and restores notes through narrow native commands", async () => {
