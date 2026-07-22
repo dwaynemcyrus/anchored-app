@@ -3428,6 +3428,7 @@ mod tests {
         )
         .expect("create authored note");
 
+        assert!(blank.content.ends_with("---\n\n"));
         assert!(blank.created_at.is_some());
         assert!(blank.updated_at.is_none());
         assert!(authored.created_at.is_some());

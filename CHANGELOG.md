@@ -72,6 +72,8 @@ Git commit. The format follows [Keep a Changelog], and releases follow
 
 ### Changed
 
+- Newly created notes now include a blank line after YAML front matter so the
+  editor can place the caret at the first writing line.
 - Settings now labels the window reload action as “Restart Anchored,” clarifies
   that it is a recovery action, and keeps long Settings content inside a
   scrollable viewport instead of allowing the modal to extend below the

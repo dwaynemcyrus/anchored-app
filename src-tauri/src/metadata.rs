@@ -406,7 +406,7 @@ fn add_new_lifecycle_front_matter(content: &str, changes: &[(&str, Option<&str>)
         .strip_prefix(UTF8_BOM)
         .map_or(("", content), |body| (UTF8_BOM, body));
     let newline = preferred_newline(body);
-    let separator = if body.is_empty() { "" } else { newline };
+    let separator = newline;
     let properties = changes
         .iter()
         .filter_map(|(key, value)| value.map(|value| format!("{key}: {value}{newline}")))
