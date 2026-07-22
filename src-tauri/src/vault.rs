@@ -26,9 +26,9 @@ use crate::continuity::{
 };
 use crate::links::{plan_rename_link_rewrites_by_path, LinkNote, LinkSource};
 use crate::metadata::{
-    archive_note, archive_note_with_type, inspect_note_aliases, inspect_note_properties,
-    inspect_wikilinks, restore_note, restore_note_with_type, split_note_source,
-    stamp_note_created_at, stamp_note_updated_at,
+    archive_note, archive_note_with_type, backfill_local_lifecycle_timestamps,
+    inspect_note_aliases, inspect_note_properties, inspect_wikilinks, restore_note,
+    restore_note_with_type, split_note_source, stamp_note_created_at, stamp_note_updated_at,
 };
 
 const MAX_VAULT_ENTRIES: usize = 50_000;
@@ -690,6 +690,7 @@ fn activate_vault(
     state: &State<'_, VaultState>,
     root: PathBuf,
 ) -> Result<VaultSnapshot, VaultError> {
+    backfill_vault_timestamps(&root)?;
     let snapshot = build_vault_snapshot(app, &root, state.metadata_cache.as_ref())?;
     remember_vault(
         &registry_path(app)?,
@@ -704,6 +705,43 @@ fn activate_vault(
         .map_err(|_| VaultError::state("The selected vault state could not be updated."))?;
     *stored_root = Some(root);
     Ok(snapshot)
+}
+
+fn backfill_vault_timestamps(root: &Path) -> Result<usize, VaultError> {
+    let root = canonical_vault_root(root)?;
+    let snapshot = scan_vault(&root)?;
+    let mut updated_files = 0;
+
+    for file in snapshot.files {
+        let path = resolve_vault_markdown_file(&root, &file.relative_path)?;
+        let metadata = fs::metadata(&path)
+            .map_err(|error| VaultError::io("A Markdown file could not be inspected", error))?;
+        if metadata.len() > MAX_MARKDOWN_FILE_BYTES {
+            continue;
+        }
+        let content = String::from_utf8(
+            fs::read(&path)
+                .map_err(|error| VaultError::io("A Markdown file could not be read", error))?,
+        )
+        .map_err(|_| VaultError::invalid_encoding())?;
+        let Some(updated) = backfill_local_lifecycle_timestamps(&content).map_err(|error| {
+            VaultError::lifecycle(format!(
+                "Anchored could not backfill timestamps safely: {error}."
+            ))
+        })?
+        else {
+            continue;
+        };
+        let temporary_path = temporary_sibling_path(&path)?;
+        let write_result = write_atomically(&temporary_path, &path, &updated, &metadata);
+        if write_result.is_err() {
+            let _ = fs::remove_file(&temporary_path);
+        }
+        write_result?;
+        updated_files += 1;
+    }
+
+    Ok(updated_files)
 }
 
 fn build_vault_snapshot(
@@ -3337,15 +3375,16 @@ mod tests {
     use tempfile::tempdir;
 
     use super::{
-        canonical_vault_root, create_conflict_copy, create_folder, create_markdown_file,
-        create_named_vault, create_scratchpad_markdown_file, create_untitled_markdown_file,
-        delete_empty_folder, enrich_vault_metadata, enrich_vault_metadata_cached, move_folder,
-        move_markdown_file_to_folder, read_markdown_file, recover_rename_transaction,
-        rename_folder, rename_markdown_file, resolve_new_vault_markdown_file, save_markdown_file,
-        save_scratchpad_markdown_file, scan_vault, scratchpad_filename_sequence,
-        search_markdown_files, transition_markdown_lifecycle, validate_folder_name,
-        validate_new_vault_name, vault_tree_signature, write_rename_journal, LifecycleTransition,
-        RenameJournal, RenameJournalEntry, RenameJournalPhase, RenameOutcome, VaultMetadataCache,
+        backfill_vault_timestamps, canonical_vault_root, create_conflict_copy, create_folder,
+        create_markdown_file, create_named_vault, create_scratchpad_markdown_file,
+        create_untitled_markdown_file, delete_empty_folder, enrich_vault_metadata,
+        enrich_vault_metadata_cached, move_folder, move_markdown_file_to_folder,
+        read_markdown_file, recover_rename_transaction, rename_folder, rename_markdown_file,
+        resolve_new_vault_markdown_file, save_markdown_file, save_scratchpad_markdown_file,
+        scan_vault, scratchpad_filename_sequence, search_markdown_files,
+        transition_markdown_lifecycle, validate_folder_name, validate_new_vault_name,
+        vault_tree_signature, write_rename_journal, LifecycleTransition, RenameJournal,
+        RenameJournalEntry, RenameJournalPhase, RenameOutcome, VaultMetadataCache,
         MAX_MARKDOWN_FILE_BYTES, MAX_SEARCH_RESULTS, RENAME_JOURNAL_NAME,
     };
 
@@ -4169,6 +4208,35 @@ mod tests {
 
         assert_eq!(error.code, "unsafeLifecycleMetadata");
         assert!(!destination.exists());
+    }
+
+    #[test]
+    fn backfills_all_visible_markdown_lifecycle_timestamps() {
+        let vault = tempdir().expect("create fixture vault");
+        let migrated = vault.path().join("Migrated.md");
+        let untouched = vault.path().join("Untouched.md");
+        fs::write(
+            &migrated,
+            "---\ncreated_at: 2026-01-02T03:04:05Z\n---\nBody\n",
+        )
+        .expect("write UTC note");
+        fs::write(&untouched, "# Untouched\n").expect("write untouched note");
+
+        assert_eq!(
+            backfill_vault_timestamps(vault.path()).expect("backfill vault"),
+            1
+        );
+        let first = fs::read_to_string(&migrated).expect("read migrated note");
+        assert!(!first.contains("created_at: 2026-01-02T03:04:05Z"));
+        assert!(first.contains("created_at: 2026-01-02T"));
+        assert_eq!(
+            backfill_vault_timestamps(vault.path()).expect("backfill vault again"),
+            0
+        );
+        assert_eq!(
+            fs::read_to_string(&untouched).expect("read untouched note"),
+            "# Untouched\n"
+        );
     }
 
     #[test]

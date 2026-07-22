@@ -100,6 +100,9 @@ Git commit. The format follows [Keep a Changelog], and releases follow
 - New lifecycle timestamps are now written in the Mac's local timezone with a
   numeric RFC 3339 offset instead of `Z` UTC notation. Existing UTC timestamps
   remain readable.
+- When a vault is selected or reopened, existing canonical UTC lifecycle
+  timestamps across its Markdown documents are backfilled to local offsets
+  without changing the represented date and time.
 - Vault refresh now reuses a versioned native metadata index keyed by relative
   path, size, and modification time. Unchanged notes are not reread, malformed
   caches rebuild automatically, and focus refresh runs off the UI thread.

@@ -84,6 +84,8 @@ Product scope remains governed by `OVERVIEW.md`.
   preserved without silent damage.
 - App-created notes receive a local-timezone RFC 3339 `created_at` value with
   second precision;
+- On vault selection or reopen, existing canonical UTC lifecycle timestamps
+  are backfilled to local offsets without changing their represented instant;
   archived notes receive `status: archived` plus `archived_at` and become
   read-only until restored to Inbox or Workbench.
 - All configured checks pass, and the core workflow remains stable for seven
