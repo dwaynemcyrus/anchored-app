@@ -7,6 +7,7 @@ import {
   statSync,
   writeFileSync,
 } from "node:fs";
+import { homedir } from "node:os";
 import path from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
@@ -138,6 +139,21 @@ async function main() {
   };
   for (const variable of notarizationVariables)
     delete alphaEnvironment[variable];
+
+  const localUpdaterKeyPath =
+    process.env.TAURI_SIGNING_PRIVATE_KEY_PATH ??
+    path.join(homedir(), ".tauri", "anchored-updater.key");
+  if (
+    !process.env.TAURI_SIGNING_PRIVATE_KEY &&
+    !existsSync(localUpdaterKeyPath)
+  ) {
+    fail(
+      `the updater signing key is missing. Set TAURI_SIGNING_PRIVATE_KEY or create ${localUpdaterKeyPath}.`,
+    );
+  }
+  if (!process.env.TAURI_SIGNING_PRIVATE_KEY) {
+    alphaEnvironment.TAURI_SIGNING_PRIVATE_KEY_PATH = localUpdaterKeyPath;
+  }
 
   console.log("Building Anchored as an Intel private alpha…");
   const buildStartedAt = Date.now();

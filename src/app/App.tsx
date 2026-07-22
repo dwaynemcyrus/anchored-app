@@ -125,6 +125,8 @@ import {
   type VaultSnapshot,
 } from "../lib/tauri/vault";
 import { openScratchpad, type ScratchpadMode } from "../lib/tauri/scratchpad";
+import { checkForUpdate, installUpdate } from "./updater";
+import type { Update } from "@tauri-apps/plugin-updater";
 
 const ACTIVITY_REFRESH_INTERVAL_MS = 60_000;
 const MINOR_NOTICE_DURATION_MS = 12_000;
@@ -266,6 +268,11 @@ export function App() {
     string | undefined
   >();
   const [reloadingApp, setReloadingApp] = useState(false);
+  const [availableUpdate, setAvailableUpdate] = useState<Update | null>(null);
+  const [updateStatus, setUpdateStatus] = useState<
+    "available" | "checking" | "error" | "idle" | "current" | "installing"
+  >("idle");
+  const [updateError, setUpdateError] = useState<string>();
   const [vaultSelected, setVaultSelected] = useState(false);
   const [vaultSwitcherVisible, setVaultSwitcherVisible] = useState(false);
   const [rememberedVaults, setRememberedVaults] = useState<RememberedVault[]>(
@@ -2472,6 +2479,34 @@ export function App() {
     }
   }
 
+  async function handleCheckForUpdates() {
+    setUpdateStatus("checking");
+    setUpdateError(undefined);
+
+    try {
+      const update = await checkForUpdate();
+      setAvailableUpdate(update);
+      setUpdateStatus(update ? "available" : "current");
+    } catch (error) {
+      setAvailableUpdate(null);
+      setUpdateError(readErrorMessage(error));
+      setUpdateStatus("error");
+    }
+  }
+
+  async function handleInstallUpdate() {
+    if (!availableUpdate) return;
+
+    setUpdateStatus("installing");
+    setUpdateError(undefined);
+    try {
+      await installUpdate(availableUpdate);
+    } catch (error) {
+      setUpdateError(readErrorMessage(error));
+      setUpdateStatus("error");
+    }
+  }
+
   async function reloadApp() {
     if (reloadingApp) return;
     if (
@@ -2907,11 +2942,17 @@ export function App() {
         <SettingsModal
           markdownSettings={markdownSettings}
           reloading={reloadingApp}
+          updateError={updateError}
+          updateNotes={availableUpdate?.body}
+          updateStatus={updateStatus}
+          updateVersion={availableUpdate?.version}
           onClose={() => {
             if (!reloadingApp) {
               setSettingsVisible(false);
             }
           }}
+          onCheckForUpdates={() => void handleCheckForUpdates()}
+          onInstallUpdate={() => void handleInstallUpdate()}
           onMarkdownSettingsChange={setMarkdownSettings}
           onReload={() => void reloadApp()}
         />

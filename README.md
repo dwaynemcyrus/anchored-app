@@ -36,6 +36,36 @@ The packaging command verifies the app and DMG signatures, disk-image
 integrity, Intel architecture, macOS 12 minimum version, and checksum before it
 reports success.
 
+## In-app updates
+
+Anchored checks GitHub Releases for signed updates from **Settings → Updates**.
+The updater public key is stored in `src-tauri/tauri.conf.json`; the private
+key must remain outside the repository at:
+
+```text
+~/.tauri/anchored-updater.key
+```
+
+The release workflow in `.github/workflows/release.yml` signs updater artifacts
+and publishes `latest.json` with each version tag. Configure these GitHub
+Actions secrets before publishing a tag:
+
+- `TAURI_SIGNING_PRIVATE_KEY`: the complete contents of the private key file.
+- `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`: leave empty for the current local key,
+  or set it if the key is replaced with a password-protected key.
+
+After authenticating GitHub CLI, the private-key secret can be loaded without
+putting the key in shell history:
+
+```sh
+gh secret set TAURI_SIGNING_PRIVATE_KEY < ~/.tauri/anchored-updater.key
+```
+
+The private key is the identity of the updater. Back it up securely; losing it
+prevents future updates for already-installed copies. A release must use a
+version greater than the installed version, for example `v0.1.1-alpha` after
+`0.1.0-alpha`.
+
 ## Run the development app
 
 Install dependencies once:

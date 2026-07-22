@@ -83,6 +83,7 @@ Git commit. The format follows [Keep a Changelog], and releases follow
 
 ### Changed
 
+- Anchored now supports signed in-app updates from GitHub Releases.
 - Markdown source editing now auto-closes wikilinks, bold, strikethrough,
   and inline-code marks, keeps the caret inside the pair, and keeps the
   wikilink candidate picker open for keyboard-first filtering and selection.

@@ -12,7 +12,14 @@ import { useModalDialog } from "./useModalDialog";
 type SettingsModalProps = {
   markdownSettings: MarkdownSettings;
   reloading: boolean;
+  updateError?: string;
+  updateNotes?: string;
+  updateStatus:
+    "available" | "checking" | "error" | "idle" | "current" | "installing";
+  updateVersion?: string;
   onClose: () => void;
+  onCheckForUpdates: () => void;
+  onInstallUpdate: () => void;
   onMarkdownSettingsChange: (settings: MarkdownSettings) => void;
   onReload: () => void;
 };
@@ -20,7 +27,13 @@ type SettingsModalProps = {
 export function SettingsModal({
   markdownSettings,
   reloading,
+  updateError,
+  updateNotes,
+  updateStatus,
+  updateVersion,
   onClose,
+  onCheckForUpdates,
+  onInstallUpdate,
   onMarkdownSettingsChange,
   onReload,
 }: SettingsModalProps) {
@@ -196,6 +209,43 @@ export function SettingsModal({
             />
             <span>Render Mermaid diagrams in Preview</span>
           </label>
+        </section>
+        <section className="settings-section">
+          <h3>Updates</h3>
+          <p>
+            Check for signed Anchored updates from the official release feed.
+          </p>
+          {updateStatus === "available" ? (
+            <>
+              <p>
+                Version {updateVersion} is ready to install.
+                {updateNotes ? ` ${updateNotes}` : ""}
+              </p>
+              <button
+                className="continuity-panel__primary"
+                disabled={reloading}
+                type="button"
+                onClick={onInstallUpdate}
+              >
+                Install update and restart
+              </button>
+            </>
+          ) : null}
+          {updateStatus === "current" ? <p>Anchored is up to date.</p> : null}
+          {updateStatus === "error" ? (
+            <p role="alert">Could not check for updates: {updateError}</p>
+          ) : null}
+          <button
+            disabled={
+              reloading ||
+              updateStatus === "checking" ||
+              updateStatus === "installing"
+            }
+            type="button"
+            onClick={onCheckForUpdates}
+          >
+            {updateStatus === "checking" ? "Checking…" : "Check for updates"}
+          </button>
         </section>
         <section className="settings-section">
           <h3>Restart Anchored</h3>

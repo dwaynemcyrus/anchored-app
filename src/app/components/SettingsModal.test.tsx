@@ -8,13 +8,18 @@ import { SettingsModal } from "./SettingsModal";
 describe("SettingsModal Markdown options", () => {
   it("exposes every Version 1 render option without editing source", async () => {
     const user = userEvent.setup();
+    const onCheckForUpdates = vi.fn();
+    const onInstallUpdate = vi.fn();
     const onMarkdownSettingsChange = vi.fn();
 
     render(
       <SettingsModal
         markdownSettings={DEFAULT_MARKDOWN_SETTINGS}
         reloading={false}
+        updateStatus="idle"
         onClose={vi.fn()}
+        onCheckForUpdates={onCheckForUpdates}
+        onInstallUpdate={onInstallUpdate}
         onMarkdownSettingsChange={onMarkdownSettingsChange}
         onReload={vi.fn()}
       />,
@@ -73,5 +78,7 @@ describe("SettingsModal Markdown options", () => {
     expect(
       screen.getByRole("button", { name: "Restart Anchored" }),
     ).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Check for updates" }));
+    expect(onCheckForUpdates).toHaveBeenCalledOnce();
   });
 });
