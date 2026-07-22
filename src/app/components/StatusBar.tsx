@@ -1,4 +1,5 @@
 import type { AnchoredDocument } from "../documents";
+import { displayFileName } from "../fileTypes";
 import type { EditorCursorPosition } from "./MarkdownEditor";
 
 type StatusBarProps = {
@@ -6,6 +7,7 @@ type StatusBarProps = {
   cursorPosition?: EditorCursorPosition;
   vaultFileCount?: number;
   vaultName: string;
+  showFileExtensions: boolean;
 };
 
 function localTimestamp(value: string): string | undefined {
@@ -18,6 +20,7 @@ export function StatusBar({
   cursorPosition,
   vaultFileCount,
   vaultName,
+  showFileExtensions,
 }: StatusBarProps) {
   const vaultFileLabel =
     vaultFileCount === undefined
@@ -48,7 +51,7 @@ export function StatusBar({
             <span aria-hidden="true">›</span>
             <span>{document.folder}</span>
             <span aria-hidden="true">›</span>
-            <span>{document.name}</span>
+            <span>{displayFileName(document.name, showFileExtensions)}</span>
           </>
         ) : null}
       </div>

@@ -106,6 +106,26 @@ export function SettingsModal({
           </label>
         </section>
         <section className="settings-section">
+          <h3>File display</h3>
+          <p>
+            Control whether file extensions appear in names, paths, search
+            results, and editor breadcrumbs.
+          </p>
+          <label className="settings-toggle">
+            <input
+              checked={markdownSettings.showFileExtensions}
+              type="checkbox"
+              onChange={(event) =>
+                onMarkdownSettingsChange({
+                  ...markdownSettings,
+                  showFileExtensions: event.target.checked,
+                })
+              }
+            />
+            <span>Show file extensions</span>
+          </label>
+        </section>
+        <section className="settings-section">
           <h3>Markdown</h3>
           <p>
             Rendering options never rewrite the Markdown source. Preview is

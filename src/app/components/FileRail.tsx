@@ -13,7 +13,12 @@ import {
 
 import type { AnchoredDocument } from "../documents";
 import { buildVaultCollections } from "../collections";
-import { fileTypeLabel, fileTypeForName } from "../fileTypes";
+import {
+  displayFileName,
+  displayFilePath,
+  fileTypeLabel,
+  fileTypeForName,
+} from "../fileTypes";
 import {
   defaultFileRailPreferences,
   loadFileRailPreferences,
@@ -114,6 +119,7 @@ type FileRailProps = {
   onToggleFolder: (folder: string) => void;
   onSetAllFoldersExpanded: (expanded: boolean) => void;
   onTrashDocument: (documentId: string) => void;
+  showFileExtensions: boolean;
 };
 
 type TreeRowData =
@@ -253,6 +259,7 @@ function documentIsDraggable(document: AnchoredDocument): boolean {
 function PhysicalTree({
   rows,
   activeDocumentId,
+  showFileExtensions,
   expandedFolders,
   selectedKey,
   onContextMenu,
@@ -268,6 +275,7 @@ function PhysicalTree({
 }: {
   rows: TreeRowData[];
   activeDocumentId: string;
+  showFileExtensions: boolean;
   expandedFolders: Set<string>;
   selectedKey?: string;
   onContextMenu: (event: MouseEvent, item: NavigableRow) => void;
@@ -305,6 +313,7 @@ function PhysicalTree({
             active={row.document.id === activeDocumentId}
             depth={row.depth}
             document={row.document}
+            showFileExtensions={showFileExtensions}
             key={key}
             selected={selectedKey === key}
             onContextMenu={(event) => onContextMenu(event, row)}
@@ -320,6 +329,7 @@ function PhysicalTree({
 
 const CollectionTree = memo(function CollectionTree({
   activeDocumentId,
+  showFileExtensions,
   collapsedCollections,
   duplicateNames,
   rows,
@@ -330,6 +340,7 @@ const CollectionTree = memo(function CollectionTree({
   onToggleCollection,
 }: {
   activeDocumentId: string;
+  showFileExtensions: boolean;
   collapsedCollections: Set<string>;
   duplicateNames: Set<string>;
   rows: CollectionRowData[];
@@ -364,10 +375,14 @@ const CollectionTree = memo(function CollectionTree({
             depth={row.depth}
             detail={
               duplicateNames.has(row.document.name.toLocaleLowerCase())
-                ? row.document.relativePath
+                ? displayFilePath(
+                    row.document.relativePath ?? row.document.name,
+                    showFileExtensions,
+                  )
                 : undefined
             }
             document={row.document}
+            showFileExtensions={showFileExtensions}
             key={key}
             selected={selectedKey === key}
             onContextMenu={(event) =>
@@ -507,6 +522,7 @@ const FileTreeRow = memo(function FileTreeRow({
   depth,
   detail,
   document,
+  showFileExtensions,
   selected,
   onContextMenu,
   onSelect,
@@ -518,6 +534,7 @@ const FileTreeRow = memo(function FileTreeRow({
   depth: number;
   detail?: string;
   document: AnchoredDocument;
+  showFileExtensions: boolean;
   selected: boolean;
   onContextMenu: (event: MouseEvent) => void;
   onSelect: () => void;
@@ -527,16 +544,17 @@ const FileTreeRow = memo(function FileTreeRow({
   const type = fileTypeForName(document.name);
   const draggable = allowDrag && documentIsDraggable(document);
   const rowDetail = detail ?? fileTypeLabel(type);
+  const displayName = displayFileName(document.name, showFileExtensions);
   return (
     <button
       aria-current={active ? "page" : undefined}
-      aria-label={document.name}
+      aria-label={displayName}
       className={`tree-row tree-row--file${active ? " is-active" : ""}${
         selected ? " is-selected" : ""
       }`}
       draggable={draggable}
       style={{ paddingLeft: `${26 + depth * 18}px` }}
-      title={`${document.name} · ${rowDetail}`}
+      title={`${displayName} · ${rowDetail}`}
       type="button"
       onClick={onSelect}
       onContextMenu={onContextMenu}
@@ -545,7 +563,7 @@ const FileTreeRow = memo(function FileTreeRow({
     >
       <FileTypeIcon fileName={document.name} />
       <span>
-        {document.name}
+        {displayName}
         {document.isRecoveryCopy ? " · Recovery copy" : ""}
       </span>
       <span className="tree-row__type" aria-hidden="true">
@@ -927,6 +945,7 @@ export function FileRail({
   onToggleFolder,
   onSetAllFoldersExpanded,
   onTrashDocument,
+  showFileExtensions,
 }: FileRailProps) {
   const [selectedKey, setSelectedKey] = useState<string>();
   const [contextMenu, setContextMenu] = useState<ContextMenuState>();
@@ -1518,6 +1537,7 @@ export function FileRail({
       {preferences.mode === "collections" ? (
         <CollectionTree
           activeDocumentId={activeDocumentId}
+          showFileExtensions={showFileExtensions}
           collapsedCollections={collapsedCollections}
           duplicateNames={duplicateNames}
           rows={collectionRows}
@@ -1530,6 +1550,7 @@ export function FileRail({
       ) : rows.length > 0 ? (
         <PhysicalTree
           activeDocumentId={activeDocumentId}
+          showFileExtensions={showFileExtensions}
           expandedFolders={expandedFolders}
           rows={rows}
           selectedKey={selectedKey}

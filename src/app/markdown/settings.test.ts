@@ -24,6 +24,7 @@ describe("Markdown settings", () => {
       ...DEFAULT_MARKDOWN_SETTINGS,
       autoLinkUrls: false,
       mermaid: false,
+      showFileExtensions: true,
     };
     saveMarkdownSettings(target, settings);
 
@@ -46,6 +47,26 @@ describe("Markdown settings", () => {
     );
 
     expect(loadMarkdownSettings(target).theme).toBe("anchored");
+    expect(loadMarkdownSettings(target).showFileExtensions).toBe(false);
+  });
+
+  it("defaults extension display off for version three settings without it", () => {
+    const target = storage();
+    target.setItem(
+      "anchored.markdown-settings.v1",
+      JSON.stringify({
+        version: 3,
+        autoLinkUrls: true,
+        editorFontSize: 14,
+        emoji: true,
+        mermaid: true,
+        smartTypography: true,
+        syntaxHighlighting: true,
+        theme: "anchored",
+      }),
+    );
+
+    expect(loadMarkdownSettings(target).showFileExtensions).toBe(false);
   });
 
   it("rejects an unknown theme and falls back to the default", () => {

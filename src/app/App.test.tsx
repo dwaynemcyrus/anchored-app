@@ -131,6 +131,20 @@ describe("App", () => {
 
   beforeEach(() => {
     window.localStorage.clear();
+    window.localStorage.setItem(
+      "anchored.markdown-settings.v1",
+      JSON.stringify({
+        version: 3,
+        autoLinkUrls: true,
+        editorFontSize: 14,
+        emoji: true,
+        mermaid: true,
+        showFileExtensions: true,
+        smartTypography: true,
+        syntaxHighlighting: true,
+        theme: "anchored",
+      }),
+    );
     eventHandlers.clear();
     mockedCreateVault.mockReset();
     mockedCreateVaultConflictCopy.mockReset();
@@ -2186,6 +2200,76 @@ describe("App", () => {
     expect(
       screen.getByText("New Name.md renamed. 3 links updated across 2 notes."),
     ).toBeInTheDocument();
+  });
+
+  it("hides extensions in the breadcrumb while preserving them on rename", async () => {
+    const user = userEvent.setup();
+    window.localStorage.setItem(
+      "anchored.markdown-settings.v1",
+      JSON.stringify({
+        version: 3,
+        autoLinkUrls: true,
+        editorFontSize: 14,
+        emoji: true,
+        mermaid: true,
+        showFileExtensions: false,
+        smartTypography: true,
+        syntaxHighlighting: true,
+        theme: "anchored",
+      }),
+    );
+    mockedSelectVault.mockResolvedValue({
+      files: [
+        {
+          name: "Old.md",
+          parent: "Notes",
+          relativePath: "Notes/Old.md",
+        },
+      ],
+      name: "My Vault",
+      warnings: noWarnings,
+    });
+    mockedReadVaultFile.mockResolvedValue({
+      content: "# Old\n",
+      relativePath: "Notes/Old.md",
+      sizeBytes: 7,
+    });
+    mockedRenameVaultFile.mockResolvedValue({
+      relativePath: "Notes/New.md",
+      updatedFiles: 0,
+      updatedLinks: 0,
+    });
+    mockedRescanVault.mockResolvedValue({
+      files: [
+        {
+          name: "New.md",
+          parent: "Notes",
+          relativePath: "Notes/New.md",
+        },
+      ],
+      name: "My Vault",
+      warnings: noWarnings,
+    });
+    render(<App />);
+
+    await user.click(screen.getByRole("button", { name: "Open vault" }));
+    await user.click(screen.getByRole("button", { name: /^Old$/ }));
+    await screen.findByRole("textbox", { name: "Old Markdown editor" });
+    await user.click(
+      screen.getByRole("button", { name: "Edit filename: Old" }),
+    );
+    const filenameInput = screen.getByRole("textbox", {
+      name: "Edit filename: Old",
+    });
+    expect(filenameInput).toHaveValue("Old");
+    await user.clear(filenameInput);
+    await user.type(filenameInput, "New");
+    await user.keyboard("{Enter}");
+
+    expect(mockedRenameVaultFile).toHaveBeenCalledWith({
+      name: "New.md",
+      relativePath: "Notes/Old.md",
+    });
   });
 
   it("cancels inline filename editing with Escape", async () => {

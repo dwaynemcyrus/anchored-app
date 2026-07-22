@@ -8,6 +8,10 @@ Git commit. The format follows [Keep a Changelog], and releases follow
 
 ### Added
 
+- Restored the Settings option to hide file extensions throughout the
+  interface, including the file rail, search results, backlinks, status bar,
+  editor breadcrumb, and inline rename field. Hidden extensions remain intact
+  on disk when renaming notes.
 - Note filenames can now be edited directly from the editor breadcrumb.
   Enter or blur submits the requested name, Escape cancels, and the existing
   atomic rename transaction continues to update supported links safely.

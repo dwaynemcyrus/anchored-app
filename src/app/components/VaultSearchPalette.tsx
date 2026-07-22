@@ -1,6 +1,7 @@
 import { useId, useRef, useState } from "react";
 
 import type { VaultSearchResult } from "../../lib/tauri/vault";
+import { displayFilePath } from "../fileTypes";
 import { useModalDialog } from "./useModalDialog";
 
 export type VaultSearchState =
@@ -13,6 +14,7 @@ type VaultSearchPaletteProps = {
   query: string;
   searchState: VaultSearchState;
   vaultSelected: boolean;
+  showFileExtensions: boolean;
   onClose: () => void;
   onOpen: (relativePath: string) => void;
   onQueryChange: (query: string) => void;
@@ -22,6 +24,7 @@ export function VaultSearchPalette({
   query,
   searchState,
   vaultSelected,
+  showFileExtensions,
   onClose,
   onOpen,
   onQueryChange,
@@ -136,7 +139,7 @@ export function VaultSearchPalette({
               onMouseEnter={() => setSelectedIndex(index)}
             >
               <span className="retrieval-result__label">
-                {match.relativePath}
+                {displayFilePath(match.relativePath, showFileExtensions)}
               </span>
               <span className="retrieval-result__detail">
                 Line {match.line}
