@@ -100,6 +100,16 @@ describe("wikilinks", () => {
     });
   });
 
+  it("keeps the open-link range distinct from closed and out-of-range cursors", () => {
+    expect(wikilinkCompletionAtOffset("[[", 2)).toEqual({
+      from: 2,
+      query: "",
+    });
+    expect(wikilinkCompletionAtOffset("[[Reading]]", 11)).toBeNull();
+    expect(wikilinkCompletionAtOffset("[[Reading", 1)).toBeNull();
+    expect(wikilinkCompletionAtOffset("[[Reading\n", 10)).toBeNull();
+  });
+
   it("preserves offsets across CRLF and a final unterminated line", () => {
     const content = "First\r\n[[Second]]\r\nLast [[Third]]";
 

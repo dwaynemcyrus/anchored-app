@@ -1693,6 +1693,11 @@ Every future large plan must identify:
 - 2026-07-22: Renamed the Settings reload action to Restart Anchored, clarified
   its recovery purpose, and constrained the compact Settings panel so long
   content scrolls inside the available window height.
+- 2026-07-22: Wikilink completion now activates without a typing debounce,
+  remains visible through idle pauses and empty candidate states, and retains
+  the existing parser boundaries for closed links, backspacing, code, fences,
+  escapes, and line breaks. Focused and full frontend tests pass; native
+  vault-backed completion remains unverified in the browser-only shell.
 
 ## Follow-up plan: persistent wikilink completion
 
