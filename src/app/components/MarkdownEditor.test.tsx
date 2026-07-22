@@ -160,4 +160,75 @@ describe("MarkdownEditor wikilink navigation", () => {
     expect(editor).toHaveTextContent("[[]]");
     expect(screen.queryByRole("listbox", { name: "Completions" })).toBeNull();
   });
+
+  it("keeps the wikilink picker open when saved metadata is synchronized", async () => {
+    const user = userEvent.setup();
+    const { rerender } = render(
+      <MarkdownEditor
+        documentId="source"
+        editorFontSize={14}
+        findRequest={0}
+        label="Source Markdown editor"
+        value=""
+        wikilinkCandidates={[
+          {
+            activityAt: 1,
+            detail: "Notes",
+            documentId: "future",
+            kind: "note",
+            label: "Future idea",
+            target: "Future idea",
+          },
+        ]}
+        onChange={vi.fn()}
+        onCursorPosition={vi.fn()}
+        onOpenWikilink={vi.fn()}
+        onPreview={vi.fn()}
+        onSave={vi.fn()}
+        onSaveAs={vi.fn()}
+      />,
+    );
+
+    const editor = screen.getByRole("textbox", {
+      name: "Source Markdown editor",
+    });
+    await user.click(editor);
+    await user.keyboard("[[[[");
+    await screen.findByRole("listbox", { name: "Completions" });
+
+    rerender(
+      <MarkdownEditor
+        documentId="source"
+        editorFontSize={14}
+        findRequest={0}
+        label="Source Markdown editor"
+        value={"---\nupdated_at: 2026-07-22T16:00:00+02:00\n---\n\n[[]]"}
+        wikilinkCandidates={[
+          {
+            activityAt: 1,
+            detail: "Notes",
+            documentId: "future",
+            kind: "note",
+            label: "Future idea",
+            target: "Future idea",
+          },
+        ]}
+        onChange={vi.fn()}
+        onCursorPosition={vi.fn()}
+        onOpenWikilink={vi.fn()}
+        onPreview={vi.fn()}
+        onSave={vi.fn()}
+        onSaveAs={vi.fn()}
+      />,
+    );
+
+    expect(
+      await screen.findByRole("listbox", { name: "Completions" }),
+    ).toBeVisible();
+    expect(editor).toHaveTextContent("[[]]");
+    await user.click(
+      screen.getByText("Future idea", { selector: ".cm-completionLabel" }),
+    );
+    expect(editor).toHaveTextContent("[[Future idea]]");
+  });
 });

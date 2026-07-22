@@ -193,7 +193,7 @@ export default function MarkdownEditor({
       if (!sync) return;
 
       syncingValueRef.current = true;
-      view.dispatch({ changes: sync.change, selection: sync.selection });
+      view.dispatch({ changes: sync.change });
       syncingValueRef.current = false;
     }
 
@@ -444,7 +444,7 @@ export default function MarkdownEditor({
     if (!sync) return;
 
     syncingValueRef.current = true;
-    view.dispatch({ changes: sync.change, selection: sync.selection });
+    view.dispatch({ changes: sync.change });
     syncingValueRef.current = false;
     localValueHistoryRef.current.clear();
     localValueHistoryRef.current.add(value);

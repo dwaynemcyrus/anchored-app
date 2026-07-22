@@ -85,5 +85,16 @@ describe("Markdown editor pairs", () => {
     expect(activeAutoPairAt(state, 8)).toMatchObject({ closeFrom: 8 });
     expect(emptyPairAt(state, 8)).toBeNull();
     expect(pairClosingAt(state, 8, "]")).not.toBeNull();
+
+    const prefix = "---\nupdated_at: 2026-07-22T16:00:00+02:00\n---\n\n";
+    state = state.update({
+      changes: { from: 0, insert: prefix },
+      selection: { anchor: prefix.length + 8 },
+    }).state;
+
+    expect(activeAutoPairAt(state, prefix.length + 8)).toMatchObject({
+      closeFrom: prefix.length + 8,
+      from: prefix.length,
+    });
   });
 });
