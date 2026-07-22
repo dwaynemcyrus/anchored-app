@@ -1,0 +1,45 @@
+name: Release Anchored
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: macos-13
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Verify release version
+        run: |
+          node -e 'const fs = require("fs"); const expected = process.env.GITHUB_REF_NAME.slice(1); const files = ["package.json", "src-tauri/tauri.conf.json", "src-tauri/Cargo.toml"]; for (const file of files) { const source = fs.readFileSync(file, "utf8"); if (!source.includes(expected)) throw new Error(`${file} does not contain ${expected}`); }'
+
+      - name: Build and publish signed release
+        uses: tauri-apps/tauri-action@v0
+        env:
+          APPLE_SIGNING_IDENTITY: "-"
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD:
+            ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          tagName: ${{ github.ref_name }}
+          releaseName: Anchored ${{ github.ref_name }}
+          releaseBody: Signed macOS release with in-app updater artifacts.
+          releaseDraft: false
+          prerelease: false
+          args: --bundles dmg
