@@ -72,6 +72,9 @@ Git commit. The format follows [Keep a Changelog], and releases follow
 
 ### Changed
 
+- Default New note drafts and Scratchpad captures are now physically created
+  in the vault's `inbox/` folder. Explicit folder creation and Save As keep
+  their user-selected destinations.
 - Wikilink completion now remains available while an unclosed link is being
   edited, including during typing pauses, and closes on the expected link and
   editor boundaries.

@@ -585,7 +585,10 @@ export function App() {
       );
 
       try {
-        const savedDocument = await createUntitledVaultFile(contentAtSave);
+        const savedDocument = await createUntitledVaultFile(
+          contentAtSave,
+          "inbox",
+        );
         const persistedDocumentId = `vault-path:${savedDocument.relativePath}`;
         const pathParts = savedDocument.relativePath.split("/");
         const name = pathParts.pop() ?? document.name;

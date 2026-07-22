@@ -1036,13 +1036,15 @@ fn create_scratchpad_markdown_file(
         ));
     }
     let source = format!("---\ntype: scratchpad\nstatus: inbox\n---\n{body}");
+    let inbox = lifecycle_destination_folder(root, Some("inbox"), None)?;
+    let parent = resolve_vault_directory(root, &inbox)?;
     for count in 1..=10_000 {
         let suffix = if count == 1 {
             String::new()
         } else {
             format!(" {count}")
         };
-        let destination = root.join(format!("Scratchpad {filename_timestamp}{suffix}.md"));
+        let destination = parent.join(format!("Scratchpad {filename_timestamp}{suffix}.md"));
         match create_markdown_file(root, &destination, &source) {
             Ok(document) => return scratchpad_document(document),
             Err(error) if error.code == "vaultFileExists" => continue,
@@ -1277,7 +1279,13 @@ fn create_untitled_markdown_file(
     parent_path: Option<&str>,
     content: &str,
 ) -> Result<VaultDocument, VaultError> {
-    let parent = resolve_vault_directory(root, parent_path.unwrap_or_default())?;
+    let parent = match parent_path {
+        Some(path) => resolve_vault_directory(root, path)?,
+        None => {
+            let inbox = lifecycle_destination_folder(root, Some("inbox"), None)?;
+            resolve_vault_directory(root, &inbox)?
+        }
+    };
     for count in 1..=10_000 {
         let name = if count == 1 {
             "Untitled.md".to_owned()
@@ -4087,21 +4095,23 @@ mod tests {
     #[test]
     fn creates_a_numbered_untitled_file_without_replacing_existing_notes() {
         let vault = tempdir().expect("create fixture vault");
-        fs::write(vault.path().join("Untitled.md"), "# First\n").expect("write first note");
-        fs::write(vault.path().join("Untitled 2.md"), "# Second\n").expect("write second note");
+        fs::create_dir(vault.path().join("inbox")).expect("create inbox folder");
+        fs::write(vault.path().join("inbox/Untitled.md"), "# First\n").expect("write first note");
+        fs::write(vault.path().join("inbox/Untitled 2.md"), "# Second\n")
+            .expect("write second note");
 
         let document = create_untitled_markdown_file(vault.path(), None, "")
             .expect("create numbered untitled note");
 
-        assert_eq!(document.relative_path, "Untitled 3.md");
+        assert_eq!(document.relative_path, "inbox/Untitled 3.md");
         assert!(document.content.contains("created_at:"));
         assert!(document.created_at.is_some());
         assert_eq!(
-            fs::read_to_string(vault.path().join("Untitled.md")).expect("read first note"),
+            fs::read_to_string(vault.path().join("inbox/Untitled.md")).expect("read first note"),
             "# First\n"
         );
         assert_eq!(
-            fs::read_to_string(vault.path().join("Untitled 2.md")).expect("read second note"),
+            fs::read_to_string(vault.path().join("inbox/Untitled 2.md")).expect("read second note"),
             "# Second\n"
         );
     }
@@ -4120,8 +4130,11 @@ mod tests {
             create_scratchpad_markdown_file(vault.path(), "Second capture", "2026-11-28 164832")
                 .expect("create second Scratchpad note");
 
-        assert_eq!(first.relative_path, "Scratchpad 2026-11-28 164832.md");
-        assert_eq!(second.relative_path, "Scratchpad 2026-11-28 164832 2.md");
+        assert_eq!(first.relative_path, "inbox/Scratchpad 2026-11-28 164832.md");
+        assert_eq!(
+            second.relative_path,
+            "inbox/Scratchpad 2026-11-28 164832 2.md"
+        );
         assert_eq!(first.body, "First capture with [[Linked note]]");
         assert!(first.persisted_content.contains("type: scratchpad\n"));
         assert!(first.persisted_content.contains("status: inbox\n"));

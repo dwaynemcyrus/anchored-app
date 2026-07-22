@@ -1546,7 +1546,7 @@ describe("App", () => {
     fireEvent.click(screen.getAllByRole("button", { name: "New note" })[0]);
 
     expect(mockedCreateUntitledVaultFile).toHaveBeenCalledOnce();
-    expect(mockedCreateUntitledVaultFile).toHaveBeenCalledWith("");
+    expect(mockedCreateUntitledVaultFile).toHaveBeenCalledWith("", "inbox");
     expect(screen.getByText("Saving…")).toBeInTheDocument();
 
     await act(async () => {
@@ -1572,15 +1572,15 @@ describe("App", () => {
     });
     mockedCreateUntitledVaultFile.mockResolvedValue({
       content: createdContent,
-      relativePath: "Untitled.md",
+      relativePath: "inbox/Untitled.md",
       sizeBytes: createdContent.length,
     });
     mockedRescanVault.mockResolvedValue({
       files: [
         {
           name: "Untitled.md",
-          parent: "",
-          relativePath: "Untitled.md",
+          parent: "inbox",
+          relativePath: "inbox/Untitled.md",
         },
       ],
       name: "My Vault",
@@ -1662,7 +1662,7 @@ describe("App", () => {
     await act(async () => {
       finishCreatingNote?.({
         content: createdContent,
-        relativePath: "Untitled.md",
+        relativePath: "inbox/Untitled.md",
         sizeBytes: createdContent.length,
       });
     });
