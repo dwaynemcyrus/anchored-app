@@ -104,6 +104,11 @@ export type CreateVaultFileRequest = {
   suggestedName: string;
 };
 
+export type CreateInboxVaultFileRequest = {
+  content: string;
+  name: string;
+};
+
 export type LifecycleVaultFileRequest = {
   expectedContent: string;
   noteType?: string;
@@ -127,6 +132,11 @@ export type CreateVaultFolderRequest = {
 export type RenameVaultFolderRequest = {
   folderPath: string;
   name: string;
+};
+
+export type RenameVaultFileRequest = {
+  name: string;
+  relativePath: string;
 };
 
 export type RenameVaultFileResult = {
@@ -289,6 +299,12 @@ export function createVaultFile(
   return invoke<VaultDocument | null>("create_vault_file", request);
 }
 
+export function createInboxVaultFile(
+  request: CreateInboxVaultFileRequest,
+): Promise<VaultDocument> {
+  return invoke<VaultDocument>("create_inbox_vault_file", request);
+}
+
 export function createUntitledVaultFile(
   content: string,
   parentPath?: string,
@@ -310,9 +326,7 @@ export function moveVaultFileToFolder(
 }
 
 export function renameVaultFile(
-  relativePath: string,
+  request: RenameVaultFileRequest,
 ): Promise<RenameVaultFileResult | null> {
-  return invoke<RenameVaultFileResult | null>("rename_vault_file", {
-    relativePath,
-  });
+  return invoke<RenameVaultFileResult | null>("rename_vault_file", request);
 }

@@ -1036,13 +1036,15 @@ fn create_scratchpad_markdown_file(
         ));
     }
     let source = format!("---\ntype: scratchpad\nstatus: inbox\n---\n{body}");
+    let inbox = lifecycle_destination_folder(root, Some("inbox"), None)?;
+    let parent = resolve_vault_directory(root, &inbox)?;
     for count in 1..=10_000 {
         let suffix = if count == 1 {
             String::new()
         } else {
             format!(" {count}")
         };
-        let destination = root.join(format!("Scratchpad {filename_timestamp}{suffix}.md"));
+        let destination = parent.join(format!("Scratchpad {filename_timestamp}{suffix}.md"));
         match create_markdown_file(root, &destination, &source) {
             Ok(document) => return scratchpad_document(document),
             Err(error) if error.code == "vaultFileExists" => continue,
@@ -1242,6 +1244,16 @@ pub async fn create_vault_file(
 }
 
 #[tauri::command]
+pub async fn create_inbox_vault_file(
+    state: State<'_, VaultState>,
+    name: String,
+    content: String,
+) -> Result<VaultDocument, VaultError> {
+    let root = selected_vault_root(&state, "creating an Inbox Markdown file")?;
+    create_inbox_markdown_file(&root, &name, &content)
+}
+
+#[tauri::command]
 pub async fn create_untitled_vault_file(
     state: State<'_, VaultState>,
     content: String,
@@ -1277,7 +1289,13 @@ fn create_untitled_markdown_file(
     parent_path: Option<&str>,
     content: &str,
 ) -> Result<VaultDocument, VaultError> {
-    let parent = resolve_vault_directory(root, parent_path.unwrap_or_default())?;
+    let parent = match parent_path {
+        Some(path) => resolve_vault_directory(root, path)?,
+        None => {
+            let inbox = lifecycle_destination_folder(root, Some("inbox"), None)?;
+            resolve_vault_directory(root, &inbox)?
+        }
+    };
     for count in 1..=10_000 {
         let name = if count == 1 {
             "Untitled.md".to_owned()
@@ -1297,6 +1315,44 @@ fn create_untitled_markdown_file(
     ))
 }
 
+fn create_inbox_markdown_file(
+    root: &Path,
+    name: &str,
+    content: &str,
+) -> Result<VaultDocument, VaultError> {
+    let name = validate_inbox_note_name(name)?;
+    let inbox = lifecycle_destination_folder(root, Some("inbox"), None)?;
+    let parent = resolve_vault_directory(root, &inbox)?;
+    create_markdown_file(root, &parent.join(format!("{name}.md")), content)
+}
+
+fn validate_inbox_note_name(name: &str) -> Result<String, VaultError> {
+    let trimmed = name.trim();
+    let stem = trimmed
+        .strip_suffix(".md")
+        .or_else(|| trimmed.strip_suffix(".MD"))
+        .unwrap_or(trimmed)
+        .trim();
+    if stem.is_empty()
+        || stem.starts_with('.')
+        || stem.chars().any(|character| character.is_control())
+        || stem.contains('/')
+        || stem.contains('\\')
+    {
+        return Err(VaultError::invalid_file(
+            "The new Inbox note name is not valid.",
+        ));
+    }
+    let path = Path::new(stem);
+    let mut components = path.components();
+    if !matches!(components.next(), Some(Component::Normal(_))) || components.next().is_some() {
+        return Err(VaultError::invalid_file(
+            "The new Inbox note name is not valid.",
+        ));
+    }
+    Ok(stem.to_owned())
+}
+
 fn move_markdown_file_to_folder(
     root: &Path,
     relative_path: &str,
@@ -1312,8 +1368,8 @@ fn move_markdown_file_to_folder(
 
 #[tauri::command]
 pub async fn rename_vault_file(
-    app: AppHandle,
     state: State<'_, VaultState>,
+    name: String,
     relative_path: String,
 ) -> Result<Option<RenameOutcome>, VaultError> {
     let _rename_guard = state
@@ -1327,24 +1383,13 @@ pub async fn rename_vault_file(
         .clone()
         .ok_or_else(|| VaultError::state("Select a vault before renaming a Markdown file."))?;
     recover_rename_transaction(&root)?;
-    let suggested_name = Path::new(&relative_path)
-        .file_name()
-        .and_then(|name| name.to_str())
-        .unwrap_or("Untitled.md");
-    let selected = app
-        .dialog()
-        .file()
-        .set_title("Rename Markdown note")
-        .set_directory(&root)
-        .set_file_name(suggested_name)
-        .add_filter("Markdown", &["md"])
-        .blocking_save_file();
-    let Some(selected) = selected else {
-        return Ok(None);
-    };
-    let destination = selected
-        .into_path()
-        .map_err(|error| VaultError::invalid_file(format!("Unsupported rename path: {error}")))?;
+    let filename = validate_markdown_filename(&name)?;
+    let parent_path = Path::new(&relative_path)
+        .parent()
+        .and_then(|path| path.to_str())
+        .unwrap_or_default();
+    let parent = resolve_vault_directory(&root, parent_path)?;
+    let destination = parent.join(filename);
 
     rename_markdown_file(&root, &relative_path, &destination, None).map(Some)
 }
@@ -1434,6 +1479,33 @@ fn validate_folder_name(name: &str) -> Result<&str, VaultError> {
     if components.next().is_some() || is_internal_component(component) {
         return Err(VaultError::invalid(
             "Folder names must be a single folder name.",
+        ));
+    }
+
+    Ok(trimmed)
+}
+
+fn validate_markdown_filename(name: &str) -> Result<&str, VaultError> {
+    let trimmed = name.trim();
+    if trimmed.is_empty() {
+        return Err(VaultError::invalid(
+            "Enter a filename before renaming this note.",
+        ));
+    }
+    if trimmed.starts_with('.') {
+        return Err(VaultError::invalid("Filenames cannot start with a dot."));
+    }
+
+    let path = Path::new(trimmed);
+    let mut components = path.components();
+    let Some(Component::Normal(component)) = components.next() else {
+        return Err(VaultError::invalid(
+            "Filenames must be a single Markdown filename.",
+        ));
+    };
+    if components.next().is_some() || is_internal_component(component) || !is_markdown(path) {
+        return Err(VaultError::invalid(
+            "Filenames must be a single Markdown filename.",
         ));
     }
 
@@ -3376,16 +3448,17 @@ mod tests {
 
     use super::{
         backfill_vault_timestamps, canonical_vault_root, create_conflict_copy, create_folder,
-        create_markdown_file, create_named_vault, create_scratchpad_markdown_file,
-        create_untitled_markdown_file, delete_empty_folder, enrich_vault_metadata,
-        enrich_vault_metadata_cached, move_folder, move_markdown_file_to_folder,
-        read_markdown_file, recover_rename_transaction, rename_folder, rename_markdown_file,
-        resolve_new_vault_markdown_file, save_markdown_file, save_scratchpad_markdown_file,
-        scan_vault, scratchpad_filename_sequence, search_markdown_files,
-        transition_markdown_lifecycle, validate_folder_name, validate_new_vault_name,
-        vault_tree_signature, write_rename_journal, LifecycleTransition, RenameJournal,
-        RenameJournalEntry, RenameJournalPhase, RenameOutcome, VaultMetadataCache,
-        MAX_MARKDOWN_FILE_BYTES, MAX_SEARCH_RESULTS, RENAME_JOURNAL_NAME,
+        create_inbox_markdown_file, create_markdown_file, create_named_vault,
+        create_scratchpad_markdown_file, create_untitled_markdown_file, delete_empty_folder,
+        enrich_vault_metadata, enrich_vault_metadata_cached, move_folder,
+        move_markdown_file_to_folder, read_markdown_file, recover_rename_transaction,
+        rename_folder, rename_markdown_file, resolve_new_vault_markdown_file, save_markdown_file,
+        save_scratchpad_markdown_file, scan_vault, scratchpad_filename_sequence,
+        search_markdown_files, transition_markdown_lifecycle, validate_folder_name,
+        validate_markdown_filename, validate_new_vault_name, vault_tree_signature,
+        write_rename_journal, LifecycleTransition, RenameJournal, RenameJournalEntry,
+        RenameJournalPhase, RenameOutcome, VaultMetadataCache, MAX_MARKDOWN_FILE_BYTES,
+        MAX_SEARCH_RESULTS, RENAME_JOURNAL_NAME,
     };
 
     #[test]
@@ -4087,22 +4160,56 @@ mod tests {
     #[test]
     fn creates_a_numbered_untitled_file_without_replacing_existing_notes() {
         let vault = tempdir().expect("create fixture vault");
-        fs::write(vault.path().join("Untitled.md"), "# First\n").expect("write first note");
-        fs::write(vault.path().join("Untitled 2.md"), "# Second\n").expect("write second note");
+        fs::create_dir(vault.path().join("inbox")).expect("create inbox folder");
+        fs::write(vault.path().join("inbox/Untitled.md"), "# First\n").expect("write first note");
+        fs::write(vault.path().join("inbox/Untitled 2.md"), "# Second\n")
+            .expect("write second note");
 
         let document = create_untitled_markdown_file(vault.path(), None, "")
             .expect("create numbered untitled note");
 
-        assert_eq!(document.relative_path, "Untitled 3.md");
+        assert_eq!(document.relative_path, "inbox/Untitled 3.md");
         assert!(document.content.contains("created_at:"));
         assert!(document.created_at.is_some());
         assert_eq!(
-            fs::read_to_string(vault.path().join("Untitled.md")).expect("read first note"),
+            fs::read_to_string(vault.path().join("inbox/Untitled.md")).expect("read first note"),
             "# First\n"
         );
         assert_eq!(
-            fs::read_to_string(vault.path().join("Untitled 2.md")).expect("read second note"),
+            fs::read_to_string(vault.path().join("inbox/Untitled 2.md")).expect("read second note"),
             "# Second\n"
+        );
+    }
+
+    #[test]
+    fn creates_a_named_note_in_the_physical_inbox() {
+        let vault = tempdir().expect("create fixture vault");
+
+        let document = create_inbox_markdown_file(vault.path(), "Future idea", "")
+            .expect("create named Inbox note");
+
+        assert_eq!(document.relative_path, "inbox/Future idea.md");
+        assert!(vault.path().join("inbox/Future idea.md").is_file());
+        assert!(document.content.contains("created_at:"));
+    }
+
+    #[test]
+    fn refuses_invalid_or_existing_named_inbox_notes() {
+        let vault = tempdir().expect("create fixture vault");
+        fs::create_dir(vault.path().join("inbox")).expect("create inbox folder");
+        fs::write(vault.path().join("inbox/Existing.md"), "# Existing\n")
+            .expect("write existing note");
+
+        let invalid = create_inbox_markdown_file(vault.path(), "../Outside", "")
+            .expect_err("reject unsafe Inbox note name");
+        let existing = create_inbox_markdown_file(vault.path(), "Existing", "")
+            .expect_err("reject existing Inbox note");
+
+        assert_eq!(invalid.code, "invalidVaultFile");
+        assert_eq!(existing.code, "vaultFileExists");
+        assert_eq!(
+            fs::read_to_string(vault.path().join("inbox/Existing.md")).expect("read existing note"),
+            "# Existing\n"
         );
     }
 
@@ -4120,8 +4227,11 @@ mod tests {
             create_scratchpad_markdown_file(vault.path(), "Second capture", "2026-11-28 164832")
                 .expect("create second Scratchpad note");
 
-        assert_eq!(first.relative_path, "Scratchpad 2026-11-28 164832.md");
-        assert_eq!(second.relative_path, "Scratchpad 2026-11-28 164832 2.md");
+        assert_eq!(first.relative_path, "inbox/Scratchpad 2026-11-28 164832.md");
+        assert_eq!(
+            second.relative_path,
+            "inbox/Scratchpad 2026-11-28 164832 2.md"
+        );
         assert_eq!(first.body, "First capture with [[Linked note]]");
         assert!(first.persisted_content.contains("type: scratchpad\n"));
         assert!(first.persisted_content.contains("status: inbox\n"));
@@ -4269,6 +4379,28 @@ mod tests {
             fs::read_to_string(&note).expect("read protected note"),
             document.content
         );
+    }
+
+    #[test]
+    fn validates_inline_rename_filenames() {
+        assert_eq!(
+            validate_markdown_filename("  Renamed.md  ").expect("valid filename"),
+            "Renamed.md"
+        );
+        for invalid in [
+            "",
+            ".hidden.md",
+            "../Outside.md",
+            "Folder/Note.md",
+            "Note.txt",
+        ] {
+            assert_eq!(
+                validate_markdown_filename(invalid)
+                    .expect_err("invalid filename should be refused")
+                    .code,
+                "invalidVault"
+            );
+        }
     }
 
     #[test]

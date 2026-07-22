@@ -43,6 +43,7 @@ pub fn run() {
             vault::read_scratchpad_note,
             vault::scratchpad_link_candidates,
             vault::create_vault_file,
+            vault::create_inbox_vault_file,
             vault::create_untitled_vault_file,
             vault::move_vault_file_to_folder,
             vault::rename_vault_file

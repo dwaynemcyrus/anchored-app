@@ -10,6 +10,7 @@ import { listen } from "@tauri-apps/api/event";
 
 import { EditorSurface } from "./components/EditorSurface";
 import { CreateVaultDialog } from "./components/CreateVaultDialog";
+import { CreateMissingWikilinkDialog } from "./components/CreateMissingWikilinkDialog";
 import { DeleteFolderDialog } from "./components/DeleteFolderDialog";
 import { FileRail } from "./components/FileRail";
 import { FolderDialog } from "./components/FolderDialog";
@@ -39,6 +40,7 @@ import {
   backlinksForDocument,
   buildDocumentLinkIndex,
   resolveWikilink,
+  wikilinkCreationName,
 } from "./links";
 import {
   buildWikilinkCandidates,
@@ -87,6 +89,7 @@ import {
   createVaultConflictCopy,
   createVault,
   createVaultFolder,
+  createInboxVaultFile,
   createUntitledVaultFile,
   createVaultFile,
   deleteVaultFolder,
@@ -292,6 +295,13 @@ export function App() {
   const [vaultNotices, setVaultNotices] = useState<VaultNotice[]>([]);
   const [notificationHistoryVisible, setNotificationHistoryVisible] =
     useState(false);
+  const [missingWikilinkTarget, setMissingWikilinkTarget] = useState<
+    string | undefined
+  >();
+  const [missingWikilinkError, setMissingWikilinkError] = useState<
+    string | undefined
+  >();
+  const [creatingMissingWikilink, setCreatingMissingWikilink] = useState(false);
   const [notificationHistory, setNotificationHistory] = useState(() => {
     try {
       return loadNotificationHistory(window.localStorage, Date.now());
@@ -585,7 +595,10 @@ export function App() {
       );
 
       try {
-        const savedDocument = await createUntitledVaultFile(contentAtSave);
+        const savedDocument = await createUntitledVaultFile(
+          contentAtSave,
+          "inbox",
+        );
         const persistedDocumentId = `vault-path:${savedDocument.relativePath}`;
         const pathParts = savedDocument.relativePath.split("/");
         const name = pathParts.pop() ?? document.name;
@@ -1790,22 +1803,54 @@ export function App() {
     addVaultNotice(message, { history: { kind: "rename" } });
   }
 
-  async function renameDocument(documentId: string) {
-    const document = documentsRef.current.find(
+  async function renameDocument(documentId: string, name: string) {
+    let document = documentsRef.current.find(
       (candidate) => candidate.id === documentId,
     );
     if (!document?.relativePath || document.isMarkdown === false) {
       return;
     }
-    if (hasUnfinishedEdits()) {
+    let relativePath = document.relativePath;
+    const otherDocumentsHaveUnfinishedEdits = documentsRef.current.some(
+      (candidate) =>
+        candidate.id !== documentId && documentHasUnfinishedEdits(candidate),
+    );
+    if (otherDocumentsHaveUnfinishedEdits) {
       addVaultNotice("Save all open note changes before renaming a note.");
+      return;
+    }
+    if (!name.trim()) {
+      addVaultNotice("Enter a filename before renaming this note.");
       return;
     }
 
     let renameCompleted = false;
     setRenamingDocumentId(documentId);
     try {
-      const outcome = await renameVaultFile(document.relativePath);
+      if (documentHasUnfinishedEdits(document)) {
+        await saveDocument(documentId);
+        await new Promise<void>((resolve) => {
+          window.setTimeout(resolve, 0);
+        });
+        document = documentsRef.current.find(
+          (candidate) => candidate.id === documentId,
+        );
+        if (
+          !document ||
+          documentHasUnfinishedEdits(document) ||
+          !document.relativePath
+        ) {
+          addVaultNotice("Save the note successfully before renaming it.", {
+            persistent: true,
+          });
+          return;
+        }
+        relativePath = document.relativePath;
+      }
+      const outcome = await renameVaultFile({
+        name: name.trim(),
+        relativePath,
+      });
       if (!outcome) return;
       renameCompleted = true;
       const filename =
@@ -2162,10 +2207,42 @@ export function App() {
       });
       return;
     }
+    if (wikilinkCreationName(target)) {
+      setMissingWikilinkError(undefined);
+      setMissingWikilinkTarget(target);
+      return;
+    }
     addVaultNotice(`[[${target}]] does not match a note or alias.`);
     addHistoryEntry("A wikilink did not match a note or alias.", {
       kind: "link",
     });
+  }
+
+  async function createMissingWikilinkNote() {
+    if (!missingWikilinkTarget) return;
+    const name = wikilinkCreationName(missingWikilinkTarget);
+    if (!name) {
+      setMissingWikilinkError(
+        "This wikilink cannot be turned into a single Inbox note name.",
+      );
+      return;
+    }
+
+    setCreatingMissingWikilink(true);
+    setMissingWikilinkError(undefined);
+    try {
+      const created = await createInboxVaultFile({ content: "", name });
+      const snapshot = await rescanVault();
+      if (snapshot) adoptVaultSnapshot(snapshot);
+      const documentId = `vault-path:${created.relativePath}`;
+      setFocusDocument(documentId);
+      setMissingWikilinkTarget(undefined);
+      await selectDocument(documentId);
+    } catch (error) {
+      setMissingWikilinkError(readErrorMessage(error));
+    } finally {
+      setCreatingMissingWikilink(false);
+    }
   }
 
   function closeDocument() {
@@ -2623,9 +2700,9 @@ export function App() {
             });
           }}
           onRenameDocument={(documentId) => {
-            void selectDocument(documentId).then(() =>
-              renameDocument(documentId),
-            );
+            void selectDocument(documentId).then(() => {
+              window.dispatchEvent(new Event("anchored:begin-rename"));
+            });
           }}
           onRenameFolder={(folderPath) => {
             setRenamingFolderPath(folderPath);
@@ -2698,8 +2775,8 @@ export function App() {
           onRetryDocument={() => {
             if (activeDocument) void selectDocument(activeDocument.id);
           }}
-          onRenameDocument={() => {
-            if (activeDocument) void renameDocument(activeDocument.id);
+          onRenameDocument={(name) => {
+            if (activeDocument) void renameDocument(activeDocument.id, name);
           }}
           onRestoreDocument={(destinationStatus) => {
             if (activeDocument) {
@@ -2995,6 +3072,20 @@ export function App() {
             }
           }}
           onCreate={(name) => void createNewVault(name)}
+        />
+      ) : null}
+      {missingWikilinkTarget ? (
+        <CreateMissingWikilinkDialog
+          creating={creatingMissingWikilink}
+          error={missingWikilinkError}
+          target={missingWikilinkTarget}
+          onClose={() => {
+            if (!creatingMissingWikilink) {
+              setMissingWikilinkError(undefined);
+              setMissingWikilinkTarget(undefined);
+            }
+          }}
+          onCreate={() => void createMissingWikilinkNote()}
         />
       ) : null}
       {trashVisible ? (

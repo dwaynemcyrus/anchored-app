@@ -357,12 +357,19 @@ bytes changed.
 ## Saving, conflicts, and data safety
 
 - [ ] Create a new note and confirm it becomes editable immediately.
+- [ ] Create a default New note and confirm its persisted path is
+      `inbox/Untitled.md` (or the next collision-safe Inbox filename).
 - [ ] Type into a new note before its first save completes.
 - [ ] Confirm save state visibly changes through unsaved, saving, and saved.
 - [ ] Use manual Save.
 - [ ] Use autosave.
 - [ ] Use Save As.
 - [ ] Rename a saved note and confirm supported links update.
+- [ ] Click the filename in the editor breadcrumb, confirm the inline field
+      receives focus and selects the current name, then rename with Enter.
+- [ ] Rename from the breadcrumb with blur, cancel with Escape, and confirm an
+      empty or invalid filename shows a recoverable notice without changing
+      the original file.
 - [ ] Change only YAML `title` and confirm links do not rewrite.
 - [ ] Edit the same file externally and confirm the app shows a conflict instead of overwriting silently.
 - [ ] Resolve or recover from a conflict without losing the newer content.
@@ -433,6 +440,7 @@ bytes changed.
 - [ ] Close a blank Scratchpad and confirm no file is created.
 - [ ] Type one nonblank character and confirm a new collision-safe Markdown file is created.
 - [ ] Confirm each new capture is a separate note with `type: scratchpad`, `status: inbox`, and `created_at`.
+- [ ] Confirm each new capture's persisted path starts with `inbox/`.
 - [ ] Confirm Scratchpad captures appear in Inbox and remain visible in Files.
 - [ ] Type continuously, paste large text, and use Unicode and IME composition without dropped or partial saves.
 - [ ] Confirm autosave reaches Saved after a short idle interval.
@@ -477,7 +485,16 @@ bytes changed.
       target.
 - [ ] Confirm duplicate filename and alias links report ambiguity rather than
       opening an arbitrary note.
-- [ ] Confirm missing links report no match and create no file.
+- [ ] Open a simple missing wikilink with Command-click and confirm a Create
+      note dialog explains that the note will be created in physical Inbox.
+- [ ] Cancel the missing-link dialog and confirm no file is created.
+- [ ] Confirm Create note writes the target as `inbox/<target>.md`, creates the
+      physical folder when needed, opens the blank note, and leaves the source
+      wikilink unchanged.
+- [ ] Confirm a stale or duplicate creation attempt never overwrites an
+      existing note and shows a recoverable error.
+- [ ] Confirm path-style unresolved targets remain reported without silently
+      rewriting the source link.
 - [ ] Confirm escaped links and links inside inline, fenced, and indented code
       do not navigate or create backlinks.
 - [ ] Type `[[`; confirm recent notes appear, excluding the active note.

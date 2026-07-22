@@ -53,7 +53,8 @@ rendered interface on 2026-07-19.
 - Open and edit exact UTF-8 Markdown source in CodeMirror 6.
 - Open an empty Markdown file, including one at the vault root.
 - Create an in-memory untitled draft and save it as a new `.md` file inside the
-  selected vault.
+  physical `inbox/` folder by default. Explicit folder creation and Save As
+  retain their user-selected destinations.
 - Save manually with Command-S.
 - Save a copy or choose a new location with Command-Shift-S or **Save as**.
 - Autosave an already saved note after one second without edits.
@@ -98,8 +99,8 @@ rendered interface on 2026-07-19.
   emoji shortcodes, LaTeX math, Mermaid diagrams, and the twelve standard
   admonition types with custom titles.
 - Resolve rendered wikilinks through cached filename, path, and alias maps.
-  Ambiguous or missing targets remain unopened and are reported through the
-  normal vault notices.
+  Ambiguous targets remain unopened and are reported through the normal vault
+  notices; simple missing targets offer explicit creation in physical Inbox.
 - Keep Preview render-only: it never serializes an AST back to disk, executes
   code, loads remote diagram resources, or enables raw executable HTML.
 - Configure automatic URL linking, smart typography, syntax highlighting,
@@ -126,11 +127,16 @@ rendered interface on 2026-07-19.
 - Create the Markdown file only after the first non-whitespace input; a blank
   capture leaves no file behind.
 - Give each capture `type: scratchpad`, `status: inbox`, and `created_at`.
+- Store each capture physically under the vault's `inbox/` folder.
 - Autosave through serialized atomic writes, flush before hiding, and keep the
   visible draft when an external edit conflict prevents saving.
 - Open the newest active Inbox capture with `Control-Option-P`, or toggle a
   newest-edited right-side list with `Control-Option-S`.
 - Complete bounded wikilink suggestions from the cached vault index.
+- Create a blank missing note from a simple unresolved wikilink after
+  confirmation; the note is written to the physical `inbox/` folder and
+  opened immediately. Heading fragments do not become part of the filename;
+  path-style unresolved targets remain reported without automatic creation.
 - Keep system-wide shortcuts deferred; the current shortcuts work while
   Anchored is active.
 
@@ -155,6 +161,9 @@ Behavior:
   reported instead of choosing an arbitrary note.
 - Open the link under the pointer with Command-click.
 - Open the link at the cursor with Command-Enter.
+- When a simple missing wikilink is opened, offer to create its note in the
+  physical `inbox/` folder. The existing source link is preserved and resolves
+  after the new note is indexed.
 - Show resolved backlinks below the active note.
 - Read supported links from ordinary Markdown and from quoted top-level YAML
   text or list values.
@@ -172,14 +181,16 @@ Behavior:
   vault-relative path.
 - Insert an alias as `[[target|alias]]`.
 - Show known unresolved targets as **Uncreated** placeholders.
-- Offer newly typed unresolved text as a link without automatically creating a
-  note.
+- Offer newly typed unresolved text as a link without creating a note until
+  the user explicitly opens it and confirms creation.
 - Display at most 24 completion options.
 
 ## Rename and move
 
-- Rename or move a saved note through the **Rename** action and a
-  native save dialog.
+- Rename or move a note through the breadcrumb's inline filename editor,
+  the **Rename** action, or the file-rail context menu. Enter or blur submits
+  an inline rename and Escape cancels it; renames stay in the note's current
+  folder.
 - Update uniquely resolved references when the filename or folder changes.
 - Update supported references in Markdown bodies and supported quoted YAML
   values.
@@ -189,7 +200,8 @@ Behavior:
   must be rewritten.
 - Leave ambiguous and unresolved references unchanged.
 - Do not rewrite links when only a YAML `title` property changes.
-- Block rename while any participating note has unfinished edits or cannot be
+- Save pending edits in the active note before renaming it, while blocking the
+  operation when another participating note has unfinished edits or cannot be
   read safely.
 - Apply the rename and all reference updates as one journaled transaction.
 - Roll back handled failures and recover an interrupted transaction the next
@@ -276,7 +288,6 @@ The following are not active features:
   preserved as text; attachment files are indexed as read-only Assets.
 - Standard Markdown-link navigation such as `[label](file.md)`.
 - Heading/block autocomplete or heading/block existence validation.
-- Automatic creation of a note from an unresolved wikilink.
 - Rich-text or live-preview editing while typing. Preview is explicit and
   source-first.
 - Permanent deletion from Trash.

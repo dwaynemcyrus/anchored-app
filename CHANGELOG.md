@@ -8,6 +8,9 @@ Git commit. The format follows [Keep a Changelog], and releases follow
 
 ### Added
 
+- Note filenames can now be edited directly from the editor breadcrumb.
+  Enter or blur submits the requested name, Escape cancels, and the existing
+  atomic rename transaction continues to update supported links safely.
 - Anchored now watches the selected vault tree while open, so Finder-created,
   renamed, moved, and deleted folders and files refresh the physical Files
   view automatically without requiring focus or another app action.
@@ -32,6 +35,10 @@ Git commit. The format follows [Keep a Changelog], and releases follow
   metadata. Archiving writes `status: archived` and `archived_at`, opens the
   note in sanitized read-only Preview, and offers explicit restore actions for
   Inbox or Workbench.
+- Opening a simple unresolved wikilink with Command-click or Command-Enter
+  now offers to create a blank note in the physical `inbox/` folder and opens
+  it after creation. Existing links are preserved and are not created merely
+  by typing completion text.
 - A lightweight floating Scratchpad now creates separate Inbox notes after the
   first nonblank input, autosaves atomically, preserves drafts on conflicts,
   completes wikilinks, and browses active captures in a newest-edited side list
@@ -72,6 +79,9 @@ Git commit. The format follows [Keep a Changelog], and releases follow
 
 ### Changed
 
+- Default New note drafts and Scratchpad captures are now physically created
+  in the vault's `inbox/` folder. Explicit folder creation and Save As keep
+  their user-selected destinations.
 - Wikilink completion now remains available while an unclosed link is being
   edited, including during typing pauses, and closes on the expected link and
   editor boundaries.
@@ -222,8 +232,8 @@ Git commit. The format follows [Keep a Changelog], and releases follow
   demonstration notes as though they were editable vault files.
 - Development launches now replace only this project's stale interface server
   on port 1420 and identify unrelated port owners with an actionable error.
-- Opening the native Rename dialog no longer blocks Anchored's main interface
-  thread.
+- Filename renaming no longer opens a blocking native save dialog; the editor
+  keeps the rename interaction in the breadcrumb.
 - The editor shell no longer becomes a blank window when WebKit denies access
   to optional local note-activity storage.
 - Wikilink parsing no longer uses regular-expression lookbehind unsupported by

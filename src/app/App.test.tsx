@@ -14,6 +14,7 @@ import {
   createVaultConflictCopy,
   createVault,
   createVaultFolder,
+  createInboxVaultFile,
   createUntitledVaultFile,
   createVaultFile,
   deleteVaultFolder,
@@ -49,6 +50,7 @@ vi.mock("../lib/tauri/vault", () => ({
   createVaultConflictCopy: vi.fn(),
   createVault: vi.fn(),
   createVaultFolder: vi.fn(),
+  createInboxVaultFile: vi.fn(),
   createUntitledVaultFile: vi.fn(),
   createVaultFile: vi.fn(),
   deleteVaultFolder: vi.fn(),
@@ -91,6 +93,7 @@ vi.mock("./windowActions", () => ({
 const mockedSelectVault = vi.mocked(selectVault);
 const mockedCreateVault = vi.mocked(createVault);
 const mockedCreateVaultFolder = vi.mocked(createVaultFolder);
+const mockedCreateInboxVaultFile = vi.mocked(createInboxVaultFile);
 const mockedCreateUntitledVaultFile = vi.mocked(createUntitledVaultFile);
 const mockedCreateVaultFile = vi.mocked(createVaultFile);
 const mockedDeleteVaultFolder = vi.mocked(deleteVaultFolder);
@@ -132,6 +135,7 @@ describe("App", () => {
     mockedCreateVault.mockReset();
     mockedCreateVaultConflictCopy.mockReset();
     mockedCreateVaultFolder.mockReset();
+    mockedCreateInboxVaultFile.mockReset();
     mockedCreateUntitledVaultFile.mockReset();
     mockedCreateVaultFile.mockReset();
     mockedDeleteVaultFolder.mockReset();
@@ -1546,7 +1550,7 @@ describe("App", () => {
     fireEvent.click(screen.getAllByRole("button", { name: "New note" })[0]);
 
     expect(mockedCreateUntitledVaultFile).toHaveBeenCalledOnce();
-    expect(mockedCreateUntitledVaultFile).toHaveBeenCalledWith("");
+    expect(mockedCreateUntitledVaultFile).toHaveBeenCalledWith("", "inbox");
     expect(screen.getByText("Saving…")).toBeInTheDocument();
 
     await act(async () => {
@@ -1572,15 +1576,15 @@ describe("App", () => {
     });
     mockedCreateUntitledVaultFile.mockResolvedValue({
       content: createdContent,
-      relativePath: "Untitled.md",
+      relativePath: "inbox/Untitled.md",
       sizeBytes: createdContent.length,
     });
     mockedRescanVault.mockResolvedValue({
       files: [
         {
           name: "Untitled.md",
-          parent: "",
-          relativePath: "Untitled.md",
+          parent: "inbox",
+          relativePath: "inbox/Untitled.md",
         },
       ],
       name: "My Vault",
@@ -1662,7 +1666,7 @@ describe("App", () => {
     await act(async () => {
       finishCreatingNote?.({
         content: createdContent,
-        relativePath: "Untitled.md",
+        relativePath: "inbox/Untitled.md",
         sizeBytes: createdContent.length,
       });
     });
@@ -1775,6 +1779,85 @@ describe("App", () => {
     expect(editor).toHaveTextContent(
       "[[Leadership]] [[Future Idea]] [[Leadership|Leading Well]]",
     );
+  });
+
+  it("offers to create a missing Command-Enter wikilink in Inbox", async () => {
+    const user = userEvent.setup();
+    const source = "See [[Future idea]]";
+    const createdContent = "---\ncreated_at: 2026-07-22T03:00:00Z\n---\n\n";
+    mockedSelectVault.mockResolvedValue({
+      files: [
+        {
+          name: "Source.md",
+          outgoingLinks: ["Future idea"],
+          parent: "",
+          relativePath: "Source.md",
+        },
+      ],
+      name: "My Vault",
+      warnings: noWarnings,
+    });
+    mockedReadVaultFile.mockImplementation(async (relativePath) => ({
+      content: relativePath === "Source.md" ? source : createdContent,
+      relativePath,
+      sizeBytes: (relativePath === "Source.md" ? source : createdContent)
+        .length,
+    }));
+    mockedCreateInboxVaultFile.mockResolvedValue({
+      content: createdContent,
+      relativePath: "inbox/Future idea.md",
+      sizeBytes: createdContent.length,
+    });
+    mockedRescanVault.mockResolvedValue({
+      files: [
+        {
+          name: "Future idea.md",
+          parent: "inbox",
+          relativePath: "inbox/Future idea.md",
+        },
+        {
+          name: "Source.md",
+          outgoingLinks: ["Future idea"],
+          parent: "",
+          relativePath: "Source.md",
+        },
+      ],
+      name: "My Vault",
+      warnings: noWarnings,
+    });
+
+    render(<App />);
+    await user.click(screen.getByRole("button", { name: "Open vault" }));
+    await user.click(screen.getByRole("button", { name: "Source.md" }));
+    const editor = await screen.findByRole("textbox", {
+      name: "Source.md Markdown editor",
+    });
+    await user.click(editor);
+    await user.keyboard("{End}");
+    fireEvent.keyDown(editor, { key: "Enter", metaKey: true });
+
+    const dialog = await screen.findByRole("dialog", {
+      name: "Create missing note",
+    });
+    expect(dialog).toHaveTextContent("[[Future idea]]");
+    await user.click(
+      within(dialog).getByRole("button", { name: "Create note" }),
+    );
+
+    await waitFor(() =>
+      expect(mockedCreateInboxVaultFile).toHaveBeenCalledWith({
+        content: "",
+        name: "Future idea",
+      }),
+    );
+    expect(
+      await screen.findByRole("textbox", {
+        name: "Future idea.md Markdown editor",
+      }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Future idea.md" }),
+    ).toHaveAttribute("aria-current", "page");
   });
 
   it("creates a real vault note through Save As", async () => {
@@ -2080,10 +2163,19 @@ describe("App", () => {
       name: "Old Name.md Markdown editor",
     });
     await user.click(
-      screen.getByRole("button", { name: "Rename Old Name.md" }),
+      screen.getByRole("button", { name: "Edit filename: Old Name.md" }),
     );
+    const filenameInput = screen.getByRole("textbox", {
+      name: "Edit filename: Old Name.md",
+    });
+    await user.clear(filenameInput);
+    await user.type(filenameInput, "New Name.md");
+    await user.keyboard("{Enter}");
 
-    expect(mockedRenameVaultFile).toHaveBeenCalledWith("Notes/Old Name.md");
+    expect(mockedRenameVaultFile).toHaveBeenCalledWith({
+      name: "New Name.md",
+      relativePath: "Notes/Old Name.md",
+    });
     expect(mockedRescanVault).toHaveBeenCalledTimes(1);
     expect(mockedReadVaultFile).toHaveBeenLastCalledWith("Writing/New Name.md");
     expect(
@@ -2094,6 +2186,121 @@ describe("App", () => {
     expect(
       screen.getByText("New Name.md renamed. 3 links updated across 2 notes."),
     ).toBeInTheDocument();
+  });
+
+  it("cancels inline filename editing with Escape", async () => {
+    const user = userEvent.setup();
+    mockedSelectVault.mockResolvedValue({
+      files: [
+        {
+          name: "Keep.md",
+          parent: "Notes",
+          relativePath: "Notes/Keep.md",
+        },
+      ],
+      name: "My Vault",
+      warnings: noWarnings,
+    });
+    mockedReadVaultFile.mockResolvedValue({
+      content: "# Keep\n",
+      relativePath: "Notes/Keep.md",
+      sizeBytes: 7,
+    });
+    render(<App />);
+
+    await user.click(screen.getByRole("button", { name: "Open vault" }));
+    await user.click(screen.getByRole("button", { name: "Keep.md" }));
+    await screen.findByRole("textbox", { name: "Keep.md Markdown editor" });
+    await user.click(
+      screen.getByRole("button", { name: "Edit filename: Keep.md" }),
+    );
+
+    const filenameInput = screen.getByRole("textbox", {
+      name: "Edit filename: Keep.md",
+    });
+    await waitFor(() => expect(filenameInput).toHaveFocus());
+    await user.clear(filenameInput);
+    await user.type(filenameInput, "Changed.md");
+    await user.keyboard("{Escape}");
+
+    expect(
+      screen.queryByRole("textbox", { name: "Edit filename: Keep.md" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Edit filename: Keep.md" }),
+    ).toBeInTheDocument();
+    expect(mockedRenameVaultFile).not.toHaveBeenCalled();
+  });
+
+  it("saves an edited note before inline renaming", async () => {
+    const user = userEvent.setup();
+    mockedSelectVault.mockResolvedValue({
+      files: [],
+      name: "My Vault",
+      warnings: noWarnings,
+    });
+    mockedCreateUntitledVaultFile.mockResolvedValue({
+      content: "",
+      relativePath: "inbox/Untitled.md",
+      sizeBytes: 0,
+    });
+    mockedSaveVaultFile.mockImplementation(async (request) => ({
+      content: request.content,
+      relativePath: request.relativePath,
+      sizeBytes: request.content.length,
+    }));
+    mockedRenameVaultFile.mockResolvedValue({
+      relativePath: "inbox/Renamed.md",
+      updatedFiles: 0,
+      updatedLinks: 0,
+    });
+    mockedRescanVault.mockResolvedValue({
+      files: [
+        {
+          name: "Renamed.md",
+          parent: "inbox",
+          relativePath: "inbox/Renamed.md",
+        },
+      ],
+      name: "My Vault",
+      warnings: noWarnings,
+    });
+    mockedReadVaultFile.mockResolvedValue({
+      content: "# Draft",
+      relativePath: "inbox/Renamed.md",
+      sizeBytes: 7,
+    });
+    render(<App />);
+
+    await user.click(screen.getByRole("button", { name: "Open vault" }));
+    await user.click(screen.getAllByRole("button", { name: "New note" })[0]);
+    const editor = await screen.findByRole("textbox", {
+      name: "Untitled.md Markdown editor",
+    });
+    await user.click(editor);
+    await user.keyboard("# Draft");
+    await user.click(
+      screen.getByRole("button", { name: "Edit filename: Untitled.md" }),
+    );
+    const filenameInput = screen.getByRole("textbox", {
+      name: "Edit filename: Untitled.md",
+    });
+    await user.clear(filenameInput);
+    await user.type(filenameInput, "Renamed.md");
+    await user.keyboard("{Enter}");
+
+    await waitFor(() =>
+      expect(mockedRenameVaultFile).toHaveBeenCalledWith({
+        name: "Renamed.md",
+        relativePath: "inbox/Untitled.md",
+      }),
+    );
+    expect(mockedSaveVaultFile).toHaveBeenCalledWith(
+      expect.objectContaining({
+        content: "# Draft",
+        relativePath: "inbox/Untitled.md",
+      }),
+    );
   });
 
   it("saves an edited vault note with Command-S", async () => {

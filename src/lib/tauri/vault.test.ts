@@ -6,6 +6,7 @@ import {
   createVault,
   createVaultConflictCopy,
   createVaultFolder,
+  createInboxVaultFile,
   createVaultFile,
   deleteVaultFolder,
   forgetVault,
@@ -307,7 +308,19 @@ describe("vault bridge", () => {
     );
   });
 
-  it("renames a Markdown file through the Rust-owned dialog", async () => {
+  it("creates a named Markdown file through the Inbox command", async () => {
+    mockedInvoke.mockResolvedValue(document);
+
+    await expect(
+      createInboxVaultFile({ content: "", name: "Missing note" }),
+    ).resolves.toEqual(document);
+    expect(mockedInvoke).toHaveBeenCalledWith("create_inbox_vault_file", {
+      content: "",
+      name: "Missing note",
+    });
+  });
+
+  it("renames a Markdown file through the Rust command", async () => {
     const result = {
       relativePath: "Notes/Leading.md",
       updatedFiles: 2,
@@ -315,11 +328,13 @@ describe("vault bridge", () => {
     };
     mockedInvoke.mockResolvedValue(result);
 
-    await expect(renameVaultFile("Notes/Leadership.md")).resolves.toEqual(
-      result,
-    );
-    expect(mockedInvoke).toHaveBeenCalledWith("rename_vault_file", {
+    const request = {
+      name: "Leading.md",
       relativePath: "Notes/Leadership.md",
+    };
+    await expect(renameVaultFile(request)).resolves.toEqual(result);
+    expect(mockedInvoke).toHaveBeenCalledWith("rename_vault_file", {
+      ...request,
     });
   });
 
