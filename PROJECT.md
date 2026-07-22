@@ -242,7 +242,7 @@ These scripts must exist in `package.json` after the scaffold chunk.
 
 ## Versioning and changelog
 
-- **Current version:** `0.1.0-alpha`
+- **Current version:** `0.1.1-alpha`
 - **Authoritative version source:** `src-tauri/tauri.conf.json`; the root npm
   manifest and lockfile plus the Rust manifest and lockfile mirror the app
   version and must remain consistent during a release.
