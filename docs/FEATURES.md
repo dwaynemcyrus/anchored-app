@@ -53,7 +53,8 @@ rendered interface on 2026-07-19.
 - Open and edit exact UTF-8 Markdown source in CodeMirror 6.
 - Open an empty Markdown file, including one at the vault root.
 - Create an in-memory untitled draft and save it as a new `.md` file inside the
-  selected vault.
+  physical `inbox/` folder by default. Explicit folder creation and Save As
+  retain their user-selected destinations.
 - Save manually with Command-S.
 - Save a copy or choose a new location with Command-Shift-S or **Save as**.
 - Autosave an already saved note after one second without edits.
@@ -98,8 +99,8 @@ rendered interface on 2026-07-19.
   emoji shortcodes, LaTeX math, Mermaid diagrams, and the twelve standard
   admonition types with custom titles.
 - Resolve rendered wikilinks through cached filename, path, and alias maps.
-  Ambiguous or missing targets remain unopened and are reported through the
-  normal vault notices.
+  Ambiguous targets remain unopened and are reported through the normal vault
+  notices; simple missing targets offer explicit creation in physical Inbox.
 - Keep Preview render-only: it never serializes an AST back to disk, executes
   code, loads remote diagram resources, or enables raw executable HTML.
 - Configure automatic URL linking, smart typography, syntax highlighting,
@@ -126,6 +127,7 @@ rendered interface on 2026-07-19.
 - Create the Markdown file only after the first non-whitespace input; a blank
   capture leaves no file behind.
 - Give each capture `type: scratchpad`, `status: inbox`, and `created_at`.
+- Store each capture physically under the vault's `inbox/` folder.
 - Autosave through serialized atomic writes, flush before hiding, and keep the
   visible draft when an external edit conflict prevents saving.
 - Open the newest active Inbox capture with `Control-Option-P`, or toggle a

@@ -357,6 +357,8 @@ bytes changed.
 ## Saving, conflicts, and data safety
 
 - [ ] Create a new note and confirm it becomes editable immediately.
+- [ ] Create a default New note and confirm its persisted path is
+      `inbox/Untitled.md` (or the next collision-safe Inbox filename).
 - [ ] Type into a new note before its first save completes.
 - [ ] Confirm save state visibly changes through unsaved, saving, and saved.
 - [ ] Use manual Save.
@@ -433,6 +435,7 @@ bytes changed.
 - [ ] Close a blank Scratchpad and confirm no file is created.
 - [ ] Type one nonblank character and confirm a new collision-safe Markdown file is created.
 - [ ] Confirm each new capture is a separate note with `type: scratchpad`, `status: inbox`, and `created_at`.
+- [ ] Confirm each new capture's persisted path starts with `inbox/`.
 - [ ] Confirm Scratchpad captures appear in Inbox and remain visible in Files.
 - [ ] Type continuously, paste large text, and use Unicode and IME composition without dropped or partial saves.
 - [ ] Confirm autosave reaches Saved after a short idle interval.

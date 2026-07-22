@@ -1963,6 +1963,19 @@ open the new note immediately.
   the same verified chunk so product documentation does not contradict the
   shipped behavior.
 
+### Implementation result
+
+- Completed in `49db60c` (plan), `caf2a75` (default Inbox routing), and
+  `897a689` (missing-wikilink creation, tests, and documentation).
+- Default New note drafts and Scratchpad captures now use physical `inbox/`;
+  explicit folder creation and Save As remain location-directed exceptions.
+- Simple missing targets can be created as named Inbox notes after explicit
+  Command-click or Command-Enter confirmation. Path-style unresolved targets
+  remain conservative notices and are not silently rewritten.
+- Full frontend tests, Rust tests, TypeScript, lint, formatting, build,
+  `cargo check`, and strict Clippy passed. Rendered native desktop verification
+  remains pending because the browser runtime is not exposed in this session.
+
 ## Completion
 
 - **Checks run:** Documentation diff checks; Prettier check; ESLint;
