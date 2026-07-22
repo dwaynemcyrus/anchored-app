@@ -107,6 +107,19 @@ describe("wikilinks", () => {
       query: "",
     });
     expect(wikilinkCompletionAtOffset("[[Reading]]", 11)).toBeNull();
+    expect(wikilinkCompletionAtOffset("[[Reading]]", 9)).toBeNull();
+    expect(
+      wikilinkCompletionAtOffset("[[Reading]]", 9, {
+        closeFrom: 9,
+        from: 0,
+      }),
+    ).toEqual({ from: 2, query: "Reading" });
+    expect(
+      wikilinkCompletionAtOffset("[[]]", 2, { closeFrom: 2, from: 0 }),
+    ).toEqual({
+      from: 2,
+      query: "",
+    });
     expect(wikilinkCompletionAtOffset("[[Reading", 1)).toBeNull();
     expect(wikilinkCompletionAtOffset("[[Reading\n", 10)).toBeNull();
   });

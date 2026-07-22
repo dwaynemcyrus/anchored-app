@@ -961,6 +961,7 @@ input:focus-visible,
   background: var(--color-surface);
   color: var(--color-text);
   box-shadow: 0 12px 32px rgb(0 0 0 / 45%);
+  overflow: hidden;
 }
 
 .markdown-editor .cm-tooltip-autocomplete > ul {
@@ -973,10 +974,12 @@ input:focus-visible,
 
 .markdown-editor .cm-tooltip-autocomplete > ul > li {
   display: flex;
-  min-height: 34px;
-  align-items: baseline;
-  gap: 14px;
-  padding: 7px 9px;
+  min-height: 42px;
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: center;
+  gap: 2px;
+  padding: 7px 10px;
   border-radius: 4px;
 }
 
@@ -993,7 +996,7 @@ input:focus-visible,
 }
 
 .markdown-editor .cm-completionDetail {
-  margin-left: auto;
+  margin-left: 0;
   overflow: hidden;
   color: var(--color-text-muted);
   font-style: normal;

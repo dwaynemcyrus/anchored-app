@@ -17,6 +17,11 @@ export type WikilinkCompletionContext = {
   query: string;
 };
 
+export type WikilinkAutoPair = {
+  closeFrom: number;
+  from: number;
+};
+
 export type DocumentLinkIndex = {
   backlinksByTargetId: ReadonlyMap<string, AnchoredDocument[]>;
   byAlias: ReadonlyMap<string, string[]>;
@@ -109,6 +114,7 @@ export function wikilinksInContent(content: string): WikilinkMatch[] {
 export function wikilinkCompletionAtOffset(
   content: string,
   offset: number,
+  autoPair?: WikilinkAutoPair,
 ): WikilinkCompletionContext | null {
   if (offset < 0 || offset > content.length) return null;
   const { bodyStart, frontMatterEnd, frontMatterStart } =
@@ -122,6 +128,7 @@ export function wikilinkCompletionAtOffset(
     return quotedPropertyCompletion(
       content.slice(frontMatterStart, offset),
       frontMatterStart,
+      autoPair,
     );
   }
   if (offset < bodyStart) return null;
@@ -150,7 +157,12 @@ export function wikilinkCompletionAtOffset(
       if (isFenceLine || fenceMarker !== undefined || /^( {4}|\t)/.test(line)) {
         return null;
       }
-      return inlineCompletion(line.slice(0, offset - lineOffset), lineOffset);
+      return inlineCompletion(
+        line,
+        lineOffset,
+        offset - lineOffset,
+        autoPair,
+      );
     }
     lineOffset += lineWithEnding.length;
   }
@@ -184,6 +196,7 @@ function completionFromQuery(
 function quotedPropertyCompletion(
   yaml: string,
   yamlOffset: number,
+  autoPair?: WikilinkAutoPair,
 ): WikilinkCompletionContext | null {
   let index = 0;
   let quote: '"' | "'" | undefined;
@@ -220,6 +233,15 @@ function quotedPropertyCompletion(
           yamlOffset + index + 2,
         );
       }
+      if (
+        autoPair?.from === yamlOffset + index &&
+        autoPair.closeFrom === yamlOffset + closing
+      ) {
+        return completionFromQuery(
+          yaml.slice(index + 2, closing),
+          yamlOffset + index + 2,
+        );
+      }
       index = closing + 2;
       continue;
     }
@@ -231,6 +253,8 @@ function quotedPropertyCompletion(
 function inlineCompletion(
   line: string,
   lineOffset: number,
+  cursor: number,
+  autoPair?: WikilinkAutoPair,
 ): WikilinkCompletionContext | null {
   let index = 0;
   let inlineCodeDelimiter = 0;
@@ -249,12 +273,27 @@ function inlineCompletion(
       !isEscaped(line, index)
     ) {
       const closing = line.indexOf("]]", index + 2);
+      if (cursor < index + 2) return null;
       if (closing === -1) {
         return completionFromQuery(
-          line.slice(index + 2),
+          line.slice(index + 2, cursor),
           lineOffset + index + 2,
         );
       }
+      if (
+        autoPair?.from === lineOffset + index &&
+        autoPair.closeFrom === lineOffset + closing
+      ) {
+        if (cursor > closing) {
+          index = closing + 2;
+          continue;
+        }
+        return completionFromQuery(
+          line.slice(index + 2, cursor),
+          lineOffset + index + 2,
+        );
+      }
+      if (cursor <= closing) return null;
       index = closing + 2;
       continue;
     }

@@ -79,6 +79,9 @@ Git commit. The format follows [Keep a Changelog], and releases follow
 
 ### Changed
 
+- Markdown source editing now auto-closes wikilinks, bold, strikethrough,
+  and inline-code marks, keeps the caret inside the pair, and keeps the
+  wikilink candidate picker open for keyboard-first filtering and selection.
 - Default New note drafts and Scratchpad captures are now physically created
   in the vault's `inbox/` folder. Explicit folder creation and Save As keep
   their user-selected destinations.

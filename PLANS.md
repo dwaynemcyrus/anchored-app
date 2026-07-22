@@ -1764,6 +1764,47 @@ Obsidian/Bear authoring flow.
   is required to prevent stale selections or accepting a candidate after the
   link has closed.
 
+## Follow-up plan: auto-closing Markdown marks
+
+### Outcome
+
+Typing a supported paired Markdown opener inserts its closer and leaves the
+caret inside. Wikilink completion remains visible for the auto-created `[[]]`
+state, narrows synchronously as the query changes, and supports ArrowUp,
+ArrowDown, Enter, and Escape without changing existing note-creation rules.
+
+### Implementation sequence
+
+1. Add a small CodeMirror state field for auto-created pair ranges. Map pair
+   positions through edits and discard ranges when either delimiter is changed.
+2. Handle direct keyboard input for `[[ ]]`, `** **`, `__ __`, `~~ ~~`, and
+   inline code backticks. Support closer overtyping and Backspace on empty
+   pairs while leaving paste and IME composition untouched.
+3. Extend wikilink completion parsing to recognize the caret before an
+   auto-created `]]`, and update completion application so it fills the gap
+   without inserting a second closer.
+4. Refine the CodeMirror completion surface with stacked label/detail rows,
+   selected-state contrast, bounded height, and existing keyboard semantics.
+   Do not advertise unsupported heading or block completion actions.
+5. Add parser, pair-state, and rendered editor tests, update feature/changelog
+   documentation, and run all frontend quality gates.
+
+### Expected files
+
+- `src/app/markdown/editorPairs.ts` and its tests
+- `src/app/links.ts` and `src/app/links.test.ts`
+- `src/app/components/MarkdownEditor.tsx` and its tests
+- `src/styles/global.css`, `docs/FEATURES.md`, and `CHANGELOG.md`
+
+### Risks and decisions
+
+- Only auto-created pairs are eligible for closer overtyping and paired
+  deletion; ordinary existing Markdown remains untouched.
+- Completion remains wikilink-only. Formatting marks do not create a second
+  suggestion system.
+- Existing physical Inbox routing, explicit folder creation, and Save As
+  destinations remain unchanged.
+
 ## Follow-up plan: named color themes
 
 ### Outcome

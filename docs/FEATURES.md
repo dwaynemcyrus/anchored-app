@@ -173,10 +173,14 @@ Behavior:
 
 ### Wikilink completion
 
-- Typing `[[` opens a completion list in supported Markdown or quoted YAML
+- Typing `[[` inserts the closing `]]`, leaves the caret between the marks,
+  and opens a persistent completion list in supported Markdown or quoted YAML
   text.
 - With no query, the list shows recently active notes.
 - As text is typed, it ranks filename, path, and alias matches.
+- Arrow keys navigate the list and Enter accepts the selected candidate;
+  accepting a candidate uses the existing closing marks without duplicating
+  them.
 - Insert the shortest unambiguous target: a filename when unique, otherwise a
   vault-relative path.
 - Insert an alias as `[[target|alias]]`.
@@ -184,6 +188,16 @@ Behavior:
 - Offer newly typed unresolved text as a link without creating a note until
   the user explicitly opens it and confirms creation.
 - Display at most 24 completion options.
+
+### Markdown pair editing
+
+- Typing `[[`, `**`, `__`, `~~`, or `` ` `` inserts the matching closing marks
+  and places the caret inside the pair.
+- Typing an existing closing mark moves over an auto-created closer, and
+  Backspace removes an empty auto-created pair.
+- Pair editing is limited to supported Markdown text and does not alter
+  pasted or composing input, fenced code, indented code, escaped syntax, or
+  the existing Inbox note-creation exceptions.
 
 ## Rename and move
 

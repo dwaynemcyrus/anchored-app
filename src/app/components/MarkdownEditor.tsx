@@ -25,6 +25,15 @@ import {
   anchoredMarkdownLanguage,
   anchoredMarkdownSyntaxHighlighting,
 } from "../markdown/editorLanguage";
+import {
+  activeAutoPairAt,
+  addPairEffect,
+  autoPairState,
+  emptyPairAt,
+  pairClosingAt,
+  pairInputAt,
+  removePairEffect,
+} from "../markdown/editorPairs";
 import type { EditorFontSize } from "../markdown/types";
 import { markdownBodyStart } from "../markdown/source";
 import { wikilinkAtOffset, wikilinkCompletionAtOffset } from "../links";
@@ -100,9 +109,13 @@ export default function MarkdownEditor({
     function completeWikilink(
       context: CompletionContext,
     ): CompletionResult | null {
+      const autoPair = activeAutoPairAt(context.state, context.pos);
       const partial = wikilinkCompletionAtOffset(
         context.state.doc.toString(),
         context.pos,
+        autoPair?.open === "[[" && autoPair.close === "]]"
+          ? autoPair
+          : undefined,
       );
       if (!partial) return null;
       const candidates = rankWikilinkCandidates(
@@ -119,13 +132,29 @@ export default function MarkdownEditor({
               from: number,
               to: number,
             ) => {
-              const inserted = `${candidate.target}]]`;
+              const pair = activeAutoPairAt(editor.state, from);
+              const autoClosedWikilink =
+                pair?.open === "[[" &&
+                pair.close === "]]" &&
+                pair.from + pair.open.length === from;
+              const inserted = autoClosedWikilink
+                ? candidate.target
+                : `${candidate.target}]]`;
               editor.dispatch({
                 changes: { from, insert: inserted, to },
                 selection: {
-                  anchor: from + inserted.length,
-                  head: from + inserted.length,
+                  anchor:
+                    from +
+                    inserted.length +
+                    (autoClosedWikilink ? pair.close.length : 0),
+                  head:
+                    from +
+                    inserted.length +
+                    (autoClosedWikilink ? pair.close.length : 0),
                 },
+                effects: autoClosedWikilink
+                  ? removePairEffect(pair.from)
+                  : undefined,
               });
             },
             detail: candidate.detail,
@@ -176,6 +205,7 @@ export default function MarkdownEditor({
           history(),
           anchoredMarkdownLanguage,
           anchoredMarkdownSyntaxHighlighting,
+          autoPairState,
           markdownEditorDecorations,
           frontMatterEditorDecorations,
           highlightSelectionMatches(),
@@ -191,6 +221,27 @@ export default function MarkdownEditor({
             override: [completeWikilink],
           }),
           keymap.of([
+            {
+              key: "Backspace",
+              run: (editor) => {
+                const cursor = editor.state.selection.main.head;
+                const emptyPair = emptyPairAt(editor.state, cursor);
+                if (!emptyPair) return false;
+                editor.dispatch({
+                  changes: {
+                    from: emptyPair.from,
+                    to: emptyPair.closeFrom + emptyPair.close.length,
+                  },
+                  selection: {
+                    anchor: emptyPair.from,
+                    head: emptyPair.from,
+                  },
+                  effects: removePairEffect(emptyPair.from),
+                  userEvent: "delete.backward",
+                });
+                return true;
+              },
+            },
             ...defaultKeymap,
             ...historyKeymap,
             ...searchKeymap,
@@ -227,6 +278,61 @@ export default function MarkdownEditor({
               return false;
             },
             keydown: (event, editor) => {
+              if (
+                !event.metaKey &&
+                !event.ctrlKey &&
+                !event.altKey &&
+                !composingRef.current &&
+                editor.state.selection.main.empty
+              ) {
+                const cursor = editor.state.selection.main.head;
+                const closingPair = pairClosingAt(
+                  editor.state,
+                  cursor,
+                  event.key,
+                );
+                if (closingPair) {
+                  event.preventDefault();
+                  editor.dispatch({
+                    selection: {
+                      anchor: cursor + closingPair.close.length,
+                      head: cursor + closingPair.close.length,
+                    },
+                    effects: removePairEffect(closingPair.from),
+                    userEvent: "input.type",
+                  });
+                  return true;
+                }
+
+                if (event.key === "Backspace") {
+                  return false;
+                }
+
+                if (event.key.length === 1) {
+                  const pairInput = pairInputAt(
+                    editor.state.doc.toString(),
+                    cursor,
+                    event.key,
+                  );
+                  if (pairInput) {
+                    event.preventDefault();
+                    editor.dispatch({
+                      changes: {
+                        from: cursor,
+                        insert: pairInput.insert,
+                      },
+                      selection: {
+                        anchor: pairInput.selection,
+                        head: pairInput.selection,
+                      },
+                      effects: addPairEffect(pairInput),
+                      userEvent: "input.type",
+                    });
+                    return true;
+                  }
+                }
+              }
+
               if (
                 event.key === "Escape" &&
                 event.target instanceof Element &&
