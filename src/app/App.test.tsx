@@ -2163,10 +2163,19 @@ describe("App", () => {
       name: "Old Name.md Markdown editor",
     });
     await user.click(
-      screen.getByRole("button", { name: "Rename Old Name.md" }),
+      screen.getByRole("button", { name: "Edit filename: Old Name.md" }),
     );
+    const filenameInput = screen.getByRole("textbox", {
+      name: "Edit filename: Old Name.md",
+    });
+    await user.clear(filenameInput);
+    await user.type(filenameInput, "New Name.md");
+    await user.keyboard("{Enter}");
 
-    expect(mockedRenameVaultFile).toHaveBeenCalledWith("Notes/Old Name.md");
+    expect(mockedRenameVaultFile).toHaveBeenCalledWith({
+      name: "New Name.md",
+      relativePath: "Notes/Old Name.md",
+    });
     expect(mockedRescanVault).toHaveBeenCalledTimes(1);
     expect(mockedReadVaultFile).toHaveBeenLastCalledWith("Writing/New Name.md");
     expect(
@@ -2177,6 +2186,121 @@ describe("App", () => {
     expect(
       screen.getByText("New Name.md renamed. 3 links updated across 2 notes."),
     ).toBeInTheDocument();
+  });
+
+  it("cancels inline filename editing with Escape", async () => {
+    const user = userEvent.setup();
+    mockedSelectVault.mockResolvedValue({
+      files: [
+        {
+          name: "Keep.md",
+          parent: "Notes",
+          relativePath: "Notes/Keep.md",
+        },
+      ],
+      name: "My Vault",
+      warnings: noWarnings,
+    });
+    mockedReadVaultFile.mockResolvedValue({
+      content: "# Keep\n",
+      relativePath: "Notes/Keep.md",
+      sizeBytes: 7,
+    });
+    render(<App />);
+
+    await user.click(screen.getByRole("button", { name: "Open vault" }));
+    await user.click(screen.getByRole("button", { name: "Keep.md" }));
+    await screen.findByRole("textbox", { name: "Keep.md Markdown editor" });
+    await user.click(
+      screen.getByRole("button", { name: "Edit filename: Keep.md" }),
+    );
+
+    const filenameInput = screen.getByRole("textbox", {
+      name: "Edit filename: Keep.md",
+    });
+    await waitFor(() => expect(filenameInput).toHaveFocus());
+    await user.clear(filenameInput);
+    await user.type(filenameInput, "Changed.md");
+    await user.keyboard("{Escape}");
+
+    expect(
+      screen.queryByRole("textbox", { name: "Edit filename: Keep.md" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Edit filename: Keep.md" }),
+    ).toBeInTheDocument();
+    expect(mockedRenameVaultFile).not.toHaveBeenCalled();
+  });
+
+  it("saves an edited note before inline renaming", async () => {
+    const user = userEvent.setup();
+    mockedSelectVault.mockResolvedValue({
+      files: [],
+      name: "My Vault",
+      warnings: noWarnings,
+    });
+    mockedCreateUntitledVaultFile.mockResolvedValue({
+      content: "",
+      relativePath: "inbox/Untitled.md",
+      sizeBytes: 0,
+    });
+    mockedSaveVaultFile.mockImplementation(async (request) => ({
+      content: request.content,
+      relativePath: request.relativePath,
+      sizeBytes: request.content.length,
+    }));
+    mockedRenameVaultFile.mockResolvedValue({
+      relativePath: "inbox/Renamed.md",
+      updatedFiles: 0,
+      updatedLinks: 0,
+    });
+    mockedRescanVault.mockResolvedValue({
+      files: [
+        {
+          name: "Renamed.md",
+          parent: "inbox",
+          relativePath: "inbox/Renamed.md",
+        },
+      ],
+      name: "My Vault",
+      warnings: noWarnings,
+    });
+    mockedReadVaultFile.mockResolvedValue({
+      content: "# Draft",
+      relativePath: "inbox/Renamed.md",
+      sizeBytes: 7,
+    });
+    render(<App />);
+
+    await user.click(screen.getByRole("button", { name: "Open vault" }));
+    await user.click(screen.getAllByRole("button", { name: "New note" })[0]);
+    const editor = await screen.findByRole("textbox", {
+      name: "Untitled.md Markdown editor",
+    });
+    await user.click(editor);
+    await user.keyboard("# Draft");
+    await user.click(
+      screen.getByRole("button", { name: "Edit filename: Untitled.md" }),
+    );
+    const filenameInput = screen.getByRole("textbox", {
+      name: "Edit filename: Untitled.md",
+    });
+    await user.clear(filenameInput);
+    await user.type(filenameInput, "Renamed.md");
+    await user.keyboard("{Enter}");
+
+    await waitFor(() =>
+      expect(mockedRenameVaultFile).toHaveBeenCalledWith({
+        name: "Renamed.md",
+        relativePath: "inbox/Untitled.md",
+      }),
+    );
+    expect(mockedSaveVaultFile).toHaveBeenCalledWith(
+      expect.objectContaining({
+        content: "# Draft",
+        relativePath: "inbox/Untitled.md",
+      }),
+    );
   });
 
   it("saves an edited vault note with Command-S", async () => {

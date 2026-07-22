@@ -1368,8 +1368,8 @@ fn move_markdown_file_to_folder(
 
 #[tauri::command]
 pub async fn rename_vault_file(
-    app: AppHandle,
     state: State<'_, VaultState>,
+    name: String,
     relative_path: String,
 ) -> Result<Option<RenameOutcome>, VaultError> {
     let _rename_guard = state
@@ -1383,24 +1383,13 @@ pub async fn rename_vault_file(
         .clone()
         .ok_or_else(|| VaultError::state("Select a vault before renaming a Markdown file."))?;
     recover_rename_transaction(&root)?;
-    let suggested_name = Path::new(&relative_path)
-        .file_name()
-        .and_then(|name| name.to_str())
-        .unwrap_or("Untitled.md");
-    let selected = app
-        .dialog()
-        .file()
-        .set_title("Rename Markdown note")
-        .set_directory(&root)
-        .set_file_name(suggested_name)
-        .add_filter("Markdown", &["md"])
-        .blocking_save_file();
-    let Some(selected) = selected else {
-        return Ok(None);
-    };
-    let destination = selected
-        .into_path()
-        .map_err(|error| VaultError::invalid_file(format!("Unsupported rename path: {error}")))?;
+    let filename = validate_markdown_filename(&name)?;
+    let parent_path = Path::new(&relative_path)
+        .parent()
+        .and_then(|path| path.to_str())
+        .unwrap_or_default();
+    let parent = resolve_vault_directory(&root, parent_path)?;
+    let destination = parent.join(filename);
 
     rename_markdown_file(&root, &relative_path, &destination, None).map(Some)
 }
@@ -1490,6 +1479,33 @@ fn validate_folder_name(name: &str) -> Result<&str, VaultError> {
     if components.next().is_some() || is_internal_component(component) {
         return Err(VaultError::invalid(
             "Folder names must be a single folder name.",
+        ));
+    }
+
+    Ok(trimmed)
+}
+
+fn validate_markdown_filename(name: &str) -> Result<&str, VaultError> {
+    let trimmed = name.trim();
+    if trimmed.is_empty() {
+        return Err(VaultError::invalid(
+            "Enter a filename before renaming this note.",
+        ));
+    }
+    if trimmed.starts_with('.') {
+        return Err(VaultError::invalid("Filenames cannot start with a dot."));
+    }
+
+    let path = Path::new(trimmed);
+    let mut components = path.components();
+    let Some(Component::Normal(component)) = components.next() else {
+        return Err(VaultError::invalid(
+            "Filenames must be a single Markdown filename.",
+        ));
+    };
+    if components.next().is_some() || is_internal_component(component) || !is_markdown(path) {
+        return Err(VaultError::invalid(
+            "Filenames must be a single Markdown filename.",
         ));
     }
 
@@ -3439,9 +3455,10 @@ mod tests {
         rename_folder, rename_markdown_file, resolve_new_vault_markdown_file, save_markdown_file,
         save_scratchpad_markdown_file, scan_vault, scratchpad_filename_sequence,
         search_markdown_files, transition_markdown_lifecycle, validate_folder_name,
-        validate_new_vault_name, vault_tree_signature, write_rename_journal, LifecycleTransition,
-        RenameJournal, RenameJournalEntry, RenameJournalPhase, RenameOutcome, VaultMetadataCache,
-        MAX_MARKDOWN_FILE_BYTES, MAX_SEARCH_RESULTS, RENAME_JOURNAL_NAME,
+        validate_markdown_filename, validate_new_vault_name, vault_tree_signature,
+        write_rename_journal, LifecycleTransition, RenameJournal, RenameJournalEntry,
+        RenameJournalPhase, RenameOutcome, VaultMetadataCache, MAX_MARKDOWN_FILE_BYTES,
+        MAX_SEARCH_RESULTS, RENAME_JOURNAL_NAME,
     };
 
     #[test]
@@ -4362,6 +4379,28 @@ mod tests {
             fs::read_to_string(&note).expect("read protected note"),
             document.content
         );
+    }
+
+    #[test]
+    fn validates_inline_rename_filenames() {
+        assert_eq!(
+            validate_markdown_filename("  Renamed.md  ").expect("valid filename"),
+            "Renamed.md"
+        );
+        for invalid in [
+            "",
+            ".hidden.md",
+            "../Outside.md",
+            "Folder/Note.md",
+            "Note.txt",
+        ] {
+            assert_eq!(
+                validate_markdown_filename(invalid)
+                    .expect_err("invalid filename should be refused")
+                    .code,
+                "invalidVault"
+            );
+        }
     }
 
     #[test]

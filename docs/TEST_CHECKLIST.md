@@ -365,6 +365,11 @@ bytes changed.
 - [ ] Use autosave.
 - [ ] Use Save As.
 - [ ] Rename a saved note and confirm supported links update.
+- [ ] Click the filename in the editor breadcrumb, confirm the inline field
+      receives focus and selects the current name, then rename with Enter.
+- [ ] Rename from the breadcrumb with blur, cancel with Escape, and confirm an
+      empty or invalid filename shows a recoverable notice without changing
+      the original file.
 - [ ] Change only YAML `title` and confirm links do not rewrite.
 - [ ] Edit the same file externally and confirm the app shows a conflict instead of overwriting silently.
 - [ ] Resolve or recover from a conflict without losing the newer content.

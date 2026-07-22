@@ -8,6 +8,9 @@ Git commit. The format follows [Keep a Changelog], and releases follow
 
 ### Added
 
+- Note filenames can now be edited directly from the editor breadcrumb.
+  Enter or blur submits the requested name, Escape cancels, and the existing
+  atomic rename transaction continues to update supported links safely.
 - Anchored now watches the selected vault tree while open, so Finder-created,
   renamed, moved, and deleted folders and files refresh the physical Files
   view automatically without requiring focus or another app action.
@@ -229,8 +232,8 @@ Git commit. The format follows [Keep a Changelog], and releases follow
   demonstration notes as though they were editable vault files.
 - Development launches now replace only this project's stale interface server
   on port 1420 and identify unrelated port owners with an actionable error.
-- Opening the native Rename dialog no longer blocks Anchored's main interface
-  thread.
+- Filename renaming no longer opens a blocking native save dialog; the editor
+  keeps the rename interaction in the breadcrumb.
 - The editor shell no longer becomes a blank window when WebKit denies access
   to optional local note-activity storage.
 - Wikilink parsing no longer uses regular-expression lookbehind unsupported by

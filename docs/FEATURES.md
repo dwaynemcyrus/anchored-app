@@ -187,8 +187,10 @@ Behavior:
 
 ## Rename and move
 
-- Rename or move a saved note through the **Rename** action and a
-  native save dialog.
+- Rename or move a note through the breadcrumb's inline filename editor,
+  the **Rename** action, or the file-rail context menu. Enter or blur submits
+  an inline rename and Escape cancels it; renames stay in the note's current
+  folder.
 - Update uniquely resolved references when the filename or folder changes.
 - Update supported references in Markdown bodies and supported quoted YAML
   values.
@@ -198,7 +200,8 @@ Behavior:
   must be rewritten.
 - Leave ambiguous and unresolved references unchanged.
 - Do not rewrite links when only a YAML `title` property changes.
-- Block rename while any participating note has unfinished edits or cannot be
+- Save pending edits in the active note before renaming it, while blocking the
+  operation when another participating note has unfinished edits or cannot be
   read safely.
 - Apply the rename and all reference updates as one journaled transaction.
 - Roll back handled failures and recover an interrupted transaction the next

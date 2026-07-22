@@ -1976,6 +1976,68 @@ open the new note immediately.
   `cargo check`, and strict Clippy passed. Rendered native desktop verification
   remains pending because the browser runtime is not exposed in this session.
 
+## Follow-up plan: restore inline filename rename
+
+### Outcome
+
+Allow the filename shown in the editor breadcrumb to enter an inline text
+field when clicked. Enter or blur submits a safe same-folder rename, Escape
+cancels, and the existing atomic link-update transaction remains authoritative.
+
+### Investigation findings
+
+- The current branch rendered the breadcrumb filename as a plain `span`, so it
+  had no click handler or inline editing state.
+- The separate Rename action called a Rust-owned blocking save dialog and the
+  typed bridge accepted only the current relative path.
+- A prior implementation exists on `feat/inline-note-rename`, but that branch
+  contains unrelated divergence and must not be merged wholesale.
+- The active note may save its pending edits before rename; other open dirty
+  notes remain a safety stop. Conflicts and failed saves remain blocked.
+
+### Implementation sequence
+
+1. Add semantic breadcrumb button/input behavior with focus-and-select,
+   Enter/blur submission, Escape cancellation, duplicate-submit protection,
+   and visible focus styling. Route the file-rail Rename action into the same
+   inline mode.
+2. Change the App rename callback to accept a name, save the active dirty note
+   when safe, reject empty names visibly, and preserve the existing refresh,
+   selection, and notification flow after a successful transaction.
+3. Change the typed bridge and Rust command to accept `{ name, relativePath }`.
+   Validate a single Markdown filename, resolve the current parent directory,
+   refuse collisions and traversal, and reuse the journaled link rewrite.
+4. Cover the breadcrumb interaction, Escape, save-before-rename, bridge
+   payload, filename validation, collision safety, and link updates. Update
+   feature documentation and the manual checklist.
+5. Run formatting, lint, type-check, targeted and full frontend tests, the
+   production build, Rust formatting, tests, and strict Clippy. Verify the
+   flow by keyboard at desktop and narrow sizes without console errors.
+
+### Expected files
+
+- `src/app/components/EditorSurface.tsx`
+- `src/app/App.tsx` and `src/app/App.test.tsx`
+- `src/lib/tauri/vault.ts` and `src/lib/tauri/vault.test.ts`
+- `src-tauri/src/vault.rs`
+- `src/styles/global.css`
+- `docs/FEATURES.md`, `docs/TEST_CHECKLIST.md`, `CHANGELOG.md`, and `PLANS.md`
+
+### Implementation result
+
+- The breadcrumb filename now opens an inline editor and supports Enter, blur,
+  and Escape without opening a native rename dialog.
+- The native command validates the requested Markdown basename and keeps the
+  rename in the current folder while preserving transaction safety.
+- The active note saves pending edits before renaming when safe; other dirty,
+  conflicted, or failed notes remain blocked.
+- Frontend formatting, lint, type-checking, 167 Vitest tests, and the Vite
+  production build pass. Rust formatting, strict Clippy, and 94 Rust tests
+  pass.
+- Rendered Vite smoke checks passed at desktop and 400px-wide viewports. The
+  native vault-backed interaction remains a Tauri-only manual verification
+  item because browser preview has no native IPC or vault picker.
+
 ## Completion
 
 - **Checks run:** Documentation diff checks; Prettier check; ESLint;
