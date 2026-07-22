@@ -45,6 +45,10 @@ function parseSettings(value: unknown): MarkdownSettings | null {
     editorFontSize,
     emoji: candidate.emoji,
     mermaid: candidate.mermaid,
+    showFileExtensions:
+      candidate.version === STORAGE_VERSION
+        ? candidate.showFileExtensions === true
+        : DEFAULT_MARKDOWN_SETTINGS.showFileExtensions,
     smartTypography: candidate.smartTypography,
     syntaxHighlighting: candidate.syntaxHighlighting,
     theme: isThemeId(candidate.theme)

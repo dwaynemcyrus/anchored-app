@@ -2079,6 +2079,28 @@ cancels, and the existing atomic link-update transaction remains authoritative.
   native vault-backed interaction remains a Tauri-only manual verification
   item because browser preview has no native IPC or vault picker.
 
+## Follow-up plan: restore filename extension display
+
+### Outcome
+
+Restore the Obsidian-like preference to hide file extensions visually while
+keeping stored filenames and rename-safe link behavior unchanged.
+
+### Implementation result
+
+- Added the persisted `showFileExtensions` setting, defaulting to hidden, with
+  safe migration for existing versioned settings.
+- Applied display formatting to the file rail, duplicate paths, breadcrumb,
+  inline rename field, backlinks, status bar, Quick Open, and vault search.
+- Inline rename now edits the displayed stem while preserving the original
+  Markdown extension exactly once in the native rename request.
+- Added helper, settings, UI, and App regression coverage.
+
+### Verification
+
+- Targeted settings, filename, and App tests pass; full formatting, lint,
+  type-check, test, and production-build verification remains required.
+
 ## Completion
 
 - **Checks run:** Documentation diff checks; Prettier check; ESLint;

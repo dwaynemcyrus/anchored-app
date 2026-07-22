@@ -1,11 +1,13 @@
 import { useId, useRef, useState } from "react";
 
 import type { QuickOpenResult } from "../retrieval";
+import { displayFileName, displayFilePath } from "../fileTypes";
 import { useModalDialog } from "./useModalDialog";
 
 type QuickOpenPaletteProps = {
   query: string;
   results: QuickOpenResult[];
+  showFileExtensions: boolean;
   onClose: () => void;
   onOpen: (documentId: string) => void;
   onQueryChange: (query: string) => void;
@@ -14,6 +16,7 @@ type QuickOpenPaletteProps = {
 export function QuickOpenPalette({
   query,
   results,
+  showFileExtensions,
   onClose,
   onOpen,
   onQueryChange,
@@ -106,13 +109,20 @@ export function QuickOpenPalette({
               onClick={() => onOpen(result.documentId)}
               onMouseEnter={() => setSelectedIndex(index)}
             >
-              <span className="retrieval-result__label">{result.label}</span>
+              <span className="retrieval-result__label">
+                {displayFileName(
+                  result.detail.split("/").pop() ?? result.label,
+                  showFileExtensions,
+                )}
+              </span>
               {result.matchedAlias ? (
                 <span className="retrieval-result__alias">
                   Alias: {result.matchedAlias}
                 </span>
               ) : null}
-              <span className="retrieval-result__detail">{result.detail}</span>
+              <span className="retrieval-result__detail">
+                {displayFilePath(result.detail, showFileExtensions)}
+              </span>
             </button>
           ))}
           {results.length === 0 ? (

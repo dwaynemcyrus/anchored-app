@@ -22,10 +22,16 @@ describe("SettingsModal Markdown options", () => {
 
     const dialog = screen.getByRole("dialog", { name: "Settings" });
     const toggles = screen.getAllByRole("checkbox");
-    expect(toggles).toHaveLength(5);
+    expect(toggles).toHaveLength(6);
+    const extensionToggle = screen.getByRole("checkbox", {
+      name: "Show file extensions",
+    });
     expect(
-      toggles.every((toggle) => (toggle as HTMLInputElement).checked),
+      toggles
+        .filter((toggle) => toggle !== extensionToggle)
+        .every((toggle) => (toggle as HTMLInputElement).checked),
     ).toBe(true);
+    expect(extensionToggle).not.toBeChecked();
     expect(
       screen.getByRole("combobox", { name: "Editor text size" }),
     ).toHaveValue("14");
@@ -33,7 +39,9 @@ describe("SettingsModal Markdown options", () => {
       "anchored",
     );
 
-    await user.click(toggles[0]);
+    await user.click(
+      screen.getByRole("checkbox", { name: "Automatically link bare URLs" }),
+    );
     expect(onMarkdownSettingsChange).toHaveBeenLastCalledWith({
       ...DEFAULT_MARKDOWN_SETTINGS,
       autoLinkUrls: false,
@@ -53,6 +61,11 @@ describe("SettingsModal Markdown options", () => {
     expect(onMarkdownSettingsChange).toHaveBeenLastCalledWith({
       ...DEFAULT_MARKDOWN_SETTINGS,
       theme: "light",
+    });
+    await user.click(extensionToggle);
+    expect(onMarkdownSettingsChange).toHaveBeenLastCalledWith({
+      ...DEFAULT_MARKDOWN_SETTINGS,
+      showFileExtensions: true,
     });
     expect(dialog).toHaveTextContent("Rendering options never rewrite");
     expect(dialog).toHaveTextContent("Typography");

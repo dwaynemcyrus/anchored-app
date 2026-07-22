@@ -45,6 +45,28 @@ export function fileExtension(fileName: string): string {
   return dot > 0 ? lastSegment.slice(dot + 1).toLocaleLowerCase() : "";
 }
 
+export function displayFileName(
+  fileName: string,
+  showFileExtensions: boolean,
+): string {
+  if (showFileExtensions) return fileName;
+  const lastSegment = fileName.split(/[\\/]/).pop() ?? fileName;
+  const dot = lastSegment.lastIndexOf(".");
+  if (dot <= 0) return fileName;
+  return fileName.slice(0, fileName.length - (lastSegment.length - dot));
+}
+
+export function displayFilePath(
+  filePath: string,
+  showFileExtensions: boolean,
+): string {
+  if (showFileExtensions) return filePath;
+  const separator = filePath.lastIndexOf("/");
+  const folder = separator >= 0 ? filePath.slice(0, separator + 1) : "";
+  const name = filePath.slice(separator + 1);
+  return `${folder}${displayFileName(name, false)}`;
+}
+
 export function fileTypeForName(fileName: string): FileType {
   const extension = fileExtension(fileName);
   if (!extension) return "unknown";
