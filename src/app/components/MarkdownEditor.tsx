@@ -54,6 +54,7 @@ type MarkdownEditorProps = {
   value: string;
   wikilinkCandidates: WikilinkCandidate[];
   onChange: (content: string) => void;
+  onCompositionChange?: (composing: boolean) => void;
   onCursorPosition: (position: EditorCursorPosition) => void;
   onOpenWikilink: (target: string) => void;
   onPreview: () => void;
@@ -71,6 +72,7 @@ export default function MarkdownEditor({
   value,
   wikilinkCandidates,
   onChange,
+  onCompositionChange,
   onCursorPosition,
   onOpenWikilink,
   onPreview,
@@ -82,6 +84,7 @@ export default function MarkdownEditor({
   const valueRef = useRef(value);
   const onChangeRef = useRef(onChange);
   const onOpenWikilinkRef = useRef(onOpenWikilink);
+  const onCompositionChangeRef = useRef(onCompositionChange);
   const onPreviewRef = useRef(onPreview);
   const onSaveRef = useRef(onSave);
   const onSaveAsRef = useRef(onSaveAs);
@@ -95,6 +98,7 @@ export default function MarkdownEditor({
   valueRef.current = value;
   onChangeRef.current = onChange;
   onOpenWikilinkRef.current = onOpenWikilink;
+  onCompositionChangeRef.current = onCompositionChange;
   onPreviewRef.current = onPreview;
   onSaveRef.current = onSave;
   onSaveAsRef.current = onSaveAs;
@@ -270,10 +274,12 @@ export default function MarkdownEditor({
           EditorView.domEventHandlers({
             compositionstart: () => {
               composingRef.current = true;
+              onCompositionChangeRef.current?.(true);
               return false;
             },
             compositionend: () => {
               composingRef.current = false;
+              onCompositionChangeRef.current?.(false);
               syncExternalValue(view);
               return false;
             },

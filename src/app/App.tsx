@@ -2372,44 +2372,58 @@ export function App() {
     }
   }
 
-  function openWikilink(target: string) {
-    const resolution = resolveWikilink(
-      target,
-      documentsRef.current,
-      activeDocumentId,
-    );
-    if (resolution.status === "resolved") {
-      void selectDocument(resolution.documentId);
-      return;
-    }
-    if (resolution.status === "ambiguous") {
-      const names = resolution.matches
-        .map(
-          (documentId) =>
-            documentsRef.current.find((document) => document.id === documentId)
-              ?.name,
-        )
-        .filter((name): name is string => Boolean(name));
-      addVaultNotice(
-        `[[${target}]] is ambiguous${
-          names.length > 0 ? `: ${names.join(", ")}.` : "."
-        }`,
+  const openWikilink = useCallback(
+    (target: string) => {
+      const resolution = resolveWikilink(
+        target,
+        documentsRef.current,
+        activeDocumentId,
       );
-      addHistoryEntry("A wikilink was ambiguous and was not opened.", {
+      if (resolution.status === "resolved") {
+        void selectDocument(resolution.documentId);
+        return;
+      }
+      if (resolution.status === "ambiguous") {
+        const names = resolution.matches
+          .map(
+            (documentId) =>
+              documentsRef.current.find(
+                (document) => document.id === documentId,
+              )?.name,
+          )
+          .filter((name): name is string => Boolean(name));
+        addVaultNotice(
+          `[[${target}]] is ambiguous${
+            names.length > 0 ? `: ${names.join(", ")}.` : "."
+          }`,
+        );
+        addHistoryEntry("A wikilink was ambiguous and was not opened.", {
+          kind: "link",
+        });
+        return;
+      }
+      if (wikilinkCreationName(target)) {
+        setMissingWikilinkError(undefined);
+        setMissingWikilinkTarget(target);
+        return;
+      }
+      addVaultNotice(`[[${target}]] does not match a note or alias.`);
+      addHistoryEntry("A wikilink did not match a note or alias.", {
         kind: "link",
       });
-      return;
-    }
-    if (wikilinkCreationName(target)) {
-      setMissingWikilinkError(undefined);
-      setMissingWikilinkTarget(target);
-      return;
-    }
-    addVaultNotice(`[[${target}]] does not match a note or alias.`);
-    addHistoryEntry("A wikilink did not match a note or alias.", {
-      kind: "link",
-    });
-  }
+    },
+    [activeDocumentId, addHistoryEntry, addVaultNotice, selectDocument],
+  );
+
+  useEffect(() => {
+    const unlistenPromise = listen<{ target: string }>(
+      "scratchpad-open-wikilink",
+      (event) => openWikilink(event.payload.target),
+    );
+    return () => {
+      void unlistenPromise.then((unlisten) => unlisten());
+    };
+  }, [openWikilink]);
 
   async function createMissingWikilinkNote() {
     if (!missingWikilinkTarget) return;

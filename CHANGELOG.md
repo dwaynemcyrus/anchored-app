@@ -8,6 +8,9 @@ Git commit. The format follows [Keep a Changelog], and releases follow
 
 ### Added
 
+- Scratchpad now uses the full Markdown editor, including CodeMirror editing,
+  wikilink completion and navigation, Markdown behavior, search, autosave,
+  and live updates for external file changes.
 - Anchored now watches the complete selected vault with a debounced native
   filesystem watcher. External creates, edits, deletes, and renames refresh
   the vault without polling; clean open notes reload automatically, while

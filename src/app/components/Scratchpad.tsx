@@ -1,4 +1,4 @@
-import { listen } from "@tauri-apps/api/event";
+import { emit, listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
@@ -14,6 +14,9 @@ import {
   type ScratchpadMode,
   type ScratchpadListItem,
 } from "../../lib/tauri/scratchpad";
+import { type VaultChangeBatch } from "../../lib/tauri/vault";
+import MarkdownEditor from "./MarkdownEditor";
+import type { WikilinkCandidate } from "../linkCandidates";
 import "../../styles/scratchpad.css";
 
 function errorMessage(error: unknown): string {
@@ -25,21 +28,38 @@ function initialMode(): ScratchpadMode {
   return mode === "previous" || mode === "list" ? mode : "new";
 }
 
+function scratchpadBody(source: string): string {
+  const match = source.match(/^\uFEFF?---\r?\n[\s\S]*?\r?\n---(?:\r?\n|$)/);
+  return match ? source.slice(match[0].length) : source;
+}
+
+function candidateForEditor(
+  candidate: ScratchpadLinkCandidate,
+  index: number,
+): WikilinkCandidate {
+  return {
+    activityAt: Date.now() - index,
+    detail: "Vault",
+    kind: "note",
+    label: candidate.label,
+    target: candidate.target,
+  };
+}
+
 export function Scratchpad() {
   const [body, setBody] = useState("");
+  const [source, setSource] = useState("");
+  const [composing, setComposing] = useState(false);
   const [document, setDocument] = useState<ScratchpadDocument>();
   const [candidates, setCandidates] = useState<ScratchpadLinkCandidate[]>([]);
-  const [composing, setComposing] = useState(false);
-  const [loading, setLoading] = useState(false);
   const [listVisible, setListVisible] = useState(false);
   const [notes, setNotes] = useState<ScratchpadListItem[]>([]);
   const [status, setStatus] = useState("Ready");
-  const [selectedSuggestion, setSelectedSuggestion] = useState(0);
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
   const bodyRef = useRef(body);
   const documentRef = useRef(document);
   const modeRequestRef = useRef(0);
   const savePromiseRef = useRef<Promise<boolean> | undefined>(undefined);
+  const [findRequest, setFindRequest] = useState(0);
   bodyRef.current = body;
   documentRef.current = document;
 
@@ -61,6 +81,7 @@ export function Scratchpad() {
           : await createScratchpadNote(bodyAtSave);
         documentRef.current = saved;
         setDocument(saved);
+        setSource(saved.persistedContent);
         setStatus(bodyRef.current === bodyAtSave ? "Saved" : "Unsaved");
       } catch (error) {
         setStatus(errorMessage(error));
@@ -91,7 +112,6 @@ export function Scratchpad() {
       const saved = await saveNow();
       if (requestId !== modeRequestRef.current) return;
       if (!saved) {
-        textareaRef.current?.focus();
         return;
       }
       if (mode === "list") {
@@ -99,14 +119,13 @@ export function Scratchpad() {
         await refreshList();
       } else if (mode === "new") {
         setListVisible(false);
-        setLoading(false);
         documentRef.current = undefined;
         bodyRef.current = "";
         setDocument(undefined);
         setBody("");
+        setSource("");
         setStatus("Ready");
       } else {
-        setLoading(true);
         setStatus("Opening…");
         try {
           const previous = await latestScratchpadNote();
@@ -115,16 +134,14 @@ export function Scratchpad() {
           bodyRef.current = previous?.body ?? "";
           setDocument(previous ?? undefined);
           setBody(previous?.body ?? "");
+          setSource(previous?.persistedContent ?? "");
           setStatus(previous ? "Saved" : "No previous Scratchpad note");
         } catch (error) {
           if (requestId === modeRequestRef.current) {
             setStatus(errorMessage(error));
           }
-        } finally {
-          if (requestId === modeRequestRef.current) setLoading(false);
         }
       }
-      window.setTimeout(() => textareaRef.current?.focus(), 0);
     },
     [refreshList, saveNow],
   );
@@ -132,7 +149,6 @@ export function Scratchpad() {
   const openListedNote = useCallback(
     async (relativePath: string) => {
       if (!(await saveNow())) return;
-      setLoading(true);
       setStatus("Opening…");
       try {
         const opened = await readScratchpadNote(relativePath);
@@ -140,12 +156,10 @@ export function Scratchpad() {
         bodyRef.current = opened.body;
         setDocument(opened);
         setBody(opened.body);
+        setSource(opened.persistedContent);
         setStatus("Saved");
-        window.setTimeout(() => textareaRef.current?.focus(), 0);
       } catch (error) {
         setStatus(errorMessage(error));
-      } finally {
-        setLoading(false);
       }
     },
     [saveNow],
@@ -154,8 +168,6 @@ export function Scratchpad() {
   useEffect(() => {
     if (initialMode() !== "new") {
       void openMode(initialMode());
-    } else {
-      window.setTimeout(() => textareaRef.current?.focus(), 0);
     }
     void loadScratchpadLinkCandidates()
       .then(setCandidates)
@@ -163,6 +175,42 @@ export function Scratchpad() {
     const unlistenPromise = listen<ScratchpadMode>(
       "scratchpad-mode",
       (event) => void openMode(event.payload),
+    );
+    const vaultChangesPromise = listen<VaultChangeBatch>(
+      "vault-changed",
+      (event) => {
+        const current = documentRef.current;
+        if (!current) {
+          void loadScratchpadLinkCandidates()
+            .then(setCandidates)
+            .catch(() => undefined);
+          return;
+        }
+        const changed = event.payload.changes.some(
+          (change) =>
+            change.relativePath === current.relativePath ||
+            change.oldRelativePath === current.relativePath,
+        );
+        if (changed) {
+          void readScratchpadNote(current.relativePath)
+            .then((external) => {
+              if (bodyRef.current === current.body) {
+                documentRef.current = external;
+                bodyRef.current = external.body;
+                setDocument(external);
+                setBody(external.body);
+                setSource(external.persistedContent);
+                setStatus("Updated from disk");
+              } else {
+                setStatus("The note changed outside Anchored.");
+              }
+            })
+            .catch(() => undefined);
+        }
+        void loadScratchpadLinkCandidates()
+          .then(setCandidates)
+          .catch(() => undefined);
+      },
     );
     const windowHandle = getCurrentWindow();
     const closePromise = windowHandle.onCloseRequested((event) => {
@@ -173,9 +221,39 @@ export function Scratchpad() {
     });
     return () => {
       void unlistenPromise.then((unlisten) => unlisten());
+      void vaultChangesPromise.then((unlisten) => unlisten());
       void closePromise.then((unlisten) => unlisten());
     };
   }, [openMode, saveNow]);
+
+  useEffect(() => {
+    const handler = (event: KeyboardEvent) => {
+      if (event.ctrlKey && event.altKey) {
+        const key = event.key.toLowerCase();
+        if (key === "n" || key === "p") {
+          event.preventDefault();
+          void openMode(key === "n" ? "new" : "previous");
+          return;
+        }
+        if (key === "s") {
+          event.preventDefault();
+          setListVisible((visible) => !visible);
+          if (!listVisible) void refreshList();
+          return;
+        }
+      }
+      if (
+        (event.metaKey || event.ctrlKey) &&
+        !event.altKey &&
+        event.key.toLowerCase() === "f"
+      ) {
+        event.preventDefault();
+        setFindRequest((current) => current + 1);
+      }
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [listVisible, openMode, refreshList]);
 
   useEffect(() => {
     if (composing || !body.trim() || body === document?.body) return;
@@ -184,38 +262,10 @@ export function Scratchpad() {
     return () => window.clearTimeout(timeout);
   }, [body, composing, document?.body, saveNow]);
 
-  const suggestions = useMemo(() => {
-    const textarea = textareaRef.current;
-    const cursor = textarea?.selectionStart ?? body.length;
-    const before = body.slice(0, cursor);
-    const opening = before.lastIndexOf("[[");
-    if (opening < 0) return [];
-    const query = before.slice(opening + 2);
-    if (query.includes("]]") || query.includes("\n")) return [];
-    const normalized = query.toLocaleLowerCase();
-    return candidates
-      .filter(
-        (candidate) =>
-          candidate.label.toLocaleLowerCase().includes(normalized) ||
-          candidate.target.toLocaleLowerCase().includes(normalized),
-      )
-      .slice(0, 8)
-      .map((candidate) => ({ ...candidate, opening, cursor }));
-  }, [body, candidates]);
-
-  function insertSuggestion(index: number) {
-    const suggestion = suggestions[index];
-    if (!suggestion) return;
-    const next = `${body.slice(0, suggestion.opening)}[[${suggestion.target}]]${body.slice(
-      suggestion.cursor,
-    )}`;
-    const cursor = suggestion.opening + suggestion.target.length + 4;
-    setBody(next);
-    window.setTimeout(() => {
-      textareaRef.current?.focus();
-      textareaRef.current?.setSelectionRange(cursor, cursor);
-    }, 0);
-  }
+  const editorCandidates = useMemo(
+    () => candidates.map(candidateForEditor),
+    [candidates],
+  );
 
   return (
     <main className="scratchpad-shell">
@@ -244,71 +294,28 @@ export function Scratchpad() {
         </button>
       </header>
       <div className={`scratchpad-workspace${listVisible ? " has-list" : ""}`}>
-        <textarea
-          ref={textareaRef}
-          aria-label="Scratchpad Markdown"
+        <MarkdownEditor
           autoFocus
-          disabled={loading}
-          placeholder="Capture a thought…"
-          spellCheck
-          value={body}
-          onCompositionEnd={(event) => {
-            const nextBody =
-              event.currentTarget.value || `${bodyRef.current}${event.data}`;
+          documentId={document?.relativePath ?? "scratchpad-new"}
+          editorFontSize={14}
+          findRequest={findRequest}
+          label="Scratchpad Markdown"
+          value={source}
+          wikilinkCandidates={editorCandidates}
+          onChange={(nextSource) => {
+            const nextBody = scratchpadBody(nextSource);
             bodyRef.current = nextBody;
             setBody(nextBody);
-            setComposing(false);
+            setSource(nextSource);
           }}
-          onCompositionStart={() => setComposing(true)}
-          onChange={(event) => {
-            setBody(event.target.value);
-            setSelectedSuggestion(0);
-          }}
-          onKeyDown={(event) => {
-            if (
-              event.ctrlKey &&
-              event.altKey &&
-              event.key.toLowerCase() === "n"
-            ) {
-              event.preventDefault();
-              void openMode("new");
-              return;
-            }
-            if (
-              event.ctrlKey &&
-              event.altKey &&
-              event.key.toLowerCase() === "s"
-            ) {
-              event.preventDefault();
-              const nextVisible = !listVisible;
-              setListVisible(nextVisible);
-              if (nextVisible) void refreshList();
-              return;
-            }
-            if (
-              event.ctrlKey &&
-              event.altKey &&
-              event.key.toLowerCase() === "p"
-            ) {
-              event.preventDefault();
-              void openMode("previous");
-              return;
-            }
-            if (suggestions.length === 0) return;
-            if (event.key === "ArrowDown" || event.key === "ArrowUp") {
-              event.preventDefault();
-              setSelectedSuggestion((current) =>
-                event.key === "ArrowDown"
-                  ? Math.min(suggestions.length - 1, current + 1)
-                  : Math.max(0, current - 1),
-              );
-            }
-            if (event.key === "Enter") {
-              event.preventDefault();
-              insertSuggestion(selectedSuggestion);
-            }
-            if (event.key === "Escape") setCandidates([]);
-          }}
+          onCompositionChange={setComposing}
+          onCursorPosition={() => undefined}
+          onOpenWikilink={(target) =>
+            void emit("scratchpad-open-wikilink", { target })
+          }
+          onPreview={() => undefined}
+          onSave={() => void saveNow()}
+          onSaveAs={() => undefined}
         />
         {listVisible ? (
           <aside aria-label="Scratchpad notes" className="scratchpad-note-list">
@@ -336,27 +343,6 @@ export function Scratchpad() {
           </aside>
         ) : null}
       </div>
-      {suggestions.length > 0 ? (
-        <div
-          className="scratchpad-suggestions"
-          role="listbox"
-          aria-label="Notes"
-        >
-          {suggestions.map((suggestion, index) => (
-            <button
-              aria-selected={index === selectedSuggestion}
-              key={suggestion.target}
-              role="option"
-              type="button"
-              onMouseDown={(event) => event.preventDefault()}
-              onClick={() => insertSuggestion(index)}
-            >
-              <span>{suggestion.label}</span>
-              <small>{suggestion.target}</small>
-            </button>
-          ))}
-        </div>
-      ) : null}
       <footer className="scratchpad-footer">
         <span>⌃⌥N New</span>
         <span>⌃⌥P Previous</span>
