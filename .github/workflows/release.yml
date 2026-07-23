@@ -4,13 +4,21 @@ on:
   push:
     tags:
       - "v*"
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: Existing version tag to publish
+        required: true
+        default: v0.1.1-alpha
 
 permissions:
   contents: write
 
 jobs:
   release:
-    runs-on: macos-13
+    runs-on: macos-15-intel
+    env:
+      RELEASE_TAG: ${{ inputs.release_tag || github.ref_name }}
     steps:
       - name: Check out source
         uses: actions/checkout@v4
@@ -26,7 +34,7 @@ jobs:
 
       - name: Verify release version
         run: |
-          node -e 'const fs = require("fs"); const expected = process.env.GITHUB_REF_NAME.slice(1); const files = ["package.json", "src-tauri/tauri.conf.json", "src-tauri/Cargo.toml"]; for (const file of files) { const source = fs.readFileSync(file, "utf8"); if (!source.includes(expected)) throw new Error(`${file} does not contain ${expected}`); }'
+          node -e 'const fs = require("fs"); const expected = process.env.RELEASE_TAG.slice(1); const files = ["package.json", "src-tauri/tauri.conf.json", "src-tauri/Cargo.toml"]; for (const file of files) { const source = fs.readFileSync(file, "utf8"); if (!source.includes(expected)) throw new Error(`${file} does not contain ${expected}`); }'
 
       - name: Build and publish signed release
         uses: tauri-apps/tauri-action@v0
@@ -37,8 +45,8 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD:
             ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
-          tagName: ${{ github.ref_name }}
-          releaseName: Anchored ${{ github.ref_name }}
+          tagName: ${{ env.RELEASE_TAG }}
+          releaseName: Anchored ${{ env.RELEASE_TAG }}
           releaseBody: Signed macOS release with in-app updater artifacts.
           releaseDraft: false
           prerelease: false
