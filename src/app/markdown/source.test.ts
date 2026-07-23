@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   hasNonUnixLineEndings,
   markdownBodyStart,
+  markdownBodyStartOffset,
   mergeCreatedMarkdownSource,
   normalizeMarkdownLineEndings,
 } from "./source";

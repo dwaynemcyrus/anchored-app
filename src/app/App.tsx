@@ -43,7 +43,6 @@ import {
   resolveWikilink,
   wikilinkCreationName,
 } from "./links";
-import { fileExtension } from "./fileTypes";
 import {
   buildWikilinkCandidates,
   type DocumentActivity,

@@ -159,26 +159,6 @@ export function SettingsModal({
           </label>
         </section>
         <section className="settings-section">
-          <h3>File display</h3>
-          <p>
-            Control whether file extensions appear in names, paths, search
-            results, and editor breadcrumbs.
-          </p>
-          <label className="settings-toggle">
-            <input
-              checked={markdownSettings.showFileExtensions}
-              type="checkbox"
-              onChange={(event) =>
-                onMarkdownSettingsChange({
-                  ...markdownSettings,
-                  showFileExtensions: event.target.checked,
-                })
-              }
-            />
-            <span>Show file extensions</span>
-          </label>
-        </section>
-        <section className="settings-section">
           <h3>File behavior</h3>
           <p>
             When a note moves in Finder, Anchored follows it and can keep its

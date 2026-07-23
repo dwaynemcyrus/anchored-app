@@ -32,7 +32,7 @@ describe("SettingsModal Markdown options", () => {
 
     const dialog = screen.getByRole("dialog", { name: "Settings" });
     const toggles = screen.getAllByRole("checkbox");
-    expect(toggles).toHaveLength(7);
+    expect(toggles).toHaveLength(8);
     const extensionToggle = screen.getByRole("checkbox", {
       name: "Show file extensions",
     });

@@ -35,6 +35,16 @@ export function markdownBodyStart(source: string): number | null {
   return null;
 }
 
+export function markdownBodyStartOffset(source: string): number | null {
+  if (!/^---(?:\n|$)/.test(source)) return null;
+
+  const closingFence = source.indexOf("\n---", 4);
+  if (closingFence < 0) return null;
+
+  const bodyStart = closingFence + 4;
+  return source[bodyStart] === "\n" ? bodyStart + 1 : bodyStart;
+}
+
 export function mergeCreatedMarkdownSource(
   originalSource: string,
   persistedSource: string,
