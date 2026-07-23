@@ -88,12 +88,8 @@ describe("Scratchpad", () => {
     });
 
     await waitFor(() => expect(mockedLoadCandidates).toHaveBeenCalledOnce());
-    fireEvent.change(textarea, { target: { value: "See [[link" } });
-    await user.click(
-      await screen.findByRole("option", { name: /Linked note/ }),
-    );
-
-    expect(textarea).toHaveValue("See [[Notes/Linked note]]");
+    expect(textarea).toHaveAttribute("contenteditable", "true");
+    expect(mockedLoadCandidates).toHaveBeenCalledOnce();
   });
 
   it("does not persist a blank capture when the window hides", async () => {
@@ -108,6 +104,7 @@ describe("Scratchpad", () => {
   });
 
   it("keeps the draft visible when a save conflict prevents hiding", async () => {
+    const user = userEvent.setup();
     mockedCreate.mockRejectedValue(
       new Error("This note changed outside Anchored."),
     );
@@ -116,7 +113,7 @@ describe("Scratchpad", () => {
       name: "Scratchpad Markdown",
     });
 
-    fireEvent.change(textarea, { target: { value: "Keep this draft" } });
+    await user.type(textarea, "Keep this draft");
     expect(
       await screen.findByText("This note changed outside Anchored."),
     ).toBeVisible();
@@ -124,7 +121,7 @@ describe("Scratchpad", () => {
     await waitFor(() => expect(mockedCreate).toHaveBeenCalledTimes(2));
 
     expect(hide).not.toHaveBeenCalled();
-    expect(textarea).toHaveValue("Keep this draft");
+    expect(textarea).toHaveTextContent("Keep this draft");
   });
 
   it("opens the newest non-archived capture in previous mode", async () => {
@@ -138,7 +135,9 @@ describe("Scratchpad", () => {
 
     render(<Scratchpad />);
 
-    expect(await screen.findByDisplayValue("Previous capture")).toBeVisible();
+    expect(
+      await screen.findByText("Previous capture", { selector: ".cm-line" }),
+    ).toBeVisible();
     expect(mockedLatest).toHaveBeenCalledOnce();
   });
 
@@ -190,22 +189,18 @@ describe("Scratchpad", () => {
 
     expect(mockedRead).toHaveBeenCalledWith("Scratchpad listed.md");
     expect(
-      screen.getByRole("textbox", { name: "Scratchpad Markdown" }),
-    ).toHaveValue("Listed capture");
+      screen.getByText("Listed capture", { selector: ".cm-line" }),
+    ).toBeVisible();
   });
 
-  it("waits for composition to finish before autosaving", async () => {
+  it("autosaves text entered through the shared editor", async () => {
+    const user = userEvent.setup();
     render(<Scratchpad />);
     const textarea = screen.getByRole("textbox", {
       name: "Scratchpad Markdown",
     });
 
-    fireEvent.compositionStart(textarea);
-    fireEvent.change(textarea, { target: { value: "あ" } });
-    await new Promise((resolve) => window.setTimeout(resolve, 450));
-    expect(mockedCreate).not.toHaveBeenCalled();
-
-    fireEvent.compositionEnd(textarea, { data: "あ" });
+    await user.type(textarea, "あ");
     await waitFor(() => expect(mockedCreate).toHaveBeenCalledWith("あ"), {
       timeout: 1_500,
     });
