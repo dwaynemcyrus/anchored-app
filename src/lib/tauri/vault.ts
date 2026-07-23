@@ -36,6 +36,50 @@ export type VaultSnapshot = {
   warnings: VaultWarnings;
 };
 
+export type TimestampMigrationTarget = {
+  expectedModifiedMillis: number;
+  expectedSizeBytes: number;
+  relativePath: string;
+};
+
+export type TimestampMigrationChange = {
+  after: string;
+  before: string;
+  line: number;
+  property: string;
+};
+
+export type TimestampMigrationCandidate = TimestampMigrationTarget & {
+  changes: TimestampMigrationChange[];
+};
+
+export type TimestampMigrationIssue = {
+  line?: number;
+  message: string;
+  property?: string;
+  relativePath: string;
+  value?: string;
+};
+
+export type TimestampMigrationPreview = {
+  candidates: TimestampMigrationCandidate[];
+  changedValues: number;
+  issues: TimestampMigrationIssue[];
+  scannedFiles: number;
+};
+
+export type TimestampMigrationOutcome = {
+  changedValues: number;
+  message?: string;
+  relativePath: string;
+  status: "applied" | "conflict" | "error" | "unchanged";
+};
+
+export type TimestampMigrationResult = {
+  outcomes: TimestampMigrationOutcome[];
+  snapshot: VaultSnapshot;
+};
+
 export type RememberedVault = {
   available: boolean;
   id: string;
@@ -205,6 +249,18 @@ export function forgetVault(vaultId: string): Promise<RememberedVault[]> {
 
 export function rescanVault(): Promise<VaultSnapshot | null> {
   return invoke<VaultSnapshot | null>("rescan_vault");
+}
+
+export function previewVaultTimestampMigration(): Promise<TimestampMigrationPreview> {
+  return invoke<TimestampMigrationPreview>("preview_vault_timestamp_migration");
+}
+
+export function applyVaultTimestampMigration(
+  candidates: TimestampMigrationTarget[],
+): Promise<TimestampMigrationResult> {
+  return invoke<TimestampMigrationResult>("apply_vault_timestamp_migration", {
+    candidates,
+  });
 }
 
 export function listVaultTrash(): Promise<TrashEntry[]> {

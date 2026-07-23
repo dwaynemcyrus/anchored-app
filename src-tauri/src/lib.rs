@@ -29,6 +29,8 @@ pub fn run() {
             vault::open_remembered_vault,
             vault::forget_vault,
             vault::rescan_vault,
+            vault::preview_vault_timestamp_migration,
+            vault::apply_vault_timestamp_migration,
             vault::list_vault_trash,
             vault::move_vault_file_to_trash,
             vault::restore_vault_file_from_trash,
