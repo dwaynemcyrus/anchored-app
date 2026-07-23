@@ -7,34 +7,51 @@ import {
 } from "../markdown/types";
 import { THEME_OPTIONS } from "../theme/palettes";
 import type { ThemeId } from "../theme/types";
+import type { TimestampMigrationPreview } from "../../lib/tauri/vault";
 import { useModalDialog } from "./useModalDialog";
 
 type SettingsModalProps = {
   markdownSettings: MarkdownSettings;
   reloading: boolean;
+  timestampMigrationBlocked: boolean;
+  timestampMigrationBusy: boolean;
+  timestampMigrationError?: string;
+  timestampMigrationMessage?: string;
+  timestampMigrationPreview?: TimestampMigrationPreview;
   updateError?: string;
   updateNotes?: string;
   updateStatus:
     "available" | "checking" | "error" | "idle" | "current" | "installing";
   updateVersion?: string;
+  vaultSelected: boolean;
   onClose: () => void;
+  onApplyTimestampMigration: () => void;
   onCheckForUpdates: () => void;
   onInstallUpdate: () => void;
   onMarkdownSettingsChange: (settings: MarkdownSettings) => void;
+  onPreviewTimestampMigration: () => void;
   onReload: () => void;
 };
 
 export function SettingsModal({
   markdownSettings,
   reloading,
+  timestampMigrationBlocked,
+  timestampMigrationBusy,
+  timestampMigrationError,
+  timestampMigrationMessage,
+  timestampMigrationPreview,
   updateError,
   updateNotes,
   updateStatus,
   updateVersion,
+  vaultSelected,
   onClose,
+  onApplyTimestampMigration,
   onCheckForUpdates,
   onInstallUpdate,
   onMarkdownSettingsChange,
+  onPreviewTimestampMigration,
   onReload,
 }: SettingsModalProps) {
   const closeButtonRef = useRef<HTMLButtonElement>(null);
@@ -209,6 +226,92 @@ export function SettingsModal({
             />
             <span>Render Mermaid diagrams in Preview</span>
           </label>
+        </section>
+        <section className="settings-section">
+          <h3>Frontmatter timestamps</h3>
+          <p>
+            Normalize exact timestamp values to RFC 3339 with your local offset,
+            such as <code>2026-07-23T14:30:00+02:00</code>. Date-only values
+            remain unchanged. Preview this migration before applying it to
+            existing notes.
+          </p>
+          <button
+            disabled={!vaultSelected || timestampMigrationBusy}
+            type="button"
+            onClick={onPreviewTimestampMigration}
+          >
+            {timestampMigrationBusy && !timestampMigrationPreview
+              ? "Preparing preview…"
+              : "Preview timestamp migration"}
+          </button>
+          {!vaultSelected ? (
+            <p>Open a vault to inspect its timestamps.</p>
+          ) : null}
+          {timestampMigrationPreview ? (
+            <div aria-live="polite">
+              <p>
+                Scanned {timestampMigrationPreview.scannedFiles} file
+                {timestampMigrationPreview.scannedFiles === 1 ? "" : "s"};{" "}
+                {timestampMigrationPreview.candidates.length} file
+                {timestampMigrationPreview.candidates.length === 1
+                  ? ""
+                  : "s"}{" "}
+                can be normalized across{" "}
+                {timestampMigrationPreview.changedValues} value
+                {timestampMigrationPreview.changedValues === 1 ? "" : "s"}.
+              </p>
+              {timestampMigrationPreview.issues.length > 0 ? (
+                <details>
+                  <summary>
+                    {timestampMigrationPreview.issues.length} value
+                    {timestampMigrationPreview.issues.length === 1
+                      ? ""
+                      : "s"}{" "}
+                    skipped
+                  </summary>
+                  <ul>
+                    {timestampMigrationPreview.issues
+                      .slice(0, 10)
+                      .map((issue) => (
+                        <li
+                          key={`${issue.relativePath}:${issue.line ?? "file"}:${issue.property ?? "unknown"}`}
+                        >
+                          {issue.relativePath}
+                          {issue.property ? ` · ${issue.property}` : ""}:{" "}
+                          {issue.message}
+                        </li>
+                      ))}
+                  </ul>
+                </details>
+              ) : null}
+              <button
+                className="continuity-panel__primary"
+                disabled={
+                  timestampMigrationBusy ||
+                  timestampMigrationBlocked ||
+                  timestampMigrationPreview.candidates.length === 0
+                }
+                type="button"
+                onClick={onApplyTimestampMigration}
+              >
+                {timestampMigrationBusy
+                  ? "Applying migration…"
+                  : timestampMigrationBlocked
+                    ? "Finish active saves first"
+                    : `Apply to ${timestampMigrationPreview.candidates.length} file${
+                        timestampMigrationPreview.candidates.length === 1
+                          ? ""
+                          : "s"
+                      }`}
+              </button>
+            </div>
+          ) : null}
+          {timestampMigrationError ? (
+            <p role="alert">{timestampMigrationError}</p>
+          ) : null}
+          {timestampMigrationMessage ? (
+            <p role="status">{timestampMigrationMessage}</p>
+          ) : null}
         </section>
         <section className="settings-section">
           <h3>Updates</h3>

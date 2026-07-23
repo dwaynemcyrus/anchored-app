@@ -1400,6 +1400,136 @@ and preserves link integrity across filename changes.
       from lifecycle/link indexes, and exposes recovery/reload actions. Three-
       way merging remains intentionally deferred to 22D.
 
+23. [x] **Epic: Normalize vault timestamp front matter**
+    - Outcome: Every frontmatter value that represents an exact moment follows
+      one portable vault convention: RFC 3339, second precision, and the
+      numeric local offset at the represented instant. Date-only values remain
+      date-only. Anchored-created and user-authored timestamp properties use
+      the same rule, while unknown or ambiguous metadata is never guessed at.
+    - Product decision: Detect timestamp values by their exact RFC 3339 shape,
+      not by an arbitrary allowlist of property names. This lets future fields
+      such as `published_at` work without a code change while avoiding edits to
+      ordinary strings. Existing `Z` values are eligible for an explicit,
+      previewed migration to the equivalent local offset; no bulk rewrite runs
+      automatically on vault open. Existing values with fractions, invalid
+      offsets, date-only values, or ambiguous YAML structure are reported and
+      left unchanged.
+    - Timestamp rules: New and successfully saved timestamp values use
+      `YYYY-MM-DDTHH:mm:ss±HH:MM`, with no fractional seconds. Basel uses
+      `+02:00` during CEST and `+01:00` during CET. The numeric offset records
+      the instant and local representation; an IANA zone such as
+      `Europe/Zurich` is not added to every property unless a later product
+      decision requires preserving the user's zone identity separately.
+    - Safety rules: Migration is preview-first and operates only on a backup
+      or disposable vault during development. The apply step carries the
+      source revision for every candidate, refuses externally changed files,
+      writes each file atomically, preserves comments/order/quotes/BOM/line
+      endings and unknown YAML, and returns per-file success, skip, and error
+      results. A failed file never causes a partial rewrite of that file.
+
+    23A. [x] **Define the timestamp grammar and source-preserving transformer**
+        - Expected files: `src-tauri/src/metadata.rs`, focused Rust tests,
+          `docs/MARKDOWN_SPEC.md`, and `PROJECT.md`.
+        - Change: Centralize canonical local-offset formatting, exact-value
+          recognition, conversion that preserves the represented instant, and
+          source-range edits for top-level and safely addressable YAML scalar
+          properties. Keep date-only values and unsupported/ambiguous values
+          untouched. Replaced the old lifecycle-only open-time backfill with
+          the broader explicit migration contract.
+        - Verify: Cover Basel summer/winter offsets, UTC conversion across
+          date/year boundaries, already-local values, quoted/unquoted values,
+          comments, CRLF/LF, BOM, duplicate keys, malformed front matter,
+          fractional seconds, date-only values, nested/ambiguous YAML, and
+          exact byte preservation outside changed scalar values.
+        - Risk/rollback: A generic YAML rewrite can damage Obsidian/plugin
+          metadata. Restrict edits to proven source ranges, refuse ambiguity,
+          and retain the original bytes on every parse or validation failure.
+
+    23B. [x] **Add previewed native vault migration**
+        - Expected files: `src-tauri/src/vault.rs`, `src-tauri/src/lib.rs`,
+          `src/lib/tauri/vault.ts`, and Rust/bridge tests.
+        - Change: Add typed preview and apply commands. Preview scans eligible
+          Markdown files and returns relative paths, property locations,
+          before/after values, skipped reasons, and source signatures. Apply
+          rechecks every signature, serializes with the existing vault
+          mutation guard, writes atomically, refreshes the metadata index, and
+          reports conflicts without overwriting external edits.
+        - Verify: Synthetic and disposable-vault tests cover empty and large
+          vaults, multiple properties per note, no-front-matter notes, hidden
+          paths, non-UTF-8/oversized files, external changes between preview
+          and apply, atomic-write failures, repeatability, and represented-
+          instant equality before and after conversion.
+        - Risk/rollback: A bulk operation can touch many user files. Require
+          explicit apply after preview, show the exact candidate count, and
+          provide a recoverable report; never silently retry a conflict.
+
+    23C. [x] **Normalize future authored timestamp values**
+        - Expected files: `src-tauri/src/vault.rs`, `src/app/App.tsx`,
+          `src/app/documents.ts`, and focused save/creation tests.
+        - Change: Route new-note creation, Save As, Scratchpad creation, and
+          successful manual/autosaves through the shared transformer so exact
+          timestamp values entered in front matter are canonicalized before
+          persistence. Keep lifecycle field semantics (`created_at` once,
+          `updated_at` on authored saves, `archived_at` on archive) unchanged.
+          Avoid save loops by comparing authored source separately from
+          Anchored-managed metadata.
+        - Verify: Cover arbitrary future keys (`published_at`, `reviewed_at`),
+          multiple timestamp values, edits that are not timestamps, date-only
+          values, failed/conflicted saves, external edits, Save As, and
+          Scratchpad autosave. Confirm the UI source reflects the persisted
+          normalized value after a successful save.
+        - Risk/rollback: Silent normalization can surprise users or rewrite
+          plugin-owned fields. Limit automatic changes to exact RFC 3339
+          values, surface a save notice when normalization occurs, and leave
+          malformed or ambiguous values unchanged.
+
+    23D. [x] **Add migration UI and documentation**
+        - Expected files: `src/app/components/SettingsModal.tsx` or a focused
+          timestamp migration dialog, `src/app/App.tsx`, frontend tests,
+          `docs/FEATURES.md`, `docs/TEST_CHECKLIST.md`, `CHANGELOG.md`, and
+          `PLANS.md`.
+        - Change: Add an accessible, keyboard-complete preview/apply flow that
+          explains local offsets, distinguishes changed/skipped/error files,
+          disables apply while saves or conflicts are active, and refreshes
+          the vault after completion. Document the vault-wide convention,
+          date-only exception, unsupported-value behavior, backup requirement,
+          and sample Basel timestamps.
+        - Verify: Test no-vault, empty, preview, zero-change, mixed-result,
+          error, cancellation, keyboard, focus, 200% zoom, and reduced-motion
+          states. Run the complete frontend and native quality gates plus a
+          manual migration against a verified vault backup and compare source
+          bytes before and after.
+        - Risk/rollback: A migration control must be discoverable without
+          becoming an accidental destructive action. Make preview the default,
+          label the operation clearly, and keep the original backup workflow
+          in the checklist.
+
+    - Implementation result (2026-07-23): Chunks 23A–23D are implemented.
+      Exact top-level scalar timestamp values now use second-precision local
+      RFC 3339 offsets during authored writes. Existing eligible values use a
+      preview-first Settings migration with source signatures, atomic writes,
+      conflict protection, and per-file outcomes. Date-only, fractional,
+      malformed, nested, and ambiguous values remain unchanged and are
+      reported where safely addressable. Vault activation no longer performs a
+      hidden bulk rewrite.
+
+24. [x] **Epic: Add a disposable development fixture vault**
+    - Outcome: Development builds open a resettable 48-file fixture vault by
+      default so browser and desktop testing begin with representative content
+      without touching a real vault or the checked-in fixture files.
+    - Product decision: The fixture is development-only. Native development
+      copies it into an isolated application cache directory; browser-only Vite
+      runs use an in-memory copy. Production builds retain normal vault and
+      session behavior.
+    - Coverage: Include Inbox, Scratchpad, Workbench, Archive, nested folders,
+      projects, reading, aliases, tags, timestamps, wikilinks, backlinks,
+      unresolved links, tasks, tables, callouts, Mermaid, math, code, and
+      non-Markdown assets.
+    - Implementation result (2026-07-23): Added 46 Markdown notes and 2 assets
+      under `fixtures/dev-vault`, native reset-on-start copying, browser fixture
+      bridge behavior, and automatic development startup selection. The
+      fixture is documented in `docs/DEV_FIXTURE.md`.
+
 ## Requirements for future large plans
 
 Every future large plan must identify:

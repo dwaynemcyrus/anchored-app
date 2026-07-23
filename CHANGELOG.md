@@ -8,6 +8,9 @@ Git commit. The format follows [Keep a Changelog], and releases follow
 
 ### Added
 
+- Added a development-only 48-file fixture vault that opens automatically for
+  browser and desktop testing, covering representative Markdown, metadata,
+  links, collections, and assets without touching real vaults.
 - Restored the Settings option to hide file extensions throughout the
   interface, including the file rail, search results, backlinks, status bar,
   editor breadcrumb, and inline rename field. Hidden extensions remain intact
@@ -35,7 +38,7 @@ Git commit. The format follows [Keep a Changelog], and releases follow
   and Assets views with live counts. Workbench starts expanded as a flat list
   sorted by Last Edited, supports grouped/type and bidirectional date/name
   sorting, and persists those choices; Files preserves physical navigation.
-- Anchored-created notes now receive second-precision UTC `created_at`
+- Anchored-created notes now receive second-precision local-offset `created_at`
   metadata. Archiving writes `status: archived` and `archived_at`, opens the
   note in sanitized read-only Preview, and offers explicit restore actions for
   Inbox or Workbench.
@@ -50,6 +53,10 @@ Git commit. The format follows [Keep a Changelog], and releases follow
   and Notes while Anchored is active; system-wide shortcuts remain deferred.
 - Non-empty folder deletion now warns before proceeding and requires typing
   `delete folder`; confirmed folders move as one recoverable Trash entry.
+- Added a preview-first Settings migration for timestamp-valued front matter.
+  Exact RFC 3339 instants are normalized to local numeric offsets in existing
+  notes and during future authored saves; date-only and ambiguous values remain
+  unchanged and are reported.
 
 - Anchored now supports the Markdown v1 rendering pipeline, including
   CommonMark, GFM tables, footnotes, task lists, definition lists, math,
@@ -119,10 +126,8 @@ Git commit. The format follows [Keep a Changelog], and releases follow
   the Mac's local timezone.
 - New lifecycle timestamps are now written in the Mac's local timezone with a
   numeric RFC 3339 offset instead of `Z` UTC notation. Existing UTC timestamps
-  remain readable.
-- When a vault is selected or reopened, existing canonical UTC lifecycle
-  timestamps across its Markdown documents are backfilled to local offsets
-  without changing the represented date and time.
+  remain readable and can be converted through the explicit timestamp migration
+  in Settings.
 - Vault refresh now reuses a versioned native metadata index keyed by relative
   path, size, and modification time. Unchanged notes are not reread, malformed
   caches rebuild automatically, and focus refresh runs off the UI thread.

@@ -26,9 +26,9 @@ use crate::continuity::{
 };
 use crate::links::{plan_rename_link_rewrites_by_path, LinkNote, LinkSource};
 use crate::metadata::{
-    archive_note, archive_note_with_type, backfill_local_lifecycle_timestamps,
-    inspect_note_aliases, inspect_note_properties, inspect_wikilinks, restore_note,
-    restore_note_with_type, split_note_source, stamp_note_created_at, stamp_note_updated_at,
+    archive_note, archive_note_with_type, inspect_note_aliases, inspect_note_properties,
+    inspect_wikilinks, normalize_front_matter_timestamps, restore_note, restore_note_with_type,
+    split_note_source, stamp_note_created_at, stamp_note_updated_at,
 };
 
 const MAX_VAULT_ENTRIES: usize = 50_000;
@@ -98,6 +98,67 @@ pub struct VaultSnapshot {
     pub name: String,
     pub vault_id: String,
     pub warnings: VaultWarnings,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TimestampMigrationTarget {
+    pub expected_modified_millis: u64,
+    pub expected_size_bytes: u64,
+    pub relative_path: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TimestampMigrationChange {
+    pub after: String,
+    pub before: String,
+    pub line: usize,
+    pub property: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TimestampMigrationCandidate {
+    pub changes: Vec<TimestampMigrationChange>,
+    pub expected_modified_millis: u64,
+    pub expected_size_bytes: u64,
+    pub relative_path: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TimestampMigrationIssue {
+    pub line: Option<usize>,
+    pub message: String,
+    pub property: Option<String>,
+    pub relative_path: String,
+    pub value: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TimestampMigrationPreview {
+    pub candidates: Vec<TimestampMigrationCandidate>,
+    pub changed_values: usize,
+    pub issues: Vec<TimestampMigrationIssue>,
+    pub scanned_files: usize,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TimestampMigrationOutcome {
+    pub changed_values: usize,
+    pub message: Option<String>,
+    pub relative_path: String,
+    pub status: String,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TimestampMigrationResult {
+    pub outcomes: Vec<TimestampMigrationOutcome>,
+    pub snapshot: VaultSnapshot,
 }
 
 #[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq, Hash)]
@@ -515,6 +576,15 @@ pub async fn open_remembered_vault(
 }
 
 #[tauri::command]
+pub async fn open_development_vault(
+    app: AppHandle,
+    state: State<'_, VaultState>,
+) -> Result<VaultSnapshot, VaultError> {
+    let root = prepare_development_vault(&app)?;
+    activate_vault(&app, &state, root)
+}
+
+#[tauri::command]
 pub async fn forget_vault(
     app: AppHandle,
     vault_id: String,
@@ -542,6 +612,36 @@ pub async fn rescan_vault(
     })
     .await
     .map_err(|error| VaultError::state(format!("Vault refresh could not finish: {error}")))?
+}
+
+#[tauri::command]
+pub async fn preview_vault_timestamp_migration(
+    state: State<'_, VaultState>,
+) -> Result<TimestampMigrationPreview, VaultError> {
+    let root = selected_vault_root(&state, "previewing timestamp migration")?;
+    tauri::async_runtime::spawn_blocking(move || preview_timestamp_migration(&root))
+        .await
+        .map_err(|error| {
+            VaultError::state(format!(
+                "Timestamp migration preview could not finish: {error}"
+            ))
+        })?
+}
+
+#[tauri::command]
+pub async fn apply_vault_timestamp_migration(
+    app: AppHandle,
+    state: State<'_, VaultState>,
+    candidates: Vec<TimestampMigrationTarget>,
+) -> Result<TimestampMigrationResult, VaultError> {
+    let _rename_guard = state
+        .rename_transaction
+        .lock()
+        .map_err(|_| VaultError::state("The timestamp migration lock could not be acquired."))?;
+    let root = selected_vault_root(&state, "applying timestamp migration")?;
+    let outcomes = apply_timestamp_migration(&root, &candidates)?;
+    let snapshot = build_vault_snapshot(&app, &root, state.metadata_cache.as_ref())?;
+    Ok(TimestampMigrationResult { outcomes, snapshot })
 }
 
 #[tauri::command]
@@ -690,7 +790,6 @@ fn activate_vault(
     state: &State<'_, VaultState>,
     root: PathBuf,
 ) -> Result<VaultSnapshot, VaultError> {
-    backfill_vault_timestamps(&root)?;
     let snapshot = build_vault_snapshot(app, &root, state.metadata_cache.as_ref())?;
     remember_vault(
         &registry_path(app)?,
@@ -707,41 +806,343 @@ fn activate_vault(
     Ok(snapshot)
 }
 
-fn backfill_vault_timestamps(root: &Path) -> Result<usize, VaultError> {
-    let root = canonical_vault_root(root)?;
-    let snapshot = scan_vault(&root)?;
-    let mut updated_files = 0;
+fn prepare_development_vault(app: &AppHandle) -> Result<PathBuf, VaultError> {
+    #[cfg(debug_assertions)]
+    {
+        let source = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../fixtures/dev-vault");
+        if !source.is_dir() {
+            return Err(VaultError::state(
+                "The development fixture vault is missing from the repository.",
+            ));
+        }
 
-    for file in snapshot.files {
-        let path = resolve_vault_markdown_file(&root, &file.relative_path)?;
-        let metadata = fs::metadata(&path)
-            .map_err(|error| VaultError::io("A Markdown file could not be inspected", error))?;
-        if metadata.len() > MAX_MARKDOWN_FILE_BYTES {
-            continue;
-        }
-        let content = String::from_utf8(
-            fs::read(&path)
-                .map_err(|error| VaultError::io("A Markdown file could not be read", error))?,
-        )
-        .map_err(|_| VaultError::invalid_encoding())?;
-        let Some(updated) = backfill_local_lifecycle_timestamps(&content).map_err(|error| {
-            VaultError::lifecycle(format!(
-                "Anchored could not backfill timestamps safely: {error}."
+        let cache = app.path().app_cache_dir().map_err(|error| {
+            VaultError::state(format!(
+                "The development fixture location is unavailable: {error}"
             ))
-        })?
-        else {
-            continue;
-        };
-        let temporary_path = temporary_sibling_path(&path)?;
-        let write_result = write_atomically(&temporary_path, &path, &updated, &metadata);
-        if write_result.is_err() {
-            let _ = fs::remove_file(&temporary_path);
+        })?;
+        fs::create_dir_all(&cache).map_err(|error| {
+            VaultError::io("The development fixture cache could not be created", error)
+        })?;
+        let destination = cache.join("dev-vault");
+        if let Ok(metadata) = fs::symlink_metadata(&destination) {
+            if metadata.file_type().is_symlink() || !metadata.is_dir() {
+                return Err(VaultError::invalid(
+                    "The development fixture cache is not a normal directory.",
+                ));
+            }
+            fs::remove_dir_all(&destination).map_err(|error| {
+                VaultError::io("The previous development fixture could not be reset", error)
+            })?;
         }
-        write_result?;
-        updated_files += 1;
+        copy_development_fixture(&source, &destination)?;
+        return Ok(destination);
     }
 
-    Ok(updated_files)
+    #[cfg(not(debug_assertions))]
+    {
+        let _ = app;
+        Err(VaultError::state(
+            "The development fixture is available only in development builds.",
+        ))
+    }
+}
+
+#[cfg(debug_assertions)]
+fn copy_development_fixture(source: &Path, destination: &Path) -> Result<(), VaultError> {
+    fs::create_dir_all(destination)
+        .map_err(|error| VaultError::io("The development fixture could not be created", error))?;
+    for entry in fs::read_dir(source)
+        .map_err(|error| VaultError::io("The development fixture could not be read", error))?
+    {
+        let entry = entry
+            .map_err(|error| VaultError::io("The development fixture could not be read", error))?;
+        let source_path = entry.path();
+        let destination_path = destination.join(entry.file_name());
+        let file_type = entry.file_type().map_err(|error| {
+            VaultError::io("The development fixture could not be inspected", error)
+        })?;
+        if file_type.is_symlink() {
+            return Err(VaultError::invalid(
+                "The development fixture cannot contain symlinks.",
+            ));
+        }
+        if file_type.is_dir() {
+            copy_development_fixture(&source_path, &destination_path)?;
+        } else if file_type.is_file() {
+            fs::copy(&source_path, &destination_path).map_err(|error| {
+                VaultError::io("The development fixture file could not be copied", error)
+            })?;
+        }
+    }
+    Ok(())
+}
+
+fn preview_timestamp_migration(root: &Path) -> Result<TimestampMigrationPreview, VaultError> {
+    let root = canonical_vault_root(root)?;
+    let snapshot = scan_vault(&root)?;
+    let mut candidates = Vec::new();
+    let mut changed_values = 0;
+    let mut issues = Vec::new();
+    let mut scanned_files = 0;
+
+    for file in snapshot.files {
+        if file.is_recovery_copy {
+            continue;
+        }
+        scanned_files += 1;
+        let path = match resolve_vault_markdown_file(&root, &file.relative_path) {
+            Ok(path) => path,
+            Err(error) => {
+                issues.push(timestamp_migration_issue(
+                    &file.relative_path,
+                    None,
+                    None,
+                    error.message,
+                    None,
+                ));
+                continue;
+            }
+        };
+        let metadata = match fs::metadata(&path) {
+            Ok(metadata) => metadata,
+            Err(error) => {
+                issues.push(timestamp_migration_issue(
+                    &file.relative_path,
+                    None,
+                    None,
+                    "A Markdown file could not be inspected.".to_owned(),
+                    Some(error.to_string()),
+                ));
+                continue;
+            }
+        };
+        if metadata.len() > MAX_MARKDOWN_FILE_BYTES {
+            issues.push(timestamp_migration_issue(
+                &file.relative_path,
+                None,
+                None,
+                "The Markdown file is too large to migrate safely.".to_owned(),
+                None,
+            ));
+            continue;
+        }
+        let content = match fs::read(&path)
+            .ok()
+            .and_then(|bytes| String::from_utf8(bytes).ok())
+        {
+            Some(content) => content,
+            None => {
+                issues.push(timestamp_migration_issue(
+                    &file.relative_path,
+                    None,
+                    None,
+                    "The Markdown file is not valid UTF-8.".to_owned(),
+                    None,
+                ));
+                continue;
+            }
+        };
+        let normalization = match normalize_front_matter_timestamps(&content) {
+            Ok(normalization) => normalization,
+            Err(error) => {
+                issues.push(timestamp_migration_issue(
+                    &file.relative_path,
+                    None,
+                    None,
+                    "Front matter could not be inspected safely.".to_owned(),
+                    Some(error.to_string()),
+                ));
+                continue;
+            }
+        };
+        issues.extend(
+            normalization
+                .skips
+                .into_iter()
+                .map(|skip| TimestampMigrationIssue {
+                    line: Some(skip.line),
+                    message: skip.reason,
+                    property: Some(skip.property),
+                    relative_path: file.relative_path.clone(),
+                    value: Some(skip.value),
+                }),
+        );
+        if normalization.changes.is_empty() {
+            continue;
+        }
+        changed_values += normalization.changes.len();
+        candidates.push(TimestampMigrationCandidate {
+            changes: normalization
+                .changes
+                .into_iter()
+                .map(|change| TimestampMigrationChange {
+                    after: change.after,
+                    before: change.before,
+                    line: change.line,
+                    property: change.property,
+                })
+                .collect(),
+            expected_modified_millis: file.modified_millis,
+            expected_size_bytes: metadata.len(),
+            relative_path: file.relative_path,
+        });
+    }
+
+    Ok(TimestampMigrationPreview {
+        candidates,
+        changed_values,
+        issues,
+        scanned_files,
+    })
+}
+
+fn apply_timestamp_migration(
+    root: &Path,
+    candidates: &[TimestampMigrationTarget],
+) -> Result<Vec<TimestampMigrationOutcome>, VaultError> {
+    let root = canonical_vault_root(root)?;
+    let mut outcomes = Vec::with_capacity(candidates.len());
+
+    for candidate in candidates {
+        let path = match resolve_vault_markdown_file(&root, &candidate.relative_path) {
+            Ok(path) => path,
+            Err(error) => {
+                outcomes.push(timestamp_migration_outcome(
+                    &candidate.relative_path,
+                    "error",
+                    0,
+                    Some(error.message),
+                ));
+                continue;
+            }
+        };
+        let metadata = match fs::metadata(&path) {
+            Ok(metadata) => metadata,
+            Err(error) => {
+                outcomes.push(timestamp_migration_outcome(
+                    &candidate.relative_path,
+                    "error",
+                    0,
+                    Some(format!("A Markdown file could not be inspected: {error}")),
+                ));
+                continue;
+            }
+        };
+        let signature = file_signature_from_metadata(&metadata);
+        if signature.size_bytes != candidate.expected_size_bytes
+            || signature.modified_millis != candidate.expected_modified_millis
+        {
+            outcomes.push(timestamp_migration_outcome(
+                &candidate.relative_path,
+                "conflict",
+                0,
+                Some("The file changed after the migration preview.".to_owned()),
+            ));
+            continue;
+        }
+        let content = match fs::read(&path)
+            .ok()
+            .and_then(|bytes| String::from_utf8(bytes).ok())
+        {
+            Some(content) => content,
+            None => {
+                outcomes.push(timestamp_migration_outcome(
+                    &candidate.relative_path,
+                    "error",
+                    0,
+                    Some("The Markdown file is not valid UTF-8.".to_owned()),
+                ));
+                continue;
+            }
+        };
+        let normalization = match normalize_front_matter_timestamps(&content) {
+            Ok(normalization) => normalization,
+            Err(error) => {
+                outcomes.push(timestamp_migration_outcome(
+                    &candidate.relative_path,
+                    "error",
+                    0,
+                    Some(format!(
+                        "Front matter could not be normalized safely: {error}"
+                    )),
+                ));
+                continue;
+            }
+        };
+        if normalization.changes.is_empty() {
+            outcomes.push(timestamp_migration_outcome(
+                &candidate.relative_path,
+                "unchanged",
+                0,
+                Some("No eligible timestamp values remain to normalize.".to_owned()),
+            ));
+            continue;
+        }
+
+        let temporary_path = match temporary_sibling_path(&path) {
+            Ok(path) => path,
+            Err(error) => {
+                outcomes.push(timestamp_migration_outcome(
+                    &candidate.relative_path,
+                    "error",
+                    0,
+                    Some(error.message),
+                ));
+                continue;
+            }
+        };
+        if let Err(error) =
+            write_atomically(&temporary_path, &path, &normalization.content, &metadata)
+        {
+            let _ = fs::remove_file(&temporary_path);
+            outcomes.push(timestamp_migration_outcome(
+                &candidate.relative_path,
+                "error",
+                0,
+                Some(error.message),
+            ));
+            continue;
+        }
+        outcomes.push(timestamp_migration_outcome(
+            &candidate.relative_path,
+            "applied",
+            normalization.changes.len(),
+            None,
+        ));
+    }
+
+    Ok(outcomes)
+}
+
+fn timestamp_migration_issue(
+    relative_path: &str,
+    line: Option<usize>,
+    property: Option<String>,
+    message: String,
+    value: Option<String>,
+) -> TimestampMigrationIssue {
+    TimestampMigrationIssue {
+        line,
+        message,
+        property,
+        relative_path: relative_path.to_owned(),
+        value,
+    }
+}
+
+fn timestamp_migration_outcome(
+    relative_path: &str,
+    status: &str,
+    changed_values: usize,
+    message: Option<String>,
+) -> TimestampMigrationOutcome {
+    TimestampMigrationOutcome {
+        changed_values,
+        message,
+        relative_path: relative_path.to_owned(),
+        status: status.to_owned(),
+    }
 }
 
 fn build_vault_snapshot(
@@ -2418,7 +2819,14 @@ fn save_markdown_file(
         ));
     }
     let content = if content != current_content {
-        stamp_note_updated_at(content, &current_local_timestamp()).map_err(|error| {
+        let content = normalize_front_matter_timestamps(content)
+            .map_err(|error| {
+                VaultError::lifecycle(format!(
+                    "Anchored could not normalize timestamp metadata safely: {error}."
+                ))
+            })?
+            .content;
+        stamp_note_updated_at(&content, &current_local_timestamp()).map_err(|error| {
             VaultError::lifecycle(format!(
                 "Anchored could not update authored metadata safely: {error}."
             ))
@@ -2642,6 +3050,13 @@ fn create_markdown_file(
             ))
         })?;
     }
+    content = normalize_front_matter_timestamps(&content)
+        .map_err(|error| {
+            VaultError::lifecycle(format!(
+                "Anchored could not normalize timestamp metadata safely: {error}."
+            ))
+        })?
+        .content;
     if content.len() as u64 > MAX_MARKDOWN_FILE_BYTES {
         return Err(VaultError::file_too_large());
     }
@@ -3447,18 +3862,19 @@ mod tests {
     use tempfile::tempdir;
 
     use super::{
-        backfill_vault_timestamps, canonical_vault_root, create_conflict_copy, create_folder,
+        apply_timestamp_migration, canonical_vault_root, create_conflict_copy, create_folder,
         create_inbox_markdown_file, create_markdown_file, create_named_vault,
         create_scratchpad_markdown_file, create_untitled_markdown_file, delete_empty_folder,
         enrich_vault_metadata, enrich_vault_metadata_cached, move_folder,
-        move_markdown_file_to_folder, read_markdown_file, recover_rename_transaction,
-        rename_folder, rename_markdown_file, resolve_new_vault_markdown_file, save_markdown_file,
-        save_scratchpad_markdown_file, scan_vault, scratchpad_filename_sequence,
-        search_markdown_files, transition_markdown_lifecycle, validate_folder_name,
-        validate_markdown_filename, validate_new_vault_name, vault_tree_signature,
-        write_rename_journal, LifecycleTransition, RenameJournal, RenameJournalEntry,
-        RenameJournalPhase, RenameOutcome, VaultMetadataCache, MAX_MARKDOWN_FILE_BYTES,
-        MAX_SEARCH_RESULTS, RENAME_JOURNAL_NAME,
+        move_markdown_file_to_folder, preview_timestamp_migration, read_markdown_file,
+        recover_rename_transaction, rename_folder, rename_markdown_file,
+        resolve_new_vault_markdown_file, save_markdown_file, save_scratchpad_markdown_file,
+        scan_vault, scratchpad_filename_sequence, search_markdown_files,
+        transition_markdown_lifecycle, validate_folder_name, validate_markdown_filename,
+        validate_new_vault_name, vault_tree_signature, write_rename_journal, LifecycleTransition,
+        RenameJournal, RenameJournalEntry, RenameJournalPhase, RenameOutcome,
+        TimestampMigrationTarget, VaultMetadataCache, MAX_MARKDOWN_FILE_BYTES, MAX_SEARCH_RESULTS,
+        RENAME_JOURNAL_NAME,
     };
 
     #[test]
@@ -3545,6 +3961,25 @@ mod tests {
         assert!(blank.updated_at.is_none());
         assert!(authored.created_at.is_some());
         assert_eq!(authored.updated_at, authored.created_at);
+    }
+
+    #[test]
+    fn normalizes_user_timestamp_properties_during_creation_and_save() {
+        let vault = tempdir().expect("create fixture vault");
+        let source = "---\npublished_at: 2026-01-02T03:04:05Z\n---\n# Note\n";
+        let created = create_markdown_file(vault.path(), &vault.path().join("Note.md"), source)
+            .expect("create note with timestamp property");
+        assert!(!created
+            .content
+            .contains("published_at: 2026-01-02T03:04:05Z"));
+        assert!(created.content.contains("published_at: 2026-01-02T"));
+
+        let saved_source = created.content.replace("# Note", "# Updated");
+        let saved = save_markdown_file(vault.path(), "Note.md", &saved_source, &created.content)
+            .expect("save changed note with timestamp property");
+        assert!(!saved.content.contains("published_at: 2026-01-02T03:04:05Z"));
+        assert!(saved.content.contains("updated_at:"));
+        assert!(saved.content.ends_with("# Updated\n"));
     }
 
     #[test]
@@ -4321,32 +4756,59 @@ mod tests {
     }
 
     #[test]
-    fn backfills_all_visible_markdown_lifecycle_timestamps() {
+    fn previews_and_applies_generic_timestamp_migration_with_conflict_protection() {
         let vault = tempdir().expect("create fixture vault");
-        let migrated = vault.path().join("Migrated.md");
-        let untouched = vault.path().join("Untouched.md");
+        let note = vault.path().join("Note.md");
         fs::write(
-            &migrated,
-            "---\ncreated_at: 2026-01-02T03:04:05Z\n---\nBody\n",
+            &note,
+            concat!(
+                "---\n",
+                "published_at: 2026-01-02T03:04:05Z\n",
+                "reviewed_at: 2026-07-23T14:30:00.123+02:00\n",
+                "date: 2026-01-02\n",
+                "---\nBody\n",
+            ),
         )
-        .expect("write UTC note");
-        fs::write(&untouched, "# Untouched\n").expect("write untouched note");
+        .expect("write timestamp note");
 
-        assert_eq!(
-            backfill_vault_timestamps(vault.path()).expect("backfill vault"),
-            1
-        );
-        let first = fs::read_to_string(&migrated).expect("read migrated note");
-        assert!(!first.contains("created_at: 2026-01-02T03:04:05Z"));
-        assert!(first.contains("created_at: 2026-01-02T"));
-        assert_eq!(
-            backfill_vault_timestamps(vault.path()).expect("backfill vault again"),
-            0
-        );
-        assert_eq!(
-            fs::read_to_string(&untouched).expect("read untouched note"),
-            "# Untouched\n"
-        );
+        let preview = preview_timestamp_migration(vault.path()).expect("preview migration");
+        assert_eq!(preview.scanned_files, 1);
+        assert_eq!(preview.candidates.len(), 1);
+        assert_eq!(preview.changed_values, 1);
+        assert_eq!(preview.issues.len(), 1);
+        assert_eq!(preview.issues[0].property.as_deref(), Some("reviewed_at"));
+
+        let candidate = &preview.candidates[0];
+        let applied = apply_timestamp_migration(
+            vault.path(),
+            &[TimestampMigrationTarget {
+                expected_modified_millis: candidate.expected_modified_millis,
+                expected_size_bytes: candidate.expected_size_bytes,
+                relative_path: candidate.relative_path.clone(),
+            }],
+        )
+        .expect("apply migration");
+        assert_eq!(applied[0].status, "applied");
+        let migrated = fs::read_to_string(&note).expect("read migrated note");
+        assert!(!migrated.contains("published_at: 2026-01-02T03:04:05Z"));
+        assert!(migrated.contains("reviewed_at: 2026-07-23T14:30:00.123+02:00"));
+        assert!(migrated.contains("date: 2026-01-02"));
+
+        let preview = preview_timestamp_migration(vault.path()).expect("preview second migration");
+        assert!(preview.candidates.is_empty());
+
+        std::thread::sleep(Duration::from_millis(5));
+        fs::write(&note, migrated.replace("Body", "Text")).expect("change note after preview");
+        let conflict = apply_timestamp_migration(
+            vault.path(),
+            &[TimestampMigrationTarget {
+                expected_modified_millis: candidate.expected_modified_millis,
+                expected_size_bytes: candidate.expected_size_bytes,
+                relative_path: candidate.relative_path.clone(),
+            }],
+        )
+        .expect("apply stale migration");
+        assert_eq!(conflict[0].status, "conflict");
     }
 
     #[test]

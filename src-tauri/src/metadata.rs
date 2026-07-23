@@ -1,5 +1,6 @@
 use std::{fmt, ops::Range};
 
+use chrono::{DateTime, Local};
 use ulid::Ulid;
 use yaml_rust2::{Yaml, YamlLoader};
 
@@ -72,6 +73,29 @@ pub struct NoteProperties {
     pub note_type: Option<String>,
     pub status: Option<String>,
     pub updated_at: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TimestampValueChange {
+    pub after: String,
+    pub before: String,
+    pub line: usize,
+    pub property: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TimestampValueSkip {
+    pub line: usize,
+    pub property: String,
+    pub reason: String,
+    pub value: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TimestampNormalization {
+    pub changes: Vec<TimestampValueChange>,
+    pub content: String,
+    pub skips: Vec<TimestampValueSkip>,
 }
 
 pub fn generate_note_id() -> String {
@@ -208,39 +232,114 @@ pub fn stamp_note_updated_at(
     mutate_lifecycle_properties(content, &[("updated_at", Some(timestamp))])
 }
 
-pub fn backfill_local_lifecycle_timestamps(
+pub fn normalize_front_matter_timestamps(
     content: &str,
-) -> Result<Option<String>, LifecycleMutationError> {
-    let properties = inspect_note_properties(content);
+) -> Result<TimestampNormalization, LifecycleMutationError> {
+    let Some(bounds) = (match front_matter_bounds(content) {
+        Ok(bounds) => bounds,
+        Err(()) => return Err(LifecycleMutationError::UnsafeFrontMatter),
+    }) else {
+        return Ok(TimestampNormalization {
+            changes: Vec::new(),
+            content: content.to_owned(),
+            skips: Vec::new(),
+        });
+    };
+
+    let yaml = &content[bounds.body_start..bounds.body_end];
+    let documents =
+        YamlLoader::load_from_str(yaml).map_err(|_| LifecycleMutationError::UnsafeFrontMatter)?;
+    if documents
+        .first()
+        .is_some_and(|document| !matches!(document, Yaml::Hash(_) | Yaml::Null))
+    {
+        return Err(LifecycleMutationError::UnsafeFrontMatter);
+    }
+
     let mut changes = Vec::new();
-    for (key, value) in [
-        ("created_at", properties.created_at),
-        ("updated_at", properties.updated_at),
-        ("archived_at", properties.archived_at),
-    ] {
-        let Some(value) = value else { continue };
-        let Ok(parsed) = chrono::DateTime::parse_from_rfc3339(&value) else {
-            continue;
-        };
-        if value != parsed.format("%Y-%m-%dT%H:%M:%SZ").to_string() {
+    let mut skips = Vec::new();
+    let mut edits = Vec::new();
+    let mut line_number = 0;
+    let mut offset = 0;
+
+    for line in yaml.split_inclusive('\n') {
+        line_number += 1;
+        let line_without_ending = line.trim_end_matches(['\r', '\n']);
+        if line_without_ending.starts_with(char::is_whitespace)
+            || line_without_ending.trim_start().starts_with('#')
+        {
+            offset += line.len();
             continue;
         }
-        changes.push((
-            key,
-            parsed
-                .with_timezone(&chrono::Local)
-                .format("%Y-%m-%dT%H:%M:%S%:z")
-                .to_string(),
-        ));
+
+        let Some((key, raw_value)) = line_without_ending.split_once(':') else {
+            offset += line.len();
+            continue;
+        };
+        let property = key.trim().trim_matches(['\'', '"']).to_owned();
+        let raw_start = line_without_ending.len() - raw_value.len();
+        let leading = raw_value.len() - raw_value.trim_start().len();
+        let value_start = raw_start + leading;
+        let value_text = &line_without_ending[value_start..];
+        let value_end = value_start + property_value_length(value_text);
+        let value_end = value_start + line_without_ending[value_start..value_end].trim_end().len();
+        let raw_value = &line_without_ending[value_start..value_end];
+        let value = timestamp_scalar_value(raw_value);
+
+        let Some(value) = value else {
+            offset += line.len();
+            continue;
+        };
+        if !looks_like_timestamp(&value) {
+            offset += line.len();
+            continue;
+        }
+
+        let Some(parsed) = parse_second_precision_timestamp(&value) else {
+            skips.push(TimestampValueSkip {
+                line: line_number,
+                property,
+                reason: "Timestamp is not canonical RFC 3339 with second precision.".to_owned(),
+                value,
+            });
+            offset += line.len();
+            continue;
+        };
+
+        let normalized = format_local_timestamp(&parsed);
+        if normalized != value {
+            let replacement = quoted_property_value(
+                &normalized,
+                raw_value.chars().next().filter(|quote| {
+                    (*quote == '\'' || *quote == '"') && raw_value.ends_with(*quote)
+                }),
+            );
+            edits.push((
+                (bounds.body_start + offset + value_start)
+                    ..(bounds.body_start + offset + value_end),
+                replacement,
+            ));
+            changes.push(TimestampValueChange {
+                after: normalized,
+                before: value,
+                line: line_number,
+                property,
+            });
+        }
+        offset += line.len();
     }
-    if changes.is_empty() {
-        return Ok(None);
+
+    edits.sort_by_key(|edit| std::cmp::Reverse(edit.0.start));
+    let mut normalized = content.to_owned();
+    for (range, replacement) in edits {
+        normalized.replace_range(range, &replacement);
     }
-    let changes = changes
-        .iter()
-        .map(|(key, value)| (*key, Some(value.as_str())))
-        .collect::<Vec<_>>();
-    mutate_lifecycle_properties(content, &changes).map(Some)
+
+    Ok(TimestampNormalization {
+        changes,
+        content: normalized,
+        skips,
+    })
 }
 
 pub fn archive_note(content: &str, timestamp: &str) -> Result<String, LifecycleMutationError> {
@@ -302,14 +401,49 @@ pub fn restore_note_with_type(
 }
 
 fn validate_lifecycle_timestamp(timestamp: &str) -> Result<(), LifecycleMutationError> {
-    let parsed = chrono::DateTime::parse_from_rfc3339(timestamp)
-        .map_err(|_| LifecycleMutationError::InvalidTimestamp)?;
+    let parsed = parse_second_precision_timestamp(timestamp)
+        .ok_or(LifecycleMutationError::InvalidTimestamp)?;
     let is_canonical = timestamp == parsed.format("%Y-%m-%dT%H:%M:%SZ").to_string()
         || timestamp == parsed.format("%Y-%m-%dT%H:%M:%S%:z").to_string();
     if !is_canonical {
         return Err(LifecycleMutationError::InvalidTimestamp);
     }
     Ok(())
+}
+
+fn parse_second_precision_timestamp(timestamp: &str) -> Option<DateTime<chrono::FixedOffset>> {
+    let parsed = DateTime::parse_from_rfc3339(timestamp).ok()?;
+    (parsed.timestamp_subsec_nanos() == 0 && (timestamp.len() == 20 || timestamp.len() == 25))
+        .then_some(parsed)
+}
+
+fn format_local_timestamp(timestamp: &DateTime<chrono::FixedOffset>) -> String {
+    timestamp
+        .with_timezone(&Local)
+        .format("%Y-%m-%dT%H:%M:%S%:z")
+        .to_string()
+}
+
+fn looks_like_timestamp(value: &str) -> bool {
+    let bytes = value.as_bytes();
+    bytes.len() >= 19
+        && bytes.get(4) == Some(&b'-')
+        && bytes.get(7) == Some(&b'-')
+        && bytes.get(10) == Some(&b'T')
+        && bytes.get(13) == Some(&b':')
+        && bytes.get(16) == Some(&b':')
+}
+
+fn timestamp_scalar_value(raw_value: &str) -> Option<String> {
+    let trimmed = raw_value.trim();
+    if trimmed.len() >= 2 {
+        let first = trimmed.as_bytes()[0] as char;
+        let last = trimmed.as_bytes()[trimmed.len() - 1] as char;
+        if (first == '\'' || first == '"') && first == last {
+            return Some(trimmed[1..trimmed.len() - 1].to_owned());
+        }
+    }
+    (!trimmed.is_empty()).then_some(trimmed.to_owned())
 }
 
 fn mutate_lifecycle_properties(
@@ -864,12 +998,11 @@ fn find_top_level_id_value(yaml: &str, id: &str) -> Option<std::ops::Range<usize
 #[cfg(test)]
 mod tests {
     use super::{
-        add_note_identity, archive_note, assign_new_note_identity,
-        backfill_local_lifecycle_timestamps, generate_note_id, inspect_note_aliases,
-        inspect_note_identity, inspect_note_properties, inspect_wikilink_occurrences,
-        inspect_wikilinks, restore_note, rewrite_wikilink_targets, split_note_source,
-        stamp_note_created_at, stamp_note_updated_at, IdentityMutationError,
-        LifecycleMutationError, NoteIdentityStatus,
+        add_note_identity, archive_note, assign_new_note_identity, generate_note_id,
+        inspect_note_aliases, inspect_note_identity, inspect_note_properties,
+        inspect_wikilink_occurrences, inspect_wikilinks, normalize_front_matter_timestamps,
+        restore_note, rewrite_wikilink_targets, split_note_source, stamp_note_created_at,
+        stamp_note_updated_at, IdentityMutationError, LifecycleMutationError, NoteIdentityStatus,
     };
 
     const ID: &str = "01JZQ7K8P4A6F2M9V3C5T7X1BY";
@@ -1057,43 +1190,63 @@ mod tests {
     }
 
     #[test]
-    fn backfills_utc_lifecycle_timestamps_without_changing_their_instant() {
+    fn normalizes_exact_timestamp_values_without_reformatting_front_matter() {
         let original = concat!(
-            "---\n",
-            "title: Note # keep\n",
-            "created_at: '2026-01-02T03:04:05Z'\n",
-            "updated_at: 2026-01-02T04:05:06Z # keep\n",
-            "---\n",
-            "Body\n",
+            "---\r\n",
+            "title: Note # keep\r\n",
+            "published_at: '2026-01-02T03:04:05Z' # preserve\r\n",
+            "date: 2026-01-02\r\n",
+            "---\r\n",
+            "\r\nBody\r\n",
         );
 
-        let updated = backfill_local_lifecycle_timestamps(original)
-            .expect("backfill timestamps")
-            .expect("timestamps should change");
+        let result =
+            normalize_front_matter_timestamps(original).expect("normalize timestamp values");
+        assert_eq!(result.changes.len(), 1);
+        assert!(result.skips.is_empty());
+        assert!(result.content.contains("title: Note # keep\r\n"));
+        assert!(result.content.contains(" # preserve\r\n"));
+        assert!(result.content.contains("date: 2026-01-02\r\n"));
+        assert!(result.content.ends_with("---\r\n\r\nBody\r\n"));
 
-        for (before, after) in [
-            ("2026-01-02T03:04:05Z", "created_at"),
-            ("2026-01-02T04:05:06Z", "updated_at"),
-        ] {
-            let before = chrono::DateTime::parse_from_rfc3339(before).expect("parse UTC");
-            let line = updated
-                .lines()
-                .find(|line| line.starts_with(&format!("{after}:")))
-                .expect("find backfilled property");
-            let value = line
-                .split_once(':')
-                .expect("property separator")
-                .1
-                .trim()
-                .split(" #")
-                .next()
-                .expect("property value")
-                .trim_matches('\'');
-            let after = chrono::DateTime::parse_from_rfc3339(value).expect("parse local time");
-            assert_eq!(before, after);
-        }
-        assert!(updated.contains("title: Note # keep"));
-        assert!(updated.contains(" # keep"));
+        let before = chrono::DateTime::parse_from_rfc3339("2026-01-02T03:04:05Z")
+            .expect("parse original timestamp");
+        let after_value = result
+            .content
+            .lines()
+            .find_map(|line| line.strip_prefix("published_at: "))
+            .expect("find normalized property")
+            .split('#')
+            .next()
+            .expect("find timestamp before comment")
+            .trim()
+            .trim_matches('\'');
+        let after =
+            chrono::DateTime::parse_from_rfc3339(after_value).expect("parse normalized timestamp");
+        assert_eq!(before.timestamp(), after.timestamp());
+        assert!(!after_value.ends_with('Z'));
+    }
+
+    #[test]
+    fn reports_fractional_timestamp_values_without_changing_them() {
+        let original = "---\nreviewed_at: 2026-07-23T14:30:00.123+02:00\n---\nBody\n";
+
+        let result =
+            normalize_front_matter_timestamps(original).expect("inspect fractional timestamp");
+        assert!(result.changes.is_empty());
+        assert_eq!(result.skips.len(), 1);
+        assert_eq!(result.skips[0].property, "reviewed_at");
+        assert_eq!(result.content, original);
+    }
+
+    #[test]
+    fn refuses_malformed_front_matter_for_timestamp_normalization() {
+        let malformed = "---\ntags: [one\n---\nBody\n";
+
+        assert_eq!(
+            normalize_front_matter_timestamps(malformed),
+            Err(LifecycleMutationError::UnsafeFrontMatter)
+        );
     }
 
     #[test]

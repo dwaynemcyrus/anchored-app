@@ -1,5 +1,26 @@
 import { invoke } from "@tauri-apps/api/core";
 
+export function isBrowserDevelopmentFixture(): boolean {
+  return (
+    import.meta.env.DEV &&
+    import.meta.env.MODE !== "test" &&
+    typeof window !== "undefined" &&
+    !("__TAURI_INTERNALS__" in window)
+  );
+}
+
+function invokeVault<T>(
+  command: string,
+  args?: Record<string, unknown>,
+): Promise<T> {
+  if (isBrowserDevelopmentFixture()) {
+    return import("./devFixture").then(({ invokeDevelopmentFixture }) =>
+      invokeDevelopmentFixture<T>(command, args),
+    );
+  }
+  return args === undefined ? invoke<T>(command) : invoke<T>(command, args);
+}
+
 export type VaultFile = {
   aliases?: string[];
   archivedAt?: string;
@@ -34,6 +55,50 @@ export type VaultSnapshot = {
   name: string;
   vaultId?: string;
   warnings: VaultWarnings;
+};
+
+export type TimestampMigrationTarget = {
+  expectedModifiedMillis: number;
+  expectedSizeBytes: number;
+  relativePath: string;
+};
+
+export type TimestampMigrationChange = {
+  after: string;
+  before: string;
+  line: number;
+  property: string;
+};
+
+export type TimestampMigrationCandidate = TimestampMigrationTarget & {
+  changes: TimestampMigrationChange[];
+};
+
+export type TimestampMigrationIssue = {
+  line?: number;
+  message: string;
+  property?: string;
+  relativePath: string;
+  value?: string;
+};
+
+export type TimestampMigrationPreview = {
+  candidates: TimestampMigrationCandidate[];
+  changedValues: number;
+  issues: TimestampMigrationIssue[];
+  scannedFiles: number;
+};
+
+export type TimestampMigrationOutcome = {
+  changedValues: number;
+  message?: string;
+  relativePath: string;
+  status: "applied" | "conflict" | "error" | "unchanged";
+};
+
+export type TimestampMigrationResult = {
+  outcomes: TimestampMigrationOutcome[];
+  snapshot: VaultSnapshot;
 };
 
 export type RememberedVault = {
@@ -146,75 +211,96 @@ export type RenameVaultFileResult = {
 };
 
 export function selectVault(): Promise<VaultSnapshot | null> {
-  return invoke<VaultSnapshot | null>("select_vault");
+  return invokeVault<VaultSnapshot | null>("select_vault");
 }
 
 export function createVault(
   request: CreateVaultRequest,
 ): Promise<VaultSnapshot | null> {
-  return invoke<VaultSnapshot | null>("create_vault", request);
+  return invokeVault<VaultSnapshot | null>("create_vault", request);
 }
 
 export function createVaultFolder(
   request: CreateVaultFolderRequest,
 ): Promise<VaultSnapshot> {
-  return invoke<VaultSnapshot>("create_vault_folder", request);
+  return invokeVault<VaultSnapshot>("create_vault_folder", request);
 }
 
 export function renameVaultFolder(
   request: RenameVaultFolderRequest,
 ): Promise<VaultSnapshot> {
-  return invoke<VaultSnapshot>("rename_vault_folder", request);
+  return invokeVault<VaultSnapshot>("rename_vault_folder", request);
 }
 
 export function moveVaultFolder(
   folderPath: string,
   destinationFolder: string,
 ): Promise<VaultSnapshot> {
-  return invoke<VaultSnapshot>("move_vault_folder", {
+  return invokeVault<VaultSnapshot>("move_vault_folder", {
     destinationFolder,
     folderPath,
   });
 }
 
 export function deleteVaultFolder(folderPath: string): Promise<VaultSnapshot> {
-  return invoke<VaultSnapshot>("delete_vault_folder", { folderPath });
+  return invokeVault<VaultSnapshot>("delete_vault_folder", { folderPath });
 }
 
 export function moveVaultFolderToTrash(
   folderPath: string,
   confirmation: string,
 ): Promise<TrashMutationResult> {
-  return invoke<TrashMutationResult>("move_vault_folder_to_trash", {
+  return invokeVault<TrashMutationResult>("move_vault_folder_to_trash", {
     confirmation,
     folderPath,
   });
 }
 
 export function listRememberedVaults(): Promise<RememberedVault[]> {
-  return invoke<RememberedVault[]>("list_remembered_vaults");
+  return invokeVault<RememberedVault[]>("list_remembered_vaults");
 }
 
 export function openRememberedVault(vaultId: string): Promise<VaultSnapshot> {
-  return invoke<VaultSnapshot>("open_remembered_vault", { vaultId });
+  return invokeVault<VaultSnapshot>("open_remembered_vault", { vaultId });
+}
+
+export function openDevelopmentVault(): Promise<VaultSnapshot> {
+  return invokeVault<VaultSnapshot>("open_development_vault");
 }
 
 export function forgetVault(vaultId: string): Promise<RememberedVault[]> {
-  return invoke<RememberedVault[]>("forget_vault", { vaultId });
+  return invokeVault<RememberedVault[]>("forget_vault", { vaultId });
 }
 
 export function rescanVault(): Promise<VaultSnapshot | null> {
-  return invoke<VaultSnapshot | null>("rescan_vault");
+  return invokeVault<VaultSnapshot | null>("rescan_vault");
+}
+
+export function previewVaultTimestampMigration(): Promise<TimestampMigrationPreview> {
+  return invokeVault<TimestampMigrationPreview>(
+    "preview_vault_timestamp_migration",
+  );
+}
+
+export function applyVaultTimestampMigration(
+  candidates: TimestampMigrationTarget[],
+): Promise<TimestampMigrationResult> {
+  return invokeVault<TimestampMigrationResult>(
+    "apply_vault_timestamp_migration",
+    {
+      candidates,
+    },
+  );
 }
 
 export function listVaultTrash(): Promise<TrashEntry[]> {
-  return invoke<TrashEntry[]>("list_vault_trash");
+  return invokeVault<TrashEntry[]>("list_vault_trash");
 }
 
 export function moveVaultFileToTrash(
   relativePath: string,
 ): Promise<TrashMutationResult> {
-  return invoke<TrashMutationResult>("move_vault_file_to_trash", {
+  return invokeVault<TrashMutationResult>("move_vault_file_to_trash", {
     relativePath,
   });
 }
@@ -222,7 +308,7 @@ export function moveVaultFileToTrash(
 export function restoreVaultFileFromTrash(
   trashId: string,
 ): Promise<TrashMutationResult> {
-  return invoke<TrashMutationResult>("restore_vault_file_from_trash", {
+  return invokeVault<TrashMutationResult>("restore_vault_file_from_trash", {
     trashId,
   });
 }
@@ -230,46 +316,46 @@ export function restoreVaultFileFromTrash(
 export function restoreVaultFolderFromTrash(
   trashId: string,
 ): Promise<TrashMutationResult> {
-  return invoke<TrashMutationResult>("restore_vault_folder_from_trash", {
+  return invokeVault<TrashMutationResult>("restore_vault_folder_from_trash", {
     trashId,
   });
 }
 
 export function readVaultFile(relativePath: string): Promise<VaultDocument> {
-  return invoke<VaultDocument>("read_vault_file", { relativePath });
+  return invokeVault<VaultDocument>("read_vault_file", { relativePath });
 }
 
 export function watchVaultFile(relativePath: string): Promise<void> {
-  return invoke<void>("watch_vault_file", { relativePath });
+  return invokeVault<void>("watch_vault_file", { relativePath });
 }
 
 export function stopVaultFileWatch(): Promise<void> {
-  return invoke<void>("stop_vault_file_watch");
+  return invokeVault<void>("stop_vault_file_watch");
 }
 
 export function watchVaultTree(): Promise<void> {
-  return invoke<void>("watch_vault_tree");
+  return invokeVault<void>("watch_vault_tree");
 }
 
 export function stopVaultTreeWatch(): Promise<void> {
-  return invoke<void>("stop_vault_tree_watch");
+  return invokeVault<void>("stop_vault_tree_watch");
 }
 
 export function searchVault(query: string): Promise<VaultSearchResult> {
-  return invoke<VaultSearchResult>("search_vault", { query });
+  return invokeVault<VaultSearchResult>("search_vault", { query });
 }
 
 export function saveVaultFile(
   request: SaveVaultFileRequest,
 ): Promise<VaultDocument> {
-  return invoke<VaultDocument>("save_vault_file", request);
+  return invokeVault<VaultDocument>("save_vault_file", request);
 }
 
 export function createVaultConflictCopy(
   relativePath: string,
   content: string,
 ): Promise<VaultDocument> {
-  return invoke<VaultDocument>("create_vault_conflict_copy", {
+  return invokeVault<VaultDocument>("create_vault_conflict_copy", {
     content,
     relativePath,
   });
@@ -278,38 +364,38 @@ export function createVaultConflictCopy(
 export function archiveVaultFile(
   request: LifecycleVaultFileRequest,
 ): Promise<VaultDocument> {
-  return invoke<VaultDocument>("archive_vault_file", request);
+  return invokeVault<VaultDocument>("archive_vault_file", request);
 }
 
 export function restoreArchivedVaultFile(
   request: RestoreArchivedVaultFileRequest,
 ): Promise<VaultDocument> {
-  return invoke<VaultDocument>("restore_archived_vault_file", request);
+  return invokeVault<VaultDocument>("restore_archived_vault_file", request);
 }
 
 export function moveVaultFileToWorkbench(
   request: LifecycleVaultFileRequest,
 ): Promise<VaultDocument> {
-  return invoke<VaultDocument>("move_vault_file_to_workbench", request);
+  return invokeVault<VaultDocument>("move_vault_file_to_workbench", request);
 }
 
 export function createVaultFile(
   request: CreateVaultFileRequest,
 ): Promise<VaultDocument | null> {
-  return invoke<VaultDocument | null>("create_vault_file", request);
+  return invokeVault<VaultDocument | null>("create_vault_file", request);
 }
 
 export function createInboxVaultFile(
   request: CreateInboxVaultFileRequest,
 ): Promise<VaultDocument> {
-  return invoke<VaultDocument>("create_inbox_vault_file", request);
+  return invokeVault<VaultDocument>("create_inbox_vault_file", request);
 }
 
 export function createUntitledVaultFile(
   content: string,
   parentPath?: string,
 ): Promise<VaultDocument> {
-  return invoke<VaultDocument>("create_untitled_vault_file", {
+  return invokeVault<VaultDocument>("create_untitled_vault_file", {
     content,
     parentPath,
   });
@@ -319,7 +405,7 @@ export function moveVaultFileToFolder(
   relativePath: string,
   destinationFolder: string,
 ): Promise<RenameVaultFileResult> {
-  return invoke<RenameVaultFileResult>("move_vault_file_to_folder", {
+  return invokeVault<RenameVaultFileResult>("move_vault_file_to_folder", {
     destinationFolder,
     relativePath,
   });
@@ -328,5 +414,8 @@ export function moveVaultFileToFolder(
 export function renameVaultFile(
   request: RenameVaultFileRequest,
 ): Promise<RenameVaultFileResult | null> {
-  return invoke<RenameVaultFileResult | null>("rename_vault_file", request);
+  return invokeVault<RenameVaultFileResult | null>(
+    "rename_vault_file",
+    request,
+  );
 }

@@ -102,7 +102,10 @@ import {
   moveVaultFileToTrash,
   moveVaultFolderToTrash,
   moveVaultFolder,
+  openDevelopmentVault,
   openRememberedVault,
+  applyVaultTimestampMigration,
+  previewVaultTimestampMigration,
   readVaultFile,
   renameVaultFolder,
   renameVaultFile,
@@ -116,6 +119,7 @@ import {
   watchVaultTree,
   type VaultFileChangedEvent,
   type VaultTreeChangedEvent,
+  isBrowserDevelopmentFixture,
   restoreVaultFileFromTrash,
   restoreVaultFolderFromTrash,
   restoreArchivedVaultFile,
@@ -123,6 +127,7 @@ import {
   type TrashEntry,
   type VaultDocument,
   type VaultSnapshot,
+  type TimestampMigrationPreview,
 } from "../lib/tauri/vault";
 import { openScratchpad, type ScratchpadMode } from "../lib/tauri/scratchpad";
 import { checkForUpdate, installUpdate } from "./updater";
@@ -234,6 +239,13 @@ export function App() {
   const [vaultId, setVaultId] = useState("");
   const [folderPaths, setFolderPaths] = useState<string[]>([]);
   const [settingsVisible, setSettingsVisible] = useState(false);
+  const [timestampMigrationPreview, setTimestampMigrationPreview] =
+    useState<TimestampMigrationPreview>();
+  const [timestampMigrationBusy, setTimestampMigrationBusy] = useState(false);
+  const [timestampMigrationError, setTimestampMigrationError] =
+    useState<string>();
+  const [timestampMigrationMessage, setTimestampMigrationMessage] =
+    useState<string>();
   const [markdownSettings, setMarkdownSettings] = useState<MarkdownSettings>(
     initialMarkdownSettings,
   );
@@ -1192,6 +1204,9 @@ export function App() {
       setQuery("");
       setDocumentLoad({ status: "idle" });
       setVaultNotices([]);
+      setTimestampMigrationPreview(undefined);
+      setTimestampMigrationError(undefined);
+      setTimestampMigrationMessage(undefined);
       setTrashEntries([]);
       setTrashError(undefined);
       setTrashVisible(false);
@@ -1245,6 +1260,81 @@ export function App() {
     [addVaultNotice, recordSnapshotEvents, setActiveDocument],
   );
 
+  const previewTimestampMigration = useCallback(async () => {
+    if (!vaultSelected) {
+      setTimestampMigrationError("Open a vault before previewing timestamps.");
+      return;
+    }
+    setTimestampMigrationBusy(true);
+    setTimestampMigrationError(undefined);
+    setTimestampMigrationMessage(undefined);
+    try {
+      setTimestampMigrationPreview(await previewVaultTimestampMigration());
+    } catch (error) {
+      setTimestampMigrationError(readErrorMessage(error));
+    } finally {
+      setTimestampMigrationBusy(false);
+    }
+  }, [vaultSelected]);
+
+  const applyTimestampMigration = useCallback(async () => {
+    const preview = timestampMigrationPreview;
+    if (!vaultSelected || !preview || timestampMigrationBusy) return;
+    if (
+      documentsRef.current.some(
+        (document) =>
+          document.saveState === "saving" || document.saveState === "conflict",
+      )
+    ) {
+      setTimestampMigrationError(
+        "Finish saving or resolving note conflicts before migrating timestamps.",
+      );
+      return;
+    }
+
+    setTimestampMigrationBusy(true);
+    setTimestampMigrationError(undefined);
+    setTimestampMigrationMessage(undefined);
+    try {
+      const result = await applyVaultTimestampMigration(
+        preview.candidates.map(
+          ({ expectedModifiedMillis, expectedSizeBytes, relativePath }) => ({
+            expectedModifiedMillis,
+            expectedSizeBytes,
+            relativePath,
+          }),
+        ),
+      );
+      adoptVaultSnapshot(result.snapshot);
+      const applied = result.outcomes.filter(
+        (outcome) => outcome.status === "applied",
+      );
+      const conflicts = result.outcomes.filter(
+        (outcome) => outcome.status === "conflict",
+      );
+      const errors = result.outcomes.filter(
+        (outcome) => outcome.status === "error",
+      );
+      setTimestampMigrationPreview(undefined);
+      setTimestampMigrationMessage(
+        `Normalized ${applied.length} file${applied.length === 1 ? "" : "s"}.` +
+          (conflicts.length > 0
+            ? ` ${conflicts.length} changed after preview.`
+            : "") +
+          (errors.length > 0 ? ` ${errors.length} could not be updated.` : ""),
+      );
+    } catch (error) {
+      setTimestampMigrationError(readErrorMessage(error));
+    } finally {
+      setTimestampMigrationBusy(false);
+    }
+  }, [
+    adoptVaultSnapshot,
+    timestampMigrationBusy,
+    timestampMigrationPreview,
+    vaultSelected,
+  ]);
+
   const refreshVault = useCallback(async () => {
     if (
       !vaultSelected ||
@@ -1289,6 +1379,24 @@ export function App() {
     }
     sessionRestoreStatusRef.current = "restoring";
 
+    if (import.meta.env.DEV && import.meta.env.MODE !== "test") {
+      pendingSessionRelativePathRef.current = undefined;
+      setOpeningRememberedVaultId("__development_fixture__");
+      void openDevelopmentVault()
+        .then(async (snapshot) => {
+          activateVaultSnapshot(snapshot);
+          await Promise.all([refreshRememberedVaults(), refreshTrashEntries()]);
+        })
+        .catch((error) => {
+          addVaultNotice(readErrorMessage(error), { persistent: true });
+        })
+        .finally(() => {
+          sessionRestoreStatusRef.current = "done";
+          setOpeningRememberedVaultId(undefined);
+        });
+      return;
+    }
+
     const session = loadSessionState(window.localStorage);
     if (!session?.vaultId) {
       sessionRestoreStatusRef.current = "done";
@@ -1313,6 +1421,7 @@ export function App() {
         setOpeningRememberedVaultId(undefined);
       });
   }, [
+    addVaultNotice,
     activateVaultSnapshot,
     refreshRememberedVaults,
     refreshTrashEntries,
@@ -1361,7 +1470,6 @@ export function App() {
 
     return () => window.clearTimeout(timeout);
   }, [vaultSearchQuery, vaultSearchVisible, vaultSelected]);
-
   const openScratchpadWindow = useCallback(
     (mode: ScratchpadMode) => {
       if (!vaultSelected) {
@@ -1447,7 +1555,6 @@ export function App() {
     saveDocument,
     saveDocumentAs,
   ]);
-
   useEffect(() => {
     if (sessionRestoreStatusRef.current !== "done" && !vaultSelected) {
       return;
@@ -1502,6 +1609,7 @@ export function App() {
   }, [refreshVault]);
 
   useEffect(() => {
+    if (isBrowserDevelopmentFixture()) return;
     if (!vaultSelected) {
       void stopVaultTreeWatch().catch(() => undefined);
       return;
@@ -1543,6 +1651,7 @@ export function App() {
   }, [addVaultNotice, refreshVault, vaultSelected, vaultId]);
 
   useEffect(() => {
+    if (isBrowserDevelopmentFixture()) return;
     const relativePath = activeDocumentPathForWatch;
     if (
       !vaultSelected ||
@@ -1580,7 +1689,6 @@ export function App() {
     checkExternalDocument,
     vaultSelected,
   ]);
-
   const selectDocument = useCallback(
     async (documentId: string) => {
       const document = documentsRef.current.find(
@@ -1726,7 +1834,6 @@ export function App() {
       void selectDocument(restoredDocument.id);
     }
   }, [activeDocumentId, documents, selectDocument, vaultSelected]);
-
   async function openVaultSearchResult(relativePath: string) {
     let document = documentsRef.current.find(
       (candidate) => candidate.relativePath === relativePath,
@@ -2942,10 +3049,20 @@ export function App() {
         <SettingsModal
           markdownSettings={markdownSettings}
           reloading={reloadingApp}
+          timestampMigrationBlocked={documents.some(
+            (document) =>
+              document.saveState === "saving" ||
+              document.saveState === "conflict",
+          )}
+          timestampMigrationBusy={timestampMigrationBusy}
+          timestampMigrationError={timestampMigrationError}
+          timestampMigrationMessage={timestampMigrationMessage}
+          timestampMigrationPreview={timestampMigrationPreview}
           updateError={updateError}
           updateNotes={availableUpdate?.body}
           updateStatus={updateStatus}
           updateVersion={availableUpdate?.version}
+          vaultSelected={vaultSelected}
           onClose={() => {
             if (!reloadingApp) {
               setSettingsVisible(false);
@@ -2954,6 +3071,8 @@ export function App() {
           onCheckForUpdates={() => void handleCheckForUpdates()}
           onInstallUpdate={() => void handleInstallUpdate()}
           onMarkdownSettingsChange={setMarkdownSettings}
+          onApplyTimestampMigration={() => void applyTimestampMigration()}
+          onPreviewTimestampMigration={() => void previewTimestampMigration()}
           onReload={() => void reloadApp()}
         />
       ) : null}

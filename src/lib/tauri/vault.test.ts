@@ -14,6 +14,7 @@ import {
   listVaultTrash,
   moveVaultFileToFolder,
   moveVaultFileToTrash,
+  openDevelopmentVault,
   openRememberedVault,
   readVaultFile,
   renameVaultFolder,
@@ -149,6 +150,13 @@ describe("vault bridge", () => {
     expect(mockedInvoke).toHaveBeenNthCalledWith(3, "forget_vault", {
       vaultId: remembered[0].id,
     });
+  });
+
+  it("opens the development fixture through the native command", async () => {
+    mockedInvoke.mockResolvedValue(snapshot);
+
+    await expect(openDevelopmentVault()).resolves.toEqual(snapshot);
+    expect(mockedInvoke).toHaveBeenCalledWith("open_development_vault");
   });
 
   it("rescans only the vault retained by Rust state", async () => {
