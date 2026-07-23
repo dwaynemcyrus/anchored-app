@@ -2777,7 +2777,14 @@ fn save_markdown_file(
         ));
     }
     let content = if content != current_content {
-        stamp_note_updated_at(content, &current_local_timestamp()).map_err(|error| {
+        let content = normalize_front_matter_timestamps(content)
+            .map_err(|error| {
+                VaultError::lifecycle(format!(
+                    "Anchored could not normalize timestamp metadata safely: {error}."
+                ))
+            })?
+            .content;
+        stamp_note_updated_at(&content, &current_local_timestamp()).map_err(|error| {
             VaultError::lifecycle(format!(
                 "Anchored could not update authored metadata safely: {error}."
             ))
@@ -3001,6 +3008,13 @@ fn create_markdown_file(
             ))
         })?;
     }
+    content = normalize_front_matter_timestamps(&content)
+        .map_err(|error| {
+            VaultError::lifecycle(format!(
+                "Anchored could not normalize timestamp metadata safely: {error}."
+            ))
+        })?
+        .content;
     if content.len() as u64 > MAX_MARKDOWN_FILE_BYTES {
         return Err(VaultError::file_too_large());
     }
@@ -3905,6 +3919,25 @@ mod tests {
         assert!(blank.updated_at.is_none());
         assert!(authored.created_at.is_some());
         assert_eq!(authored.updated_at, authored.created_at);
+    }
+
+    #[test]
+    fn normalizes_user_timestamp_properties_during_creation_and_save() {
+        let vault = tempdir().expect("create fixture vault");
+        let source = "---\npublished_at: 2026-01-02T03:04:05Z\n---\n# Note\n";
+        let created = create_markdown_file(vault.path(), &vault.path().join("Note.md"), source)
+            .expect("create note with timestamp property");
+        assert!(!created
+            .content
+            .contains("published_at: 2026-01-02T03:04:05Z"));
+        assert!(created.content.contains("published_at: 2026-01-02T"));
+
+        let saved_source = created.content.replace("# Note", "# Updated");
+        let saved = save_markdown_file(vault.path(), "Note.md", &saved_source, &created.content)
+            .expect("save changed note with timestamp property");
+        assert!(!saved.content.contains("published_at: 2026-01-02T03:04:05Z"));
+        assert!(saved.content.contains("updated_at:"));
+        assert!(saved.content.ends_with("# Updated\n"));
     }
 
     #[test]
