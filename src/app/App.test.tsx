@@ -24,6 +24,7 @@ import {
   listVaultTrash,
   moveVaultFileToFolder,
   moveVaultFileToTrash,
+  openDevelopmentVault,
   openRememberedVault,
   previewVaultTimestampMigration,
   readVaultFile,
@@ -60,8 +61,10 @@ vi.mock("../lib/tauri/vault", () => ({
   forgetVault: vi.fn(),
   listRememberedVaults: vi.fn(),
   listVaultTrash: vi.fn(),
+  isBrowserDevelopmentFixture: vi.fn(() => false),
   moveVaultFileToFolder: vi.fn(),
   moveVaultFileToTrash: vi.fn(),
+  openDevelopmentVault: vi.fn(),
   openRememberedVault: vi.fn(),
   previewVaultTimestampMigration: vi.fn(),
   readVaultFile: vi.fn(),
@@ -110,6 +113,7 @@ const mockedListVaultTrash = vi.mocked(listVaultTrash);
 const mockedMoveVaultFileToFolder = vi.mocked(moveVaultFileToFolder);
 const mockedMoveVaultFileToTrash = vi.mocked(moveVaultFileToTrash);
 const mockedOpenRememberedVault = vi.mocked(openRememberedVault);
+const mockedOpenDevelopmentVault = vi.mocked(openDevelopmentVault);
 const mockedPreviewVaultTimestampMigration = vi.mocked(
   previewVaultTimestampMigration,
 );
@@ -170,6 +174,7 @@ describe("App", () => {
     mockedMoveVaultFileToFolder.mockReset();
     mockedMoveVaultFileToTrash.mockReset();
     mockedOpenRememberedVault.mockReset();
+    mockedOpenDevelopmentVault.mockReset();
     mockedPreviewVaultTimestampMigration.mockReset();
     mockedSelectVault.mockReset();
     mockedReadVaultFile.mockReset();

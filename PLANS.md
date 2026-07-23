@@ -1513,6 +1513,23 @@ and preserves link integrity across filename changes.
       reported where safely addressable. Vault activation no longer performs a
       hidden bulk rewrite.
 
+24. [x] **Epic: Add a disposable development fixture vault**
+    - Outcome: Development builds open a resettable 48-file fixture vault by
+      default so browser and desktop testing begin with representative content
+      without touching a real vault or the checked-in fixture files.
+    - Product decision: The fixture is development-only. Native development
+      copies it into an isolated application cache directory; browser-only Vite
+      runs use an in-memory copy. Production builds retain normal vault and
+      session behavior.
+    - Coverage: Include Inbox, Scratchpad, Workbench, Archive, nested folders,
+      projects, reading, aliases, tags, timestamps, wikilinks, backlinks,
+      unresolved links, tasks, tables, callouts, Mermaid, math, code, and
+      non-Markdown assets.
+    - Implementation result (2026-07-23): Added 46 Markdown notes and 2 assets
+      under `fixtures/dev-vault`, native reset-on-start copying, browser fixture
+      bridge behavior, and automatic development startup selection. The
+      fixture is documented in `docs/DEV_FIXTURE.md`.
+
 ## Requirements for future large plans
 
 Every future large plan must identify:

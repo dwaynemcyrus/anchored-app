@@ -102,6 +102,7 @@ import {
   moveVaultFileToTrash,
   moveVaultFolderToTrash,
   moveVaultFolder,
+  openDevelopmentVault,
   openRememberedVault,
   applyVaultTimestampMigration,
   previewVaultTimestampMigration,
@@ -118,6 +119,7 @@ import {
   watchVaultTree,
   type VaultFileChangedEvent,
   type VaultTreeChangedEvent,
+  isBrowserDevelopmentFixture,
   restoreVaultFileFromTrash,
   restoreVaultFolderFromTrash,
   restoreArchivedVaultFile,
@@ -1377,6 +1379,24 @@ export function App() {
     }
     sessionRestoreStatusRef.current = "restoring";
 
+    if (import.meta.env.DEV && import.meta.env.MODE !== "test") {
+      pendingSessionRelativePathRef.current = undefined;
+      setOpeningRememberedVaultId("__development_fixture__");
+      void openDevelopmentVault()
+        .then(async (snapshot) => {
+          activateVaultSnapshot(snapshot);
+          await Promise.all([refreshRememberedVaults(), refreshTrashEntries()]);
+        })
+        .catch((error) => {
+          addVaultNotice(readErrorMessage(error), { persistent: true });
+        })
+        .finally(() => {
+          sessionRestoreStatusRef.current = "done";
+          setOpeningRememberedVaultId(undefined);
+        });
+      return;
+    }
+
     const session = loadSessionState(window.localStorage);
     if (!session?.vaultId) {
       sessionRestoreStatusRef.current = "done";
@@ -1401,6 +1421,7 @@ export function App() {
         setOpeningRememberedVaultId(undefined);
       });
   }, [
+    addVaultNotice,
     activateVaultSnapshot,
     refreshRememberedVaults,
     refreshTrashEntries,
@@ -1449,7 +1470,6 @@ export function App() {
 
     return () => window.clearTimeout(timeout);
   }, [vaultSearchQuery, vaultSearchVisible, vaultSelected]);
-
   const openScratchpadWindow = useCallback(
     (mode: ScratchpadMode) => {
       if (!vaultSelected) {
@@ -1535,7 +1555,6 @@ export function App() {
     saveDocument,
     saveDocumentAs,
   ]);
-
   useEffect(() => {
     if (sessionRestoreStatusRef.current !== "done" && !vaultSelected) {
       return;
@@ -1590,6 +1609,7 @@ export function App() {
   }, [refreshVault]);
 
   useEffect(() => {
+    if (isBrowserDevelopmentFixture()) return;
     if (!vaultSelected) {
       void stopVaultTreeWatch().catch(() => undefined);
       return;
@@ -1631,6 +1651,7 @@ export function App() {
   }, [addVaultNotice, refreshVault, vaultSelected, vaultId]);
 
   useEffect(() => {
+    if (isBrowserDevelopmentFixture()) return;
     const relativePath = activeDocumentPathForWatch;
     if (
       !vaultSelected ||
@@ -1668,7 +1689,6 @@ export function App() {
     checkExternalDocument,
     vaultSelected,
   ]);
-
   const selectDocument = useCallback(
     async (documentId: string) => {
       const document = documentsRef.current.find(
@@ -1814,7 +1834,6 @@ export function App() {
       void selectDocument(restoredDocument.id);
     }
   }, [activeDocumentId, documents, selectDocument, vaultSelected]);
-
   async function openVaultSearchResult(relativePath: string) {
     let document = documentsRef.current.find(
       (candidate) => candidate.relativePath === relativePath,

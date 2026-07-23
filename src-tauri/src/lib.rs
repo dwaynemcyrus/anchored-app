@@ -27,6 +27,7 @@ pub fn run() {
             vault::move_vault_folder_to_trash,
             vault::list_remembered_vaults,
             vault::open_remembered_vault,
+            vault::open_development_vault,
             vault::forget_vault,
             vault::rescan_vault,
             vault::preview_vault_timestamp_migration,

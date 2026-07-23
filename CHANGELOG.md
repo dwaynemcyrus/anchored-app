@@ -8,6 +8,9 @@ Git commit. The format follows [Keep a Changelog], and releases follow
 
 ### Added
 
+- Added a development-only 48-file fixture vault that opens automatically for
+  browser and desktop testing, covering representative Markdown, metadata,
+  links, collections, and assets without touching real vaults.
 - Restored the Settings option to hide file extensions throughout the
   interface, including the file rail, search results, backlinks, status bar,
   editor breadcrumb, and inline rename field. Hidden extensions remain intact

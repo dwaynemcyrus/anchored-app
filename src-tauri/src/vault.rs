@@ -576,6 +576,15 @@ pub async fn open_remembered_vault(
 }
 
 #[tauri::command]
+pub async fn open_development_vault(
+    app: AppHandle,
+    state: State<'_, VaultState>,
+) -> Result<VaultSnapshot, VaultError> {
+    let root = prepare_development_vault(&app)?;
+    activate_vault(&app, &state, root)
+}
+
+#[tauri::command]
 pub async fn forget_vault(
     app: AppHandle,
     vault_id: String,
@@ -795,6 +804,78 @@ fn activate_vault(
         .map_err(|_| VaultError::state("The selected vault state could not be updated."))?;
     *stored_root = Some(root);
     Ok(snapshot)
+}
+
+fn prepare_development_vault(app: &AppHandle) -> Result<PathBuf, VaultError> {
+    #[cfg(debug_assertions)]
+    {
+        let source = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../fixtures/dev-vault");
+        if !source.is_dir() {
+            return Err(VaultError::state(
+                "The development fixture vault is missing from the repository.",
+            ));
+        }
+
+        let cache = app.path().app_cache_dir().map_err(|error| {
+            VaultError::state(format!(
+                "The development fixture location is unavailable: {error}"
+            ))
+        })?;
+        fs::create_dir_all(&cache).map_err(|error| {
+            VaultError::io("The development fixture cache could not be created", error)
+        })?;
+        let destination = cache.join("dev-vault");
+        if let Ok(metadata) = fs::symlink_metadata(&destination) {
+            if metadata.file_type().is_symlink() || !metadata.is_dir() {
+                return Err(VaultError::invalid(
+                    "The development fixture cache is not a normal directory.",
+                ));
+            }
+            fs::remove_dir_all(&destination).map_err(|error| {
+                VaultError::io("The previous development fixture could not be reset", error)
+            })?;
+        }
+        copy_development_fixture(&source, &destination)?;
+        return Ok(destination);
+    }
+
+    #[cfg(not(debug_assertions))]
+    {
+        let _ = app;
+        Err(VaultError::state(
+            "The development fixture is available only in development builds.",
+        ))
+    }
+}
+
+#[cfg(debug_assertions)]
+fn copy_development_fixture(source: &Path, destination: &Path) -> Result<(), VaultError> {
+    fs::create_dir_all(destination)
+        .map_err(|error| VaultError::io("The development fixture could not be created", error))?;
+    for entry in fs::read_dir(source)
+        .map_err(|error| VaultError::io("The development fixture could not be read", error))?
+    {
+        let entry = entry
+            .map_err(|error| VaultError::io("The development fixture could not be read", error))?;
+        let source_path = entry.path();
+        let destination_path = destination.join(entry.file_name());
+        let file_type = entry.file_type().map_err(|error| {
+            VaultError::io("The development fixture could not be inspected", error)
+        })?;
+        if file_type.is_symlink() {
+            return Err(VaultError::invalid(
+                "The development fixture cannot contain symlinks.",
+            ));
+        }
+        if file_type.is_dir() {
+            copy_development_fixture(&source_path, &destination_path)?;
+        } else if file_type.is_file() {
+            fs::copy(&source_path, &destination_path).map_err(|error| {
+                VaultError::io("The development fixture file could not be copied", error)
+            })?;
+        }
+    }
+    Ok(())
 }
 
 fn preview_timestamp_migration(root: &Path) -> Result<TimestampMigrationPreview, VaultError> {
