@@ -1803,33 +1803,6 @@ fn create_named_vault(parent: &Path, name: &str) -> Result<PathBuf, VaultError> 
     canonical_vault_root(&destination)
 }
 
-fn validate_markdown_filename(name: &str) -> Result<&str, VaultError> {
-    let trimmed = name.trim();
-    if trimmed.is_empty() {
-        return Err(VaultError::invalid(
-            "Enter a filename before renaming this note.",
-        ));
-    }
-    if trimmed.starts_with('.') {
-        return Err(VaultError::invalid("Filenames cannot start with a dot."));
-    }
-
-    let path = Path::new(trimmed);
-    let mut components = path.components();
-    let Some(Component::Normal(component)) = components.next() else {
-        return Err(VaultError::invalid(
-            "Filenames must be a single Markdown filename.",
-        ));
-    };
-    if components.next().is_some() || is_internal_component(component) || !is_markdown(path) {
-        return Err(VaultError::invalid(
-            "Filenames must be a single Markdown filename.",
-        ));
-    }
-
-    Ok(trimmed)
-}
-
 fn validate_folder_name(name: &str) -> Result<&str, VaultError> {
     let trimmed = name.trim();
     if trimmed.is_empty() {

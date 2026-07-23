@@ -175,6 +175,8 @@ Git commit. The format follows [Keep a Changelog], and releases follow
 
 ### Fixed
 
+- Restored native macOS builds after the inline-note merge introduced a
+  duplicate filename validator in the Rust vault boundary.
 - Scratchpad shortcut handling and visible key hints now consistently use
   Control-Option-N/P/S instead of showing Command-Option symbols.
 - Native saves now independently refuse archived notes, and lifecycle changes
