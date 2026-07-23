@@ -2,15 +2,15 @@ use std::{
     collections::{BTreeMap, HashMap, HashSet},
     fs,
     fs::OpenOptions,
-    hash::{Hash, Hasher},
     path::{Component, Path, PathBuf},
     sync::{
-        atomic::{AtomicBool, AtomicU64, Ordering},
+        atomic::{AtomicU64, Ordering},
         Arc, Mutex, RwLock,
     },
-    thread,
-    time::Duration,
 };
+
+#[cfg(test)]
+use std::hash::{Hash, Hasher};
 
 use chrono::{Local, Utc};
 use serde::{Deserialize, Serialize};
@@ -30,6 +30,7 @@ use crate::metadata::{
     inspect_wikilinks, normalize_front_matter_timestamps, restore_note, restore_note_with_type,
     split_note_source, stamp_note_created_at, stamp_note_updated_at,
 };
+use crate::watcher::VaultWatcher;
 
 const MAX_VAULT_ENTRIES: usize = 50_000;
 const MAX_VAULT_DEPTH: usize = 64;
@@ -45,8 +46,7 @@ pub struct VaultState {
     metadata_cache: Arc<Mutex<VaultMetadataCache>>,
     rename_transaction: Mutex<()>,
     root: RwLock<Option<PathBuf>>,
-    file_watch: Mutex<Option<Arc<AtomicBool>>>,
-    vault_watch: Mutex<Option<Arc<AtomicBool>>>,
+    watcher: Mutex<Option<VaultWatcher>>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -226,21 +226,6 @@ pub struct ScratchpadDocument {
     pub body: String,
     pub persisted_content: String,
     pub relative_path: String,
-}
-
-#[derive(Clone, Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct VaultFileChangedEvent {
-    pub exists: bool,
-    pub modified_millis: Option<u64>,
-    pub relative_path: String,
-    pub size_bytes: Option<u64>,
-}
-
-#[derive(Clone, Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct VaultTreeChangedEvent {
-    pub vault_id: String,
 }
 
 #[derive(Debug, Serialize)]
@@ -710,22 +695,7 @@ fn selected_vault_root(
         .ok_or_else(|| VaultError::state(format!("Select a vault before {operation}.")))
 }
 
-fn stop_file_watch(state: &VaultState) {
-    if let Ok(mut current) = state.file_watch.lock() {
-        if let Some(stop) = current.take() {
-            stop.store(true, Ordering::Relaxed);
-        }
-    }
-}
-
-fn stop_vault_tree_watch_signal(state: &VaultState) {
-    if let Ok(mut current) = state.vault_watch.lock() {
-        if let Some(stop) = current.take() {
-            stop.store(true, Ordering::Relaxed);
-        }
-    }
-}
-
+#[cfg(test)]
 fn vault_tree_signature(root: &Path) -> Result<u64, VaultError> {
     let root = canonical_vault_root(root)?;
     let mut hasher = std::collections::hash_map::DefaultHasher::new();
@@ -1177,50 +1147,17 @@ pub async fn read_vault_file(
 
 #[tauri::command]
 pub async fn watch_vault_file(
-    app: AppHandle,
     state: State<'_, VaultState>,
     relative_path: String,
 ) -> Result<(), VaultError> {
     let root = selected_vault_root(&state, "watching a Markdown file")?;
-    let path = resolve_vault_markdown_file(&root, &relative_path)?;
-    stop_file_watch(&state);
-
-    let stop = Arc::new(AtomicBool::new(false));
-    if let Ok(mut current) = state.file_watch.lock() {
-        *current = Some(Arc::clone(&stop));
-    }
-
-    thread::spawn(move || {
-        let mut previous = fs::metadata(&path)
-            .ok()
-            .map(|metadata| file_signature_from_metadata(&metadata));
-        while !stop.load(Ordering::Relaxed) {
-            thread::sleep(Duration::from_millis(400));
-            let current = fs::metadata(&path)
-                .ok()
-                .map(|metadata| file_signature_from_metadata(&metadata));
-            if current == previous {
-                continue;
-            }
-            previous = current;
-            let event = VaultFileChangedEvent {
-                exists: current.is_some(),
-                modified_millis: current.map(|signature| signature.modified_millis),
-                relative_path: relative_path.clone(),
-                size_bytes: current.map(|signature| signature.size_bytes),
-            };
-            if app.emit("vault-file-changed", event).is_err() {
-                break;
-            }
-        }
-    });
-
+    let _ = resolve_vault_markdown_file(&root, &relative_path)?;
     Ok(())
 }
 
 #[tauri::command]
 pub async fn stop_vault_file_watch(state: State<'_, VaultState>) -> Result<(), VaultError> {
-    stop_file_watch(&state);
+    let _ = state;
     Ok(())
 }
 
@@ -1231,37 +1168,24 @@ pub async fn watch_vault_tree(
 ) -> Result<(), VaultError> {
     let root = selected_vault_root(&state, "watching the vault")?;
     let vault_id = ensure_vault_identity(&root)?;
-    stop_vault_tree_watch_signal(&state);
 
-    let stop = Arc::new(AtomicBool::new(false));
-    if let Ok(mut current) = state.vault_watch.lock() {
-        *current = Some(Arc::clone(&stop));
-    }
-
-    thread::spawn(move || {
-        let mut previous = vault_tree_signature(&root).ok();
-        while !stop.load(Ordering::Relaxed) {
-            thread::sleep(Duration::from_millis(750));
-            let current = vault_tree_signature(&root).ok();
-            if current == previous {
-                continue;
-            }
-            previous = current;
-            let event = VaultTreeChangedEvent {
-                vault_id: vault_id.clone(),
-            };
-            if app.emit("vault-tree-changed", event).is_err() {
-                break;
-            }
-        }
-    });
+    let watcher = VaultWatcher::start(app, root, vault_id).map_err(VaultError::state)?;
+    let mut current = state
+        .watcher
+        .lock()
+        .map_err(|_| VaultError::state("The vault watcher state could not be updated."))?;
+    *current = Some(watcher);
 
     Ok(())
 }
 
 #[tauri::command]
 pub async fn stop_vault_tree_watch(state: State<'_, VaultState>) -> Result<(), VaultError> {
-    stop_vault_tree_watch_signal(&state);
+    let mut current = state
+        .watcher
+        .lock()
+        .map_err(|_| VaultError::state("The vault watcher state could not be updated."))?;
+    current.take();
     Ok(())
 }
 

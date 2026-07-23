@@ -164,6 +164,17 @@ export type VaultTreeChangedEvent = {
   vaultId: string;
 };
 
+export type VaultChange = {
+  kind: "created" | "modified" | "deleted" | "renamed" | "moved";
+  oldRelativePath?: string;
+  relativePath: string;
+};
+
+export type VaultChangeBatch = {
+  changes: VaultChange[];
+  vaultId: string;
+};
+
 export type CreateVaultFileRequest = {
   content: string;
   suggestedName: string;
@@ -338,6 +349,14 @@ export function watchVaultTree(): Promise<void> {
 }
 
 export function stopVaultTreeWatch(): Promise<void> {
+  return invokeVault<void>("stop_vault_tree_watch");
+}
+
+export function watchVault(): Promise<void> {
+  return invokeVault<void>("watch_vault_tree");
+}
+
+export function stopVault(): Promise<void> {
   return invokeVault<void>("stop_vault_tree_watch");
 }
 
