@@ -2,7 +2,9 @@ import { useRef } from "react";
 
 import {
   EDITOR_FONT_SIZES,
+  EDITOR_LINE_LENGTHS,
   type EditorFontSize,
+  type EditorLineLength,
   type MarkdownSettings,
 } from "../markdown/types";
 import { THEME_OPTIONS } from "../theme/palettes";
@@ -108,6 +110,27 @@ export function SettingsModal({
               ))}
             </select>
           </label>
+          <label className="settings-select">
+            <span>Editor line length</span>
+            <select
+              aria-label="Editor line length"
+              value={markdownSettings.editorLineLength}
+              onChange={(event) =>
+                onMarkdownSettingsChange({
+                  ...markdownSettings,
+                  editorLineLength: Number(
+                    event.target.value,
+                  ) as EditorLineLength,
+                })
+              }
+            >
+              {EDITOR_LINE_LENGTHS.map((length) => (
+                <option key={length} value={length}>
+                  {length} characters
+                </option>
+              ))}
+            </select>
+          </label>
         </section>
         <section className="settings-section">
           <h3>Appearance</h3>
@@ -153,6 +176,26 @@ export function SettingsModal({
               }
             />
             <span>Show file extensions</span>
+          </label>
+        </section>
+        <section className="settings-section">
+          <h3>File behavior</h3>
+          <p>
+            When a note moves in Finder, Anchored follows it and can keep its
+            type aligned with the first folder beneath the vault root.
+          </p>
+          <label className="settings-toggle">
+            <input
+              checked={markdownSettings.updateTypeOnExternalMove}
+              type="checkbox"
+              onChange={(event) =>
+                onMarkdownSettingsChange({
+                  ...markdownSettings,
+                  updateTypeOnExternalMove: event.target.checked,
+                })
+              }
+            />
+            <span>Update note type when moved in Finder</span>
           </label>
         </section>
         <section className="settings-section">

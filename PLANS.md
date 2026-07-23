@@ -279,8 +279,10 @@ and preserves link integrity across filename changes.
       first. Reverting the feature leaves `.anchored` data intact and ordinary
       Markdown untouched; manually restoring files remains possible from the
       hidden trash directory and index.
-    - Approved decisions: Use `.anchored/trash/`; exclude trashed notes from
-      files, search, links, aliases, and backlinks; preserve note bytes and
+    - Superseded decision: The original design used `.anchored/trash/`;
+      implementation must now use the vault-root `trash/` system folder.
+      Exclude trashed notes from files, search, links, aliases, and backlinks;
+      preserve note bytes and
       links; include Restore but no permanent delete; stop safely on restore
       name conflicts; show remembered vaults with quick switch and Forget;
       keep registry paths native-only; use vault identity for notification
@@ -2231,6 +2233,140 @@ keeping stored filenames and rename-safe link behavior unchanged.
 
 - Targeted settings, filename, and App tests pass; full formatting, lint,
   type-check, test, and production-build verification remains required.
+
+## Follow-up plan: preserve external moves and derive note types
+
+### Outcome
+
+When Finder or another file manager moves an open Markdown file inside the
+selected vault, Anchored keeps the document open, follows its new path, and
+updates the file's metadata according to the agreed folder rules. The change
+is safe, toggleable, and consistent with Anchored's existing atomic move and
+wikilink transaction behavior.
+
+### Approved behavior
+
+- The setting `Update note type when moved between folders` defaults to on and
+  is persisted with the existing Markdown settings. When off, external moves
+  update path and selection only and preserve front matter metadata.
+- The first path component from the vault root determines `type`.
+- A file at the vault root has no derived `type`.
+- `inbox` and `trash` are physical system-folder exceptions and have no
+  derived `type`; matching is case-insensitive.
+- `Archive` is a virtual collection, not a physical type folder. Archive
+  actions set `status: archived` and preserve `type`; they do not derive a
+  type from an `archive` path.
+- Other first-level folders set `type` to the folder name, preserving the
+  folder's displayed capitalization. Deeper folders do not change it.
+- Existing archived notes remain archived during ordinary external moves.
+  Only an explicit Restore action changes their lifecycle status.
+- External moves update supported wikilinks in YAML front matter and Markdown
+  bodies across affected notes, reusing the existing path-rewrite transaction.
+- Anchored-managed hidden paths and recovery data are excluded from type
+  derivation and ordinary vault indexing. The user-visible Trash location is
+  the vault-root `trash/` folder and remains a system folder like `inbox`.
+
+### Implementation sequence
+
+1. Define one shared, tested native classification policy for the vault root,
+   `inbox`, `trash`, virtual Archive status, first-level folder, case-folding,
+   and capitalization rules. Update the project contract to supersede the
+   `.anchored/trash/` decision and document the setting's default.
+2. Extend the native external-move path to reconcile a moved Markdown file
+   atomically: validate the old and new paths, load the current bytes, apply
+   only the necessary front-matter/status mutation, and use the existing
+   cross-file rewrite transaction so links in properties and bodies update
+   together. Recheck files before commit and leave the vault unchanged on a
+   conflict or malformed/unsafe document.
+3. Move the existing reversible Trash implementation from
+   `.anchored/trash/` to vault-root `trash/`, preserving exact bytes, restore
+   conflict checks, system-folder exclusion, and notification behavior. Add
+   migration or recovery handling for existing `.anchored/trash/` entries
+   before removing that storage assumption.
+4. Update the Tauri watcher event handling and React app state so an active
+   document is associated by `oldRelativePath`, retained through the new path,
+   and refreshed without falling back to the empty-document view. Debounce
+   duplicate move events, handle moves out of the vault, and preserve dirty,
+   conflict, and save-in-flight protections.
+5. Add the persisted Settings toggle and explanatory copy. Verify that
+   disabling it prevents metadata mutation while still preserving open-note
+   continuity and normal tree refresh behavior.
+6. Add targeted native, frontend, and disposable-vault integration coverage;
+   update user-facing feature documentation and the unreleased changelog only
+   with the implementation. Run formatting, lint, type-check, frontend tests,
+   production build, Rust formatting, Rust tests, strict Clippy, and rendered
+   desktop/narrow-window QA.
+
+### Expected files and boundaries
+
+- Native metadata, vault mutation, watcher, Trash, and link-transaction
+  modules under `src-tauri/src/`, plus their Rust tests.
+- Typed bridge definitions and tests in `src/lib/tauri/vault.ts`.
+- App reconciliation, settings state, and Settings UI/tests under `src/app/`.
+- `PROJECT.md`, `docs/FEATURES.md`, `docs/TEST_CHECKLIST.md`,
+  `CHANGELOG.md`, and this plan.
+
+### Risks and safeguards
+
+- A filesystem move can race with editing or another application. Recheck
+  expected bytes and refuse silent metadata writes when the document is dirty,
+  conflicted, malformed, or changed during planning.
+- Native watchers can emit incomplete or duplicate rename pairs. Keep the
+  current debouncing, require a valid old/new pair for mutation, and fall back
+  to a refresh-only path when identity cannot be proven.
+- Updating links across a vault is a multi-file mutation. Reuse the existing
+  journaled transaction, preserve front-matter formatting, and roll back every
+  affected file if any preparation or commit step fails.
+- Root `trash/` may collide with an existing user folder. Treat it as reserved
+  only after an explicit compatibility decision, refuse unsafe collisions, and
+  never reinterpret arbitrary existing content as managed Trash.
+- The setting must control only folder-derived metadata. It must not disable
+  path tracking, link maintenance, conflict protection, or normal status
+  semantics.
+
+### Verification matrix
+
+- Open note moved from root to `day/run/`: stays open and receives
+  `type: day`.
+- Open note moved from `day/run/` to `Projects/Day/`: receives
+  `type: Projects`.
+- Open note moved to root, `inbox/`, or `trash/`: derived `type` is removed.
+- Archive action preserves `type` and writes `status: archived`; explicit
+  Restore changes status as specified by the existing lifecycle flow.
+- Toggle off preserves existing `type` and `status` across external moves.
+- Wikilinks in YAML properties and Markdown bodies update during an external
+  move, including links in other affected notes.
+- Dirty, conflicted, malformed, missing, outside-vault, duplicate-event, and
+  destination-collision cases remain recoverable without data loss.
+- Existing `.anchored/trash/` data, root `trash/` conflicts, symlinks, hidden
+  paths, Unicode folder names, and case variants of system folders are tested.
+
+### Commit boundaries
+
+Keep the implementation in focused verified chunks, normally:
+
+1. policy, settings, and contract/documentation;
+2. native external-move reconciliation and link transaction;
+3. root Trash relocation and compatibility handling;
+4. app continuity, UI, integration coverage, and final documentation.
+
+### Implementation result
+
+- Implemented the shared first-folder policy, including root, `inbox`,
+  `trash`, and virtual Archive exceptions, with case-insensitive system-folder
+  matching and capitalization preserved for ordinary folders.
+- Added journaled external-move reconciliation so open notes keep their path
+  identity, derived `type` updates are atomic and optional, and wikilinks in
+  YAML properties and Markdown bodies update with the existing transaction.
+- Moved managed Trash to vault-root `trash/`, excluded it from indexing and
+  watcher changes, and added compatibility migration from `.anchored/trash/`.
+- Added the persisted default-on Settings toggle, App/native bridge coverage,
+  documentation, and changelog entries.
+- Verification completed: 102 Rust tests, 190 frontend tests, formatting,
+  lint, TypeScript, production build, and strict Clippy all pass. Rendered
+  local-app QA verified the Settings toggle and default state; the browser
+  fixture cannot provide Tauri's native event listener and reports that known
+  IPC limitation, so filesystem move behavior is covered by native/App tests.
 
 ## Completion
 

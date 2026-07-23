@@ -287,6 +287,18 @@ export function rescanVault(): Promise<VaultSnapshot | null> {
   return invokeVault<VaultSnapshot | null>("rescan_vault");
 }
 
+export function reconcileVaultFileMove(
+  oldRelativePath: string,
+  newRelativePath: string,
+  updateType: boolean,
+): Promise<VaultDocument> {
+  return invokeVault<VaultDocument>("reconcile_vault_file_move", {
+    oldRelativePath,
+    newRelativePath,
+    updateType,
+  });
+}
+
 export function previewVaultTimestampMigration(): Promise<TimestampMigrationPreview> {
   return invokeVault<TimestampMigrationPreview>(
     "preview_vault_timestamp_migration",

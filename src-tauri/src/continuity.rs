@@ -17,7 +17,7 @@ use crate::vault::VaultError;
 pub(crate) const INTERNAL_DIRECTORY_NAME: &str = ".anchored";
 const VAULT_METADATA_NAME: &str = "vault.json";
 const REGISTRY_NAME: &str = "vault-registry.json";
-const TRASH_DIRECTORY_NAME: &str = "trash";
+pub(crate) const TRASH_DIRECTORY_NAME: &str = "trash";
 const TRASH_INDEX_NAME: &str = "index.json";
 const MAX_REMEMBERED_VAULTS: usize = 50;
 const MAX_TRASH_ENTRIES: usize = 10_000;
@@ -102,6 +102,21 @@ pub(crate) fn is_internal_component(component: &OsStr) -> bool {
 pub(crate) fn is_internal_relative_path(path: &Path) -> bool {
     path.components()
         .any(|component| is_internal_component(component.as_os_str()))
+}
+
+pub(crate) fn is_trash_component(component: &OsStr) -> bool {
+    component
+        .to_str()
+        .is_some_and(|value| value.eq_ignore_ascii_case(TRASH_DIRECTORY_NAME))
+}
+
+pub(crate) fn is_vault_trash_relative_path(path: &Path) -> bool {
+    path.components()
+        .next()
+        .is_some_and(|component| match component {
+            std::path::Component::Normal(value) => is_trash_component(value),
+            _ => false,
+        })
 }
 
 pub(crate) fn ensure_no_hidden_descendants(directory: &Path) -> Result<(), VaultError> {
@@ -548,8 +563,21 @@ pub(crate) fn restore_folder_from_trash(
 }
 
 fn load_and_recover_trash(root: &Path) -> Result<(PathBuf, TrashIndex), VaultError> {
-    let internal = root.join(INTERNAL_DIRECTORY_NAME);
-    let trash_directory = internal.join(TRASH_DIRECTORY_NAME);
+    let trash_directory = root.join(TRASH_DIRECTORY_NAME);
+    let legacy_directory = root
+        .join(INTERNAL_DIRECTORY_NAME)
+        .join(TRASH_DIRECTORY_NAME);
+    if !trash_directory.exists() && legacy_directory.exists() {
+        fs::rename(&legacy_directory, &trash_directory).map_err(|error| {
+            VaultError::io("The legacy Anchored Trash could not be migrated", error)
+        })?;
+        sync_parent(&legacy_directory)?;
+        sync_parent(&trash_directory)?;
+    } else if trash_directory.exists() && legacy_directory.exists() {
+        return Err(VaultError::state(
+            "Both the root Trash folder and legacy hidden Trash folder exist. Resolve this conflict before using Trash.",
+        ));
+    }
     ensure_normal_directory(&trash_directory)?;
     let index_path = trash_directory.join(TRASH_INDEX_NAME);
     let mut index = load_trash_index(&index_path)?;
@@ -690,6 +718,7 @@ fn validate_stored_trash_entry(entry: &StoredTrashEntry) -> Result<(), VaultErro
 
 fn validate_original_path(path: &Path) -> Result<(), VaultError> {
     if !is_valid_relative_path(path)
+        || is_vault_trash_relative_path(path)
         || path
             .extension()
             .and_then(|extension| extension.to_str())
@@ -706,7 +735,7 @@ fn validate_original_path(path: &Path) -> Result<(), VaultError> {
 }
 
 fn validate_folder_path(path: &Path) -> Result<(), VaultError> {
-    if !is_valid_relative_path(path) {
+    if !is_valid_relative_path(path) || is_vault_trash_relative_path(path) {
         return Err(VaultError::invalid_file("The folder path is invalid."));
     }
     Ok(())
@@ -983,7 +1012,7 @@ mod tests {
         ensure_vault_identity, forget_vault, list_remembered_vaults, list_trash_entries,
         load_trash_index, load_vault_identity, move_folder_to_trash, move_note_to_trash,
         remember_vault, remembered_vault_root, restore_note_from_trash, trash_file_path,
-        write_trash_index, TrashEntryState, INTERNAL_DIRECTORY_NAME,
+        write_trash_index, TrashEntryState, INTERNAL_DIRECTORY_NAME, TRASH_DIRECTORY_NAME,
     };
 
     #[test]
@@ -1060,6 +1089,7 @@ mod tests {
         let trashed =
             move_note_to_trash(vault.path(), "Notes/Original.md", 100).expect("trash note");
         assert!(!source.exists());
+        assert!(vault.path().join(TRASH_DIRECTORY_NAME).is_dir());
         assert_eq!(
             list_trash_entries(vault.path()).unwrap(),
             vec![trashed.clone()]
@@ -1070,6 +1100,20 @@ mod tests {
         assert_eq!(restored, trashed);
         assert_eq!(fs::read(&source).expect("read restored note"), content);
         assert!(list_trash_entries(vault.path()).unwrap().is_empty());
+    }
+
+    #[test]
+    fn migrates_legacy_hidden_trash_to_the_vault_root() {
+        let vault = tempdir().expect("create fixture vault");
+        fs::write(vault.path().join("Note.md"), "# Note").expect("write note");
+        let trashed = move_note_to_trash(vault.path(), "Note.md", 100).expect("trash note");
+        let root_trash = vault.path().join(TRASH_DIRECTORY_NAME);
+        let legacy_trash = vault.path().join(INTERNAL_DIRECTORY_NAME).join("trash");
+        fs::rename(&root_trash, &legacy_trash).expect("move Trash to legacy location");
+
+        assert_eq!(list_trash_entries(vault.path()).unwrap(), vec![trashed]);
+        assert!(root_trash.is_dir());
+        assert!(!legacy_trash.exists());
     }
 
     #[test]
@@ -1137,7 +1181,7 @@ mod tests {
         let source = vault.path().join("Note.md");
         fs::write(&source, "# Original").expect("write original note");
         let trashed = move_note_to_trash(vault.path(), "Note.md", 100).expect("trash note");
-        let trash_directory = vault.path().join(INTERNAL_DIRECTORY_NAME).join("trash");
+        let trash_directory = vault.path().join(TRASH_DIRECTORY_NAME);
         let index_path = trash_directory.join("index.json");
         let mut index = load_trash_index(&index_path).expect("load trash index");
         index.entries[0].state = TrashEntryState::Moving;

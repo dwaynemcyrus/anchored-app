@@ -157,12 +157,7 @@ export function wikilinkCompletionAtOffset(
       if (isFenceLine || fenceMarker !== undefined || /^( {4}|\t)/.test(line)) {
         return null;
       }
-      return inlineCompletion(
-        line,
-        lineOffset,
-        offset - lineOffset,
-        autoPair,
-      );
+      return inlineCompletion(line, lineOffset, offset - lineOffset, autoPair);
     }
     lineOffset += lineWithEnding.length;
   }

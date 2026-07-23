@@ -8,6 +8,8 @@ Git commit. The format follows [Keep a Changelog], and releases follow
 
 ### Added
 
+- Settings now lets users choose the Markdown source editor line length as
+  48, 56, 64, or 72 characters, with a 64-character default.
 - Scratchpad now uses the full Markdown editor, including CodeMirror editing,
   wikilink completion and navigation, Markdown behavior, search, autosave,
   and live updates for external file changes.
@@ -31,9 +33,17 @@ Git commit. The format follows [Keep a Changelog], and releases follow
 - Note filenames can now be edited directly from the editor breadcrumb.
   Enter or blur submits the requested name, Escape cancels, and the existing
   atomic rename transaction continues to update supported links safely.
+- Inline filename editing now treats blank or unchanged input as a cancel and
+  reliably restores the original name when Escape is pressed.
 - Anchored now watches the selected vault tree while open, so Finder-created,
   renamed, moved, and deleted folders and files refresh the physical Files
   view automatically without requiring focus or another app action.
+- Open notes moved in Finder now remain open and keep their selection. Their
+  supported wikilinks are updated in both YAML front matter and Markdown
+  bodies, and the first folder beneath the vault root can derive `type` when
+  the new Settings option is enabled (on by default).
+- Reversible Trash now uses the reserved vault-root `trash/` system folder;
+  existing `.anchored/trash/` data is migrated when Trash is first accessed.
 - Lifecycle moves now route Inbox notes into a lower-case folder derived from
   their `type` front matter, create that folder when needed, and return notes
   to the physical `inbox` folder when moved back to Inbox. Untyped notes use

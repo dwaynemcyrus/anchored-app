@@ -34,7 +34,7 @@ import {
   pairInputAt,
   removePairEffect,
 } from "../markdown/editorPairs";
-import type { EditorFontSize } from "../markdown/types";
+import type { EditorFontSize, EditorLineLength } from "../markdown/types";
 import { markdownBodyStart } from "../markdown/source";
 import { wikilinkAtOffset, wikilinkCompletionAtOffset } from "../links";
 import { describeExternalDocumentChange } from "./editorSync";
@@ -50,6 +50,7 @@ type MarkdownEditorProps = {
   focusAtEnd?: boolean;
   documentId: string;
   editorFontSize: EditorFontSize;
+  editorLineLength?: EditorLineLength;
   findRequest: number;
   label: string;
   value: string;
@@ -69,6 +70,7 @@ export default function MarkdownEditor({
   focusAtEnd = false,
   documentId,
   editorFontSize,
+  editorLineLength = 64,
   findRequest,
   label,
   value,
@@ -507,6 +509,7 @@ export default function MarkdownEditor({
       style={
         {
           "--anchored-editor-font-size": `${editorFontSize}px`,
+          "--anchored-editor-line-length": `${editorLineLength}ch`,
         } as CSSProperties
       }
     />

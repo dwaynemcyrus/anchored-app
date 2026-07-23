@@ -32,7 +32,7 @@ describe("SettingsModal Markdown options", () => {
 
     const dialog = screen.getByRole("dialog", { name: "Settings" });
     const toggles = screen.getAllByRole("checkbox");
-    expect(toggles).toHaveLength(6);
+    expect(toggles).toHaveLength(7);
     const extensionToggle = screen.getByRole("checkbox", {
       name: "Show file extensions",
     });
@@ -42,9 +42,16 @@ describe("SettingsModal Markdown options", () => {
         .every((toggle) => (toggle as HTMLInputElement).checked),
     ).toBe(true);
     expect(extensionToggle).not.toBeChecked();
+    const moveTypeToggle = screen.getByRole("checkbox", {
+      name: "Update note type when moved in Finder",
+    });
+    expect(moveTypeToggle).toBeChecked();
     expect(
       screen.getByRole("combobox", { name: "Editor text size" }),
     ).toHaveValue("14");
+    expect(
+      screen.getByRole("combobox", { name: "Editor line length" }),
+    ).toHaveValue("64");
     expect(screen.getByRole("combobox", { name: "Color theme" })).toHaveValue(
       "anchored",
     );
@@ -65,6 +72,14 @@ describe("SettingsModal Markdown options", () => {
       editorFontSize: 12,
     });
     await user.selectOptions(
+      screen.getByRole("combobox", { name: "Editor line length" }),
+      "72",
+    );
+    expect(onMarkdownSettingsChange).toHaveBeenLastCalledWith({
+      ...DEFAULT_MARKDOWN_SETTINGS,
+      editorLineLength: 72,
+    });
+    await user.selectOptions(
       screen.getByRole("combobox", { name: "Color theme" }),
       "light",
     );
@@ -76,6 +91,11 @@ describe("SettingsModal Markdown options", () => {
     expect(onMarkdownSettingsChange).toHaveBeenLastCalledWith({
       ...DEFAULT_MARKDOWN_SETTINGS,
       showFileExtensions: true,
+    });
+    await user.click(moveTypeToggle);
+    expect(onMarkdownSettingsChange).toHaveBeenLastCalledWith({
+      ...DEFAULT_MARKDOWN_SETTINGS,
+      updateTypeOnExternalMove: false,
     });
     expect(dialog).toHaveTextContent("Rendering options never rewrite");
     expect(dialog).toHaveTextContent("Typography");

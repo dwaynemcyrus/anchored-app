@@ -28,6 +28,7 @@ import {
   openRememberedVault,
   previewVaultTimestampMigration,
   readVaultFile,
+  reconcileVaultFileMove,
   renameVaultFolder,
   renameVaultFile,
   rescanVault,
@@ -70,6 +71,7 @@ vi.mock("../lib/tauri/vault", () => ({
   openRememberedVault: vi.fn(),
   previewVaultTimestampMigration: vi.fn(),
   readVaultFile: vi.fn(),
+  reconcileVaultFileMove: vi.fn(),
   renameVaultFolder: vi.fn(),
   renameVaultFile: vi.fn(),
   rescanVault: vi.fn(),
@@ -122,6 +124,7 @@ const mockedPreviewVaultTimestampMigration = vi.mocked(
   previewVaultTimestampMigration,
 );
 const mockedReadVaultFile = vi.mocked(readVaultFile);
+const mockedReconcileVaultFileMove = vi.mocked(reconcileVaultFileMove);
 const mockedRenameVaultFolder = vi.mocked(renameVaultFolder);
 const mockedRenameVaultFile = vi.mocked(renameVaultFile);
 const mockedRescanVault = vi.mocked(rescanVault);
@@ -184,6 +187,7 @@ describe("App", () => {
     mockedPreviewVaultTimestampMigration.mockReset();
     mockedSelectVault.mockReset();
     mockedReadVaultFile.mockReset();
+    mockedReconcileVaultFileMove.mockReset();
     mockedRenameVaultFolder.mockReset();
     mockedRenameVaultFile.mockReset();
     mockedRescanVault.mockReset();
@@ -2108,6 +2112,86 @@ describe("App", () => {
     expect(await screen.findByRole("button", { name: "Finder" })).toBeVisible();
   });
 
+  it("keeps an open note selected when Finder moves it", async () => {
+    const user = userEvent.setup();
+    const originalPath = "Notes/Leadership.md";
+    const movedPath = "day/run/Leadership.md";
+    mockedSelectVault.mockResolvedValue({
+      files: [
+        {
+          name: "Leadership.md",
+          parent: "Notes",
+          relativePath: originalPath,
+        },
+      ],
+      name: "My Vault",
+      vaultId: "vault-1",
+      warnings: noWarnings,
+    });
+    mockedReadVaultFile.mockImplementation(async (relativePath) => ({
+      content:
+        relativePath === movedPath
+          ? "---\ntype: day\n---\n# Leadership\n"
+          : "---\ntype: Notes\n---\n# Leadership\n",
+      noteType: relativePath === movedPath ? "day" : "Notes",
+      relativePath,
+      sizeBytes: 34,
+    }));
+    mockedReconcileVaultFileMove.mockResolvedValue({
+      content: "---\ntype: day\n---\n# Leadership\n",
+      noteType: "day",
+      relativePath: movedPath,
+      sizeBytes: 34,
+      updatedFiles: 1,
+      updatedLinks: 0,
+    });
+    render(<App />);
+
+    await user.click(screen.getByRole("button", { name: "Open vault" }));
+    await user.click(
+      await screen.findByRole("button", { name: "Leadership.md" }),
+    );
+    await waitFor(() =>
+      expect(
+        screen.getByRole("textbox", {
+          name: "Leadership.md Markdown editor",
+        }),
+      ).toBeInTheDocument(),
+    );
+
+    await waitFor(() => expect(eventHandlers.has("vault-changed")).toBe(true));
+    await act(async () => {
+      eventHandlers.get("vault-changed")?.({
+        payload: {
+          vaultId: "vault-1",
+          changes: [
+            {
+              kind: "renamed",
+              oldRelativePath: originalPath,
+              relativePath: movedPath,
+            },
+          ],
+        },
+      });
+    });
+
+    await waitFor(() =>
+      expect(mockedReconcileVaultFileMove).toHaveBeenCalledWith(
+        originalPath,
+        movedPath,
+        true,
+      ),
+    );
+    expect(
+      screen.queryByRole("heading", { level: 1, name: "No note open" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("textbox", {
+        name: "Leadership.md Markdown editor",
+      }),
+    ).toBeInTheDocument();
+  });
+
   it("shows a recoverable error when a vault note cannot be read", async () => {
     const user = userEvent.setup();
     mockedSelectVault.mockResolvedValue({
@@ -2379,6 +2463,48 @@ describe("App", () => {
     await waitFor(() => expect(filenameInput).toHaveFocus());
     await user.clear(filenameInput);
     await user.type(filenameInput, "Changed.md");
+    await user.keyboard("{Escape}");
+
+    expect(
+      screen.queryByRole("textbox", { name: "Edit filename: Keep.md" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Edit filename: Keep.md" }),
+    ).toBeInTheDocument();
+    expect(mockedRenameVaultFile).not.toHaveBeenCalled();
+  });
+
+  it("restores the original filename when Escape is pressed on a blank field", async () => {
+    const user = userEvent.setup();
+    mockedSelectVault.mockResolvedValue({
+      files: [
+        {
+          name: "Keep.md",
+          parent: "Notes",
+          relativePath: "Notes/Keep.md",
+        },
+      ],
+      name: "My Vault",
+      warnings: noWarnings,
+    });
+    mockedReadVaultFile.mockResolvedValue({
+      content: "# Keep\n",
+      relativePath: "Notes/Keep.md",
+      sizeBytes: 7,
+    });
+    render(<App />);
+
+    await user.click(screen.getByRole("button", { name: "Open vault" }));
+    await user.click(screen.getByRole("button", { name: "Keep.md" }));
+    await screen.findByRole("textbox", { name: "Keep.md Markdown editor" });
+    await user.click(
+      screen.getByRole("button", { name: "Edit filename: Keep.md" }),
+    );
+
+    const filenameInput = screen.getByRole("textbox", {
+      name: "Edit filename: Keep.md",
+    });
+    await user.clear(filenameInput);
     await user.keyboard("{Escape}");
 
     expect(

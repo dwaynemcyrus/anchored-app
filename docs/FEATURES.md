@@ -265,7 +265,7 @@ Behavior:
 
 ## Reversible Trash
 
-- Move a saved note to a hidden vault-specific `.anchored/trash` folder.
+- Move a saved note to the reserved vault-root `trash/` system folder.
 - Remove trashed notes from navigation, search, links, aliases, and backlinks.
 - Preserve the note's exact bytes and do not rewrite links when trashing it.
 - Restore a note to its original folder and filename, recreating missing normal

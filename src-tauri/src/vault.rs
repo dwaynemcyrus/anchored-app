@@ -20,6 +20,7 @@ use tauri_plugin_dialog::DialogExt;
 use crate::continuity::{
     current_time_millis, ensure_no_hidden_descendants, ensure_vault_identity,
     forget_vault as forget_registered_vault, is_internal_component, is_internal_relative_path,
+    is_trash_component, is_vault_trash_relative_path,
     list_remembered_vaults as load_remembered_vaults, list_trash_entries, move_folder_to_trash,
     move_note_to_trash, registry_path, remember_vault, remembered_vault_root,
     restore_folder_from_trash, restore_note_from_trash, RememberedVault, TrashEntry,
@@ -28,7 +29,7 @@ use crate::links::{plan_rename_link_rewrites_by_path, LinkNote, LinkSource};
 use crate::metadata::{
     archive_note, archive_note_with_type, inspect_note_aliases, inspect_note_properties,
     inspect_wikilinks, normalize_front_matter_timestamps, restore_note, restore_note_with_type,
-    split_note_source, stamp_note_created_at, stamp_note_updated_at,
+    split_note_source, stamp_note_created_at, stamp_note_updated_at, update_note_type,
 };
 use crate::watcher::VaultWatcher;
 
@@ -600,6 +601,22 @@ pub async fn rescan_vault(
 }
 
 #[tauri::command]
+pub async fn reconcile_vault_file_move(
+    state: State<'_, VaultState>,
+    old_relative_path: String,
+    new_relative_path: String,
+    update_type: bool,
+) -> Result<VaultDocument, VaultError> {
+    let _rename_guard = state
+        .rename_transaction
+        .lock()
+        .map_err(|_| VaultError::state("The external move lock could not be acquired."))?;
+    let root = selected_vault_root(&state, "reconciling an external Markdown move")?;
+    recover_rename_transaction(&root)?;
+    reconcile_external_markdown_move(&root, &old_relative_path, &new_relative_path, update_type)
+}
+
+#[tauri::command]
 pub async fn preview_vault_timestamp_migration(
     state: State<'_, VaultState>,
 ) -> Result<TimestampMigrationPreview, VaultError> {
@@ -719,6 +736,9 @@ fn vault_tree_signature(root: &Path) -> Result<u64, VaultError> {
             if is_internal_component(&entry.file_name()) {
                 continue;
             }
+            if depth == 0 && is_trash_component(&entry.file_name()) {
+                continue;
+            }
             visited_entries += 1;
             if visited_entries > MAX_VAULT_ENTRIES {
                 return Err(VaultError::too_large());
@@ -806,7 +826,7 @@ fn prepare_development_vault(app: &AppHandle) -> Result<PathBuf, VaultError> {
             })?;
         }
         copy_development_fixture(&source, &destination)?;
-        return Ok(destination);
+        Ok(destination)
     }
 
     #[cfg(not(debug_assertions))]
@@ -1844,9 +1864,9 @@ fn resolve_vault_directory(root: &Path, relative_path: &str) -> Result<PathBuf, 
     }
 
     let requested = Path::new(relative_path);
-    if is_internal_relative_path(requested) {
+    if is_internal_relative_path(requested) || is_vault_trash_relative_path(requested) {
         return Err(VaultError::invalid_file(
-            "The hidden .anchored directory is reserved for Anchored data.",
+            "The system Trash folder is reserved for Anchored data.",
         ));
     }
 
@@ -2190,6 +2210,9 @@ fn scan_vault(root: &Path) -> Result<VaultSnapshot, VaultError> {
 
         for entry in entries {
             if is_internal_component(&entry.file_name()) {
+                continue;
+            }
+            if depth == 0 && is_trash_component(&entry.file_name()) {
                 continue;
             }
             visited_entries += 1;
@@ -2620,6 +2643,25 @@ fn validated_note_type(note_type: Option<&str>) -> Result<Option<&str>, VaultErr
     Ok(Some(value))
 }
 
+fn derived_note_type(relative_path: &str) -> Option<String> {
+    let mut components = Path::new(relative_path).components();
+    let first = components.next()?;
+    if !matches!(components.next(), Some(Component::Normal(_))) {
+        return None;
+    }
+    let Component::Normal(component) = first else {
+        return None;
+    };
+    let folder = component.to_str()?.to_owned();
+    if folder.eq_ignore_ascii_case("inbox")
+        || folder.eq_ignore_ascii_case("trash")
+        || folder.eq_ignore_ascii_case("archive")
+    {
+        return None;
+    }
+    Some(folder)
+}
+
 fn current_local_timestamp() -> String {
     Local::now().format("%Y-%m-%dT%H:%M:%S%:z").to_string()
 }
@@ -3002,6 +3044,195 @@ fn create_markdown_file(
         metadata.len(),
         file_signature_from_metadata(&metadata).modified_millis,
     ))
+}
+
+fn reconcile_external_markdown_move(
+    root: &Path,
+    old_relative_path: &str,
+    new_relative_path: &str,
+    update_type: bool,
+) -> Result<VaultDocument, VaultError> {
+    let root = canonical_vault_root(root)?;
+    let old_path = Path::new(old_relative_path);
+    let new_path = Path::new(new_relative_path);
+    for path in [old_path, new_path] {
+        if path.as_os_str().is_empty()
+            || !is_markdown(path)
+            || is_internal_relative_path(path)
+            || is_vault_trash_relative_path(path)
+            || path
+                .components()
+                .any(|component| !matches!(component, Component::Normal(_)))
+        {
+            return Err(VaultError::invalid_file(
+                "Only visible relative Markdown moves can be reconciled safely.",
+            ));
+        }
+    }
+    if old_relative_path == new_relative_path {
+        return Err(VaultError::rename_conflict(
+            "The external move did not change the note path.",
+        ));
+    }
+    if root.join(old_path).exists() {
+        return Err(VaultError::conflict());
+    }
+
+    let destination_path = resolve_vault_markdown_file(&root, new_relative_path)?;
+    let mut snapshot = scan_vault(&root)?;
+    enrich_vault_metadata(&root, &mut snapshot.files)?;
+    if !snapshot
+        .files
+        .iter()
+        .any(|file| file.relative_path == new_relative_path)
+    {
+        return Err(VaultError::invalid_file(
+            "The moved note is no longer visible in the vault.",
+        ));
+    }
+
+    let sources = snapshot
+        .files
+        .iter()
+        .map(|file| {
+            let document = read_markdown_file(&root, &file.relative_path).map_err(|error| {
+                VaultError::rename_conflict(format!(
+                    "Every Markdown file must be readable before external links can be updated safely. {}: {}",
+                    file.relative_path, error.message
+                ))
+            })?;
+            Ok::<_, VaultError>(LinkSource {
+                content: document.content,
+                relative_path: file.relative_path.clone(),
+            })
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+
+    let target_source = sources
+        .iter()
+        .find(|source| source.relative_path == new_relative_path)
+        .ok_or_else(|| VaultError::invalid_file("The moved note could not be read."))?;
+    let target_content = if update_type {
+        let note_type = derived_note_type(new_relative_path);
+        update_note_type(&target_source.content, note_type.as_deref()).map_err(|error| {
+            VaultError::lifecycle(format!(
+                "Anchored could not update the moved note's type safely: {error}."
+            ))
+        })?
+    } else {
+        target_source.content.clone()
+    };
+
+    let planning_sources = sources
+        .iter()
+        .map(|source| LinkSource {
+            content: if source.relative_path == new_relative_path {
+                target_content.clone()
+            } else {
+                source.content.clone()
+            },
+            relative_path: if source.relative_path == new_relative_path {
+                old_relative_path.to_owned()
+            } else {
+                source.relative_path.clone()
+            },
+        })
+        .collect::<Vec<_>>();
+    let notes = snapshot
+        .files
+        .iter()
+        .map(|file| LinkNote {
+            aliases: file.aliases.clone(),
+            identity: None,
+            relative_path: if file.relative_path == new_relative_path {
+                old_relative_path.to_owned()
+            } else {
+                file.relative_path.clone()
+            },
+        })
+        .collect::<Vec<_>>();
+    let rewrites = plan_rename_link_rewrites_by_path(
+        &notes,
+        &planning_sources,
+        old_relative_path,
+        new_relative_path,
+    );
+    let updated_links = rewrites
+        .iter()
+        .map(|rewrite| rewrite.replacement_count)
+        .sum();
+    let mut final_contents = rewrites
+        .into_iter()
+        .map(|rewrite| (rewrite.relative_path, rewrite.content))
+        .collect::<BTreeMap<_, _>>();
+    final_contents.insert(old_relative_path.to_owned(), target_content);
+
+    let target_changed = final_contents
+        .get(old_relative_path)
+        .is_some_and(|content| content != &target_source.content);
+    let mut entries = Vec::with_capacity(final_contents.len());
+    for (logical_path, content) in final_contents {
+        let actual_path = if logical_path == old_relative_path {
+            new_relative_path
+        } else {
+            logical_path.as_str()
+        };
+        let source = sources
+            .iter()
+            .find(|source| source.relative_path == actual_path)
+            .ok_or_else(|| VaultError::state("An external move source could not be matched."))?;
+        let original_path = resolve_vault_markdown_file(&root, actual_path)?;
+        let final_path = if logical_path == old_relative_path {
+            destination_path.clone()
+        } else {
+            original_path.clone()
+        };
+        if content == source.content && original_path == final_path {
+            continue;
+        }
+        let temporary_path = temporary_sibling_path(&final_path)?;
+        let backup_path = transaction_sibling_path(&original_path, "backup")?;
+        let metadata = fs::metadata(&original_path)
+            .map_err(|error| VaultError::io("A Markdown file could not be inspected", error))?;
+        prepare_transaction_file(&temporary_path, &content, &metadata)?;
+        entries.push(RenameTransactionEntry {
+            backup_path,
+            destination_path: final_path,
+            original_content: source.content.clone(),
+            original_path,
+            temporary_path,
+        });
+    }
+
+    if entries.is_empty() {
+        let metadata = fs::metadata(&destination_path)
+            .map_err(|error| VaultError::io("The moved note could not be inspected", error))?;
+        return Ok(vault_document(
+            target_source.content.clone(),
+            new_relative_path.to_owned(),
+            metadata.len(),
+            file_signature_from_metadata(&metadata).modified_millis,
+        ));
+    }
+
+    for entry in &entries {
+        let current = fs::read(&entry.original_path).map_err(|error| {
+            VaultError::io("An external move source could not be rechecked", error)
+        })?;
+        if current != entry.original_content.as_bytes() {
+            cleanup_transaction_files(&entries);
+            return Err(VaultError::conflict());
+        }
+    }
+
+    commit_rename_transaction(&root, &entries, None)?;
+    let mut document = read_markdown_file(&root, new_relative_path)?;
+    document.updated_files = Some(entries.len());
+    document.updated_links = Some(updated_links);
+    if target_changed && document.updated_files == Some(0) {
+        document.updated_files = Some(1);
+    }
+    Ok(document)
 }
 
 fn rename_markdown_file(
@@ -3606,9 +3837,9 @@ fn resolve_new_vault_markdown_file(
     let relative = candidate.strip_prefix(&root).map_err(|_| {
         VaultError::invalid_file("New notes must be saved inside the selected vault.")
     })?;
-    if is_internal_relative_path(relative) {
+    if is_internal_relative_path(relative) || is_vault_trash_relative_path(relative) {
         return Err(VaultError::invalid_file(
-            "The hidden .anchored directory is reserved for Anchored data.",
+            "The system Trash folder is reserved for Anchored data.",
         ));
     }
 
@@ -3626,7 +3857,11 @@ pub(crate) fn resolve_vault_markdown_file(
     let root = canonical_vault_root(root)?;
     let requested = Path::new(relative_path);
 
-    if relative_path.is_empty() || !is_markdown(requested) || is_internal_relative_path(requested) {
+    if relative_path.is_empty()
+        || !is_markdown(requested)
+        || is_internal_relative_path(requested)
+        || is_vault_trash_relative_path(requested)
+    {
         return Err(VaultError::invalid_file(
             "Only relative Markdown file paths can be opened.",
         ));
@@ -3789,22 +4024,23 @@ mod tests {
         apply_timestamp_migration, canonical_vault_root, create_conflict_copy, create_folder,
         create_inbox_markdown_file, create_markdown_file, create_named_vault,
         create_scratchpad_markdown_file, create_untitled_markdown_file, delete_empty_folder,
-        enrich_vault_metadata, enrich_vault_metadata_cached, move_folder,
+        derived_note_type, enrich_vault_metadata, enrich_vault_metadata_cached, move_folder,
         move_markdown_file_to_folder, preview_timestamp_migration, read_markdown_file,
-        recover_rename_transaction, rename_folder, rename_markdown_file,
-        resolve_new_vault_markdown_file, save_markdown_file, save_scratchpad_markdown_file,
-        scan_vault, scratchpad_filename_sequence, search_markdown_files,
-        transition_markdown_lifecycle, validate_folder_name, validate_markdown_filename,
-        validate_new_vault_name, vault_tree_signature, write_rename_journal, LifecycleTransition,
-        RenameJournal, RenameJournalEntry, RenameJournalPhase, RenameOutcome,
-        TimestampMigrationTarget, VaultMetadataCache, MAX_MARKDOWN_FILE_BYTES, MAX_SEARCH_RESULTS,
-        RENAME_JOURNAL_NAME,
+        reconcile_external_markdown_move, recover_rename_transaction, rename_folder,
+        rename_markdown_file, resolve_new_vault_markdown_file, save_markdown_file,
+        save_scratchpad_markdown_file, scan_vault, scratchpad_filename_sequence,
+        search_markdown_files, transition_markdown_lifecycle, validate_folder_name,
+        validate_markdown_filename, validate_new_vault_name, vault_tree_signature,
+        write_rename_journal, LifecycleTransition, RenameJournal, RenameJournalEntry,
+        RenameJournalPhase, RenameOutcome, TimestampMigrationTarget, VaultMetadataCache,
+        MAX_MARKDOWN_FILE_BYTES, MAX_SEARCH_RESULTS, RENAME_JOURNAL_NAME,
     };
 
     #[test]
     fn scans_nested_markdown_in_stable_order() {
         let vault = tempdir().expect("create fixture vault");
         fs::create_dir(vault.path().join("Notes")).expect("create Notes folder");
+        fs::create_dir(vault.path().join("trash")).expect("create system Trash folder");
         fs::write(vault.path().join("Zulu.md"), "# Zulu").expect("write root note");
         fs::write(
             vault.path().join("Notes/Alpha.MD"),
@@ -3812,6 +4048,7 @@ mod tests {
         )
         .expect("write nested note");
         fs::write(vault.path().join("Notes/ignore.txt"), "ignored").expect("write ignored file");
+        fs::write(vault.path().join("trash/opaque.md"), "ignored").expect("write Trash file");
 
         let mut snapshot = scan_vault(vault.path()).expect("scan fixture vault");
         enrich_vault_metadata(vault.path(), &mut snapshot.files).expect("index note metadata");
@@ -4864,6 +5101,56 @@ mod tests {
         assert_eq!(
             fs::read_to_string(vault.path().join("Reference.md")).expect("read reference note"),
             "---\nid: 01JZQ91T3AA6F2M9V3C5T7X1BZ\n---\n[[Archive/Field]]\n"
+        );
+    }
+
+    #[test]
+    fn reconciles_an_external_move_and_updates_type_and_property_links() {
+        let vault = tempdir().expect("create fixture vault");
+        fs::create_dir(vault.path().join("Notes")).expect("create source folder");
+        fs::create_dir_all(vault.path().join("day/run")).expect("create destination folders");
+        fs::write(
+            vault.path().join("Notes/Old.md"),
+            "---\ntype: Old\n---\nMoved note\n",
+        )
+        .expect("write moved note");
+        fs::write(
+            vault.path().join("Reference.md"),
+            "---\nrelated: \"[[Notes/Old.md]]\"\n---\n[[Notes/Old.md]]\n",
+        )
+        .expect("write reference note");
+        fs::rename(
+            vault.path().join("Notes/Old.md"),
+            vault.path().join("day/run/Old.md"),
+        )
+        .expect("move note externally");
+
+        let document =
+            reconcile_external_markdown_move(vault.path(), "Notes/Old.md", "day/run/Old.md", true)
+                .expect("reconcile external move");
+
+        assert_eq!(document.note_type.as_deref(), Some("day"));
+        assert_eq!(document.updated_links, Some(2));
+        assert_eq!(document.updated_files, Some(2));
+        assert_eq!(
+            fs::read_to_string(vault.path().join("day/run/Old.md")).unwrap(),
+            "---\ntype: day\n---\nMoved note\n"
+        );
+        assert_eq!(
+            fs::read_to_string(vault.path().join("Reference.md")).unwrap(),
+            "---\nrelated: \"[[day/run/Old.md]]\"\n---\n[[day/run/Old.md]]\n"
+        );
+    }
+
+    #[test]
+    fn derives_external_move_types_from_the_first_folder_only() {
+        assert_eq!(derived_note_type("Note.md"), None);
+        assert_eq!(derived_note_type("Inbox/Note.md"), None);
+        assert_eq!(derived_note_type("trash/Note.md"), None);
+        assert_eq!(derived_note_type("day/run/Note.md"), Some("day".to_owned()));
+        assert_eq!(
+            derived_note_type("Projects/Day/Note.md"),
+            Some("Projects".to_owned())
         );
     }
 

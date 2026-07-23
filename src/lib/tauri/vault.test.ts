@@ -17,6 +17,7 @@ import {
   openDevelopmentVault,
   openRememberedVault,
   readVaultFile,
+  reconcileVaultFileMove,
   renameVaultFolder,
   renameVaultFile,
   rescanVault,
@@ -215,6 +216,19 @@ describe("vault bridge", () => {
     );
     expect(mockedInvoke).toHaveBeenCalledWith("read_vault_file", {
       relativePath: "Notes/Leadership.md",
+    });
+  });
+
+  it("reconciles an external move through the native bridge", async () => {
+    mockedInvoke.mockResolvedValue(document);
+
+    await expect(
+      reconcileVaultFileMove("Notes/Leadership.md", "day/Leadership.md", true),
+    ).resolves.toEqual(document);
+    expect(mockedInvoke).toHaveBeenCalledWith("reconcile_vault_file_move", {
+      oldRelativePath: "Notes/Leadership.md",
+      newRelativePath: "day/Leadership.md",
+      updateType: true,
     });
   });
 

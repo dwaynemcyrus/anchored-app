@@ -408,6 +408,15 @@ bytes changed.
       metadata and do not generate recurring identity notifications.
 - [ ] Add, rename, move, and delete files externally; return focus and confirm
       the index refreshes without rewriting unrelated files.
+- [ ] Move an open note in Finder from the vault root into a nested folder and
+      confirm it stays open, keeps its selection, and derives `type` from the
+      first folder beneath the vault root.
+- [ ] Move an open note in Finder into the vault root or `inbox/` and confirm
+      the derived `type` is removed; disable the setting and verify path
+      tracking and link maintenance still work without changing metadata.
+- [ ] Confirm external moves update wikilinks in both YAML front matter and
+      Markdown bodies, while Archive preserves `type` and sets archived status
+      through its existing action.
 - [ ] Run Git checkout, pull, merge, rebase, and reset operations in a
       disposable vault and confirm Anchored refreshes without reload loops.
 - [ ] Exercise atomic replacement and temporary-file sync behavior with

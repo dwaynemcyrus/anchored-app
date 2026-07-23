@@ -304,7 +304,7 @@ These scripts must exist in `package.json` after the scaffold chunk.
 | 2026-07-16 | Use a minimal white-on-black design | Explicit product requirement; reduces visual chrome and prioritizes writing |
 | 2026-07-16 | Use Tauri configuration as the app version source | The desktop bundle configuration defines the application version; npm and Rust manifests mirror it |
 | 2026-07-17 | Use stable vault IDs and native-only remembered paths | Notification history follows a moved vault without exposing absolute paths to the interface |
-| 2026-07-17 | Use `.anchored/trash/` for reversible deletion | Same-vault moves preserve exact note bytes, stay out of active indexes, and permit conflict-safe restore without permanent deletion |
+| 2026-07-23 | Use vault-root `trash/` for reversible deletion | Trash remains a reserved system folder while keeping its opaque entries and conflict-safe restore data outside active vault indexes; legacy `.anchored/trash/` data is migrated on access |
 | 2026-07-17 | Package `0.1.0-alpha` as a private ad-hoc-signed Intel alpha | Supports local testing on Dwayne's 2015 MacBook Pro without implying public Gatekeeper or notarization readiness |
 | 2026-07-18 | Use a browser-safe Markdown-it adapter for Preview | It supports the required syntax and render-only settings directly in the existing Tauri WebView while keeping source persistence independent of parser tokens |
 | 2026-07-17 | Defer public website, Apple Silicon, and Linux packages | These delivery targets require separate prerequisites and verification and are outside the current private-alpha scope |

@@ -108,12 +108,14 @@ describe("Anchored Markdown renderer", () => {
     const rendered = renderMarkdown(source, {
       autoLinkUrls: false,
       editorFontSize: 14,
+      editorLineLength: 64,
       emoji: false,
       mermaid: false,
       showFileExtensions: false,
       smartTypography: false,
       syntaxHighlighting: false,
       theme: "anchored",
+      updateTypeOnExternalMove: false,
     });
 
     expect(rendered.body).toBe(source);
@@ -123,12 +125,14 @@ describe("Anchored Markdown renderer", () => {
       renderMarkdown("```rust\nfn main() {}\n```", {
         autoLinkUrls: true,
         editorFontSize: 14,
+        editorLineLength: 64,
         emoji: true,
         mermaid: true,
         showFileExtensions: false,
         smartTypography: true,
         syntaxHighlighting: false,
         theme: "anchored",
+        updateTypeOnExternalMove: true,
       }).html,
     ).not.toContain("hljs-");
   });

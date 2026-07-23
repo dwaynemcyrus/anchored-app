@@ -89,6 +89,7 @@ export function EditorSurface({
   const [draftName, setDraftName] = useState(document?.name ?? "");
   const nameInputRef = useRef<HTMLInputElement>(null);
   const submittedNameRef = useRef<string | undefined>(undefined);
+  const skipRenameBlurRef = useRef(false);
   const documentName = document?.name;
 
   useEffect(() => {
@@ -118,6 +119,7 @@ export function EditorSurface({
 
   function beginRename() {
     if (!document?.relativePath || renaming) return;
+    skipRenameBlurRef.current = false;
     setDraftName(
       displayFileName(document.name, markdownSettings.showFileExtensions),
     );
@@ -129,6 +131,16 @@ export function EditorSurface({
     event?.preventDefault();
     if (!document) return;
     const name = draftName.trim();
+    const currentName = displayFileName(
+      document.name,
+      markdownSettings.showFileExtensions,
+    );
+    if (!name || name === currentName) {
+      setDraftName(currentName);
+      setEditingName(false);
+      submittedNameRef.current = undefined;
+      return;
+    }
     if (submittedNameRef.current === name) return;
     submittedNameRef.current = name;
     onRenameDocument(name);
@@ -137,6 +149,11 @@ export function EditorSurface({
   function handleNameKeyDown(event: KeyboardEvent<HTMLInputElement>) {
     if (event.key !== "Escape") return;
     event.preventDefault();
+    skipRenameBlurRef.current = true;
+    const currentName = document
+      ? displayFileName(document.name, markdownSettings.showFileExtensions)
+      : "";
+    setDraftName(currentName);
     setEditingName(false);
     submittedNameRef.current = undefined;
   }
@@ -227,7 +244,13 @@ export function EditorSurface({
                 disabled={renaming}
                 type="text"
                 value={draftName}
-                onBlur={() => submitRename()}
+                onBlur={() => {
+                  if (skipRenameBlurRef.current) {
+                    skipRenameBlurRef.current = false;
+                    return;
+                  }
+                  submitRename();
+                }}
                 onChange={(event) => {
                   setDraftName(event.target.value);
                   submittedNameRef.current = undefined;
@@ -445,6 +468,7 @@ export function EditorSurface({
                 autoFocus={focusEditorOnOpen || focusDocumentId === document.id}
                 documentId={document.id}
                 editorFontSize={markdownSettings.editorFontSize}
+                editorLineLength={markdownSettings.editorLineLength}
                 findRequest={findRequest}
                 focusAtBodyStart={focusDocumentId === document.id}
                 label={`${displayName} Markdown editor`}

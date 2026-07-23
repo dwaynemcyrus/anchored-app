@@ -67,6 +67,50 @@ describe("Markdown settings", () => {
     );
 
     expect(loadMarkdownSettings(target).showFileExtensions).toBe(false);
+    expect(loadMarkdownSettings(target).updateTypeOnExternalMove).toBe(true);
+  });
+
+  it("loads the external move setting from version four settings", () => {
+    const target = storage();
+    target.setItem(
+      "anchored.markdown-settings.v1",
+      JSON.stringify({
+        version: 4,
+        autoLinkUrls: true,
+        editorFontSize: 14,
+        emoji: true,
+        mermaid: true,
+        showFileExtensions: false,
+        smartTypography: true,
+        syntaxHighlighting: true,
+        theme: "anchored",
+        updateTypeOnExternalMove: false,
+      }),
+    );
+
+    expect(loadMarkdownSettings(target).updateTypeOnExternalMove).toBe(false);
+  });
+
+  it("loads the editor line length from version five settings", () => {
+    const target = storage();
+    target.setItem(
+      "anchored.markdown-settings.v1",
+      JSON.stringify({
+        version: 5,
+        autoLinkUrls: true,
+        editorFontSize: 14,
+        editorLineLength: 72,
+        emoji: true,
+        mermaid: true,
+        showFileExtensions: false,
+        smartTypography: true,
+        syntaxHighlighting: true,
+        theme: "anchored",
+        updateTypeOnExternalMove: true,
+      }),
+    );
+
+    expect(loadMarkdownSettings(target).editorLineLength).toBe(72);
   });
 
   it("rejects an unknown theme and falls back to the default", () => {

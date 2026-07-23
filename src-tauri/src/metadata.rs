@@ -259,11 +259,10 @@ pub fn normalize_front_matter_timestamps(
     let mut changes = Vec::new();
     let mut skips = Vec::new();
     let mut edits = Vec::new();
-    let mut line_number = 0;
     let mut offset = 0;
 
-    for line in yaml.split_inclusive('\n') {
-        line_number += 1;
+    for (line_index, line) in yaml.split_inclusive('\n').enumerate() {
+        let line_number = line_index + 1;
         let line_without_ending = line.trim_end_matches(['\r', '\n']);
         if line_without_ending.starts_with(char::is_whitespace)
             || line_without_ending.trim_start().starts_with('#')
@@ -398,6 +397,13 @@ pub fn restore_note_with_type(
             ("type", note_type),
         ],
     )
+}
+
+pub fn update_note_type(
+    content: &str,
+    note_type: Option<&str>,
+) -> Result<String, LifecycleMutationError> {
+    mutate_lifecycle_properties(content, &[("type", note_type)])
 }
 
 fn validate_lifecycle_timestamp(timestamp: &str) -> Result<(), LifecycleMutationError> {
@@ -1002,7 +1008,8 @@ mod tests {
         inspect_note_aliases, inspect_note_identity, inspect_note_properties,
         inspect_wikilink_occurrences, inspect_wikilinks, normalize_front_matter_timestamps,
         restore_note, rewrite_wikilink_targets, split_note_source, stamp_note_created_at,
-        stamp_note_updated_at, IdentityMutationError, LifecycleMutationError, NoteIdentityStatus,
+        stamp_note_updated_at, update_note_type, IdentityMutationError, LifecycleMutationError,
+        NoteIdentityStatus,
     };
 
     const ID: &str = "01JZQ7K8P4A6F2M9V3C5T7X1BY";
@@ -1074,6 +1081,20 @@ mod tests {
                 "---\n",
                 "Body\n",
             )
+        );
+    }
+
+    #[test]
+    fn updates_or_removes_a_note_type_without_reformatting_front_matter() {
+        let source = "---\ntype: Project\n# keep\n---\nBody\n";
+
+        assert_eq!(
+            update_note_type(source, Some("day")).expect("set note type"),
+            "---\ntype: day\n# keep\n---\nBody\n"
+        );
+        assert_eq!(
+            update_note_type(source, None).expect("remove note type"),
+            "---\n# keep\n---\nBody\n"
         );
     }
 

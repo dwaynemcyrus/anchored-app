@@ -441,6 +441,14 @@ export async function invokeDevelopmentFixture<T>(
     case "rescan_vault":
       ensureFixture();
       return snapshot() as T;
+    case "reconcile_vault_file_move": {
+      const relativePath = requireArgument<string>(args, "newRelativePath");
+      const content = fixtureFiles.get(relativePath);
+      if (content === undefined) {
+        throw new Error("Fixture note no longer exists.");
+      }
+      return document(relativePath, content) as T;
+    }
     case "list_remembered_vaults":
     case "forget_vault":
       return [] as T;

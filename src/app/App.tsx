@@ -108,6 +108,7 @@ import {
   applyVaultTimestampMigration,
   previewVaultTimestampMigration,
   readVaultFile,
+  reconcileVaultFileMove,
   renameVaultFolder,
   renameVaultFile,
   rescanVault,
@@ -116,6 +117,7 @@ import {
   selectVault,
   stopVault,
   watchVault,
+  type VaultChange,
   type VaultChangeBatch,
   isBrowserDevelopmentFixture,
   restoreVaultFileFromTrash,
@@ -1636,6 +1638,79 @@ export function App() {
     };
   }, [refreshVault]);
 
+  const reconcileExternalMove = useCallback(
+    async (change: VaultChange) => {
+      const oldRelativePath = change.oldRelativePath;
+      if (!oldRelativePath || oldRelativePath === change.relativePath) return;
+
+      const current = documentsRef.current.find(
+        (document) => document.relativePath === oldRelativePath,
+      );
+      const nextDocumentId = `vault-path:${change.relativePath}`;
+      if (current) {
+        const parts = change.relativePath.split("/");
+        const name = parts.pop() ?? current.name;
+        const folderPath = parts.join("/");
+        const nextDocuments = documentsRef.current.map((document) =>
+          document.id === current.id
+            ? {
+                ...document,
+                folder: folderPath || vaultName,
+                folderPath,
+                id: nextDocumentId,
+                name,
+                relativePath: change.relativePath,
+              }
+            : document,
+        );
+        documentsRef.current = nextDocuments;
+        setDocuments(nextDocuments);
+        if (activeDocumentIdRef.current === current.id) {
+          setActiveDocument(nextDocumentId);
+        }
+        if (focusDocumentIdRef.current === current.id) {
+          setFocusDocument(nextDocumentId);
+        }
+      }
+
+      try {
+        const result = await reconcileVaultFileMove(
+          oldRelativePath,
+          change.relativePath,
+          markdownSettings.updateTypeOnExternalMove,
+        );
+        if (current?.sourceText !== undefined) {
+          await checkExternalDocument(nextDocumentId);
+        }
+        if (result.updatedLinks && result.updatedLinks > 0) {
+          addVaultNotice(
+            `${result.relativePath.split("/").pop() ?? result.relativePath} moved. ${
+              result.updatedLinks
+            } link${result.updatedLinks === 1 ? "" : "s"} updated across ${
+              result.updatedFiles ?? 0
+            } note${result.updatedFiles === 1 ? "" : "s"}.`,
+          );
+        }
+      } catch (error) {
+        addVaultNotice(
+          `Anchored could not reconcile the moved note safely: ${readErrorMessage(error)}`,
+          { persistent: true },
+        );
+        if (current?.sourceText !== undefined) {
+          await checkExternalDocument(nextDocumentId);
+        }
+      }
+    },
+    [
+      addVaultNotice,
+      checkExternalDocument,
+      markdownSettings.updateTypeOnExternalMove,
+      setActiveDocument,
+      setFocusDocument,
+      vaultName,
+    ],
+  );
+
   useEffect(() => {
     if (isBrowserDevelopmentFixture()) return;
     if (!vaultSelected) {
@@ -1654,54 +1729,44 @@ export function App() {
         ) {
           return;
         }
+        const moveChanges = event.payload.changes.filter(
+          (change) =>
+            change.oldRelativePath &&
+            change.relativePath.toLowerCase().endsWith(".md"),
+        );
+        const movePromises = moveChanges.map((change) =>
+          reconcileExternalMove(change),
+        );
+
         const activeDocument = documentsRef.current.find(
           (document) => document.id === activeDocumentIdRef.current,
         );
         const activeDocumentId = activeDocumentIdRef.current;
         const activePath = activeDocument?.relativePath;
-        const rename = event.payload.changes.find(
-          (change) =>
-            change.oldRelativePath && change.oldRelativePath === activePath,
-        );
-        if (rename?.oldRelativePath) {
-          const parts = rename.relativePath.split("/");
-          const name = parts.pop() ?? activeDocument?.name;
-          const folderPath = parts.join("/");
-          const nextDocument = activeDocument
-            ? {
-                ...activeDocument,
-                folder: folderPath || vaultName,
-                folderPath,
-                name: name ?? activeDocument.name,
-                relativePath: rename.relativePath,
-              }
-            : undefined;
-          if (nextDocument) {
-            const nextDocuments = documentsRef.current.map((document) =>
-              document.id === activeDocumentId ? nextDocument : document,
-            );
-            documentsRef.current = nextDocuments;
-            setDocuments(nextDocuments);
-          }
-        }
         if (
           activeDocumentId &&
           activePath &&
           event.payload.changes.some(
             (change) =>
-              change.relativePath === activePath ||
-              change.oldRelativePath === activePath,
+              !change.oldRelativePath && change.relativePath === activePath,
           )
         ) {
           void checkExternalDocument(activeDocumentId);
         }
-        if (vaultTreeRefreshTimeoutRef.current !== undefined) {
-          window.clearTimeout(vaultTreeRefreshTimeoutRef.current);
+        const scheduleRefresh = () => {
+          if (vaultTreeRefreshTimeoutRef.current !== undefined) {
+            window.clearTimeout(vaultTreeRefreshTimeoutRef.current);
+          }
+          vaultTreeRefreshTimeoutRef.current = window.setTimeout(() => {
+            vaultTreeRefreshTimeoutRef.current = undefined;
+            void refreshVault();
+          }, 250);
+        };
+        if (movePromises.length > 0) {
+          void Promise.allSettled(movePromises).then(scheduleRefresh);
+        } else {
+          scheduleRefresh();
         }
-        vaultTreeRefreshTimeoutRef.current = window.setTimeout(() => {
-          vaultTreeRefreshTimeoutRef.current = undefined;
-          void refreshVault();
-        }, 250);
       },
     );
     void watchVault().catch((error) => {
@@ -1720,6 +1785,7 @@ export function App() {
   }, [
     addVaultNotice,
     checkExternalDocument,
+    reconcileExternalMove,
     refreshVault,
     vaultName,
     vaultSelected,
