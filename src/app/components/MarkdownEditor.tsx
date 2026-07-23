@@ -47,6 +47,7 @@ export type EditorCursorPosition = {
 type MarkdownEditorProps = {
   autoFocus?: boolean;
   focusAtBodyStart?: boolean;
+  focusAtEnd?: boolean;
   documentId: string;
   editorFontSize: EditorFontSize;
   findRequest: number;
@@ -65,6 +66,7 @@ type MarkdownEditorProps = {
 export default function MarkdownEditor({
   autoFocus = false,
   focusAtBodyStart = false,
+  focusAtEnd = false,
   documentId,
   editorFontSize,
   findRequest,
@@ -414,6 +416,11 @@ export default function MarkdownEditor({
       column: view.state.selection.main.head - initialLine.from + 1,
     });
     if (autoFocus) view.focus();
+    if (focusAtEnd) {
+      const end = view.state.doc.length;
+      view.dispatch({ selection: { anchor: end, head: end } });
+      view.focus();
+    }
     if (focusAtBodyStart) {
       const bodyStart = markdownBodyStart(view.state.doc.toString());
       if (bodyStart !== null) {
@@ -429,7 +436,7 @@ export default function MarkdownEditor({
       editorRef.current = null;
       view.destroy();
     };
-  }, [autoFocus, documentId, focusAtBodyStart, label]);
+  }, [autoFocus, documentId, focusAtBodyStart, focusAtEnd, label]);
 
   useEffect(() => {
     const view = editorRef.current;
@@ -465,7 +472,15 @@ export default function MarkdownEditor({
         bodyFocusAppliedRef.current = true;
       }
     }
-  }, [focusAtBodyStart, value]);
+    if (focusAtEnd && !bodyFocusAppliedRef.current) {
+      const end = view.state.doc.length;
+      view.dispatch({
+        selection: { anchor: end, head: end },
+      });
+      view.focus();
+      bodyFocusAppliedRef.current = true;
+    }
+  }, [focusAtBodyStart, focusAtEnd, value]);
 
   useEffect(() => {
     if (findRequest <= 0 || !editorRef.current) return;
