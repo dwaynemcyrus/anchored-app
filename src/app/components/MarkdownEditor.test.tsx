@@ -5,6 +5,34 @@ import { describe, expect, it, vi } from "vitest";
 import MarkdownEditor from "./MarkdownEditor";
 
 describe("MarkdownEditor wikilink navigation", () => {
+  it("places the caret at the end when requested", () => {
+    const onCursorPosition = vi.fn();
+
+    render(
+      <MarkdownEditor
+        autoFocus
+        documentId="scratchpad"
+        editorFontSize={14}
+        findRequest={0}
+        focusAtEnd
+        label="Scratchpad Markdown"
+        value={"First line\nSecond line"}
+        wikilinkCandidates={[]}
+        onChange={vi.fn()}
+        onCursorPosition={onCursorPosition}
+        onOpenWikilink={vi.fn()}
+        onPreview={vi.fn()}
+        onSave={vi.fn()}
+        onSaveAs={vi.fn()}
+      />,
+    );
+
+    expect(onCursorPosition).toHaveBeenLastCalledWith({
+      line: 2,
+      column: 12,
+    });
+  });
+
   it("opens a wikilink under a Command-click", () => {
     const onOpenWikilink = vi.fn();
 

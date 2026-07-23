@@ -299,6 +299,7 @@ export function Scratchpad() {
           documentId={document?.relativePath ?? "scratchpad-new"}
           editorFontSize={14}
           findRequest={findRequest}
+          focusAtEnd
           label="Scratchpad Markdown"
           value={source}
           wikilinkCandidates={editorCandidates}
