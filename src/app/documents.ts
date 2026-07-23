@@ -18,6 +18,8 @@ export type AnchoredDocument = {
   sourceText?: string;
   savedSourceText?: string;
   conflictCopyPath?: string;
+  conflictBaseSourceText?: string;
+  conflictExternalSourceText?: string;
   saveMessage?: string;
   saveState?: DocumentSaveState;
   sizeBytes?: number;

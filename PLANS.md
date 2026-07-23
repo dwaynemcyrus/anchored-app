@@ -1358,16 +1358,16 @@ and preserves link integrity across filename changes.
           confirmation for discard/reload and retain the local draft until the
           recovery operation succeeds.
 
-    22D. [ ] **Prototype conservative three-way merge**
+    22D. [x] **Prototype conservative three-way merge**
         - Expected files: a new merge module and tests, native save bridge,
           conflict UI, `docs/MARKDOWN_SPEC.md`, `docs/TEST_CHECKLIST.md`, and
           `CHANGELOG.md` if the feature is enabled.
         - Change: Compare base (last saved source), local source, and external
-          source. Automatically merge only disjoint edits with a bounded,
-          source-preserving algorithm. Treat overlapping edits, ambiguous
-          line boundaries, front-matter structural changes, and unsupported
-          cases as conflicts that use the recovery-copy path. Re-read the
-          external version before committing a merged result.
+          source. Automatically propose only bounded, disjoint single-span
+          line edits with a source-preserving algorithm. Treat overlapping,
+          multi-span, and ambiguous cases as conflicts with an editable result
+          and the recovery-copy path. Re-read the external version before
+          committing a merged result.
         - Verify: Unit and fixture tests cover insertions, deletions, adjacent
           edits, same-line edits, front matter, CRLF/LF, Unicode, code fences,
           wikilinks, malformed content, and external changes during merge.
@@ -1393,12 +1393,13 @@ and preserves link integrity across filename changes.
           `[Unreleased]`; mention automatic merging only if it ships. No
           version change is authorized by this plan.
 
-    - Implementation result (2026-07-22): Chunks 22A–22C are implemented.
-      Anchored now watches the active file natively, reloads clean external
-      changes, serializes per-note saves, creates visible same-folder recovery
-      copies for dirty conflicts, labels those copies in Files, excludes them
-      from lifecycle/link indexes, and exposes recovery/reload actions. Three-
-      way merging remains intentionally deferred to 22D.
+    - Implementation result (2026-07-23): Chunks 22A–22D are implemented.
+      Anchored now watches the complete vault through one native debounced
+      service, rescans after normalized change batches, reloads clean external
+      changes, preserves dirty drafts, persists bounded recovery snapshots,
+      offers conservative three-way merge review, and rechecks the external
+      content before applying a resolution. Native two-editor QA remains in
+      22E.
 
 23. [x] **Epic: Normalize vault timestamp front matter**
     - Outcome: Every frontmatter value that represents an exact moment follows

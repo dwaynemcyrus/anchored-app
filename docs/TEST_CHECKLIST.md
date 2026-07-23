@@ -383,6 +383,11 @@ bytes changed.
       a unique filename.
 - [ ] Open the recovery copy from the conflict notice and reload the external
       version from the explicit conflict actions.
+- [ ] Resolve disjoint local and external line edits with the proposed
+      three-way result, then confirm the file is written only after an
+      expected-content recheck.
+- [ ] Resolve overlapping edits manually, cancel the dialog, and confirm both
+      the external file and local recovery copy remain intact.
 - [ ] Press Command-S while autosave is pending and confirm only one serialized
       save is issued and the newest local edit remains available.
 - [ ] Close and reopen the app after saving.
@@ -403,6 +408,11 @@ bytes changed.
       metadata and do not generate recurring identity notifications.
 - [ ] Add, rename, move, and delete files externally; return focus and confirm
       the index refreshes without rewriting unrelated files.
+- [ ] Run Git checkout, pull, merge, rebase, and reset operations in a
+      disposable vault and confirm Anchored refreshes without reload loops.
+- [ ] Exercise atomic replacement and temporary-file sync behavior with
+      iCloud, Dropbox, or a local replacement script; confirm duplicate events
+      do not create duplicate recovery copies.
 
 ## Lifecycle and Archive
 

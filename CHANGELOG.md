@@ -8,6 +8,16 @@ Git commit. The format follows [Keep a Changelog], and releases follow
 
 ### Added
 
+- Anchored now watches the complete selected vault with a debounced native
+  filesystem watcher. External creates, edits, deletes, and renames refresh
+  the vault without polling; clean open notes reload automatically, while
+  dirty notes remain protected by conflict recovery and explicit merge
+  actions.
+- External-edit conflicts now retain base, local, and filesystem versions,
+  persist bounded local recovery snapshots, offer conservative three-way
+  merging for disjoint edits, and keep the filesystem version protected until
+  the user applies a result.
+
 - Added a development-only 48-file fixture vault that opens automatically for
   browser and desktop testing, covering representative Markdown, metadata,
   links, collections, and assets without touching real vaults.

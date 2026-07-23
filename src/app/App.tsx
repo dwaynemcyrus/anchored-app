@@ -9,6 +9,7 @@ import {
 import { listen } from "@tauri-apps/api/event";
 
 import { EditorSurface } from "./components/EditorSurface";
+import { ConflictResolutionDialog } from "./components/ConflictResolutionDialog";
 import { CreateVaultDialog } from "./components/CreateVaultDialog";
 import { CreateMissingWikilinkDialog } from "./components/CreateMissingWikilinkDialog";
 import { DeleteFolderDialog } from "./components/DeleteFolderDialog";
@@ -113,12 +114,9 @@ import {
   saveVaultFile,
   searchVault,
   selectVault,
-  stopVaultFileWatch,
-  stopVaultTreeWatch,
-  watchVaultFile,
-  watchVaultTree,
-  type VaultFileChangedEvent,
-  type VaultTreeChangedEvent,
+  stopVault,
+  watchVault,
+  type VaultChangeBatch,
   isBrowserDevelopmentFixture,
   restoreVaultFileFromTrash,
   restoreVaultFolderFromTrash,
@@ -132,6 +130,8 @@ import {
 import { openScratchpad, type ScratchpadMode } from "../lib/tauri/scratchpad";
 import { checkForUpdate, installUpdate } from "./updater";
 import type { Update } from "@tauri-apps/plugin-updater";
+import { mergeThreeWay } from "./threeWayMerge";
+import { saveConflictSnapshot } from "./conflictSnapshots";
 
 const ACTIVITY_REFRESH_INTERVAL_MS = 60_000;
 const MINOR_NOTICE_DURATION_MS = 12_000;
@@ -315,6 +315,8 @@ export function App() {
   const [vaultNotices, setVaultNotices] = useState<VaultNotice[]>([]);
   const [notificationHistoryVisible, setNotificationHistoryVisible] =
     useState(false);
+  const [conflictResolutionDocumentId, setConflictResolutionDocumentId] =
+    useState<string>();
   const [missingWikilinkTarget, setMissingWikilinkTarget] = useState<
     string | undefined
   >();
@@ -416,9 +418,6 @@ export function App() {
     };
   }, [deletingFolderPath, documents, folderPaths]);
   const saveState: DocumentSaveState = activeDocument?.saveState ?? "saved";
-  const activeDocumentIdForWatch = activeDocument?.id;
-  const activeDocumentPathForWatch = activeDocument?.relativePath;
-  const activeDocumentLoaded = activeDocument?.sourceText !== undefined;
   const deferredDocuments = useDeferredValue(documents);
   const linkIndex = useMemo(
     () => buildDocumentLinkIndex(deferredDocuments),
@@ -970,7 +969,25 @@ export function App() {
           return;
         }
 
-        if (current.sourceText === undefined) return;
+        if (
+          current.sourceText === undefined ||
+          current.savedSourceText === undefined ||
+          current.relativePath === undefined
+        )
+          return;
+        const merge = mergeThreeWay(
+          current.savedSourceText,
+          current.sourceText,
+          external.content,
+        );
+        saveConflictSnapshot(window.localStorage, {
+          base: current.savedSourceText,
+          external: external.content,
+          local: current.sourceText,
+          path: current.relativePath,
+          savedAt: Date.now(),
+          vaultId: vaultIdRef.current,
+        });
         const copyPath = await createConflictCopyForDocument(
           documentId,
           current.sourceText,
@@ -982,7 +999,16 @@ export function App() {
         setDocuments((currentDocuments) =>
           currentDocuments.map((candidate) =>
             candidate.id === documentId
-              ? { ...candidate, saveMessage: message, saveState: "conflict" }
+              ? {
+                  ...candidate,
+                  conflictBaseSourceText: current.savedSourceText,
+                  conflictExternalSourceText: external.content,
+                  saveMessage:
+                    merge.status === "clean"
+                      ? `${message} Anchored found a non-overlapping merge you can review.`
+                      : message,
+                  saveState: "conflict",
+                }
               : candidate,
           ),
         );
@@ -1101,6 +1127,8 @@ export function App() {
                       : undefined,
                   saveState: hasNewerEdit ? "unsaved" : "saved",
                   conflictCopyPath: undefined,
+                  conflictBaseSourceText: undefined,
+                  conflictExternalSourceText: undefined,
                   savedSourceText: savedDocument.content,
                   sizeBytes: savedDocument.sizeBytes,
                   status: savedDocument.status,
@@ -1611,13 +1639,13 @@ export function App() {
   useEffect(() => {
     if (isBrowserDevelopmentFixture()) return;
     if (!vaultSelected) {
-      void stopVaultTreeWatch().catch(() => undefined);
+      void stopVault().catch(() => undefined);
       return;
     }
 
     let disposed = false;
-    const unlistenPromise = listen<VaultTreeChangedEvent>(
-      "vault-tree-changed",
+    const unlistenPromise = listen<VaultChangeBatch>(
+      "vault-changed",
       (event) => {
         if (
           disposed ||
@@ -1625,6 +1653,47 @@ export function App() {
             event.payload.vaultId !== vaultIdRef.current)
         ) {
           return;
+        }
+        const activeDocument = documentsRef.current.find(
+          (document) => document.id === activeDocumentIdRef.current,
+        );
+        const activeDocumentId = activeDocumentIdRef.current;
+        const activePath = activeDocument?.relativePath;
+        const rename = event.payload.changes.find(
+          (change) =>
+            change.oldRelativePath && change.oldRelativePath === activePath,
+        );
+        if (rename?.oldRelativePath) {
+          const parts = rename.relativePath.split("/");
+          const name = parts.pop() ?? activeDocument?.name;
+          const folderPath = parts.join("/");
+          const nextDocument = activeDocument
+            ? {
+                ...activeDocument,
+                folder: folderPath || vaultName,
+                folderPath,
+                name: name ?? activeDocument.name,
+                relativePath: rename.relativePath,
+              }
+            : undefined;
+          if (nextDocument) {
+            const nextDocuments = documentsRef.current.map((document) =>
+              document.id === activeDocumentId ? nextDocument : document,
+            );
+            documentsRef.current = nextDocuments;
+            setDocuments(nextDocuments);
+          }
+        }
+        if (
+          activeDocumentId &&
+          activePath &&
+          event.payload.changes.some(
+            (change) =>
+              change.relativePath === activePath ||
+              change.oldRelativePath === activePath,
+          )
+        ) {
+          void checkExternalDocument(activeDocumentId);
         }
         if (vaultTreeRefreshTimeoutRef.current !== undefined) {
           window.clearTimeout(vaultTreeRefreshTimeoutRef.current);
@@ -1635,59 +1704,26 @@ export function App() {
         }, 250);
       },
     );
-    void watchVaultTree().catch((error) => {
+    void watchVault().catch((error) => {
       if (!disposed) addVaultNotice(readErrorMessage(error));
     });
 
     return () => {
       disposed = true;
       void unlistenPromise.then((unlisten) => unlisten());
-      void stopVaultTreeWatch().catch(() => undefined);
+      void stopVault().catch(() => undefined);
       if (vaultTreeRefreshTimeoutRef.current !== undefined) {
         window.clearTimeout(vaultTreeRefreshTimeoutRef.current);
         vaultTreeRefreshTimeoutRef.current = undefined;
       }
     };
-  }, [addVaultNotice, refreshVault, vaultSelected, vaultId]);
-
-  useEffect(() => {
-    if (isBrowserDevelopmentFixture()) return;
-    const relativePath = activeDocumentPathForWatch;
-    if (
-      !vaultSelected ||
-      !relativePath ||
-      !activeDocumentLoaded ||
-      !activeDocumentIdForWatch
-    ) {
-      void stopVaultFileWatch().catch(() => undefined);
-      return;
-    }
-
-    let disposed = false;
-    const unlistenPromise = listen<VaultFileChangedEvent>(
-      "vault-file-changed",
-      (event) => {
-        if (!disposed && event.payload.relativePath === relativePath) {
-          void checkExternalDocument(activeDocumentIdForWatch);
-        }
-      },
-    );
-    void watchVaultFile(relativePath).catch((error) => {
-      if (!disposed) addVaultNotice(readErrorMessage(error));
-    });
-
-    return () => {
-      disposed = true;
-      void unlistenPromise.then((unlisten) => unlisten());
-      void stopVaultFileWatch().catch(() => undefined);
-    };
   }, [
-    activeDocumentIdForWatch,
-    activeDocumentLoaded,
-    activeDocumentPathForWatch,
     addVaultNotice,
     checkExternalDocument,
+    refreshVault,
+    vaultName,
     vaultSelected,
+    vaultId,
   ]);
   const selectDocument = useCallback(
     async (documentId: string) => {
@@ -1780,7 +1816,9 @@ export function App() {
             ? {
                 ...current,
                 archivedAt: external.archivedAt,
+                conflictBaseSourceText: undefined,
                 conflictCopyPath: undefined,
+                conflictExternalSourceText: undefined,
                 createdAt: external.createdAt,
                 modifiedMillis: external.modifiedMillis,
                 noteType: external.noteType,
@@ -1798,6 +1836,44 @@ export function App() {
       resolveHistorySource(documentId);
     } catch (error) {
       addVaultNotice(readErrorMessage(error), { persistent: true });
+    }
+  }
+
+  async function resolveConflict(documentId: string, content: string) {
+    const document = documentsRef.current.find(
+      (candidate) => candidate.id === documentId,
+    );
+    if (!document?.relativePath || !document.conflictExternalSourceText) return;
+    try {
+      const saved = await saveVaultFile({
+        content: normalizeMarkdownLineEndings(content),
+        expectedContent: document.conflictExternalSourceText,
+        relativePath: document.relativePath,
+      });
+      setDocuments((currentDocuments) =>
+        currentDocuments.map((candidate) =>
+          candidate.id === documentId
+            ? {
+                ...candidate,
+                conflictBaseSourceText: undefined,
+                conflictExternalSourceText: undefined,
+                conflictCopyPath: undefined,
+                saveMessage: undefined,
+                saveState: "saved",
+                savedSourceText: saved.content,
+                sourceText: saved.content,
+              }
+            : candidate,
+        ),
+      );
+      setConflictResolutionDocumentId(undefined);
+      resolveHistorySource(documentId);
+      await refreshVault();
+    } catch (error) {
+      addVaultNotice(
+        `The conflict changed again and was not overwritten: ${readErrorMessage(error)}`,
+        { persistent: true },
+      );
     }
   }
 
@@ -3004,6 +3080,14 @@ export function App() {
                   <button
                     type="button"
                     onClick={() =>
+                      setConflictResolutionDocumentId(activeDocument.id)
+                    }
+                  >
+                    Resolve conflict
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() =>
                       void reloadExternalDocument(activeDocument.id)
                     }
                   >
@@ -3015,6 +3099,41 @@ export function App() {
           ) : null}
         </div>
       ) : null}
+      {conflictResolutionDocumentId
+        ? (() => {
+            const conflictDocument = documents.find(
+              (candidate) => candidate.id === conflictResolutionDocumentId,
+            );
+            if (
+              !conflictDocument?.conflictBaseSourceText ||
+              !conflictDocument.conflictExternalSourceText ||
+              conflictDocument.sourceText === undefined
+            ) {
+              return null;
+            }
+            const merge = mergeThreeWay(
+              conflictDocument.conflictBaseSourceText,
+              conflictDocument.sourceText,
+              conflictDocument.conflictExternalSourceText,
+            );
+            return (
+              <ConflictResolutionDialog
+                base={conflictDocument.conflictBaseSourceText}
+                external={conflictDocument.conflictExternalSourceText}
+                local={conflictDocument.sourceText}
+                merged={merge.status === "clean" ? merge.content : undefined}
+                onApply={(content) =>
+                  void resolveConflict(conflictDocument.id, content)
+                }
+                onCancel={() => setConflictResolutionDocumentId(undefined)}
+                onKeepExternal={() => {
+                  setConflictResolutionDocumentId(undefined);
+                  void reloadExternalDocument(conflictDocument.id);
+                }}
+              />
+            );
+          })()
+        : null}
       {notificationHistoryVisible ? (
         <NotificationCenter
           entries={visibleNotificationHistory}

@@ -2,6 +2,7 @@ mod continuity;
 pub mod links;
 pub mod metadata;
 mod vault;
+mod watcher;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {

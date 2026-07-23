@@ -36,8 +36,10 @@ import {
   selectVault,
   stopVaultFileWatch,
   stopVaultTreeWatch,
+  stopVault,
   watchVaultFile,
   watchVaultTree,
+  watchVault,
   restoreVaultFileFromTrash,
   restoreArchivedVaultFile,
 } from "../lib/tauri/vault";
@@ -76,8 +78,10 @@ vi.mock("../lib/tauri/vault", () => ({
   selectVault: vi.fn(),
   stopVaultFileWatch: vi.fn(),
   stopVaultTreeWatch: vi.fn(),
+  stopVault: vi.fn(),
   watchVaultFile: vi.fn(),
   watchVaultTree: vi.fn(),
+  watchVault: vi.fn(),
   restoreVaultFileFromTrash: vi.fn(),
   restoreArchivedVaultFile: vi.fn(),
 }));
@@ -131,6 +135,8 @@ const mockedStopVaultFileWatch = vi.mocked(stopVaultFileWatch);
 const mockedStopVaultTreeWatch = vi.mocked(stopVaultTreeWatch);
 const mockedWatchVaultFile = vi.mocked(watchVaultFile);
 const mockedWatchVaultTree = vi.mocked(watchVaultTree);
+const mockedStopVault = vi.mocked(stopVault);
+const mockedWatchVault = vi.mocked(watchVault);
 const mockedReloadAnchoredWindow = vi.mocked(reloadAnchoredWindow);
 const mockedOpenScratchpad = vi.mocked(openScratchpad);
 const noWarnings = {
@@ -190,6 +196,8 @@ describe("App", () => {
     mockedWatchVaultFile.mockReset();
     mockedStopVaultTreeWatch.mockReset().mockResolvedValue(undefined);
     mockedWatchVaultTree.mockReset().mockResolvedValue(undefined);
+    mockedStopVault.mockReset().mockResolvedValue(undefined);
+    mockedWatchVault.mockReset().mockResolvedValue(undefined);
     mockedReloadAnchoredWindow.mockReset();
     mockedOpenScratchpad.mockReset();
     mockedOpenScratchpad.mockResolvedValue(undefined);
@@ -1634,12 +1642,10 @@ describe("App", () => {
     expect(editor).toHaveFocus();
     expect(screen.getByText("Ln 5, Col 1")).toBeInTheDocument();
 
-    await waitFor(() =>
-      expect(eventHandlers.has("vault-tree-changed")).toBe(true),
-    );
+    await waitFor(() => expect(eventHandlers.has("vault-changed")).toBe(true));
     await act(async () => {
-      eventHandlers.get("vault-tree-changed")?.({
-        payload: { vaultId: "vault-1" },
+      eventHandlers.get("vault-changed")?.({
+        payload: { vaultId: "vault-1", changes: [] },
       });
     });
 
@@ -2091,12 +2097,10 @@ describe("App", () => {
       screen.getByRole("button", { name: "Open file explorer" }),
     );
     await user.click(screen.getByRole("button", { name: "Files" }));
-    await waitFor(() =>
-      expect(eventHandlers.has("vault-tree-changed")).toBe(true),
-    );
+    await waitFor(() => expect(eventHandlers.has("vault-changed")).toBe(true));
     await act(async () => {
-      eventHandlers.get("vault-tree-changed")?.({
-        payload: { vaultId: "vault-1" },
+      eventHandlers.get("vault-changed")?.({
+        payload: { vaultId: "vault-1", changes: [] },
       });
     });
 

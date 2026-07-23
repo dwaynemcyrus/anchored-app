@@ -66,6 +66,10 @@ rendered interface on 2026-07-19.
 - Detect changes to the open file while Anchored is running. Clean notes reload
   the external version automatically; notes with local edits remain visible as
   conflicts and stop autosaving.
+- Watch the complete selected vault through one debounced native watcher so
+  external creates, edits, deletes, and renames are treated as ordinary vault
+  activity. Watcher events trigger authoritative filesystem rescans and do not
+  replace content comparison.
 - Preserve local edits in one visible, same-folder recovery copy named with an
   `Anchored conflict` suffix. Recovery copies never replace an existing file,
   are labeled in the Files view, and are excluded from lifecycle collections,
@@ -73,6 +77,11 @@ rendered interface on 2026-07-19.
 - Offer explicit actions to open the recovery copy or reload the external
   version. The original external file remains untouched until the user chooses
   a subsequent save action.
+- Keep bounded app-local base/local/external snapshots for recovery. When
+  changes are provably disjoint, Anchored proposes a conservative three-way
+  merged result; overlapping or ambiguous edits remain manual conflicts.
+- Require a fresh expected-content check before applying a merged or local
+  resolution, so a second external change cannot be overwritten.
 - Refuse to create or rename over an existing Markdown file.
 - Add second-precision local-offset RFC 3339 `created_at` metadata to notes
   created by Anchored and normalize exact timestamp-valued front matter during
