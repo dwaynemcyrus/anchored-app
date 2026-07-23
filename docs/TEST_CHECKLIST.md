@@ -406,8 +406,17 @@ bytes changed.
 
 ## Lifecycle and Archive
 
-- [ ] Create a note and confirm `created_at` is UTC ISO 8601 with seconds and a trailing `Z`.
-- [ ] Confirm existing or externally imported notes are not backfilled automatically.
+- [ ] Create a note and confirm `created_at` uses second-precision RFC 3339 with
+      the Mac's local numeric offset, such as `+02:00` in Basel summer time.
+- [ ] Confirm existing notes are not bulk-rewritten automatically on vault open.
+- [ ] In Settings, preview timestamp migration on a backed-up vault and confirm
+      the candidate file/value counts and skipped-value reasons are visible.
+- [ ] Apply the migration and confirm exact timestamp-valued properties change
+      to local offsets without changing their represented instants.
+- [ ] Confirm date-only, fractional, malformed, ambiguous, and unsupported
+      frontmatter values remain unchanged and are reported.
+- [ ] Change a candidate externally between preview and apply; confirm it is
+      reported as a conflict and is not overwritten.
 - [ ] Archive an editable saved note and confirm `status: archived` and a fresh `archived_at` are written atomically.
 - [ ] Confirm archived notes open directly in sanitized Preview with no editor or ordinary save action.
 - [ ] Attempt an archived native save path and confirm it is refused without changing the file.
@@ -421,7 +430,8 @@ bytes changed.
 - [ ] Confirm choosing Untyped removes or omits `type` instead of writing `type: untyped`.
 - [ ] Move a note to Archive and confirm its existing type is preserved unless explicitly changed.
 - [ ] Confirm restoring to Workbench asks for type while restoring to Inbox preserves the existing type.
-- [ ] Confirm stored `created_at`, `updated_at`, and `archived_at` values remain second-precision UTC while the UI displays local time.
+- [ ] Confirm stored `created_at`, `updated_at`, and `archived_at` values use
+      second-precision local-offset RFC 3339 while the UI displays local time.
 - [ ] Create a note with initial authored content and confirm `created_at` and `updated_at` begin with the same timestamp.
 - [ ] Confirm successful content edits and autosaves advance `updated_at`.
 - [ ] Confirm status/type-only changes, rename, move, conflicts, failed saves, and detected external edits do not advance `updated_at`.

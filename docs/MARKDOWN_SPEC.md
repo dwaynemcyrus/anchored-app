@@ -55,6 +55,28 @@ supported references transactionally; changing only a YAML `title` does not.
 Unknown Markdown, front matter, Obsidian syntax, and linked attachments are
 preserved without interpretation or silent removal.
 
+## Frontmatter timestamps
+
+Any top-level frontmatter scalar that exactly represents an instant uses RFC
+3339 with second precision and a numeric local offset:
+
+```yaml
+published_at: 2026-07-23T14:30:00+02:00
+```
+
+The offset is calculated for the represented instant, so Basel uses `+02:00`
+during CEST and `+01:00` during CET. Date-only values such as
+`2026-07-23` remain date-only. Anchored recognizes exact timestamp-shaped
+values rather than requiring a fixed property-name allowlist, so future fields
+such as `reviewed_at` follow the same convention automatically when saved.
+
+Existing eligible values can be converted through Settings with a
+preview-first, source-preserving migration. `Z` and other valid offset values
+are converted without changing the represented instant. Fractional, malformed,
+date-only, ambiguous, and unsupported YAML values are reported and left
+unchanged. Nested or otherwise non-scalar YAML is outside the safe automatic
+rewrite scope.
+
 ## Rendering safety
 
 Rendered HTML is sanitized before insertion into the application. Scripts,

@@ -1400,7 +1400,7 @@ and preserves link integrity across filename changes.
       from lifecycle/link indexes, and exposes recovery/reload actions. Three-
       way merging remains intentionally deferred to 22D.
 
-23. [ ] **Epic: Normalize vault timestamp front matter**
+23. [x] **Epic: Normalize vault timestamp front matter**
     - Outcome: Every frontmatter value that represents an exact moment follows
       one portable vault convention: RFC 3339, second precision, and the
       numeric local offset at the represented instant. Date-only values remain
@@ -1427,15 +1427,15 @@ and preserves link integrity across filename changes.
       endings and unknown YAML, and returns per-file success, skip, and error
       results. A failed file never causes a partial rewrite of that file.
 
-    23A. [ ] **Define the timestamp grammar and source-preserving transformer**
+    23A. [x] **Define the timestamp grammar and source-preserving transformer**
         - Expected files: `src-tauri/src/metadata.rs`, focused Rust tests,
           `docs/MARKDOWN_SPEC.md`, and `PROJECT.md`.
         - Change: Centralize canonical local-offset formatting, exact-value
           recognition, conversion that preserves the represented instant, and
           source-range edits for top-level and safely addressable YAML scalar
           properties. Keep date-only values and unsupported/ambiguous values
-          untouched. Reconcile the existing lifecycle-only backfill behavior
-          with the broader explicit migration contract.
+          untouched. Replaced the old lifecycle-only open-time backfill with
+          the broader explicit migration contract.
         - Verify: Cover Basel summer/winter offsets, UTC conversion across
           date/year boundaries, already-local values, quoted/unquoted values,
           comments, CRLF/LF, BOM, duplicate keys, malformed front matter,
@@ -1445,7 +1445,7 @@ and preserves link integrity across filename changes.
           metadata. Restrict edits to proven source ranges, refuse ambiguity,
           and retain the original bytes on every parse or validation failure.
 
-    23B. [ ] **Add previewed native vault migration**
+    23B. [x] **Add previewed native vault migration**
         - Expected files: `src-tauri/src/vault.rs`, `src-tauri/src/lib.rs`,
           `src/lib/tauri/vault.ts`, and Rust/bridge tests.
         - Change: Add typed preview and apply commands. Preview scans eligible
@@ -1463,7 +1463,7 @@ and preserves link integrity across filename changes.
           explicit apply after preview, show the exact candidate count, and
           provide a recoverable report; never silently retry a conflict.
 
-    23C. [ ] **Normalize future authored timestamp values**
+    23C. [x] **Normalize future authored timestamp values**
         - Expected files: `src-tauri/src/vault.rs`, `src/app/App.tsx`,
           `src/app/documents.ts`, and focused save/creation tests.
         - Change: Route new-note creation, Save As, Scratchpad creation, and
@@ -1483,7 +1483,7 @@ and preserves link integrity across filename changes.
           values, surface a save notice when normalization occurs, and leave
           malformed or ambiguous values unchanged.
 
-    23D. [ ] **Add migration UI and documentation**
+    23D. [x] **Add migration UI and documentation**
         - Expected files: `src/app/components/SettingsModal.tsx` or a focused
           timestamp migration dialog, `src/app/App.tsx`, frontend tests,
           `docs/FEATURES.md`, `docs/TEST_CHECKLIST.md`, `CHANGELOG.md`, and
@@ -1503,6 +1503,15 @@ and preserves link integrity across filename changes.
           becoming an accidental destructive action. Make preview the default,
           label the operation clearly, and keep the original backup workflow
           in the checklist.
+
+    - Implementation result (2026-07-23): Chunks 23A–23D are implemented.
+      Exact top-level scalar timestamp values now use second-precision local
+      RFC 3339 offsets during authored writes. Existing eligible values use a
+      preview-first Settings migration with source signatures, atomic writes,
+      conflict protection, and per-file outcomes. Date-only, fractional,
+      malformed, nested, and ambiguous values remain unchanged and are
+      reported where safely addressable. Vault activation no longer performs a
+      hidden bulk rewrite.
 
 ## Requirements for future large plans
 

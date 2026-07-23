@@ -10,6 +10,7 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
+  applyVaultTimestampMigration,
   archiveVaultFile,
   createVaultConflictCopy,
   createVault,
@@ -24,6 +25,7 @@ import {
   moveVaultFileToFolder,
   moveVaultFileToTrash,
   openRememberedVault,
+  previewVaultTimestampMigration,
   readVaultFile,
   renameVaultFolder,
   renameVaultFile,
@@ -46,6 +48,7 @@ import { reloadAnchoredWindow } from "./windowActions";
 const eventHandlers = vi.hoisted(() => new Map());
 
 vi.mock("../lib/tauri/vault", () => ({
+  applyVaultTimestampMigration: vi.fn(),
   archiveVaultFile: vi.fn(),
   createVaultConflictCopy: vi.fn(),
   createVault: vi.fn(),
@@ -60,6 +63,7 @@ vi.mock("../lib/tauri/vault", () => ({
   moveVaultFileToFolder: vi.fn(),
   moveVaultFileToTrash: vi.fn(),
   openRememberedVault: vi.fn(),
+  previewVaultTimestampMigration: vi.fn(),
   readVaultFile: vi.fn(),
   renameVaultFolder: vi.fn(),
   renameVaultFile: vi.fn(),
@@ -91,6 +95,9 @@ vi.mock("./windowActions", () => ({
 }));
 
 const mockedSelectVault = vi.mocked(selectVault);
+const mockedApplyVaultTimestampMigration = vi.mocked(
+  applyVaultTimestampMigration,
+);
 const mockedCreateVault = vi.mocked(createVault);
 const mockedCreateVaultFolder = vi.mocked(createVaultFolder);
 const mockedCreateInboxVaultFile = vi.mocked(createInboxVaultFile);
@@ -103,6 +110,9 @@ const mockedListVaultTrash = vi.mocked(listVaultTrash);
 const mockedMoveVaultFileToFolder = vi.mocked(moveVaultFileToFolder);
 const mockedMoveVaultFileToTrash = vi.mocked(moveVaultFileToTrash);
 const mockedOpenRememberedVault = vi.mocked(openRememberedVault);
+const mockedPreviewVaultTimestampMigration = vi.mocked(
+  previewVaultTimestampMigration,
+);
 const mockedReadVaultFile = vi.mocked(readVaultFile);
 const mockedRenameVaultFolder = vi.mocked(renameVaultFolder);
 const mockedRenameVaultFile = vi.mocked(renameVaultFile);
@@ -148,6 +158,7 @@ describe("App", () => {
     eventHandlers.clear();
     mockedCreateVault.mockReset();
     mockedCreateVaultConflictCopy.mockReset();
+    mockedApplyVaultTimestampMigration.mockReset();
     mockedCreateVaultFolder.mockReset();
     mockedCreateInboxVaultFile.mockReset();
     mockedCreateUntitledVaultFile.mockReset();
@@ -159,6 +170,7 @@ describe("App", () => {
     mockedMoveVaultFileToFolder.mockReset();
     mockedMoveVaultFileToTrash.mockReset();
     mockedOpenRememberedVault.mockReset();
+    mockedPreviewVaultTimestampMigration.mockReset();
     mockedSelectVault.mockReset();
     mockedReadVaultFile.mockReset();
     mockedRenameVaultFolder.mockReset();

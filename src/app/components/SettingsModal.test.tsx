@@ -16,11 +16,16 @@ describe("SettingsModal Markdown options", () => {
       <SettingsModal
         markdownSettings={DEFAULT_MARKDOWN_SETTINGS}
         reloading={false}
+        timestampMigrationBlocked={false}
+        timestampMigrationBusy={false}
         updateStatus="idle"
+        vaultSelected={false}
         onClose={vi.fn()}
+        onApplyTimestampMigration={vi.fn()}
         onCheckForUpdates={onCheckForUpdates}
         onInstallUpdate={onInstallUpdate}
         onMarkdownSettingsChange={onMarkdownSettingsChange}
+        onPreviewTimestampMigration={vi.fn()}
         onReload={vi.fn()}
       />,
     );
@@ -80,5 +85,60 @@ describe("SettingsModal Markdown options", () => {
     ).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Check for updates" }));
     expect(onCheckForUpdates).toHaveBeenCalledOnce();
+  });
+
+  it("shows a preview and protects the apply action during active saves", async () => {
+    const user = userEvent.setup();
+    const onApplyTimestampMigration = vi.fn();
+    const onPreviewTimestampMigration = vi.fn();
+    const preview = {
+      candidates: [
+        {
+          changes: [
+            {
+              after: "2026-07-23T14:30:00+02:00",
+              before: "2026-07-23T12:30:00Z",
+              line: 2,
+              property: "published_at",
+            },
+          ],
+          expectedModifiedMillis: 1,
+          expectedSizeBytes: 2,
+          relativePath: "Note.md",
+        },
+      ],
+      changedValues: 1,
+      issues: [],
+      scannedFiles: 3,
+    };
+
+    render(
+      <SettingsModal
+        markdownSettings={DEFAULT_MARKDOWN_SETTINGS}
+        reloading={false}
+        timestampMigrationBlocked
+        timestampMigrationBusy={false}
+        timestampMigrationPreview={preview}
+        updateStatus="idle"
+        vaultSelected
+        onApplyTimestampMigration={onApplyTimestampMigration}
+        onClose={vi.fn()}
+        onCheckForUpdates={vi.fn()}
+        onInstallUpdate={vi.fn()}
+        onMarkdownSettingsChange={vi.fn()}
+        onPreviewTimestampMigration={onPreviewTimestampMigration}
+        onReload={vi.fn()}
+      />,
+    );
+
+    await user.click(
+      screen.getByRole("button", { name: "Preview timestamp migration" }),
+    );
+    expect(onPreviewTimestampMigration).toHaveBeenCalledOnce();
+    expect(screen.getByText(/Scanned 3 files/)).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Finish active saves first" }),
+    ).toBeDisabled();
+    expect(onApplyTimestampMigration).not.toHaveBeenCalled();
   });
 });

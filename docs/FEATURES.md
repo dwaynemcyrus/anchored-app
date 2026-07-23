@@ -74,11 +74,15 @@ rendered interface on 2026-07-19.
   version. The original external file remains untouched until the user chooses
   a subsequent save action.
 - Refuse to create or rename over an existing Markdown file.
-- Add second-precision UTC `created_at` metadata to notes created by Anchored
-  without backfilling externally imported notes.
-- Add second-precision UTC `updated_at` only after successful authored saves;
-  display stored timestamps in local time and use cached filesystem metadata
-  for Last Edited without writing `modified_at`.
+- Add second-precision local-offset RFC 3339 `created_at` metadata to notes
+  created by Anchored and normalize exact timestamp-valued front matter during
+  successful authored saves.
+- Preview and explicitly apply a source-preserving migration for existing
+  timestamp values. Date-only, fractional, malformed, and ambiguous values are
+  reported without being rewritten.
+- Add second-precision local-offset `updated_at` only after successful authored
+  saves; display stored timestamps in local time and use cached filesystem
+  metadata for Last Edited without writing `modified_at`.
 - Archive through a dedicated atomic transition that writes `status: archived`
   and `archived_at`; archived notes open in read-only Preview until restored.
 - Close a note without closing its vault. A note with unfinished edits is
