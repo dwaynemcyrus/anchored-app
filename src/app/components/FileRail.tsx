@@ -1542,6 +1542,7 @@ export function FileRail({
           duplicateNames={duplicateNames}
           rows={collectionRows}
           selectedKey={selectedKey}
+          showFileExtensions={showFileExtensions}
           onContextMenu={showContextMenu}
           onSelectCollection={selectCollection}
           onSelectDocument={selectDocument}
@@ -1554,6 +1555,7 @@ export function FileRail({
           expandedFolders={expandedFolders}
           rows={rows}
           selectedKey={selectedKey}
+          showFileExtensions={showFileExtensions}
           onContextMenu={showContextMenu}
           onSelectDocument={selectDocument}
           onSelectFolder={selectFolder}

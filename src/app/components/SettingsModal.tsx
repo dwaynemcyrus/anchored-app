@@ -199,6 +199,26 @@ export function SettingsModal({
           </label>
         </section>
         <section className="settings-section">
+          <h3>File display</h3>
+          <p>
+            Control whether file extensions appear in names, paths, search
+            results, and editor breadcrumbs.
+          </p>
+          <label className="settings-toggle">
+            <input
+              checked={markdownSettings.showFileExtensions}
+              type="checkbox"
+              onChange={(event) =>
+                onMarkdownSettingsChange({
+                  ...markdownSettings,
+                  showFileExtensions: event.target.checked,
+                })
+              }
+            />
+            <span>Show file extensions</span>
+          </label>
+        </section>
+        <section className="settings-section">
           <h3>Markdown</h3>
           <p>
             Rendering options never rewrite the Markdown source. Preview is
@@ -216,6 +236,19 @@ export function SettingsModal({
               }
             />
             <span>Automatically link bare URLs</span>
+          </label>
+          <label className="settings-toggle">
+            <input
+              checked={markdownSettings.backslashLineBreaks}
+              type="checkbox"
+              onChange={(event) =>
+                onMarkdownSettingsChange({
+                  ...markdownSettings,
+                  backslashLineBreaks: event.target.checked,
+                })
+              }
+            />
+            <span>Use backslash for hard line breaks</span>
           </label>
           <label className="settings-toggle">
             <input

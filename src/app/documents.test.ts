@@ -1,7 +1,11 @@
 import { describe, expect, it } from "vitest";
 
 import type { VaultSnapshot } from "../lib/tauri/vault";
-import { documentsFromVault, mergeDocumentsFromVault } from "./documents";
+import {
+  documentsFromVault,
+  mergeDocumentsFromVault,
+  newNoteFilename,
+} from "./documents";
 
 const warnings = {
   skippedNonUtf8Paths: 0,
@@ -9,6 +13,12 @@ const warnings = {
 };
 
 describe("vault documents", () => {
+  it("formats new note filenames as UTC timestamps with milliseconds", () => {
+    expect(newNoteFilename(new Date("2026-02-19T23:35:41.123Z"))).toBe(
+      "20260219233541123.md",
+    );
+  });
+
   it("indexes a note by path and keeps Obsidian aliases", () => {
     const snapshot: VaultSnapshot = {
       files: [

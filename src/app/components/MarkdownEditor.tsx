@@ -21,6 +21,7 @@ import {
   frontMatterEditorDecorations,
   markdownEditorDecorations,
 } from "../markdown/editorDecorations";
+import { markdownBodyStartOffset } from "../markdown/source";
 import {
   anchoredMarkdownLanguage,
   anchoredMarkdownSyntaxHighlighting,
@@ -62,6 +63,7 @@ type MarkdownEditorProps = {
   onPreview: () => void;
   onSave: () => void;
   onSaveAs: () => void;
+  placeCursorAfterFrontMatter?: boolean;
 };
 
 export default function MarkdownEditor({
@@ -82,6 +84,7 @@ export default function MarkdownEditor({
   onPreview,
   onSave,
   onSaveAs,
+  placeCursorAfterFrontMatter = false,
 }: MarkdownEditorProps) {
   const hostRef = useRef<HTMLDivElement>(null);
   const editorRef = useRef<EditorView | null>(null);
@@ -96,6 +99,8 @@ export default function MarkdownEditor({
   const onCursorPositionRef = useRef(onCursorPosition);
   const syncingValueRef = useRef(false);
   const composingRef = useRef(false);
+  const userEditedRef = useRef(false);
+  const initialCursorPlacedRef = useRef(false);
   const localValueHistoryRef = useRef(new Set([value]));
   const bodyFocusAppliedRef = useRef(false);
 
@@ -113,6 +118,10 @@ export default function MarkdownEditor({
     const host = hostRef.current;
     if (!host) return;
     bodyFocusAppliedRef.current = false;
+
+    userEditedRef.current = false;
+    initialCursorPlacedRef.current = false;
+    localValueHistoryRef.current = new Set([valueRef.current]);
 
     function completeWikilink(
       context: CompletionContext,
@@ -394,6 +403,7 @@ export default function MarkdownEditor({
             }
             if (update.docChanged) {
               if (!syncingValueRef.current) {
+                userEditedRef.current = true;
                 const nextValue = update.state.doc.toString();
                 localValueHistoryRef.current.add(nextValue);
                 if (localValueHistoryRef.current.size > 64) {
@@ -483,6 +493,27 @@ export default function MarkdownEditor({
       bodyFocusAppliedRef.current = true;
     }
   }, [focusAtBodyStart, focusAtEnd, value]);
+
+  useEffect(() => {
+    const view = editorRef.current;
+    if (
+      !view ||
+      !autoFocus ||
+      !placeCursorAfterFrontMatter ||
+      initialCursorPlacedRef.current ||
+      userEditedRef.current ||
+      view.state.doc.toString() !== value
+    ) {
+      return;
+    }
+
+    const bodyStart = markdownBodyStartOffset(value);
+    if (bodyStart === null || bodyStart > view.state.doc.length) return;
+
+    view.dispatch({ selection: { anchor: bodyStart } });
+    initialCursorPlacedRef.current = true;
+    view.focus();
+  }, [autoFocus, placeCursorAfterFrontMatter, value]);
 
   useEffect(() => {
     if (findRequest <= 0 || !editorRef.current) return;

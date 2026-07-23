@@ -758,9 +758,9 @@ input:focus-visible,
 }
 
 .document {
-  width: min(100% - 88px, 780px);
+  width: min(calc(100% - 88px), 48ch);
   min-height: calc(100% - 52px);
-  margin: 0 44px;
+  margin: 0 auto;
   padding: 28px 0 160px;
   outline-offset: 8px;
 }
@@ -899,6 +899,11 @@ input:focus-visible,
 .markdown-editor .cm-anchored-admonition,
 .markdown-editor .cm-anchored-fence {
   color: var(--syntax-list);
+}
+
+.markdown-editor .cm-anchored-hard-break {
+  color: #d7a85b;
+  font-weight: 700;
 }
 
 .markdown-editor .cm-anchored-math {
@@ -2044,9 +2049,9 @@ input:focus-visible,
   }
 
   .document {
-    width: min(100% - 56px, 780px);
-    margin-right: 28px;
-    margin-left: 28px;
+    width: min(calc(100% - 56px), 48ch);
+    margin-right: auto;
+    margin-left: auto;
   }
 
   .search-field input {
@@ -2102,8 +2107,8 @@ input:focus-visible,
   .document {
     width: calc(100% - 40px);
     min-height: calc(100% - 44px);
-    margin-right: 20px;
-    margin-left: 20px;
+    margin-right: auto;
+    margin-left: auto;
     padding-top: 20px;
   }
 

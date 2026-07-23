@@ -63,6 +63,11 @@ describe("SettingsModal Markdown options", () => {
       ...DEFAULT_MARKDOWN_SETTINGS,
       autoLinkUrls: false,
     });
+    expect(
+      screen.getByRole("checkbox", {
+        name: "Use backslash for hard line breaks",
+      }),
+    ).toBeChecked();
     await user.selectOptions(
       screen.getByRole("combobox", { name: "Editor text size" }),
       "12",

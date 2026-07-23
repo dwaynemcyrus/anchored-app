@@ -34,18 +34,31 @@ export type AnchoredDocument = {
   updatedAt?: string;
 };
 
-export function createUntitledDocument(
-  documents: AnchoredDocument[],
-): AnchoredDocument {
-  const untitledCount = documents.filter((document) =>
-    document.name.startsWith("Untitled"),
-  ).length;
-  const suffix = untitledCount === 0 ? "" : ` ${untitledCount + 1}`;
-  const title = `Untitled${suffix}`;
+function pad(value: number, length: number): string {
+  return value.toString().padStart(length, "0");
+}
+
+export function newNoteFilename(date = new Date()): string {
+  const timestamp = [
+    date.getUTCFullYear(),
+    pad(date.getUTCMonth() + 1, 2),
+    pad(date.getUTCDate(), 2),
+    pad(date.getUTCHours(), 2),
+    pad(date.getUTCMinutes(), 2),
+    pad(date.getUTCSeconds(), 2),
+    pad(date.getUTCMilliseconds(), 3),
+  ].join("");
+
+  return `${timestamp}.md`;
+}
+
+export function createUntitledDocument(): AnchoredDocument {
+  const name = newNoteFilename();
+  const title = name.replace(/\.md$/i, "");
 
   return {
     id: `draft-${crypto.randomUUID()}`,
-    name: `${title}.md`,
+    name,
     outgoingLinks: [],
     folder: "Vault root",
     folderPath: "",

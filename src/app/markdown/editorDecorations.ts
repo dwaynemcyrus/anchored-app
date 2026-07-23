@@ -77,6 +77,42 @@ function addMathMatches(
   }
 }
 
+function addBackslashLineBreakMatches(
+  source: string,
+  start: number,
+  end: number,
+  ranges: MarkdownDecorationRange[],
+): void {
+  const lines = source.slice(start, end).split("\n");
+  let offset = start;
+  let fence: string | null = null;
+
+  for (const rawLine of lines) {
+    const line = rawLine.replace(/\r$/, "");
+    const fenceMatch = /^\s*(`{3,})/.exec(line);
+    if (fenceMatch) {
+      if (fence && fenceMatch[1].length >= fence.length) fence = null;
+      else if (!fence) fence = fenceMatch[1];
+    } else if (!fence && /\\$/.test(line) && !/^\s{4}/.test(line)) {
+      let inCode = false;
+      for (let index = 0; index < line.length - 1; index += 1) {
+        if (line[index] !== "`") continue;
+        const run = line.slice(index).match(/^`+/)?.[0] ?? "`";
+        inCode = !inCode;
+        index += run.length - 1;
+      }
+      if (!inCode) {
+        ranges.push({
+          className: "cm-anchored-hard-break",
+          from: offset + line.length - 1,
+          to: offset + line.length,
+        });
+      }
+    }
+    offset += rawLine.length + 1;
+  }
+}
+
 export function findMarkdownDecorationRanges(
   source: string,
   start = 0,
@@ -87,6 +123,7 @@ export function findMarkdownDecorationRanges(
     addPatternMatches(source, start, end, pattern, className, ranges);
   }
   addMathMatches(source, start, end, ranges);
+  addBackslashLineBreakMatches(source, start, end, ranges);
   return ranges.sort(
     (left, right) => left.from - right.from || left.to - right.to,
   );

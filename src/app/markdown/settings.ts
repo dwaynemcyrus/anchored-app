@@ -53,6 +53,10 @@ function parseSettings(value: unknown): MarkdownSettings | null {
       : candidate.editorFontSize;
   return {
     autoLinkUrls: candidate.autoLinkUrls,
+    backslashLineBreaks:
+      candidate.version === STORAGE_VERSION
+        ? candidate.backslashLineBreaks === true
+        : DEFAULT_MARKDOWN_SETTINGS.backslashLineBreaks,
     editorFontSize,
     editorLineLength:
       candidate.version === STORAGE_VERSION &&

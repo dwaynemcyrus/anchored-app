@@ -27,6 +27,7 @@ export type EditorLineLength = (typeof EDITOR_LINE_LENGTHS)[number];
 
 export type MarkdownSettings = {
   autoLinkUrls: boolean;
+  backslashLineBreaks: boolean;
   editorFontSize: EditorFontSize;
   editorLineLength: EditorLineLength;
   emoji: boolean;
@@ -40,6 +41,7 @@ export type MarkdownSettings = {
 
 export const DEFAULT_MARKDOWN_SETTINGS: MarkdownSettings = {
   autoLinkUrls: true,
+  backslashLineBreaks: true,
   editorFontSize: 14,
   editorLineLength: 64,
   emoji: true,

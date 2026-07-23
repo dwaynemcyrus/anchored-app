@@ -164,6 +164,56 @@ export function EditorSurface({
     return () =>
       window.removeEventListener("anchored:show-preview", showPreview);
   }, []);
+
+  useEffect(() => {
+    const startRename = () => setEditingName(true);
+    window.addEventListener("anchored:begin-rename", startRename);
+    return () =>
+      window.removeEventListener("anchored:begin-rename", startRename);
+  }, []);
+
+  useEffect(() => {
+    setDraftName(
+      documentName
+        ? displayFileName(documentName, markdownSettings.showFileExtensions)
+        : "",
+    );
+    setEditingName(false);
+    submittedNameRef.current = undefined;
+  }, [document?.id, documentName, markdownSettings.showFileExtensions]);
+
+  useEffect(() => {
+    if (!editingName) return;
+    window.requestAnimationFrame(() => {
+      nameInputRef.current?.focus();
+      nameInputRef.current?.select();
+    });
+  }, [editingName]);
+
+  function beginRename() {
+    if (!document?.relativePath || renaming) return;
+    setDraftName(
+      displayFileName(document.name, markdownSettings.showFileExtensions),
+    );
+    submittedNameRef.current = undefined;
+    setEditingName(true);
+  }
+
+  function submitRename(event?: FormEvent<HTMLFormElement>) {
+    event?.preventDefault();
+    if (!document) return;
+    const name = draftName.trim();
+    if (submittedNameRef.current === name) return;
+    submittedNameRef.current = name;
+    onRenameDocument(name);
+  }
+
+  function handleNameKeyDown(event: KeyboardEvent<HTMLInputElement>) {
+    if (event.key !== "Escape") return;
+    event.preventDefault();
+    setEditingName(false);
+    submittedNameRef.current = undefined;
+  }
   const [focusEditorOnOpen, setFocusEditorOnOpen] = useState(false);
   const displayName = document
     ? displayFileName(document.name, markdownSettings.showFileExtensions)
@@ -289,7 +339,7 @@ export function EditorSurface({
                 lifecycleChanging ||
                 renaming ||
                 trashing ||
-                document.saveState !== "saved" ||
+                document.saveState === "saving" ||
                 loadState.status === "loading"
               }
               type="button"
@@ -480,6 +530,7 @@ export function EditorSurface({
                 onPreview={() => setPreviewVisible(true)}
                 onSave={onSaveDocument}
                 onSaveAs={onSaveDocumentAs}
+                placeCursorAfterFrontMatter={document.id.startsWith("draft-")}
               />
             </Suspense>
           )
