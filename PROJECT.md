@@ -243,7 +243,7 @@ These scripts must exist in `package.json` after the scaffold chunk.
 
 ## Versioning and changelog
 
-- **Current version:** `0.1.1-alpha`
+- **Current version:** `0.1.3-alpha`
 - **Authoritative version source:** `src-tauri/tauri.conf.json`; the root npm
   manifest and lockfile plus the Rust manifest and lockfile mirror the app
   version and must remain consistent during a release.
@@ -324,3 +324,4 @@ These scripts must exist in `package.json` after the scaffold chunk.
 | 2026-07-22 | Write lifecycle timestamps with the Mac's local offset | Values such as `2026-11-28T15:48:32+01:00` match the user's local time while remaining RFC 3339 timestamps; existing `Z` values remain readable |
 | 2026-07-23 | Normalize all exact timestamp-valued front matter through a previewed migration | Keeps future timestamp properties consistent without guessing about date-only, malformed, fractional, or ambiguous metadata; preserves represented instants and protects external edits |
 | 2026-07-19 | Keep global Scratchpad shortcuts and asset copying deferred | Local capture ships only after performance work; GitHub issues #41 and #40 own the later operating-system and import workflows |
+| 2026-07-25 | Fix the updater endpoint repo and release bundle target | Every release through `0.1.2-alpha` pointed the updater at the wrong GitHub repository and never published `latest.json`/signature artifacts, so no installed copy could ever find or apply an update |
