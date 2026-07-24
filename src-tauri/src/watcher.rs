@@ -15,7 +15,7 @@ use tauri::{AppHandle, Emitter};
 
 const DEBOUNCE_WINDOW: Duration = Duration::from_millis(200);
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct VaultChange {
     pub kind: String,
@@ -109,11 +109,7 @@ enum WatcherMessage {
     Stop,
 }
 
-fn emit_pending(app: &AppHandle, vault_id: &str, pending: &mut Vec<VaultChange>) {
-    if pending.is_empty() {
-        return;
-    }
-
+fn normalize_pending(pending: &mut Vec<VaultChange>) {
     pending.sort_by(|left, right| {
         left.relative_path
             .cmp(&right.relative_path)
@@ -124,6 +120,14 @@ fn emit_pending(app: &AppHandle, vault_id: &str, pending: &mut Vec<VaultChange>)
             && left.relative_path == right.relative_path
             && left.old_relative_path == right.old_relative_path
     });
+}
+
+fn emit_pending(app: &AppHandle, vault_id: &str, pending: &mut Vec<VaultChange>) {
+    if pending.is_empty() {
+        return;
+    }
+
+    normalize_pending(pending);
 
     let _ = app.emit(
         "vault-changed",
@@ -193,8 +197,11 @@ fn relative_visible_path(root: &Path, path: &Path) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{normalize_event, relative_visible_path};
-    use notify::{event::CreateKind, Event, EventKind};
+    use super::{normalize_event, normalize_pending, relative_visible_path, VaultChange};
+    use notify::{
+        event::{AccessKind, CreateKind, ModifyKind, RenameMode},
+        Event, EventKind,
+    };
     use std::path::Path;
 
     #[test]
@@ -224,5 +231,75 @@ mod tests {
         let changes = normalize_event(Path::new("/vault"), event);
         assert_eq!(changes[0].kind, "created");
         assert_eq!(changes[0].relative_path, "Notes/New.md");
+    }
+
+    #[test]
+    fn pairs_rename_from_and_to_paths_into_one_change() {
+        let event = Event {
+            kind: EventKind::Modify(ModifyKind::Name(RenameMode::Both)),
+            paths: vec!["/vault/Notes/Old.md".into(), "/vault/Notes/New.md".into()],
+            attrs: Default::default(),
+        };
+        let changes = normalize_event(Path::new("/vault"), event);
+        assert_eq!(changes.len(), 1);
+        assert_eq!(changes[0].kind, "renamed");
+        assert_eq!(changes[0].relative_path, "Notes/New.md");
+        assert_eq!(
+            changes[0].old_relative_path.as_deref(),
+            Some("Notes/Old.md")
+        );
+    }
+
+    #[test]
+    fn ignores_event_kinds_outside_the_tracked_set() {
+        let event = Event {
+            kind: EventKind::Access(AccessKind::Any),
+            paths: vec!["/vault/Notes/Read.md".into()],
+            attrs: Default::default(),
+        };
+        assert!(normalize_event(Path::new("/vault"), event).is_empty());
+    }
+
+    fn change(kind: &str, path: &str) -> VaultChange {
+        VaultChange {
+            kind: kind.to_owned(),
+            relative_path: path.to_owned(),
+            old_relative_path: None,
+        }
+    }
+
+    #[test]
+    fn coalesces_duplicate_events_for_the_same_path() {
+        let mut pending = vec![
+            change("modified", "Notes/A.md"),
+            change("modified", "Notes/A.md"),
+            change("created", "Notes/A.md"),
+        ];
+        normalize_pending(&mut pending);
+        assert_eq!(
+            pending,
+            vec![
+                change("created", "Notes/A.md"),
+                change("modified", "Notes/A.md")
+            ]
+        );
+    }
+
+    #[test]
+    fn orders_a_batch_deterministically_regardless_of_arrival_order() {
+        let mut pending = vec![
+            change("created", "Notes/B.md"),
+            change("modified", "Notes/A.md"),
+            change("created", "Notes/A.md"),
+        ];
+        normalize_pending(&mut pending);
+        assert_eq!(
+            pending,
+            vec![
+                change("created", "Notes/A.md"),
+                change("modified", "Notes/A.md"),
+                change("created", "Notes/B.md"),
+            ]
+        );
     }
 }

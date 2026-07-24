@@ -1,6 +1,4 @@
 import DOMPurify from "dompurify";
-import hljs from "highlight.js/lib/common";
-import katex from "katex";
 import MarkdownIt from "markdown-it";
 import anchor from "markdown-it-anchor";
 import deflist from "markdown-it-deflist";
@@ -18,6 +16,39 @@ import {
   type MarkdownRenderResult,
   type MarkdownSettings,
 } from "./types";
+
+type HljsModule = (typeof import("highlight.js/lib/common"))["default"];
+type KatexModule = (typeof import("katex"))["default"];
+
+let hljsModule: HljsModule | undefined;
+let katexModule: KatexModule | undefined;
+let hljsLoad: Promise<HljsModule> | undefined;
+let katexLoad: Promise<KatexModule> | undefined;
+
+function loadHljs(): Promise<HljsModule> {
+  hljsLoad ??= import("highlight.js/lib/common").then((module) => {
+    hljsModule = module.default;
+    return module.default;
+  });
+  return hljsLoad;
+}
+
+function loadKatex(): Promise<KatexModule> {
+  katexLoad ??= import("katex").then((module) => {
+    katexModule = module.default;
+    return module.default;
+  });
+  return katexLoad;
+}
+
+// highlight.js and KaTeX are only needed once a document actually renders
+// code fences or math; loading them on demand keeps them out of the
+// eagerly-bundled editor/preview chunk. Callers that need synchronous,
+// fully-rendered output on first paint (tests, Preview's first render)
+// should await this before calling renderMarkdown.
+export function ensureMarkdownRendererDependenciesLoaded(): Promise<void> {
+  return Promise.all([loadHljs(), loadKatex()]).then(() => undefined);
+}
 
 type FrontMatterBounds = {
   bodyStart: number;
@@ -256,8 +287,17 @@ function admonitionPlugin(md: MarkdownIt): void {
   });
 }
 
-function renderMath(content: string, displayMode: boolean): string {
-  return katex.renderToString(content, {
+function renderMath(
+  md: MarkdownIt,
+  content: string,
+  displayMode: boolean,
+): string {
+  if (!katexModule) {
+    void loadKatex();
+    const delimiter = displayMode ? "$$" : "$";
+    return `<span class="markdown-math-pending">${md.utils.escapeHtml(`${delimiter}${content}${delimiter}`)}</span>`;
+  }
+  return katexModule.renderToString(content, {
     displayMode,
     throwOnError: false,
     strict: "ignore",
@@ -276,10 +316,16 @@ function createMarkdownIt(settings: MarkdownSettings): MarkdownIt {
     typographer: settings.smartTypography,
     highlight: settings.syntaxHighlighting
       ? (value, language) => {
-          if (!language || !hljs.getLanguage(language)) return "";
+          if (!hljsModule) {
+            void loadHljs();
+            return "";
+          }
+          if (!language || !hljsModule.getLanguage(language)) return "";
           try {
-            return hljs.highlight(value, { language, ignoreIllegals: true })
-              .value;
+            return hljsModule.highlight(value, {
+              language,
+              ignoreIllegals: true,
+            }).value;
           } catch {
             return "";
           }
@@ -309,9 +355,9 @@ function createMarkdownIt(settings: MarkdownSettings): MarkdownIt {
       : slf.renderToken(tokens, index, options);
   };
   md.renderer.rules.math_inline = (tokens, index) =>
-    renderMath(tokens[index].content, false);
+    renderMath(md, tokens[index].content, false);
   md.renderer.rules.math_block = (tokens, index) =>
-    `<div class="markdown-math">${renderMath(tokens[index].content, true)}</div>`;
+    `<div class="markdown-math">${renderMath(md, tokens[index].content, true)}</div>`;
   md.renderer.rules.wikilink = (tokens, index) => {
     const meta = tokens[index].meta as { label: string; target: string };
     return `<a class="markdown-wikilink" data-wikilink-target="${md.utils.escapeHtml(meta.target)}" href="#">${md.utils.escapeHtml(meta.label)}</a>`;

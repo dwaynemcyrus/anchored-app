@@ -8,7 +8,7 @@ Product scope remains governed by `OVERVIEW.md`.
 - **Overview:** `OVERVIEW.md`
 - **Overview status:** approved on 2026-07-16
 - **Additional source documents:** `anchor-stuff.md`
-- **Contract last reviewed:** 2026-07-19
+- **Contract last reviewed:** 2026-07-24
 - **Blocking decisions:** none for the private in-house alpha. Public website
   distribution remains deferred until Developer ID signing and notarization
   prerequisites are available.
@@ -278,13 +278,23 @@ These scripts must exist in `package.json` after the scaffold chunk.
   duplicate names, ambiguous aliases, and malformed front matter.
 - Cross-file rename, status, timestamp, and archive updates are high-risk data
   changes; they must never be tested first against the primary vault.
-- Current link and backlink derivation scales quadratically and the file-tree
-  virtualizer can expose unpainted gaps during rapid scrolling. Chunk 21 must
-  remove both defects before adding more collection UI.
 - macOS 12 and the 2015 hardware baseline constrain dependency and WebKit API
   choices.
 - Seven-day stability cannot be completed within a single implementation
   session; release readiness requires the later real-use observation period.
+- Epic 21 (fast virtual collections) and Epic 22 (external-edit recovery) both
+  landed their functional chunks, but their closing native-QA chunks (21K,
+  22E) remain open pending native timing, VoiceOver, and 2015 MacBook Pro
+  measurements.
+- `App.tsx` is oversized (3,500+ lines, 60+ `useState`, no context/reducer)
+  and should be decomposed by feature before further expansion; this needs
+  its own planned chunk with stronger test coverage first, not an incidental
+  refactor.
+- The native vault watcher debounces individual filesystem events but still
+  triggers a full recursive vault rescan for any single external change,
+  rather than an incremental update scoped to the changed path. This is
+  bounded by vault size, not file-count-per-change, so it will show up as
+  latency on large vaults during rapid external edits.
 
 ## Decisions
 

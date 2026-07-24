@@ -25,6 +25,8 @@ import type { EditorCursorPosition } from "./components/MarkdownEditor";
 import { TitleBar } from "./components/TitleBar";
 import { TrashPanel } from "./components/TrashPanel";
 import { VaultSwitcher } from "./components/VaultSwitcher";
+import { readErrorMessage } from "./errors";
+import { useTrashPanel } from "./useTrashPanel";
 import {
   VaultSearchPalette,
   type VaultSearchState,
@@ -98,10 +100,8 @@ import {
   deleteVaultFolder,
   forgetVault,
   listRememberedVaults,
-  listVaultTrash,
   moveVaultFileToFolder,
   moveVaultFileToWorkbench,
-  moveVaultFileToTrash,
   moveVaultFolderToTrash,
   moveVaultFolder,
   openDevelopmentVault,
@@ -122,11 +122,8 @@ import {
   type VaultChange,
   type VaultChangeBatch,
   isBrowserDevelopmentFixture,
-  restoreVaultFileFromTrash,
-  restoreVaultFolderFromTrash,
   restoreArchivedVaultFile,
   type RememberedVault,
-  type TrashEntry,
   type VaultDocument,
   type VaultSnapshot,
   type TimestampMigrationPreview,
@@ -160,19 +157,6 @@ type LifecycleTypeRequest = {
   action: "archive" | "workbench";
   documentId: string;
 };
-
-function readErrorMessage(error: unknown): string {
-  if (
-    typeof error === "object" &&
-    error !== null &&
-    "message" in error &&
-    typeof error.message === "string"
-  ) {
-    return error.message;
-  }
-
-  return "This Markdown file could not be opened safely.";
-}
 
 function vaultSummaryMessage(snapshot: VaultSnapshot): string {
   const notices: string[] = [];
@@ -299,16 +283,6 @@ export function App() {
     string | undefined
   >();
   const [openingRememberedVaultId, setOpeningRememberedVaultId] = useState<
-    string | undefined
-  >();
-  const [trashVisible, setTrashVisible] = useState(false);
-  const [trashEntries, setTrashEntries] = useState<TrashEntry[]>([]);
-  const [trashLoading, setTrashLoading] = useState(false);
-  const [trashError, setTrashError] = useState<string | undefined>();
-  const [restoringTrashId, setRestoringTrashId] = useState<
-    string | undefined
-  >();
-  const [trashingDocumentId, setTrashingDocumentId] = useState<
     string | undefined
   >();
   const [transitioningDocumentId, setTransitioningDocumentId] = useState<
@@ -578,18 +552,6 @@ export function App() {
       );
     } finally {
       setRememberedVaultsLoading(false);
-    }
-  }, []);
-
-  const refreshTrashEntries = useCallback(async () => {
-    setTrashLoading(true);
-    setTrashError(undefined);
-    try {
-      setTrashEntries(await listVaultTrash());
-    } catch (error) {
-      setTrashError(readErrorMessage(error));
-    } finally {
-      setTrashLoading(false);
     }
   }, []);
 
@@ -1214,42 +1176,6 @@ export function App() {
     [addHistoryEntry],
   );
 
-  const activateVaultSnapshot = useCallback(
-    (snapshot: VaultSnapshot) => {
-      const nextDocuments = documentsFromVault(snapshot);
-      const nextFolders = folderPathsFromVault(snapshot);
-
-      loadRequestRef.current += 1;
-      vaultIdRef.current = snapshot.vaultId ?? "";
-      documentsRef.current = nextDocuments;
-      setVaultId(snapshot.vaultId ?? "");
-      setVaultName(snapshot.name);
-      setVaultSelected(true);
-      setDocuments(nextDocuments);
-      setDocumentActivity((current) =>
-        reconcileDocumentActivity(current, nextDocuments, Date.now()),
-      );
-      setFolderPaths(nextFolders);
-      setExpandedFolders(new Set(nextFolders));
-      setActiveDocument("");
-      setFocusDocument(undefined);
-      setQuery("");
-      setDocumentLoad({ status: "idle" });
-      setVaultNotices([]);
-      setTimestampMigrationPreview(undefined);
-      setTimestampMigrationError(undefined);
-      setTimestampMigrationMessage(undefined);
-      setTrashEntries([]);
-      setTrashError(undefined);
-      setTrashVisible(false);
-      setNotificationHistoryVisible(false);
-      recordSnapshotEvents(snapshot);
-      const summary = vaultSummaryMessage(snapshot);
-      if (summary) addVaultNotice(summary);
-    },
-    [addVaultNotice, recordSnapshotEvents, setActiveDocument, setFocusDocument],
-  );
-
   const adoptVaultSnapshot = useCallback(
     (snapshot: VaultSnapshot) => {
       const activeDocumentBeforeRefresh = documentsRef.current.find(
@@ -1290,6 +1216,65 @@ export function App() {
       if (summary) addVaultNotice(summary);
     },
     [addVaultNotice, recordSnapshotEvents, setActiveDocument],
+  );
+
+  const onActiveDocumentTrashed = useCallback(() => {
+    loadRequestRef.current += 1;
+    setActiveDocument("");
+    setFocusDocument(undefined);
+    setDocumentLoad({ status: "idle" });
+  }, [setActiveDocument, setFocusDocument]);
+
+  const trash = useTrashPanel({
+    addHistoryEntry,
+    addVaultNotice,
+    adoptVaultSnapshot,
+    documentsRef,
+    onActiveDocumentTrashed,
+  });
+
+  const activateVaultSnapshot = useCallback(
+    (snapshot: VaultSnapshot) => {
+      const nextDocuments = documentsFromVault(snapshot);
+      const nextFolders = folderPathsFromVault(snapshot);
+
+      loadRequestRef.current += 1;
+      vaultIdRef.current = snapshot.vaultId ?? "";
+      documentsRef.current = nextDocuments;
+      setVaultId(snapshot.vaultId ?? "");
+      setVaultName(snapshot.name);
+      setVaultSelected(true);
+      setDocuments(nextDocuments);
+      setDocumentActivity((current) =>
+        reconcileDocumentActivity(current, nextDocuments, Date.now()),
+      );
+      setFolderPaths(nextFolders);
+      setExpandedFolders(new Set(nextFolders));
+      setActiveDocument("");
+      setFocusDocument(undefined);
+      setQuery("");
+      setDocumentLoad({ status: "idle" });
+      setVaultNotices([]);
+      setTimestampMigrationPreview(undefined);
+      setTimestampMigrationError(undefined);
+      setTimestampMigrationMessage(undefined);
+      trash.reset();
+      setNotificationHistoryVisible(false);
+      recordSnapshotEvents(snapshot);
+      const summary = vaultSummaryMessage(snapshot);
+      if (summary) addVaultNotice(summary);
+    },
+    // trash.reset has a stable identity (useCallback with no deps inside
+    // useTrashPanel); the trash object itself is recreated every render, so
+    // depending on it directly would defeat this memoization.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [
+      addVaultNotice,
+      recordSnapshotEvents,
+      setActiveDocument,
+      setFocusDocument,
+      trash.reset,
+    ],
   );
 
   const previewTimestampMigration = useCallback(async () => {
@@ -1449,7 +1434,10 @@ export function App() {
       void openDevelopmentVault()
         .then(async (snapshot) => {
           activateVaultSnapshot(snapshot);
-          await Promise.all([refreshRememberedVaults(), refreshTrashEntries()]);
+          await Promise.all([
+            refreshRememberedVaults(),
+            trash.refreshTrashEntries(),
+          ]);
         })
         .catch((error) => {
           addVaultNotice(readErrorMessage(error), { persistent: true });
@@ -1474,7 +1462,10 @@ export function App() {
     void openRememberedVault(session.vaultId)
       .then(async (snapshot) => {
         activateVaultSnapshot(snapshot);
-        await Promise.all([refreshRememberedVaults(), refreshTrashEntries()]);
+        await Promise.all([
+          refreshRememberedVaults(),
+          trash.refreshTrashEntries(),
+        ]);
       })
       .catch(() => {
         pendingSessionRelativePathRef.current = undefined;
@@ -1484,12 +1475,15 @@ export function App() {
         sessionRestoreStatusRef.current = "done";
         setOpeningRememberedVaultId(undefined);
       });
+    // trash.refreshTrashEntries has a stable identity; see the comment on
+    // activateVaultSnapshot's dependency array above.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     addVaultNotice,
     activateVaultSnapshot,
     refreshRememberedVaults,
-    refreshTrashEntries,
     rememberedVaultsLoading,
+    trash.refreshTrashEntries,
   ]);
 
   useEffect(() => {
@@ -2435,70 +2429,6 @@ export function App() {
     }
   }
 
-  async function trashDocument(documentId: string) {
-    const document = documentsRef.current.find(
-      (candidate) => candidate.id === documentId,
-    );
-    if (
-      !document?.relativePath ||
-      document.isMarkdown === false ||
-      document.saveState !== "saved" ||
-      (document.sourceText !== undefined &&
-        document.sourceText !== document.savedSourceText)
-    ) {
-      addVaultNotice("Save this note before moving it to Trash.");
-      return;
-    }
-
-    setTrashingDocumentId(documentId);
-    try {
-      const result = await moveVaultFileToTrash(document.relativePath);
-      loadRequestRef.current += 1;
-      setActiveDocument("");
-      setFocusDocument(undefined);
-      setDocumentLoad({ status: "idle" });
-      adoptVaultSnapshot(result.snapshot);
-      setTrashEntries((current) => [
-        result.entry,
-        ...current.filter((entry) => entry.id !== result.entry.id),
-      ]);
-      addVaultNotice(`${document.name} moved to Trash.`, {
-        history: { kind: "trash" },
-      });
-    } catch (error) {
-      addVaultNotice(readErrorMessage(error), { persistent: true });
-      addHistoryEntry(`${document.name} could not be moved to Trash.`, {
-        kind: "error",
-      });
-    } finally {
-      setTrashingDocumentId(undefined);
-    }
-  }
-
-  async function restoreTrashEntry(entry: TrashEntry) {
-    setRestoringTrashId(entry.id);
-    setTrashError(undefined);
-    try {
-      const result = entry.isFolder
-        ? await restoreVaultFolderFromTrash(entry.id)
-        : await restoreVaultFileFromTrash(entry.id);
-      adoptVaultSnapshot(result.snapshot);
-      setTrashEntries((current) =>
-        current.filter((candidate) => candidate.id !== entry.id),
-      );
-      addVaultNotice(`${entry.name} restored to ${entry.originalPath}.`, {
-        history: { kind: "trash" },
-      });
-    } catch (error) {
-      setTrashError(readErrorMessage(error));
-      addHistoryEntry(`${entry.name} could not be restored from Trash.`, {
-        kind: "error",
-      });
-    } finally {
-      setRestoringTrashId(undefined);
-    }
-  }
-
   const openWikilink = useCallback(
     (target: string) => {
       const resolution = resolveWikilink(
@@ -2635,7 +2565,10 @@ export function App() {
       if (!snapshot) return;
       activateVaultSnapshot(snapshot);
       setVaultSwitcherVisible(false);
-      await Promise.all([refreshRememberedVaults(), refreshTrashEntries()]);
+      await Promise.all([
+        refreshRememberedVaults(),
+        trash.refreshTrashEntries(),
+      ]);
     } catch {
       addVaultNotice(
         "Vault selection is available in the Anchored desktop app.",
@@ -2665,7 +2598,10 @@ export function App() {
       activateVaultSnapshot(snapshot);
       setCreateVaultVisible(false);
       setVaultSwitcherVisible(false);
-      await Promise.all([refreshRememberedVaults(), refreshTrashEntries()]);
+      await Promise.all([
+        refreshRememberedVaults(),
+        trash.refreshTrashEntries(),
+      ]);
     } catch (error) {
       setCreateVaultError(readErrorMessage(error));
     } finally {
@@ -2768,10 +2704,7 @@ export function App() {
           confirmation,
         );
         adoptVaultSnapshot(result.snapshot);
-        setTrashEntries((current) => [
-          result.entry,
-          ...current.filter((entry) => entry.id !== result.entry.id),
-        ]);
+        trash.addTrashEntry(result.entry);
       } else {
         const snapshot = await deleteVaultFolder(targetFolderPath);
         adoptVaultSnapshot(snapshot);
@@ -2908,7 +2841,10 @@ export function App() {
       const snapshot = await openRememberedVault(rememberedVaultId);
       activateVaultSnapshot(snapshot);
       setVaultSwitcherVisible(false);
-      await Promise.all([refreshRememberedVaults(), refreshTrashEntries()]);
+      await Promise.all([
+        refreshRememberedVaults(),
+        trash.refreshTrashEntries(),
+      ]);
     } catch (error) {
       setRememberedVaultsError(readErrorMessage(error));
     } finally {
@@ -3021,7 +2957,7 @@ export function App() {
           folders={folderPaths}
           query={query}
           searchInputRef={searchInputRef}
-          trashCount={trashEntries.length}
+          trashCount={trash.trashEntries.length}
           vaultName={vaultName}
           vaultSelected={vaultSelected}
           showFileExtensions={markdownSettings.showFileExtensions}
@@ -3051,10 +2987,7 @@ export function App() {
             setMoveDocumentVisible(true);
           }}
           onMoveFolderRequest={setMoveFolderPath}
-          onOpenTrash={() => {
-            setTrashVisible(true);
-            void refreshTrashEntries();
-          }}
+          onOpenTrash={trash.openTrashPanel}
           onOpenScratchpad={() => openScratchpadWindow("list")}
           onQueryChange={setQuery}
           onPreviewDocument={(documentId) => {
@@ -3091,7 +3024,7 @@ export function App() {
           }
           onTrashDocument={(documentId) => {
             void selectDocument(documentId).then(() =>
-              trashDocument(documentId),
+              trash.trashDocument(documentId),
             );
           }}
         />
@@ -3156,12 +3089,12 @@ export function App() {
             if (activeDocument) void saveDocumentAs(activeDocument.id);
           }}
           onTrashDocument={() => {
-            if (activeDocument) void trashDocument(activeDocument.id);
+            if (activeDocument) void trash.trashDocument(activeDocument.id);
           }}
           moving={movingDocumentId === activeDocument?.id}
           markdownSettings={markdownSettings}
           renaming={renamingDocumentId === activeDocument?.id}
-          trashing={trashingDocumentId === activeDocument?.id}
+          trashing={trash.trashingDocumentId === activeDocument?.id}
         />
       </div>
       {vaultNotices.length > 0 || activeDocument?.saveMessage ? (
@@ -3512,14 +3445,14 @@ export function App() {
           onCreate={() => void createMissingWikilinkNote()}
         />
       ) : null}
-      {trashVisible ? (
+      {trash.trashVisible ? (
         <TrashPanel
-          entries={trashEntries}
-          error={trashError}
-          loading={trashLoading}
-          restoringId={restoringTrashId}
-          onClose={() => setTrashVisible(false)}
-          onRestore={(entry) => void restoreTrashEntry(entry)}
+          entries={trash.trashEntries}
+          error={trash.trashError}
+          loading={trash.trashLoading}
+          restoringId={trash.restoringTrashId}
+          onClose={() => trash.setTrashVisible(false)}
+          onRestore={(entry) => void trash.restoreTrashEntry(entry)}
         />
       ) : null}
       {quickOpenVisible ? (
