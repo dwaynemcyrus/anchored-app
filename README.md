@@ -4,7 +4,7 @@ Anchored is a minimal local-first Markdown editor for macOS. It opens a folder
 as a vault, edits the Markdown files directly, and maintains Obsidian-style
 wikilinks, aliases, backlinks, and permanent note identities.
 
-Anchored `0.1.1-alpha` is available as a private Intel Mac alpha for in-house
+Anchored `0.1.3-alpha` is available as a private Intel Mac alpha for in-house
 testing.
 Use a backed-up or disposable vault until the seven-day stability observation
 is complete. This package is not yet intended for public website downloads.
@@ -25,7 +25,7 @@ The command creates the DMG and a SHA-256 checksum in:
 src-tauri/target/release/bundle/dmg/
 ```
 
-Open `Anchored_0.1.1-alpha_x64.dmg`, drag **Anchored** into **Applications**, eject
+Open `Anchored_0.1.3-alpha_x64.dmg`, drag **Anchored** into **Applications**, eject
 the disk image, and open Anchored from Applications. No terminal is required
 after installation. A copy built locally on this Mac should open normally.
 If macOS blocks an ad-hoc-signed copy after it has been transferred or
@@ -63,8 +63,10 @@ gh secret set TAURI_SIGNING_PRIVATE_KEY < ~/.tauri/anchored-updater.key
 
 The private key is the identity of the updater. Back it up securely; losing it
 prevents future updates for already-installed copies. A release must use a
-version greater than the installed version. The first updater-enabled release
-is `v0.1.1-alpha`.
+version greater than the installed version. Releases through `v0.1.2-alpha`
+pointed the updater endpoint at the wrong repository and never published
+update artifacts, so no installed copy could find or apply an update; `v0.1.3-alpha`
+is the first release where in-app updates actually function.
 
 ## Run the development app
 

@@ -6,6 +6,8 @@ Git commit. The format follows [Keep a Changelog], and releases follow
 
 ## [Unreleased]
 
+## [0.1.3-alpha] - 2026-07-25
+
 ### Added
 
 - Settings now lets users choose the Markdown source editor line length as
@@ -201,6 +203,10 @@ Git commit. The format follows [Keep a Changelog], and releases follow
   completion collapses its selection correctly, composition input is protected
   during reconciliation, find returns focus to the editor, and the status bar
   reports the live line and column.
+- Fixed the in-app updater: the endpoint pointed at the wrong GitHub
+  repository, and the release workflow never built the target needed to
+  produce signed update artifacts, so no release through `0.1.2-alpha` could
+  ever be found or applied by an installed copy.
 
 ## [0.1.0-alpha] - 2026-07-17
 
