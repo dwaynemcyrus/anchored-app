@@ -172,6 +172,9 @@ Git commit. The format follows [Keep a Changelog], and releases follow
 - Block Markdown now has explicit coverage for headings, quotes, lists,
   separators, fenced code, and front-matter delimiters. YAML keys, values,
   list markers, and comments receive dedicated source-editor styling.
+- The Files and Collections trees now keep each row's click, context-menu,
+  and drag handlers stable across renders, so selecting a note or an
+  unrelated app state change no longer reconstructs every visible row.
 
 ### Fixed
 
