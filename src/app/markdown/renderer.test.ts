@@ -1,9 +1,14 @@
-import { describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it } from "vitest";
 
-import { renderMarkdown } from "./renderer";
+import {
+  ensureMarkdownRendererDependenciesLoaded,
+  renderMarkdown,
+} from "./renderer";
 import { DEFAULT_MARKDOWN_SETTINGS } from "./types";
 
 describe("Anchored Markdown renderer", () => {
+  beforeAll(() => ensureMarkdownRendererDependenciesLoaded());
+
   it("renders the Version 1 feature set without rewriting source", () => {
     const source = [
       "---",

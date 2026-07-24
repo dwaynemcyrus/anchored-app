@@ -1,9 +1,12 @@
 import DOMPurify from "dompurify";
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import "katex/dist/katex.min.css";
 
-import { renderMarkdown } from "../markdown/renderer";
+import {
+  ensureMarkdownRendererDependenciesLoaded,
+  renderMarkdown,
+} from "../markdown/renderer";
 import { THEME_DEFINITIONS } from "../theme/palettes";
 import type { MarkdownSettings } from "../markdown/types";
 
@@ -21,9 +24,25 @@ export default function MarkdownPreview({
   source,
 }: MarkdownPreviewProps) {
   const hostRef = useRef<HTMLElement>(null);
+  const [dependenciesReady, setDependenciesReady] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    void ensureMarkdownRendererDependenciesLoaded().then(() => {
+      if (!cancelled) setDependenciesReady(true);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   const rendered = useMemo(
     () => renderMarkdown(source, settings),
-    [settings, source],
+    // dependenciesReady isn't read here; it forces a re-render with fully
+    // highlighted code and rendered math once highlight.js/KaTeX finish
+    // their on-demand import.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [settings, source, dependenciesReady],
   );
 
   useEffect(() => {

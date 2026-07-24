@@ -256,7 +256,7 @@ function documentIsDraggable(document: AnchoredDocument): boolean {
   );
 }
 
-function PhysicalTree({
+const PhysicalTree = memo(function PhysicalTree({
   rows,
   activeDocumentId,
   showFileExtensions,
@@ -298,14 +298,15 @@ function PhysicalTree({
             expanded={expandedFolders.has(row.path)}
             key={key}
             path={row.path}
+            row={row}
             selected={selectedKey === key}
             depth={row.depth}
-            onContextMenu={(event) => onContextMenu(event, row)}
-            onSelect={() => onSelectFolder(row.path)}
-            onToggle={() => onToggleFolder(row.path)}
-            onDragOver={(event) => onDragOver(event, row.path)}
+            onContextMenu={onContextMenu}
+            onSelect={onSelectFolder}
+            onToggle={onToggleFolder}
+            onDragOver={onDragOver}
             onDragLeave={onDragLeave}
-            onDrop={(event) => onDrop(event, row.path)}
+            onDrop={onDrop}
             dropTarget={dropTargetFolder === row.path}
           />
         ) : (
@@ -313,19 +314,20 @@ function PhysicalTree({
             active={row.document.id === activeDocumentId}
             depth={row.depth}
             document={row.document}
+            row={row}
             showFileExtensions={showFileExtensions}
             key={key}
             selected={selectedKey === key}
-            onContextMenu={(event) => onContextMenu(event, row)}
-            onSelect={() => onSelectDocument(row.document.id)}
-            onDragStart={(event) => onDragStart(event, row.document)}
+            onContextMenu={onContextMenu}
+            onSelect={onSelectDocument}
+            onDragStart={onDragStart}
             onDragEnd={onDragEnd}
           />
         );
       })}
     </nav>
   );
-}
+});
 
 const CollectionTree = memo(function CollectionTree({
   activeDocumentId,
@@ -362,11 +364,12 @@ const CollectionTree = memo(function CollectionTree({
             expandable={row.key !== "collection:scratchpad"}
             key={key}
             label={row.label}
+            row={row}
             selected={selectedKey === key}
             scratchpad={row.key === "collection:scratchpad"}
-            onContextMenu={(event) => onContextMenu(event, row)}
-            onSelect={() => onSelectCollection(row.key)}
-            onToggle={() => onToggleCollection(row.key)}
+            onContextMenu={onContextMenu}
+            onSelect={onSelectCollection}
+            onToggle={onToggleCollection}
           />
         ) : (
           <FileTreeRow
@@ -382,17 +385,12 @@ const CollectionTree = memo(function CollectionTree({
                 : undefined
             }
             document={row.document}
+            row={row}
             showFileExtensions={showFileExtensions}
             key={key}
             selected={selectedKey === key}
-            onContextMenu={(event) =>
-              onContextMenu(event, {
-                depth: row.depth,
-                document: row.document,
-                kind: "file",
-              })
-            }
-            onSelect={() => onSelectDocument(row.document.id)}
+            onContextMenu={onContextMenu}
+            onSelect={onSelectDocument}
           />
         );
       })}
@@ -406,6 +404,7 @@ const CollectionTreeRow = memo(function CollectionTreeRow({
   expanded,
   expandable,
   label,
+  row,
   selected,
   scratchpad,
   onContextMenu,
@@ -417,12 +416,29 @@ const CollectionTreeRow = memo(function CollectionTreeRow({
   expanded: boolean;
   expandable: boolean;
   label: string;
+  row: NavigableRow;
   selected: boolean;
   scratchpad: boolean;
-  onContextMenu: (event: MouseEvent) => void;
-  onSelect: () => void;
-  onToggle: () => void;
+  onContextMenu: (event: MouseEvent, row: NavigableRow) => void;
+  onSelect: (key: string) => void;
+  onToggle: (key: string) => void;
 }) {
+  const collectionKey = row.kind === "collection" ? row.key : "";
+  const handleContextMenu = useCallback(
+    (event: MouseEvent) => onContextMenu(event, row),
+    [onContextMenu, row],
+  );
+  const handleSelect = useCallback(
+    () => onSelect(collectionKey),
+    [onSelect, collectionKey],
+  );
+  const handleToggle = useCallback(
+    (event: MouseEvent) => {
+      event.stopPropagation();
+      onToggle(collectionKey);
+    },
+    [onToggle, collectionKey],
+  );
   return (
     <div
       aria-expanded={expandable ? expanded : undefined}
@@ -433,18 +449,15 @@ const CollectionTreeRow = memo(function CollectionTreeRow({
       }`}
       role="button"
       style={{ paddingLeft: `${8 + depth * 18}px` }}
-      onClick={onSelect}
-      onContextMenu={onContextMenu}
+      onClick={handleSelect}
+      onContextMenu={handleContextMenu}
     >
       {expandable ? (
         <button
           aria-label={`${expanded ? "Collapse" : "Expand"} ${label}`}
           className="tree-row__disclosure"
           type="button"
-          onClick={(event) => {
-            event.stopPropagation();
-            onToggle();
-          }}
+          onClick={handleToggle}
         >
           <ChevronIcon className={expanded ? "is-expanded" : ""} />
         </button>
@@ -464,6 +477,7 @@ const FolderTreeRow = memo(function FolderTreeRow({
   depth,
   expanded,
   path,
+  row,
   selected,
   onContextMenu,
   onSelect,
@@ -476,15 +490,36 @@ const FolderTreeRow = memo(function FolderTreeRow({
   depth: number;
   expanded: boolean;
   path: string;
+  row: NavigableRow;
   selected: boolean;
-  onContextMenu: (event: MouseEvent) => void;
-  onSelect: () => void;
-  onToggle: () => void;
-  onDragOver: (event: DragEvent) => void;
+  onContextMenu: (event: MouseEvent, row: NavigableRow) => void;
+  onSelect: (path: string) => void;
+  onToggle: (path: string) => void;
+  onDragOver: (event: DragEvent, path: string) => void;
   onDragLeave: () => void;
-  onDrop: (event: DragEvent) => void;
+  onDrop: (event: DragEvent, path: string) => void;
   dropTarget: boolean;
 }) {
+  const handleContextMenu = useCallback(
+    (event: MouseEvent) => onContextMenu(event, row),
+    [onContextMenu, row],
+  );
+  const handleSelect = useCallback(() => onSelect(path), [onSelect, path]);
+  const handleToggle = useCallback(
+    (event: MouseEvent) => {
+      event.stopPropagation();
+      onToggle(path);
+    },
+    [onToggle, path],
+  );
+  const handleDragOver = useCallback(
+    (event: DragEvent) => onDragOver(event, path),
+    [onDragOver, path],
+  );
+  const handleDrop = useCallback(
+    (event: DragEvent) => onDrop(event, path),
+    [onDrop, path],
+  );
   return (
     <div
       aria-expanded={expanded}
@@ -493,20 +528,17 @@ const FolderTreeRow = memo(function FolderTreeRow({
       className={`tree-row tree-row--folder${selected ? " is-selected" : ""}${dropTarget ? " is-drop-target" : ""}`}
       role="button"
       style={{ paddingLeft: `${8 + depth * 18}px` }}
-      onClick={onSelect}
-      onContextMenu={onContextMenu}
-      onDragOver={onDragOver}
+      onClick={handleSelect}
+      onContextMenu={handleContextMenu}
+      onDragOver={handleDragOver}
       onDragLeave={onDragLeave}
-      onDrop={onDrop}
+      onDrop={handleDrop}
     >
       <button
         aria-label={`${expanded ? "Collapse" : "Expand"} ${folderName(path)}`}
         className="tree-row__disclosure"
         type="button"
-        onClick={(event) => {
-          event.stopPropagation();
-          onToggle();
-        }}
+        onClick={handleToggle}
       >
         <ChevronIcon className={expanded ? "is-expanded" : ""} />
       </button>
@@ -522,6 +554,7 @@ const FileTreeRow = memo(function FileTreeRow({
   depth,
   detail,
   document,
+  row,
   showFileExtensions,
   selected,
   onContextMenu,
@@ -534,17 +567,30 @@ const FileTreeRow = memo(function FileTreeRow({
   depth: number;
   detail?: string;
   document: AnchoredDocument;
+  row: NavigableRow;
   showFileExtensions: boolean;
   selected: boolean;
-  onContextMenu: (event: MouseEvent) => void;
-  onSelect: () => void;
-  onDragStart?: (event: DragEvent) => void;
+  onContextMenu: (event: MouseEvent, row: NavigableRow) => void;
+  onSelect: (documentId: string) => void;
+  onDragStart?: (event: DragEvent, document: AnchoredDocument) => void;
   onDragEnd?: () => void;
 }) {
   const type = fileTypeForName(document.name);
   const draggable = allowDrag && documentIsDraggable(document);
   const rowDetail = detail ?? fileTypeLabel(type);
   const displayName = displayFileName(document.name, showFileExtensions);
+  const handleContextMenu = useCallback(
+    (event: MouseEvent) => onContextMenu(event, row),
+    [onContextMenu, row],
+  );
+  const handleSelect = useCallback(
+    () => onSelect(document.id),
+    [onSelect, document.id],
+  );
+  const handleDragStart = useCallback(
+    (event: DragEvent) => onDragStart?.(event, document),
+    [onDragStart, document],
+  );
   return (
     <button
       aria-current={active ? "page" : undefined}
@@ -556,9 +602,9 @@ const FileTreeRow = memo(function FileTreeRow({
       style={{ paddingLeft: `${26 + depth * 18}px` }}
       title={`${displayName} · ${rowDetail}`}
       type="button"
-      onClick={onSelect}
-      onContextMenu={onContextMenu}
-      onDragStart={onDragStart}
+      onClick={handleSelect}
+      onContextMenu={handleContextMenu}
+      onDragStart={handleDragStart}
       onDragEnd={onDragEnd}
     >
       <FileTypeIcon fileName={document.name} />
@@ -1245,9 +1291,9 @@ export function FileRail({
     [closeContextMenu, onSelectDocument],
   );
 
-  function selectFolder(folderPath: string) {
+  const selectFolder = useCallback((folderPath: string) => {
     setSelectedKey(`folder:${folderPath}`);
-  }
+  }, []);
 
   const selectCollection = useCallback(
     (key: string) => {
@@ -1291,34 +1337,55 @@ export function FileRail({
     action();
   }
 
-  function handleDragStart(event: DragEvent, document: AnchoredDocument) {
-    if (!documentIsDraggable(document)) return;
-    setDraggingDocumentId(document.id);
-    if (event.dataTransfer) {
-      event.dataTransfer.effectAllowed = "move";
-      event.dataTransfer.setData("text/plain", document.id);
-    }
-  }
+  const handleDragStart = useCallback(
+    (event: DragEvent, document: AnchoredDocument) => {
+      if (!documentIsDraggable(document)) return;
+      setDraggingDocumentId(document.id);
+      if (event.dataTransfer) {
+        event.dataTransfer.effectAllowed = "move";
+        event.dataTransfer.setData("text/plain", document.id);
+      }
+    },
+    [],
+  );
 
-  function handleDragEnd() {
+  const handleDragEnd = useCallback(() => {
     setDraggingDocumentId(undefined);
     setDropTargetFolder(undefined);
-  }
+  }, []);
 
-  function handleDragOver(event: DragEvent, folderPath: string) {
-    if (!draggingDocumentId) return;
-    event.preventDefault();
-    if (event.dataTransfer) event.dataTransfer.dropEffect = "move";
-    setDropTargetFolder(folderPath);
-  }
+  const handleDragOver = useCallback(
+    (event: DragEvent, folderPath: string) => {
+      if (!draggingDocumentId) return;
+      event.preventDefault();
+      if (event.dataTransfer) event.dataTransfer.dropEffect = "move";
+      setDropTargetFolder(folderPath);
+    },
+    [draggingDocumentId],
+  );
 
-  function handleDrop(event: DragEvent, folderPath: string) {
-    event.preventDefault();
-    const documentId =
-      event.dataTransfer?.getData("text/plain") || draggingDocumentId;
-    if (documentId) onMoveDocument(documentId, folderPath);
-    handleDragEnd();
-  }
+  const handleDrop = useCallback(
+    (event: DragEvent, folderPath: string) => {
+      event.preventDefault();
+      const documentId =
+        event.dataTransfer?.getData("text/plain") || draggingDocumentId;
+      if (documentId) onMoveDocument(documentId, folderPath);
+      handleDragEnd();
+    },
+    [draggingDocumentId, onMoveDocument, handleDragEnd],
+  );
+
+  const clearDropTarget = useCallback(() => {
+    setDropTargetFolder(undefined);
+  }, []);
+
+  const handleToggleFolder = useCallback(
+    (folderPath: string) => {
+      closeContextMenu();
+      onToggleFolder(folderPath);
+    },
+    [closeContextMenu, onToggleFolder],
+  );
 
   function handleTreeKeyDown(event: KeyboardEvent<HTMLElement>) {
     if (
@@ -1557,14 +1624,11 @@ export function FileRail({
           onContextMenu={showContextMenu}
           onSelectDocument={selectDocument}
           onSelectFolder={selectFolder}
-          onToggleFolder={(folder) => {
-            closeContextMenu();
-            onToggleFolder(folder);
-          }}
+          onToggleFolder={handleToggleFolder}
           onDragStart={handleDragStart}
           onDragEnd={handleDragEnd}
           onDragOver={handleDragOver}
-          onDragLeave={() => setDropTargetFolder(undefined)}
+          onDragLeave={clearDropTarget}
           onDrop={handleDrop}
           dropTargetFolder={dropTargetFolder}
         />

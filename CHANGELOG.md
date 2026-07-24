@@ -172,6 +172,13 @@ Git commit. The format follows [Keep a Changelog], and releases follow
 - Block Markdown now has explicit coverage for headings, quotes, lists,
   separators, fenced code, and front-matter delimiters. YAML keys, values,
   list markers, and comments receive dedicated source-editor styling.
+- The Files and Collections trees now keep each row's click, context-menu,
+  and drag handlers stable across renders, so selecting a note or an
+  unrelated app state change no longer reconstructs every visible row.
+- KaTeX and highlight.js now load on demand when Preview first opens,
+  matching Mermaid's existing lazy loading, instead of shipping inside the
+  eagerly-loaded Preview bundle. The Preview chunk shrinks from about 624 kB
+  to about 200 kB before those two libraries are fetched separately.
 
 ### Fixed
 
