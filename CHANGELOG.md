@@ -172,6 +172,11 @@ Git commit. The format follows [Keep a Changelog], and releases follow
 - Block Markdown now has explicit coverage for headings, quotes, lists,
   separators, fenced code, and front-matter delimiters. YAML keys, values,
   list markers, and comments receive dedicated source-editor styling.
+- A single external file change (a normal edit, create, or delete outside
+  Anchored, including Anchored's own writes echoing back through the native
+  watcher) now refreshes only that path instead of rescanning the whole
+  vault. A watcher batch that includes a new folder still falls back to a
+  full rescan.
 
 ### Fixed
 

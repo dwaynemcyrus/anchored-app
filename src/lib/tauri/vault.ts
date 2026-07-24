@@ -57,6 +57,14 @@ export type VaultSnapshot = {
   warnings: VaultWarnings;
 };
 
+export type VaultPatch = {
+  removedPaths: string[];
+  requiresFullRescan: boolean;
+  upsertedAssets: VaultAsset[];
+  upsertedFiles: VaultFile[];
+  vaultId: string;
+};
+
 export type TimestampMigrationTarget = {
   expectedModifiedMillis: number;
   expectedSizeBytes: number;
@@ -285,6 +293,14 @@ export function forgetVault(vaultId: string): Promise<RememberedVault[]> {
 
 export function rescanVault(): Promise<VaultSnapshot | null> {
   return invokeVault<VaultSnapshot | null>("rescan_vault");
+}
+
+export function rescanVaultPaths(
+  relativePaths: string[],
+): Promise<VaultPatch | null> {
+  return invokeVault<VaultPatch | null>("rescan_vault_paths", {
+    relativePaths,
+  });
 }
 
 export function reconcileVaultFileMove(

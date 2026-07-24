@@ -1,4 +1,4 @@
-import type { VaultSnapshot } from "../lib/tauri/vault";
+import type { VaultAsset, VaultFile, VaultSnapshot } from "../lib/tauri/vault";
 
 export type DocumentSaveState =
   "saved" | "unsaved" | "saving" | "conflict" | "error";
@@ -113,6 +113,37 @@ export function documentsFromVault(
   return [...notes, ...assets];
 }
 
+function mergeScannedFields(
+  current: AnchoredDocument,
+  incoming: AnchoredDocument,
+): AnchoredDocument {
+  return {
+    ...current,
+    aliases: incoming.aliases,
+    archivedAt: incoming.archivedAt,
+    createdAt: incoming.createdAt,
+    modifiedMillis: incoming.modifiedMillis,
+    folder: incoming.folder,
+    folderPath: incoming.folderPath,
+    id: incoming.id,
+    isRecoveryCopy: incoming.isRecoveryCopy,
+    name: incoming.name,
+    noteType: incoming.noteType,
+    outgoingLinks: incoming.outgoingLinks,
+    relativePath: incoming.relativePath,
+    title: incoming.title,
+    status: incoming.status,
+    updatedAt: incoming.updatedAt,
+  };
+}
+
+/// A missing document is only dropped outright when it has no unsaved local
+/// state; otherwise it's kept visible so local edits are never silently
+/// discarded just because the backing file disappeared externally.
+function keepsMissingDocument(document: AnchoredDocument): boolean {
+  return document.saveState !== undefined && document.saveState !== "saved";
+}
+
 export function mergeDocumentsFromVault(
   currentDocuments: AnchoredDocument[],
   snapshot: VaultSnapshot,
@@ -130,36 +161,60 @@ export function mergeDocumentsFromVault(
   const incomingDocuments = documentsFromVault(snapshot);
   const scannedDocuments = incomingDocuments.map((document) => {
     const current = currentByPath.get(document.relativePath as string);
-    return current
-      ? {
-          ...current,
-          aliases: document.aliases,
-          archivedAt: document.archivedAt,
-          createdAt: document.createdAt,
-          modifiedMillis: document.modifiedMillis,
-          folder: document.folder,
-          folderPath: document.folderPath,
-          id: document.id,
-          isRecoveryCopy: document.isRecoveryCopy,
-          name: document.name,
-          noteType: document.noteType,
-          outgoingLinks: document.outgoingLinks,
-          relativePath: document.relativePath,
-          title: document.title,
-          status: document.status,
-          updatedAt: document.updatedAt,
-        }
-      : document;
+    return current ? mergeScannedFields(current, document) : document;
   });
   const localOrDirtyMissingDocuments = currentDocuments.filter(
     (document) =>
       !document.relativePath ||
       (!scannedPaths.has(document.relativePath) &&
-        document.saveState !== undefined &&
-        document.saveState !== "saved"),
+        keepsMissingDocument(document)),
   );
 
   return [...scannedDocuments, ...localOrDirtyMissingDocuments];
+}
+
+export type VaultDocumentPatch = {
+  removedPaths: string[];
+  upsertedAssets: VaultAsset[];
+  upsertedFiles: VaultFile[];
+};
+
+/// Applies a targeted `VaultPatch` (from `rescanVaultPaths`) to the current
+/// document list without re-deriving it from a full vault snapshot. Mirrors
+/// `mergeDocumentsFromVault`'s rules: removed paths only disappear when they
+/// carry no unsaved local state, and existing local/editor state is
+/// preserved for documents that are simply updated in place.
+export function applyVaultPatch(
+  currentDocuments: AnchoredDocument[],
+  patch: VaultDocumentPatch,
+): AnchoredDocument[] {
+  const removedPaths = new Set(patch.removedPaths);
+  const upsertedByPath = new Map(
+    documentsFromVault({
+      assets: patch.upsertedAssets,
+      files: patch.upsertedFiles,
+      name: "",
+      warnings: { skippedNonUtf8Paths: 0, skippedSymlinks: 0 },
+    }).map((document) => [document.relativePath as string, document]),
+  );
+
+  const survivors = currentDocuments
+    .filter(
+      (document) =>
+        !document.relativePath ||
+        !removedPaths.has(document.relativePath) ||
+        keepsMissingDocument(document),
+    )
+    .map((document) => {
+      const incoming = document.relativePath
+        ? upsertedByPath.get(document.relativePath)
+        : undefined;
+      if (!incoming) return document;
+      upsertedByPath.delete(document.relativePath as string);
+      return mergeScannedFields(document, incoming);
+    });
+
+  return [...survivors, ...upsertedByPath.values()];
 }
 
 export function folderPathsFromVault(snapshot: VaultSnapshot): string[] {
