@@ -1279,6 +1279,22 @@ and preserves link integrity across filename changes.
       and 2015 MacBook Pro measurements remain manual release blockers, so this
       chunk and Epic 21 stay open until Chunks 21I and 21J land and those
       checklist results are recorded.
+    - Automated re-verification result (2026-07-25, after Plan chunk 25):
+      Formatting, ESLint, TypeScript, all 216 frontend tests (up from 145;
+      growth is chunks 21I/21J/23/24 plus chunk 25's new hook tests), `cargo
+      fmt --check`, strict Clippy, all 110 Rust tests, the production Vite
+      build, and `npm run tauri build -- --bundles app` pass with no
+      regressions. The built `Anchored.app` is an 18 MB `x86_64` Mach-O
+      binary targeting macOS 12.0 (`LSMinimumSystemVersion`), version
+      `0.1.1-alpha`. The build additionally emitted an unrelated updater-
+      signing error (`TAURI_SIGNING_PRIVATE_KEY` not set) while producing the
+      auto-update `.tar.gz` artifact; this environment has no signing key and
+      the error does not affect the `.app` bundle itself, which built and
+      inspects correctly. Native interaction timing, representative-vault
+      byte diffs, and VoiceOver on the 2015 MacBook Pro baseline remain
+      manual, hardware-dependent blockers — see `docs/TEST_CHECKLIST.md`'s
+      "Performance and stability" and "Accessibility and input methods"
+      sections. This chunk stays open until Dwayne records those results.
 
 22. [ ] **Epic: Recover from concurrent external edits**
     - Outcome: Editing the same Markdown file in Anchored and Obsidian gives
@@ -1532,6 +1548,55 @@ and preserves link integrity across filename changes.
       under `fixtures/dev-vault`, native reset-on-start copying, browser fixture
       bridge behavior, and automatic development startup selection. The
       fixture is documented in `docs/DEV_FIXTURE.md`.
+
+25. [x] **Chunk: Begin App.tsx decomposition**
+    - Files: `src/app/App.tsx`, new `src/app/useConflictResolution.ts` (+test),
+      new `src/app/useMissingWikilinkDialog.ts` (+test), new
+      `src/app/useSidebarState.ts` (+test), `PROJECT.md`, `PLANS.md`.
+    - Change: Extracted the three smallest, most self-contained state
+      clusters flagged in `PROJECT.md`'s known-risks entry for `App.tsx`
+      (conflict-resolution dialog visibility, the missing-wikilink creation
+      dialog and its note-creation mutation, and sidebar open/expanded-folder
+      state) into dedicated hooks, following the `useTrashPanel` precedent
+      (dependencies passed in, typed API returned, `reset()` included). Unlike
+      `useTrashPanel`, each new hook ships its own `use<Feature>.test.ts`,
+      correcting the missing hook-level test coverage gap noted in that
+      precedent, and each hook memoizes its returned API object with
+      `useMemo` because, unlike Trash's panel (only ever read from JSX),
+      these three are also read inside other memoized `App.tsx` callbacks —
+      an unmemoized object would recreate those callbacks (and anything
+      depending on them, including effects) on every render.
+    - Regression caught and fixed during implementation: making a callback
+      depend on the whole `sidebar`/`missingWikilink` object (as
+      `eslint-plugin-react-hooks` initially suggested, since it does not
+      recognize hook-returned members as stable the way it recognizes raw
+      `useState` setters) created a feedback loop where a callback's own
+      state update changed the dependency it was keyed on. This broke two
+      `App.test.tsx` tests (`vault-changed` listener never registering) and
+      was caught by the full suite before landing. Fixed by depending on the
+      specific stable member (`sidebar.setExpandedFolders`, a raw `useState`
+      setter, or `missingWikilink.openMissingWikilinkDialog`, a `useCallback`
+      with an empty deps array) with a justified
+      `eslint-disable-next-line react-hooks/exhaustive-deps` comment instead.
+    - Verify: `npm run format:check`, `npm run lint`, `npm run typecheck`,
+      `npm test` (216 tests, up from 196 — 20 new hook tests), `npm run
+      build`. Manual dev-server smoke check confirmed no console errors on
+      launch; conflict-resolution and missing-wikilink-creation behavior are
+      additionally covered end-to-end by existing passing `App.tsx`
+      integration tests. `App.tsx`'s `useState` count dropped from 66 to 59.
+    - Risk/rollback: Pure extraction, not a behavior change; the regression
+      above was caught by the existing test suite before commit, not
+      discovered later. Revert this focused commit to restore inline state
+      without touching any other feature.
+    - Remaining decomposition roadmap (largest/riskiest last), ranked by
+      approximate reference count in the current `App.tsx`: notifications
+      (~96, vault notices + history), folder CRUD (~33, create/rename/delete
+      dialogs), vault search/Quick Open (~36), Settings/Markdown/timestamp
+      migration (~28), move document/folder (~25), remembered
+      vaults/switcher (~18), update/reload flow (small), Scratchpad state
+      ownership (component already separate, state not yet isolated). Each
+      is large enough to deserve its own focused, separately-verified chunk
+      following this same pattern.
 
 ## Requirements for future large plans
 

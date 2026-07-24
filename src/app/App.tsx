@@ -26,6 +26,9 @@ import { TitleBar } from "./components/TitleBar";
 import { TrashPanel } from "./components/TrashPanel";
 import { VaultSwitcher } from "./components/VaultSwitcher";
 import { readErrorMessage } from "./errors";
+import { useConflictResolution } from "./useConflictResolution";
+import { useMissingWikilinkDialog } from "./useMissingWikilinkDialog";
+import { useSidebarState } from "./useSidebarState";
 import { useTrashPanel } from "./useTrashPanel";
 import {
   VaultSearchPalette,
@@ -94,7 +97,6 @@ import {
   createVaultConflictCopy,
   createVault,
   createVaultFolder,
-  createInboxVaultFile,
   createUntitledVaultFile,
   createVaultFile,
   deleteVaultFolder,
@@ -210,9 +212,6 @@ export function App() {
     line: 1,
     column: 1,
   });
-  const [expandedFolders, setExpandedFolders] = useState<Set<string>>(
-    () => new Set(),
-  );
   const [query, setQuery] = useState("");
   const [quickOpenQuery, setQuickOpenQuery] = useState("");
   const [quickOpenVisible, setQuickOpenVisible] = useState(false);
@@ -222,7 +221,6 @@ export function App() {
   });
   const [vaultSearchVisible, setVaultSearchVisible] = useState(false);
   const [findRequest, setFindRequest] = useState(0);
-  const [sidebarOpen, setSidebarOpen] = useState(false);
   const [vaultName, setVaultName] = useState("");
   const [vaultId, setVaultId] = useState("");
   const [folderPaths, setFolderPaths] = useState<string[]>([]);
@@ -293,15 +291,6 @@ export function App() {
   const [vaultNotices, setVaultNotices] = useState<VaultNotice[]>([]);
   const [notificationHistoryVisible, setNotificationHistoryVisible] =
     useState(false);
-  const [conflictResolutionDocumentId, setConflictResolutionDocumentId] =
-    useState<string>();
-  const [missingWikilinkTarget, setMissingWikilinkTarget] = useState<
-    string | undefined
-  >();
-  const [missingWikilinkError, setMissingWikilinkError] = useState<
-    string | undefined
-  >();
-  const [creatingMissingWikilink, setCreatingMissingWikilink] = useState(false);
   const [notificationHistory, setNotificationHistory] = useState(() => {
     try {
       return loadNotificationHistory(window.localStorage, Date.now());
@@ -350,6 +339,9 @@ export function App() {
     "pending",
   );
   const vaultIdRef = useRef("");
+
+  const sidebar = useSidebarState();
+  const conflictResolution = useConflictResolution();
 
   documentsRef.current = documents;
   activeDocumentIdRef.current = activeDocumentId;
@@ -634,7 +626,7 @@ export function App() {
           setFocusDocument(hasNewerEdit ? undefined : persistedDocumentId);
         }
         if (folderPath) {
-          setExpandedFolders((currentFolders) =>
+          sidebar.setExpandedFolders((currentFolders) =>
             new Set(currentFolders).add(folderPath),
           );
         }
@@ -665,11 +657,17 @@ export function App() {
         });
       }
     },
+    // sidebar.setExpandedFolders is a raw useState setter (always stable);
+    // depending on the whole `sidebar` object would recreate this callback
+    // whenever expandedFolders/sidebarOpen change, including as a result of
+    // this callback's own calls to sidebar.setExpandedFolders.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     [
       addHistoryEntry,
       resolveHistorySource,
       setActiveDocument,
       setFocusDocument,
+      sidebar.setExpandedFolders,
       vaultName,
     ],
   );
@@ -688,7 +686,7 @@ export function App() {
     setActiveDocument(nextDocument.id);
     setFocusDocument(nextDocument.id);
     if (nextDocument.folderPath) {
-      setExpandedFolders((currentFolders) =>
+      sidebar.setExpandedFolders((currentFolders) =>
         new Set(currentFolders).add(nextDocument.folderPath ?? ""),
       );
     }
@@ -702,16 +700,23 @@ export function App() {
     );
     setQuery("");
     setDocumentLoad({ status: "idle" });
-    setSidebarOpen(false);
+    sidebar.setSidebarOpen(false);
     setDocumentActivity((current) =>
       markDocumentActive(current, nextDocument.id, Date.now()),
     );
     void saveUntitledDocument(nextDocument.id);
+    // sidebar.setExpandedFolders/setSidebarOpen are raw useState setters
+    // (always stable); depending on the whole `sidebar` object would
+    // recreate this callback whenever expandedFolders/sidebarOpen change,
+    // including as a result of this callback's own calls below.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     addVaultNotice,
     saveUntitledDocument,
     setActiveDocument,
     setFocusDocument,
+    sidebar.setExpandedFolders,
+    sidebar.setSidebarOpen,
     vaultSelected,
   ]);
 
@@ -799,7 +804,7 @@ export function App() {
           ),
         );
         if (folderPath) {
-          setExpandedFolders((currentFolders) =>
+          sidebar.setExpandedFolders((currentFolders) =>
             new Set(currentFolders).add(folderPath),
           );
         }
@@ -841,7 +846,16 @@ export function App() {
         });
       }
     },
-    [addHistoryEntry, addVaultNotice, resolveHistorySource, vaultName],
+    // sidebar.setExpandedFolders is a raw useState setter (always stable);
+    // see the comment on saveUntitledDocument's dependency array above.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [
+      addHistoryEntry,
+      addVaultNotice,
+      resolveHistorySource,
+      sidebar.setExpandedFolders,
+      vaultName,
+    ],
   );
 
   const createConflictCopyForDocument = useCallback(
@@ -1205,7 +1219,7 @@ export function App() {
         reconcileDocumentActivity(current, nextDocuments, Date.now()),
       );
       setFolderPaths(nextFolders);
-      setExpandedFolders((currentFolders) => {
+      sidebar.setExpandedFolders((currentFolders) => {
         const available = new Set(nextFolders);
         return new Set(
           Array.from(currentFolders).filter((folder) => available.has(folder)),
@@ -1215,7 +1229,15 @@ export function App() {
       const summary = vaultSummaryMessage(snapshot);
       if (summary) addVaultNotice(summary);
     },
-    [addVaultNotice, recordSnapshotEvents, setActiveDocument],
+    // sidebar.setExpandedFolders is a raw useState setter (always stable);
+    // see the comment on saveUntitledDocument's dependency array above.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [
+      addVaultNotice,
+      recordSnapshotEvents,
+      setActiveDocument,
+      sidebar.setExpandedFolders,
+    ],
   );
 
   const onActiveDocumentTrashed = useCallback(() => {
@@ -1249,7 +1271,7 @@ export function App() {
         reconcileDocumentActivity(current, nextDocuments, Date.now()),
       );
       setFolderPaths(nextFolders);
-      setExpandedFolders(new Set(nextFolders));
+      sidebar.setExpandedFolders(new Set(nextFolders));
       setActiveDocument("");
       setFocusDocument(undefined);
       setQuery("");
@@ -1864,7 +1886,7 @@ export function App() {
       );
       setActiveDocument(documentId);
       setCursorPosition({ line: 1, column: 1 });
-      setSidebarOpen(false);
+      sidebar.setSidebarOpen(false);
 
       if (document.isMarkdown === false) {
         loadRequestRef.current += 1;
@@ -1920,8 +1942,17 @@ export function App() {
         });
       }
     },
-    [setActiveDocument, setFocusDocument],
+    // sidebar.setSidebarOpen is a raw useState setter (always stable); see
+    // the comment on saveUntitledDocument's dependency array above.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [setActiveDocument, setFocusDocument, sidebar.setSidebarOpen],
   );
+
+  const missingWikilink = useMissingWikilinkDialog({
+    adoptVaultSnapshot,
+    selectDocument,
+    setFocusDocument,
+  });
 
   async function reloadExternalDocument(documentId: string) {
     const document = documentsRef.current.find(
@@ -1987,7 +2018,7 @@ export function App() {
             : candidate,
         ),
       );
-      setConflictResolutionDocumentId(undefined);
+      conflictResolution.closeConflictResolution();
       resolveHistorySource(documentId);
       await refreshVault();
     } catch (error) {
@@ -2104,7 +2135,7 @@ export function App() {
       reconcileDocumentActivity(current, nextDocuments, Date.now()),
     );
     setFolderPaths(nextFolders);
-    setExpandedFolders((currentFolders) => {
+    sidebar.setExpandedFolders((currentFolders) => {
       const nextExpanded = new Set(currentFolders);
       nextFolders.forEach((folder) => nextExpanded.add(folder));
       return nextExpanded;
@@ -2460,8 +2491,7 @@ export function App() {
         return;
       }
       if (wikilinkCreationName(target)) {
-        setMissingWikilinkError(undefined);
-        setMissingWikilinkTarget(target);
+        missingWikilink.openMissingWikilinkDialog(target);
         return;
       }
       addVaultNotice(`[[${target}]] does not match a note or alias.`);
@@ -2469,7 +2499,18 @@ export function App() {
         kind: "link",
       });
     },
-    [activeDocumentId, addHistoryEntry, addVaultNotice, selectDocument],
+    // missingWikilink.openMissingWikilinkDialog is a useCallback with an
+    // empty deps array (always stable); depending on the whole
+    // `missingWikilink` object would recreate this callback whenever its
+    // dialog state changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [
+      activeDocumentId,
+      addHistoryEntry,
+      addVaultNotice,
+      missingWikilink.openMissingWikilinkDialog,
+      selectDocument,
+    ],
   );
 
   useEffect(() => {
@@ -2481,33 +2522,6 @@ export function App() {
       void unlistenPromise.then((unlisten) => unlisten());
     };
   }, [openWikilink]);
-
-  async function createMissingWikilinkNote() {
-    if (!missingWikilinkTarget) return;
-    const name = wikilinkCreationName(missingWikilinkTarget);
-    if (!name) {
-      setMissingWikilinkError(
-        "This wikilink cannot be turned into a single Inbox note name.",
-      );
-      return;
-    }
-
-    setCreatingMissingWikilink(true);
-    setMissingWikilinkError(undefined);
-    try {
-      const created = await createInboxVaultFile({ content: "", name });
-      const snapshot = await rescanVault();
-      if (snapshot) adoptVaultSnapshot(snapshot);
-      const documentId = `vault-path:${created.relativePath}`;
-      setFocusDocument(documentId);
-      setMissingWikilinkTarget(undefined);
-      await selectDocument(documentId);
-    } catch (error) {
-      setMissingWikilinkError(readErrorMessage(error));
-    } finally {
-      setCreatingMissingWikilink(false);
-    }
-  }
 
   function closeDocument() {
     loadRequestRef.current += 1;
@@ -2659,7 +2673,7 @@ export function App() {
         ? `${parentPath}/${nextName}`
         : nextName;
       adoptVaultSnapshot(snapshot);
-      setExpandedFolders((currentFolders) => {
+      sidebar.setExpandedFolders((currentFolders) => {
         const nextFolders = new Set(currentFolders);
         return new Set(
           Array.from(nextFolders, (folderPath) =>
@@ -2709,7 +2723,7 @@ export function App() {
         const snapshot = await deleteVaultFolder(targetFolderPath);
         adoptVaultSnapshot(snapshot);
       }
-      setExpandedFolders((currentFolders) => {
+      sidebar.setExpandedFolders((currentFolders) => {
         const nextFolders = new Set(currentFolders);
         Array.from(nextFolders).forEach((folderPath) => {
           if (
@@ -2862,7 +2876,7 @@ export function App() {
   }
 
   function toggleFolder(folder: string) {
-    setExpandedFolders((currentFolders) => {
+    sidebar.setExpandedFolders((currentFolders) => {
       const nextFolders = new Set(currentFolders);
 
       if (nextFolders.has(folder)) {
@@ -2895,7 +2909,7 @@ export function App() {
             : document,
         ),
       );
-      setExpandedFolders((current) => new Set(current).add(folderPath));
+      sidebar.setExpandedFolders((current) => new Set(current).add(folderPath));
       setFocusDocument(documentId);
       setActiveDocument(documentId);
       setDocumentLoad({ status: "idle" });
@@ -2928,7 +2942,7 @@ export function App() {
         notificationCount={visibleNotificationHistory.length}
         saveState={activeDocument ? saveState : undefined}
         selectingVault={selectingVault}
-        sidebarOpen={sidebarOpen}
+        sidebarOpen={sidebar.sidebarOpen}
         vaultSelected={vaultSelected}
         vaultName={vaultName}
         onCreateNote={createNote}
@@ -2947,13 +2961,13 @@ export function App() {
           setVaultSwitcherVisible(true);
           void refreshRememberedVaults();
         }}
-        onToggleSidebar={() => setSidebarOpen((isOpen) => !isOpen)}
+        onToggleSidebar={() => sidebar.setSidebarOpen((isOpen) => !isOpen)}
       />
-      <div className={`workspace${sidebarOpen ? " sidebar-open" : ""}`}>
+      <div className={`workspace${sidebar.sidebarOpen ? " sidebar-open" : ""}`}>
         <FileRail
           activeDocumentId={activeDocument?.id ?? ""}
           documents={documents}
-          expandedFolders={expandedFolders}
+          expandedFolders={sidebar.expandedFolders}
           folders={folderPaths}
           query={query}
           searchInputRef={searchInputRef}
@@ -3020,7 +3034,9 @@ export function App() {
           }}
           onToggleFolder={toggleFolder}
           onSetAllFoldersExpanded={(expanded) =>
-            setExpandedFolders(expanded ? new Set(folderPaths) : new Set())
+            sidebar.setExpandedFolders(
+              expanded ? new Set(folderPaths) : new Set(),
+            )
           }
           onTrashDocument={(documentId) => {
             void selectDocument(documentId).then(() =>
@@ -3154,7 +3170,9 @@ export function App() {
                   <button
                     type="button"
                     onClick={() =>
-                      setConflictResolutionDocumentId(activeDocument.id)
+                      conflictResolution.openConflictResolution(
+                        activeDocument.id,
+                      )
                     }
                   >
                     Resolve conflict
@@ -3173,10 +3191,12 @@ export function App() {
           ) : null}
         </div>
       ) : null}
-      {conflictResolutionDocumentId
+      {conflictResolution.conflictResolutionDocumentId
         ? (() => {
             const conflictDocument = documents.find(
-              (candidate) => candidate.id === conflictResolutionDocumentId,
+              (candidate) =>
+                candidate.id ===
+                conflictResolution.conflictResolutionDocumentId,
             );
             if (
               !conflictDocument?.conflictBaseSourceText ||
@@ -3199,9 +3219,9 @@ export function App() {
                 onApply={(content) =>
                   void resolveConflict(conflictDocument.id, content)
                 }
-                onCancel={() => setConflictResolutionDocumentId(undefined)}
+                onCancel={() => conflictResolution.closeConflictResolution()}
                 onKeepExternal={() => {
-                  setConflictResolutionDocumentId(undefined);
+                  conflictResolution.closeConflictResolution();
                   void reloadExternalDocument(conflictDocument.id);
                 }}
               />
@@ -3431,18 +3451,13 @@ export function App() {
           onCreate={(name) => void createNewVault(name)}
         />
       ) : null}
-      {missingWikilinkTarget ? (
+      {missingWikilink.missingWikilinkTarget ? (
         <CreateMissingWikilinkDialog
-          creating={creatingMissingWikilink}
-          error={missingWikilinkError}
-          target={missingWikilinkTarget}
-          onClose={() => {
-            if (!creatingMissingWikilink) {
-              setMissingWikilinkError(undefined);
-              setMissingWikilinkTarget(undefined);
-            }
-          }}
-          onCreate={() => void createMissingWikilinkNote()}
+          creating={missingWikilink.creatingMissingWikilink}
+          error={missingWikilink.missingWikilinkError}
+          target={missingWikilink.missingWikilinkTarget}
+          onClose={() => missingWikilink.closeMissingWikilinkDialog()}
+          onCreate={() => void missingWikilink.createMissingWikilinkNote()}
         />
       ) : null}
       {trash.trashVisible ? (
