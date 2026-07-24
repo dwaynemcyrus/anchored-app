@@ -286,10 +286,13 @@ These scripts must exist in `package.json` after the scaffold chunk.
   landed their functional chunks, but their closing native-QA chunks (21K,
   22E) remain open pending native timing, VoiceOver, and 2015 MacBook Pro
   measurements.
-- `App.tsx` is oversized (3,500+ lines, 60+ `useState`, no context/reducer)
-  and should be decomposed by feature before further expansion; this needs
-  its own planned chunk with stronger test coverage first, not an incidental
-  refactor.
+- `App.tsx` is still oversized (3,450+ lines, 59 `useState`, no
+  context/reducer) and should continue to be decomposed by feature before
+  further expansion. Decomposition began in Plan chunk 25 (conflict
+  resolution, missing-wikilink dialog, and sidebar state extracted into
+  tested hooks following the `useTrashPanel` precedent); the larger
+  notification, search, settings, and folder-CRUD clusters remain and each
+  needs its own planned, separately-verified chunk.
 - The native vault watcher debounces individual filesystem events but still
   triggers a full recursive vault rescan for any single external change,
   rather than an incremental update scoped to the changed path. This is
