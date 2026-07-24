@@ -32,6 +32,7 @@ import {
   renameVaultFolder,
   renameVaultFile,
   rescanVault,
+  rescanVaultPaths,
   saveVaultFile,
   searchVault,
   selectVault,
@@ -75,6 +76,7 @@ vi.mock("../lib/tauri/vault", () => ({
   renameVaultFolder: vi.fn(),
   renameVaultFile: vi.fn(),
   rescanVault: vi.fn(),
+  rescanVaultPaths: vi.fn(),
   saveVaultFile: vi.fn(),
   searchVault: vi.fn(),
   selectVault: vi.fn(),
@@ -128,6 +130,7 @@ const mockedReconcileVaultFileMove = vi.mocked(reconcileVaultFileMove);
 const mockedRenameVaultFolder = vi.mocked(renameVaultFolder);
 const mockedRenameVaultFile = vi.mocked(renameVaultFile);
 const mockedRescanVault = vi.mocked(rescanVault);
+const mockedRescanVaultPaths = vi.mocked(rescanVaultPaths);
 const mockedSaveVaultFile = vi.mocked(saveVaultFile);
 const mockedSearchVault = vi.mocked(searchVault);
 const mockedRestoreVaultFileFromTrash = vi.mocked(restoreVaultFileFromTrash);
@@ -191,6 +194,7 @@ describe("App", () => {
     mockedRenameVaultFolder.mockReset();
     mockedRenameVaultFile.mockReset();
     mockedRescanVault.mockReset();
+    mockedRescanVaultPaths.mockReset();
     mockedSaveVaultFile.mockReset();
     mockedSearchVault.mockReset();
     mockedRestoreVaultFileFromTrash.mockReset();
@@ -2188,6 +2192,97 @@ describe("App", () => {
 
     await waitFor(() => expect(mockedRescanVault).toHaveBeenCalled());
     expect(await screen.findByRole("button", { name: "Finder" })).toBeVisible();
+  });
+
+  it("targets a single external edit without a full vault rescan", async () => {
+    const user = userEvent.setup();
+    mockedSelectVault.mockResolvedValue({
+      files: [],
+      folders: [],
+      name: "My Vault",
+      vaultId: "vault-1",
+      warnings: noWarnings,
+    });
+    mockedRescanVaultPaths.mockResolvedValue({
+      removedPaths: [],
+      requiresFullRescan: false,
+      upsertedAssets: [],
+      upsertedFiles: [
+        {
+          name: "New.md",
+          parent: "",
+          relativePath: "New.md",
+        },
+      ],
+      vaultId: "vault-1",
+    });
+    render(<App />);
+
+    await user.click(screen.getByRole("button", { name: "Open vault" }));
+    await user.click(
+      screen.getByRole("button", { name: "Open file explorer" }),
+    );
+    await user.click(screen.getByRole("button", { name: "Files" }));
+    await waitFor(() => expect(eventHandlers.has("vault-changed")).toBe(true));
+    await act(async () => {
+      eventHandlers.get("vault-changed")?.({
+        payload: {
+          vaultId: "vault-1",
+          changes: [{ kind: "created", relativePath: "New.md" }],
+        },
+      });
+    });
+
+    await waitFor(() =>
+      expect(mockedRescanVaultPaths).toHaveBeenCalledWith(["New.md"]),
+    );
+    expect(await screen.findByRole("button", { name: "New.md" })).toBeVisible();
+    expect(mockedRescanVault).not.toHaveBeenCalled();
+  });
+
+  it("falls back to a full rescan when a watcher change is a new folder", async () => {
+    const user = userEvent.setup();
+    mockedSelectVault.mockResolvedValue({
+      files: [],
+      folders: [],
+      name: "My Vault",
+      vaultId: "vault-1",
+      warnings: noWarnings,
+    });
+    mockedRescanVaultPaths.mockResolvedValue({
+      removedPaths: [],
+      requiresFullRescan: true,
+      upsertedAssets: [],
+      upsertedFiles: [],
+      vaultId: "vault-1",
+    });
+    mockedRescanVault.mockResolvedValue({
+      files: [],
+      folders: ["Nested"],
+      name: "My Vault",
+      vaultId: "vault-1",
+      warnings: noWarnings,
+    });
+    render(<App />);
+
+    await user.click(screen.getByRole("button", { name: "Open vault" }));
+    await user.click(
+      screen.getByRole("button", { name: "Open file explorer" }),
+    );
+    await user.click(screen.getByRole("button", { name: "Files" }));
+    await waitFor(() => expect(eventHandlers.has("vault-changed")).toBe(true));
+    await act(async () => {
+      eventHandlers.get("vault-changed")?.({
+        payload: {
+          vaultId: "vault-1",
+          changes: [{ kind: "created", relativePath: "Nested" }],
+        },
+      });
+    });
+
+    await waitFor(() => expect(mockedRescanVaultPaths).toHaveBeenCalled());
+    await waitFor(() => expect(mockedRescanVault).toHaveBeenCalled());
+    expect(await screen.findByRole("button", { name: "Nested" })).toBeVisible();
   });
 
   it("keeps an open note selected when Finder moves it", async () => {

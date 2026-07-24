@@ -179,6 +179,11 @@ Git commit. The format follows [Keep a Changelog], and releases follow
   matching Mermaid's existing lazy loading, instead of shipping inside the
   eagerly-loaded Preview bundle. The Preview chunk shrinks from about 624 kB
   to about 200 kB before those two libraries are fetched separately.
+- A single external file change (a normal edit, create, or delete outside
+  Anchored, including Anchored's own writes echoing back through the native
+  watcher) now refreshes only that path instead of rescanning the whole
+  vault. A watcher batch that includes a new folder still falls back to a
+  full rescan.
 
 ### Fixed
 

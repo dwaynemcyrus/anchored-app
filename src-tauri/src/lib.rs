@@ -31,6 +31,7 @@ pub fn run() {
             vault::open_development_vault,
             vault::forget_vault,
             vault::rescan_vault,
+            vault::rescan_vault_paths,
             vault::reconcile_vault_file_move,
             vault::preview_vault_timestamp_migration,
             vault::apply_vault_timestamp_migration,

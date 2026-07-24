@@ -441,6 +441,18 @@ export async function invokeDevelopmentFixture<T>(
     case "rescan_vault":
       ensureFixture();
       return snapshot() as T;
+    case "rescan_vault_paths":
+      // The browser fixture has no real filesystem watcher to target a
+      // partial update from, so it always asks the caller to fall back to
+      // a full rescan (safe and unused in practice: this command is only
+      // invoked from watcher events, which never fire in the fixture).
+      return {
+        removedPaths: [],
+        requiresFullRescan: true,
+        upsertedAssets: [],
+        upsertedFiles: [],
+        vaultId: FIXTURE_VAULT_ID,
+      } as T;
     case "reconcile_vault_file_move": {
       const relativePath = requireArgument<string>(args, "newRelativePath");
       const content = fixtureFiles.get(relativePath);

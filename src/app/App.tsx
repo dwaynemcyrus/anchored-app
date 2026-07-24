@@ -32,6 +32,7 @@ import {
   type VaultSearchState,
 } from "./components/VaultSearchPalette";
 import {
+  applyVaultPatch,
   createUntitledDocument,
   documentsFromVault,
   folderPathsFromVault,
@@ -112,6 +113,7 @@ import {
   renameVaultFolder,
   renameVaultFile,
   rescanVault,
+  rescanVaultPaths,
   saveVaultFile,
   searchVault,
   selectVault,
@@ -1373,6 +1375,38 @@ export function App() {
     }
   }, [addHistoryEntry, addVaultNotice, adoptVaultSnapshot, vaultSelected]);
 
+  const refreshVaultForPaths = useCallback(
+    async (relativePaths: string[]) => {
+      if (
+        !vaultSelected ||
+        rescanInFlightRef.current ||
+        documentsRef.current.some((document) => document.saveState === "saving")
+      ) {
+        return;
+      }
+      rescanInFlightRef.current = true;
+      let patch;
+      try {
+        patch = await rescanVaultPaths(relativePaths);
+      } catch (error) {
+        rescanInFlightRef.current = false;
+        addVaultNotice(readErrorMessage(error), { persistent: true });
+        addHistoryEntry("Vault refresh could not be completed.", {
+          kind: "error",
+        });
+        return;
+      }
+      rescanInFlightRef.current = false;
+      if (!patch) return;
+      if (patch.requiresFullRescan) {
+        await refreshVault();
+        return;
+      }
+      setDocuments((current) => applyVaultPatch(current, patch));
+    },
+    [addHistoryEntry, addVaultNotice, refreshVault, vaultSelected],
+  );
+
   useEffect(() => {
     try {
       saveDocumentActivity(window.localStorage, documentActivity);
@@ -1747,7 +1781,7 @@ export function App() {
         ) {
           void checkExternalDocument(activeDocumentId);
         }
-        const scheduleRefresh = () => {
+        const scheduleFullRefresh = () => {
           if (vaultTreeRefreshTimeoutRef.current !== undefined) {
             window.clearTimeout(vaultTreeRefreshTimeoutRef.current);
           }
@@ -1756,10 +1790,36 @@ export function App() {
             void refreshVault();
           }, 250);
         };
+        // Markdown renames/moves already need a full rescan afterward (link
+        // rewrites can touch any note), so only the remaining changes are
+        // worth a targeted patch: everything else, plus non-Markdown asset
+        // renames, which never carry links to rewrite.
+        const targetedRelativePaths = Array.from(
+          new Set(
+            event.payload.changes
+              .filter((change) => !moveChanges.includes(change))
+              .flatMap((change) =>
+                change.oldRelativePath
+                  ? [change.oldRelativePath, change.relativePath]
+                  : [change.relativePath],
+              ),
+          ),
+        );
+        const schedulePathRefresh = (relativePaths: string[]) => {
+          if (vaultTreeRefreshTimeoutRef.current !== undefined) {
+            window.clearTimeout(vaultTreeRefreshTimeoutRef.current);
+          }
+          vaultTreeRefreshTimeoutRef.current = window.setTimeout(() => {
+            vaultTreeRefreshTimeoutRef.current = undefined;
+            void refreshVaultForPaths(relativePaths);
+          }, 250);
+        };
         if (movePromises.length > 0) {
-          void Promise.allSettled(movePromises).then(scheduleRefresh);
+          void Promise.allSettled(movePromises).then(scheduleFullRefresh);
+        } else if (targetedRelativePaths.length > 0) {
+          schedulePathRefresh(targetedRelativePaths);
         } else {
-          scheduleRefresh();
+          scheduleFullRefresh();
         }
       },
     );
@@ -1781,6 +1841,7 @@ export function App() {
     checkExternalDocument,
     reconcileExternalMove,
     refreshVault,
+    refreshVaultForPaths,
     vaultName,
     vaultSelected,
     vaultId,
