@@ -4,7 +4,7 @@ This file records notable changes to Anchored rather than duplicating every
 Git commit. The format follows [Keep a Changelog], and releases follow
 [Semantic Versioning].
 
-## [Unreleased]
+## [0.1.2-alpha] - 2026-07-24
 
 ### Added
 
