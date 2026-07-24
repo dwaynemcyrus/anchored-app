@@ -345,4 +345,55 @@ mod tests {
             "[[New Name]] [[New Name|Legacy]] [[Archive/New Name.md]]\n"
         );
     }
+
+    #[test]
+    fn leaves_ambiguous_alias_links_unchanged() {
+        let notes = vec![
+            note("Notes/Old Name.md", Some(TARGET_ID), &["Shared"]),
+            note("Archive/Other.md", None, &["Shared"]),
+            note("Sources.md", None, &[]),
+        ];
+        let source = LinkSource {
+            content: "[[Shared]] [[Old Name]]\n".to_owned(),
+            relative_path: "Sources.md".to_owned(),
+        };
+
+        let rewrites = plan_rename_link_rewrites(&notes, &[source], TARGET_ID, "Notes/New Name.md");
+
+        assert_eq!(rewrites[0].replacement_count, 1);
+        assert_eq!(rewrites[0].content, "[[Shared]] [[New Name]]\n");
+    }
+
+    #[test]
+    fn never_rewrites_a_note_own_same_note_heading_links() {
+        let notes = vec![
+            note("Notes/Old Name.md", Some(TARGET_ID), &[]),
+            note("Sources.md", None, &[]),
+        ];
+        let source = LinkSource {
+            content: "See [[#Background]] for context.\n".to_owned(),
+            relative_path: "Notes/Old Name.md".to_owned(),
+        };
+
+        let rewrites = plan_rename_link_rewrites(&notes, &[source], TARGET_ID, "Notes/New Name.md");
+
+        assert!(rewrites.is_empty());
+    }
+
+    #[test]
+    fn rewrites_alias_links_with_heading_fragments_and_keeps_implicit_label() {
+        let notes = vec![
+            note("Notes/Old Name.md", Some(TARGET_ID), &["Legacy"]),
+            note("Sources.md", None, &[]),
+        ];
+        let source = LinkSource {
+            content: "[[Legacy#Background]]\n".to_owned(),
+            relative_path: "Sources.md".to_owned(),
+        };
+
+        let rewrites = plan_rename_link_rewrites(&notes, &[source], TARGET_ID, "Notes/New Name.md");
+
+        assert_eq!(rewrites[0].replacement_count, 1);
+        assert_eq!(rewrites[0].content, "[[New Name#Background|Legacy]]\n");
+    }
 }
