@@ -50,4 +50,4 @@ jobs:
           releaseBody: Signed macOS release with in-app updater artifacts.
           releaseDraft: false
           prerelease: false
-          args: --bundles dmg
+          args: --bundles app,dmg
