@@ -81,4 +81,87 @@ describe("lintFrontmatter", () => {
       expect(diagnostic.from).toBeLessThanOrEqual(diagnostic.to);
     }
   });
+
+  describe("known property shapes (Anchored schema)", () => {
+    it.each(["status", "type", "created_at", "updated_at", "archived_at"])(
+      "flags a non-scalar value for %s",
+      (key) => {
+        const source = ["---", `${key}: [archived]`, "---", "Body"].join(
+          "\n",
+        );
+        const diagnostics = lintFrontmatter(source);
+        expect(diagnostics).toHaveLength(1);
+        expect(diagnostics[0].rule).toBe("invalid-property-shape");
+        expect(diagnostics[0].message).toContain(`\`${key}\``);
+      },
+    );
+
+    it.each(["status", "type", "created_at", "updated_at", "archived_at"])(
+      "accepts a plain string value for %s",
+      (key) => {
+        const source = ["---", `${key}: active`, "---", "Body"].join("\n");
+        expect(lintFrontmatter(source)).toEqual([]);
+      },
+    );
+
+    it.each(["status", "type", "created_at", "updated_at", "archived_at"])(
+      "leaves an empty value for %s alone",
+      (key) => {
+        const source = ["---", `${key}:`, "---", "Body"].join("\n");
+        expect(lintFrontmatter(source)).toEqual([]);
+      },
+    );
+
+    it("flags a mapping value for a known scalar key", () => {
+      const source = ["---", "status:", "  nested: archived", "---", "Body"].join(
+        "\n",
+      );
+      const diagnostics = lintFrontmatter(source);
+      expect(diagnostics).toHaveLength(1);
+      expect(diagnostics[0].rule).toBe("invalid-property-shape");
+    });
+
+    it("accepts a plain string alias", () => {
+      const source = ["---", "aliases: Alt Name", "---", "Body"].join("\n");
+      expect(lintFrontmatter(source)).toEqual([]);
+    });
+
+    it("accepts a list of string aliases", () => {
+      const source = ["---", "aliases:", "  - Alt Name", "  - Other", "---", "Body"].join(
+        "\n",
+      );
+      expect(lintFrontmatter(source)).toEqual([]);
+    });
+
+    it("leaves an empty aliases value alone", () => {
+      const source = ["---", "aliases:", "---", "Body"].join("\n");
+      expect(lintFrontmatter(source)).toEqual([]);
+    });
+
+    it("flags a list of aliases containing a non-string item", () => {
+      const source = ["---", "aliases:", "  - Alt Name", "  - 42", "---", "Body"].join(
+        "\n",
+      );
+      const diagnostics = lintFrontmatter(source);
+      expect(diagnostics).toHaveLength(1);
+      expect(diagnostics[0].rule).toBe("invalid-property-shape");
+      expect(diagnostics[0].message).toContain("`aliases`");
+    });
+
+    it("flags a mapping value for aliases", () => {
+      const source = ["---", "aliases:", "  primary: Alt Name", "---", "Body"].join(
+        "\n",
+      );
+      const diagnostics = lintFrontmatter(source);
+      expect(diagnostics).toHaveLength(1);
+      expect(diagnostics[0].rule).toBe("invalid-property-shape");
+    });
+
+    it("does not flag unrelated custom properties", () => {
+      const source = ["---", "tags: [a, b]", "custom: 42", "---", "Body"].join(
+        "\n",
+      );
+      expect(lintFrontmatter(source)).toEqual([]);
+    });
+  });
 });

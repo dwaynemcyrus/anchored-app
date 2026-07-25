@@ -1,17 +1,31 @@
-import { parseDocument } from "yaml";
+import { isMap, isScalar, isSeq, parseDocument } from "yaml";
+import type { Pair, YAMLMap } from "yaml";
 
-// Mirrors the structural rules enforced by src-tauri/src/metadata.rs
-// (front_matter_bounds / MalformedFrontMatter / UnsafeFrontMatter) so the
-// live editor warns about the same problems the backend already refuses to
-// silently rewrite. Only structural validity is checked here (Phase 1);
-// Anchored's own schema (id/status/timestamps) and general type/shape
-// linting are separate, later phases.
+// Mirrors the structural and schema rules enforced by
+// src-tauri/src/metadata.rs (front_matter_bounds / MalformedFrontMatter /
+// UnsafeFrontMatter / inspect_note_properties / inspect_note_aliases) so
+// the live editor warns about the same problems the backend already
+// refuses to silently rewrite, or silently ignores on read. General
+// type/shape linting for arbitrary user properties is a separate, later
+// phase.
 
 export type FrontmatterLintRule =
   | "malformed-delimiters"
   | "malformed-yaml"
   | "duplicate-key"
-  | "invalid-root";
+  | "invalid-root"
+  | "invalid-property-shape";
+
+// Keys inspect_note_properties (metadata.rs) reads as a single scalar
+// string via unique_string_property; any other shape is silently treated
+// as absent by the backend, so we warn instead of failing silently.
+const KNOWN_SCALAR_KEYS = [
+  "status",
+  "type",
+  "created_at",
+  "updated_at",
+  "archived_at",
+] as const;
 
 export type FrontmatterDiagnostic = {
   from: number;
@@ -90,6 +104,67 @@ function cleanYamlErrorMessage(message: string): string {
   return message.replace(/ at line \d+, column \d+:[\s\S]*/, "").trim();
 }
 
+function isScalarString(value: unknown): boolean {
+  return isScalar(value) && typeof value.value === "string";
+}
+
+function isValidAliasesValue(value: unknown): boolean {
+  if (value === null || value === undefined) return true;
+  if (isScalar(value) && value.value === null) return true;
+  if (isScalarString(value)) return true;
+  return isSeq(value) && value.items.every((item) => isScalarString(item));
+}
+
+function diagnosticRangeForPair(
+  pair: Pair<unknown, unknown>,
+  bodyStart: number,
+): { from: number; to: number } {
+  const node = pair.value ?? pair.key;
+  const range =
+    node && typeof node === "object" && "range" in node
+      ? (node as { range?: [number, number, number] | null }).range
+      : null;
+  if (!range) return { from: bodyStart, to: bodyStart };
+  return { from: bodyStart + range[0], to: bodyStart + range[1] };
+}
+
+function checkKnownPropertyShapes(
+  root: YAMLMap,
+  bodyStart: number,
+): FrontmatterDiagnostic[] {
+  const diagnostics: FrontmatterDiagnostic[] = [];
+
+  for (const pair of root.items as Pair<unknown, unknown>[]) {
+    if (!isScalar(pair.key) || typeof pair.key.value !== "string") continue;
+    const key = pair.key.value;
+    const value = pair.value;
+    const isEmpty =
+      value === null ||
+      value === undefined ||
+      (isScalar(value) && value.value === null);
+    if (isEmpty) continue;
+
+    if ((KNOWN_SCALAR_KEYS as readonly string[]).includes(key)) {
+      if (!isScalarString(value)) {
+        diagnostics.push({
+          ...diagnosticRangeForPair(pair, bodyStart),
+          rule: "invalid-property-shape",
+          message: `Anchored ignores \`${key}\` unless it's plain text — this value won't be picked up.`,
+        });
+      }
+    } else if (key === "aliases" && !isValidAliasesValue(value)) {
+      diagnostics.push({
+        ...diagnosticRangeForPair(pair, bodyStart),
+        rule: "invalid-property-shape",
+        message:
+          "Anchored ignores `aliases` unless it's plain text or a list of text values.",
+      });
+    }
+  }
+
+  return diagnostics;
+}
+
 export function lintFrontmatter(documentText: string): FrontmatterDiagnostic[] {
   const scan = scanFrontMatterBounds(documentText);
 
@@ -143,7 +218,7 @@ export function lintFrontmatter(documentText: string): FrontmatterDiagnostic[] {
   }
 
   const root = parsed.contents;
-  if (root !== null && root !== undefined && root.constructor.name !== "YAMLMap") {
+  if (root !== null && root !== undefined && !isMap(root)) {
     diagnostics.push({
       from: bounds.bodyStart,
       to: bounds.bodyEnd,
@@ -151,6 +226,8 @@ export function lintFrontmatter(documentText: string): FrontmatterDiagnostic[] {
       message:
         "Frontmatter must be a set of `key: value` pairs, not a plain list or value.",
     });
+  } else if (isMap(root)) {
+    diagnostics.push(...checkKnownPropertyShapes(root, bounds.bodyStart));
   }
 
   return diagnostics;
