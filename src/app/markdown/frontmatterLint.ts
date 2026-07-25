@@ -14,7 +14,9 @@ export type FrontmatterLintRule =
   | "malformed-yaml"
   | "duplicate-key"
   | "invalid-root"
-  | "invalid-property-shape";
+  | "invalid-property-shape"
+  | "duplicate-list-item"
+  | "empty-list-item";
 
 // Keys inspect_note_properties (metadata.rs) reads as a single scalar
 // string via unique_string_property; any other shape is silently treated
@@ -115,17 +117,23 @@ function isValidAliasesValue(value: unknown): boolean {
   return isSeq(value) && value.items.every((item) => isScalarString(item));
 }
 
-function diagnosticRangeForPair(
-  pair: Pair<unknown, unknown>,
+function diagnosticRangeForNode(
+  node: unknown,
   bodyStart: number,
 ): { from: number; to: number } {
-  const node = pair.value ?? pair.key;
   const range =
     node && typeof node === "object" && "range" in node
       ? (node as { range?: [number, number, number] | null }).range
       : null;
   if (!range) return { from: bodyStart, to: bodyStart };
   return { from: bodyStart + range[0], to: bodyStart + range[1] };
+}
+
+function diagnosticRangeForPair(
+  pair: Pair<unknown, unknown>,
+  bodyStart: number,
+): { from: number; to: number } {
+  return diagnosticRangeForNode(pair.value ?? pair.key, bodyStart);
 }
 
 function checkKnownPropertyShapes(
@@ -159,6 +167,50 @@ function checkKnownPropertyShapes(
         message:
           "Anchored ignores `aliases` unless it's plain text or a list of text values.",
       });
+    }
+  }
+
+  return diagnostics;
+}
+
+// General, key-agnostic list hygiene: duplicate or blank entries in any
+// list-shaped property, not just ones Anchored reads. Known scalar keys
+// are skipped here since Phase 2's invalid-property-shape rule already
+// owns flagging them as wrong-shaped entirely.
+function checkListItemHygiene(
+  root: YAMLMap,
+  bodyStart: number,
+): FrontmatterDiagnostic[] {
+  const diagnostics: FrontmatterDiagnostic[] = [];
+
+  for (const pair of root.items as Pair<unknown, unknown>[]) {
+    if (!isScalar(pair.key) || typeof pair.key.value !== "string") continue;
+    const key = pair.key.value;
+    if ((KNOWN_SCALAR_KEYS as readonly string[]).includes(key)) continue;
+
+    const value = pair.value;
+    if (!isSeq(value)) continue;
+    if (!value.items.every((item) => isScalarString(item))) continue;
+
+    const seen = new Set<string>();
+    for (const item of value.items) {
+      const text = (item as { value: string }).value;
+      if (text.length === 0) {
+        diagnostics.push({
+          ...diagnosticRangeForNode(item, bodyStart),
+          rule: "empty-list-item",
+          message:
+            "This entry is blank — check for a stray comma or empty line.",
+        });
+      } else if (seen.has(text)) {
+        diagnostics.push({
+          ...diagnosticRangeForNode(item, bodyStart),
+          rule: "duplicate-list-item",
+          message: `\`${text}\` is repeated in this list.`,
+        });
+      } else {
+        seen.add(text);
+      }
     }
   }
 
@@ -228,6 +280,7 @@ export function lintFrontmatter(documentText: string): FrontmatterDiagnostic[] {
     });
   } else if (isMap(root)) {
     diagnostics.push(...checkKnownPropertyShapes(root, bounds.bodyStart));
+    diagnostics.push(...checkListItemHygiene(root, bounds.bodyStart));
   }
 
   return diagnostics;

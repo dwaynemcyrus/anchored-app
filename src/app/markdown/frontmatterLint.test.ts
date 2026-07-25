@@ -164,4 +164,70 @@ describe("lintFrontmatter", () => {
       expect(lintFrontmatter(source)).toEqual([]);
     });
   });
+
+  describe("list item hygiene (schema-agnostic)", () => {
+    it("flags a duplicate string item in a list", () => {
+      const source = ["---", "aliases: [Foo, Bar, Foo]", "---", "Body"].join(
+        "\n",
+      );
+      const diagnostics = lintFrontmatter(source);
+      expect(diagnostics).toHaveLength(1);
+      expect(diagnostics[0].rule).toBe("duplicate-list-item");
+      expect(diagnostics[0].message).toContain("Foo");
+    });
+
+    it("flags a blank string item in a list", () => {
+      const source = ["---", 'aliases: [Foo, "", Bar]', "---", "Body"].join(
+        "\n",
+      );
+      const diagnostics = lintFrontmatter(source);
+      expect(diagnostics).toHaveLength(1);
+      expect(diagnostics[0].rule).toBe("empty-list-item");
+    });
+
+    it("flags both a duplicate and a blank item in the same list", () => {
+      const source = [
+        "---",
+        'aliases: [Foo, "", Foo]',
+        "---",
+        "Body",
+      ].join("\n");
+      const diagnostics = lintFrontmatter(source);
+      expect(diagnostics).toHaveLength(2);
+      expect(diagnostics.map((d) => d.rule).sort()).toEqual([
+        "duplicate-list-item",
+        "empty-list-item",
+      ]);
+    });
+
+    it("does not flag a clean list", () => {
+      const source = ["---", "aliases: [Foo, Bar, Baz]", "---", "Body"].join(
+        "\n",
+      );
+      expect(lintFrontmatter(source)).toEqual([]);
+    });
+
+    it("applies to arbitrary custom list properties, not just aliases", () => {
+      const source = ["---", "related: [Foo, Foo]", "---", "Body"].join("\n");
+      const diagnostics = lintFrontmatter(source);
+      expect(diagnostics).toHaveLength(1);
+      expect(diagnostics[0].rule).toBe("duplicate-list-item");
+    });
+
+    it("skips list hygiene for known scalar keys, deferring to the shape rule", () => {
+      const source = ["---", "status: [a, a]", "---", "Body"].join("\n");
+      const diagnostics = lintFrontmatter(source);
+      expect(diagnostics).toHaveLength(1);
+      expect(diagnostics[0].rule).toBe("invalid-property-shape");
+    });
+
+    it("skips hygiene checks on a list that already has a shape problem", () => {
+      const source = ["---", "aliases: [Foo, Foo, 42]", "---", "Body"].join(
+        "\n",
+      );
+      const diagnostics = lintFrontmatter(source);
+      expect(diagnostics).toHaveLength(1);
+      expect(diagnostics[0].rule).toBe("invalid-property-shape");
+    });
+  });
 });
