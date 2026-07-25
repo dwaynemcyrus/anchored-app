@@ -591,6 +591,7 @@ export function App() {
                   folder,
                   folderPath,
                   id: persistedDocumentId,
+                  noteId: savedDocument.identity,
                   name,
                   noteType: savedDocument.noteType,
                   relativePath: savedDocument.relativePath,
@@ -630,7 +631,7 @@ export function App() {
                   value.length > 0 && values.indexOf(value) === index,
               ),
         );
-        resolveHistorySource(document.id);
+        resolveHistorySource(savedDocument.identity ?? persistedDocumentId);
       } catch (error) {
         setDocuments((currentDocuments) =>
           currentDocuments.map((current) =>
@@ -645,7 +646,7 @@ export function App() {
         );
         addHistoryEntry(`${document.name} could not be saved.`, {
           kind: "error",
-          sourceId: document.id,
+          sourceId: document.noteId ?? document.id,
         });
       }
     },
@@ -776,6 +777,7 @@ export function App() {
                   folder,
                   folderPath,
                   name,
+                  noteId: savedDocument.identity ?? current.noteId,
                   noteType: savedDocument.noteType,
                   relativePath: savedDocument.relativePath,
                   saveMessage: hasNewerEdit
@@ -814,11 +816,14 @@ export function App() {
             {
               kind: "conflict",
               requiresAction: true,
-              sourceId: document.id,
+              sourceId:
+                savedDocument.identity ?? document.noteId ?? document.id,
             },
           );
         } else {
-          resolveHistorySource(document.id);
+          resolveHistorySource(
+            savedDocument.identity ?? document.noteId ?? document.id,
+          );
         }
       } catch (error) {
         setDocuments((currentDocuments) =>
@@ -834,7 +839,7 @@ export function App() {
         );
         addHistoryEntry(`${document.name} could not be saved.`, {
           kind: "error",
-          sourceId: document.id,
+          sourceId: document.noteId ?? document.id,
         });
       }
     },
@@ -925,6 +930,7 @@ export function App() {
                     conflictCopyPath: undefined,
                     createdAt: external.createdAt,
                     modifiedMillis: external.modifiedMillis,
+                    noteId: external.identity ?? candidate.noteId,
                     noteType: external.noteType,
                     saveMessage: undefined,
                     saveState: "saved",
@@ -937,7 +943,9 @@ export function App() {
                 : candidate,
             ),
           );
-          resolveHistorySource(documentId);
+          resolveHistorySource(
+            external.identity ?? current.noteId ?? documentId,
+          );
           return;
         }
 
@@ -990,7 +998,7 @@ export function App() {
             {
               kind: "conflict",
               requiresAction: true,
-              sourceId: current.id,
+              sourceId: current.noteId ?? current.id,
             },
           );
         }
@@ -1057,7 +1065,7 @@ export function App() {
               : current,
           ),
         );
-        resolveHistorySource(document.id);
+        resolveHistorySource(document.noteId ?? document.id);
         return;
       }
 
@@ -1089,6 +1097,7 @@ export function App() {
                   archivedAt: savedDocument.archivedAt,
                   createdAt: savedDocument.createdAt,
                   modifiedMillis: savedDocument.modifiedMillis,
+                  noteId: savedDocument.identity ?? current.noteId,
                   noteType: savedDocument.noteType,
                   saveMessage: hasNewerEdit
                     ? undefined
@@ -1112,7 +1121,9 @@ export function App() {
               : current,
           ),
         );
-        resolveHistorySource(document.id);
+        resolveHistorySource(
+          savedDocument.identity ?? document.noteId ?? document.id,
+        );
       } catch (error) {
         const message = readErrorMessage(error);
         const nextSaveState =
@@ -1148,7 +1159,7 @@ export function App() {
           {
             kind: nextSaveState,
             requiresAction: nextSaveState === "conflict",
-            sourceId: document.id,
+            sourceId: document.noteId ?? document.id,
           },
         );
       } finally {
@@ -1901,6 +1912,7 @@ export function App() {
                 conflictExternalSourceText: undefined,
                 createdAt: external.createdAt,
                 modifiedMillis: external.modifiedMillis,
+                noteId: external.identity ?? current.noteId,
                 noteType: external.noteType,
                 saveMessage: undefined,
                 saveState: "saved",
@@ -1913,7 +1925,7 @@ export function App() {
             : current,
         ),
       );
-      resolveHistorySource(documentId);
+      resolveHistorySource(external.identity ?? document.noteId ?? documentId);
     } catch (error) {
       addVaultNotice(readErrorMessage(error), { persistent: true });
     }
@@ -1938,6 +1950,7 @@ export function App() {
                 conflictBaseSourceText: undefined,
                 conflictExternalSourceText: undefined,
                 conflictCopyPath: undefined,
+                noteId: saved.identity ?? candidate.noteId,
                 saveMessage: undefined,
                 saveState: "saved",
                 savedSourceText: saved.content,
@@ -1947,7 +1960,7 @@ export function App() {
         ),
       );
       conflictResolution.closeConflictResolution();
-      resolveHistorySource(documentId);
+      resolveHistorySource(saved.identity ?? document.noteId ?? documentId);
       await refreshVault();
     } catch (error) {
       addVaultNotice(
