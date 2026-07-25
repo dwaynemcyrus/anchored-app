@@ -24,6 +24,11 @@ Git commit. The format follows [Keep a Changelog], and releases follow
 
 ### Changed
 
+- The vault index is now kept up to date continuously rather than only on a
+  full scan. Saving, creating, archiving, restoring, renaming, and moving a
+  note all update it directly, and edits made in another program are picked
+  up through the existing watcher. A note keeps its identity when it is
+  renamed or moved, so anything attached to that identity follows it.
 - Note, vault, and trash identities are now UUIDv7 instead of ULID, in
   preparation for the database-backed storage phase. A vault written by an
   earlier build still opens: its identity file is quietly re-minted in the

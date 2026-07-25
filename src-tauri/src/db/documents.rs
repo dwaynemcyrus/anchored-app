@@ -11,17 +11,30 @@ use super::keys::link_target_key;
 use super::map_error;
 use crate::vault::VaultError;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct Upserted {
+    pub id: i64,
+    /// Whether this path gained a row it did not have. A new or removed
+    /// document changes what *other* notes' links resolve to; an edit to an
+    /// existing one does not.
+    pub created: bool,
+}
+
 /// Writes a document and its derived alias and link rows.
 ///
-/// Matching is by `path_key` rather than `uuid`: the file at a path is the
-/// thing being re-imported, and reusing its existing row keeps the identity
-/// already assigned to that path instead of minting a second one for a note
-/// that merely changed on disk.
+/// A row is found by path first: the file at a path is the thing being
+/// re-imported, and reusing its row keeps the identity already assigned there
+/// rather than minting a second one for a note that merely changed on disk.
+///
+/// Failing that, a row carrying the same identity is adopted and re-pointed at
+/// the new path. That is what a rename or a move looks like from here, and it
+/// is why a note keeps its identity across one. Without it the insert would
+/// also collide with the old row's unique identity.
 pub(crate) fn upsert(
     connection: &Connection,
     document: &ImportedDocument,
-) -> Result<i64, VaultError> {
-    let existing: Option<(i64, String)> = connection
+) -> Result<Upserted, VaultError> {
+    let mut existing: Option<(i64, String)> = connection
         .query_row(
             "SELECT id, uuid FROM documents WHERE path_key = ?1 AND deleted_at IS NULL",
             params![document.path_key],
@@ -30,6 +43,19 @@ pub(crate) fn upsert(
         .optional()
         .map_err(map_error("A document could not be looked up"))?;
 
+    // A minted identity is fresh and cannot name an existing note, so only a
+    // identity the file actually carries can claim a row this way.
+    if existing.is_none() && !document.minted_identity {
+        existing = connection
+            .query_row(
+                "SELECT id, uuid FROM documents WHERE uuid = ?1 AND deleted_at IS NULL",
+                params![document.uuid],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .optional()
+            .map_err(map_error("A document identity could not be looked up"))?;
+    }
+
     // A freshly minted identity never displaces one already recorded for this
     // path; the file simply has not been written back yet.
     let uuid = match &existing {
@@ -37,6 +63,7 @@ pub(crate) fn upsert(
         _ => document.uuid.clone(),
     };
 
+    let created = existing.is_none();
     let id = match existing {
         Some((id, _)) => {
             connection
@@ -46,7 +73,8 @@ pub(crate) fn upsert(
                         is_markdown = ?7, frontmatter_text = ?8, body = ?9, content_hash = ?10,
                         size_bytes = ?11, status = ?12, note_type = ?13, archived_at = ?14,
                         created_at = ?15, updated_at = ?16, created_at_millis = ?17,
-                        updated_at_millis = ?18, aliases_text = ?19, revision = revision + 1
+                        updated_at_millis = ?18, aliases_text = ?19, path_key = ?20,
+                        revision = revision + 1
                      WHERE id = ?1",
                     params![
                         id,
@@ -68,6 +96,7 @@ pub(crate) fn upsert(
                         document.created_at_millis,
                         document.updated_at_millis,
                         document.aliases_text(),
+                        document.path_key,
                     ],
                 )
                 .map_err(map_error("A document could not be updated"))?;
@@ -114,7 +143,21 @@ pub(crate) fn upsert(
 
     replace_aliases(connection, id, document)?;
     replace_links(connection, id, document)?;
-    Ok(id)
+    Ok(Upserted { id, created })
+}
+
+/// Resolves only the links leaving one document. Used after an edit that did
+/// not add or remove any document, where no other note's links can have
+/// changed meaning — a full re-resolution would rewrite the whole table on
+/// every keystroke-triggered autosave.
+pub(crate) fn resolve_links_from(
+    connection: &Connection,
+    source_document_id: i64,
+) -> Result<(), VaultError> {
+    connection
+        .execute(RESOLVE_LINKS_SQL, params![Some(source_document_id)])
+        .map(drop)
+        .map_err(map_error("Document links could not be resolved"))
 }
 
 fn replace_aliases(
@@ -163,56 +206,62 @@ fn replace_links(
     Ok(())
 }
 
-/// Points every link at the document it names, preferring an exact path, then
-/// a unique filename, then a unique alias — the same precedence the interface
-/// applies. A name matching more than one document stays ambiguous rather than
-/// resolving arbitrarily.
+/// Points links at the document they name, preferring an exact path, then a
+/// unique filename, then a unique alias — the same precedence
+/// `resolveWikilink` applies in the interface. A name shared by more than one
+/// document stays ambiguous rather than resolving arbitrarily.
+///
+/// A NULL parameter resolves every link; a document id resolves only the links
+/// leaving that document.
+const RESOLVE_LINKS_SQL: &str = "
+UPDATE links SET
+    target_document_id = COALESCE(
+        (SELECT id FROM documents
+         WHERE path_key = links.target_key
+            OR path_key = links.target_key || '.md'
+         LIMIT 1),
+        CASE WHEN (SELECT count(*) FROM documents WHERE name_key = links.target_key) = 1
+             THEN (SELECT id FROM documents WHERE name_key = links.target_key) END,
+        CASE WHEN (SELECT count(*) FROM documents WHERE name_key = links.target_key) = 0
+              AND (SELECT count(*) FROM aliases WHERE alias_key = links.target_key) = 1
+             THEN (SELECT document_id FROM aliases WHERE alias_key = links.target_key) END
+    ),
+    resolution = CASE
+        WHEN EXISTS (SELECT 1 FROM documents
+                     WHERE path_key = links.target_key
+                        OR path_key = links.target_key || '.md') THEN 'path'
+        WHEN (SELECT count(*) FROM documents WHERE name_key = links.target_key) = 1
+            THEN 'filename'
+        WHEN (SELECT count(*) FROM documents WHERE name_key = links.target_key) > 1
+            THEN 'ambiguous'
+        WHEN (SELECT count(*) FROM aliases WHERE alias_key = links.target_key) = 1
+            THEN 'alias'
+        ELSE 'unresolved'
+    END
+WHERE ?1 IS NULL OR source_document_id = ?1";
+
+/// Re-resolves every link in the vault. Needed whenever a document is added or
+/// removed, because that changes what other notes' links point at.
 pub(crate) fn resolve_links(connection: &Connection) -> Result<(), VaultError> {
     connection
-        .execute_batch(
-            "UPDATE links SET target_document_id = NULL, resolution = 'unresolved';
-
-             UPDATE links SET
-                target_document_id = (
-                    SELECT id FROM documents
-                    WHERE path_key = links.target_key
-                       OR path_key = links.target_key || '.md'
-                ),
-                resolution = 'path'
-             WHERE EXISTS (
-                SELECT 1 FROM documents
-                WHERE path_key = links.target_key
-                   OR path_key = links.target_key || '.md'
-             );
-
-             UPDATE links SET
-                target_document_id = (
-                    SELECT id FROM documents WHERE name_key = links.target_key
-                ),
-                resolution = 'filename'
-             WHERE target_document_id IS NULL
-               AND (
-                SELECT count(*) FROM documents WHERE name_key = links.target_key
-               ) = 1;
-
-             UPDATE links SET resolution = 'ambiguous'
-             WHERE target_document_id IS NULL
-               AND (
-                SELECT count(*) FROM documents WHERE name_key = links.target_key
-               ) > 1;
-
-             UPDATE links SET
-                target_document_id = (
-                    SELECT document_id FROM aliases WHERE alias_key = links.target_key
-                ),
-                resolution = 'alias'
-             WHERE target_document_id IS NULL
-               AND resolution <> 'ambiguous'
-               AND (
-                SELECT count(*) FROM aliases WHERE alias_key = links.target_key
-               ) = 1;",
-        )
+        .execute(RESOLVE_LINKS_SQL, params![None::<i64>])
+        .map(drop)
         .map_err(map_error("Document links could not be resolved"))
+}
+
+/// Removes the row for one path, if it has one. Matching goes through the
+/// normalized key so a differently-spelled but equivalent path still hits.
+pub(crate) fn delete_by_path(
+    connection: &Connection,
+    relative_path: &str,
+) -> Result<(), VaultError> {
+    connection
+        .execute(
+            "DELETE FROM documents WHERE path_key = ?1",
+            params![super::keys::path_key(relative_path)],
+        )
+        .map(drop)
+        .map_err(map_error("A document could not be removed"))
 }
 
 /// Removes rows for paths no longer present, so a whole-vault import converges
@@ -253,6 +302,8 @@ mod tests {
     use super::{delete_missing, resolve_links, upsert};
     use crate::db::import::import_note;
 
+    const ID: &str = "019f989c-2dc0-7a01-8b2c-4d5e6f708192";
+
     fn database() -> (tempfile::TempDir, Connection) {
         let directory = tempdir().expect("create fixture directory");
         let connection =
@@ -277,9 +328,11 @@ mod tests {
         let id = upsert(&connection, &first).expect("insert document");
 
         let second = import_note("Notes/Harbor.md", b"# Harbor edited\n");
-        let same_id = upsert(&connection, &second).expect("update document");
+        let same = upsert(&connection, &second).expect("update document");
 
-        assert_eq!(id, same_id);
+        assert_eq!(id.id, same.id);
+        assert!(id.created, "the first import creates the row");
+        assert!(!same.created, "the second import reuses it");
         assert_ne!(
             first.uuid, second.uuid,
             "each import mints its own candidate"
@@ -287,7 +340,7 @@ mod tests {
         let (uuid, body, revision): (String, String, i64) = connection
             .query_row(
                 "SELECT uuid, body, revision FROM documents WHERE id = ?1",
-                [id],
+                [id.id],
                 |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
             )
             .expect("read document");
@@ -311,6 +364,55 @@ mod tests {
             .query_row("SELECT uuid FROM documents", [], |row| row.get(0))
             .expect("read identity");
         assert_eq!(uuid, "019f989c-2dc0-7a01-8b2c-4d5e6f708192");
+    }
+
+    /// A note keeps its identity when it moves. The row is adopted by
+    /// identity, not re-created, so backlinks and history stay attached — and
+    /// the insert does not collide with the old row's unique identity.
+    #[test]
+    fn follows_a_note_that_moved_to_a_new_path() {
+        let (_directory, connection) = database();
+        let source = format!("---\nid: {ID}\n---\n# Harbor\n");
+        let before = upsert(
+            &connection,
+            &import_note("Notes/Harbor.md", source.as_bytes()),
+        )
+        .expect("insert at the original path");
+
+        let after = upsert(
+            &connection,
+            &import_note("Archive/Anchorage.md", source.as_bytes()),
+        )
+        .expect("import at the new path");
+
+        assert_eq!(before.id, after.id, "the same row follows the note");
+        assert!(!after.created);
+        let (uuid, path, count): (String, String, i64) = connection
+            .query_row(
+                "SELECT uuid, relative_path, (SELECT count(*) FROM documents) FROM documents",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )
+            .expect("read the moved document");
+        assert_eq!(count, 1, "a move must not leave two rows behind");
+        assert_eq!(uuid, ID);
+        assert_eq!(path, "Archive/Anchorage.md");
+    }
+
+    /// Without an identity in the file there is nothing to follow, so a note
+    /// arriving at a new path is a new document rather than a silent adoption
+    /// of an unrelated row.
+    #[test]
+    fn does_not_adopt_a_row_for_a_note_without_an_identity() {
+        let (_directory, connection) = database();
+        upsert(&connection, &import_note("Notes/Harbor.md", b"# Harbor\n")).expect("insert first");
+
+        upsert(&connection, &import_note("Notes/Other.md", b"# Other\n")).expect("insert second");
+
+        let count: i64 = connection
+            .query_row("SELECT count(*) FROM documents", [], |row| row.get(0))
+            .expect("count documents");
+        assert_eq!(count, 2);
     }
 
     #[test]
@@ -404,6 +506,77 @@ mod tests {
         let (resolution, target) = resolution(&connection, "Planning");
         assert_eq!(resolution, "ambiguous");
         assert_eq!(target, None, "an ambiguous link must not pick a winner");
+    }
+
+    #[test]
+    fn scoped_resolution_matches_full_resolution() {
+        let (_directory, connection) = database();
+        upsert(
+            &connection,
+            &import_note("Notes/Harbor.md", b"---\naliases: [North Star]\n---\n"),
+        )
+        .expect("insert target");
+        upsert(&connection, &import_note("Notes/Planning.md", b"")).expect("insert other");
+        let source = upsert(
+            &connection,
+            &import_note(
+                "Notes/Source.md",
+                b"[[Notes/Harbor]]\n[[Harbor]]\n[[North Star]]\n[[Nowhere]]\n[[Harbor#Top]]\n",
+            ),
+        )
+        .expect("insert source");
+
+        super::resolve_links_from(&connection, source.id).expect("resolve one document");
+        let scoped = link_resolutions(&connection);
+        resolve_links(&connection).expect("resolve everything");
+
+        assert_eq!(scoped, link_resolutions(&connection));
+        assert_eq!(
+            scoped,
+            vec![
+                ("Notes/Harbor".to_owned(), "path".to_owned()),
+                ("Harbor".to_owned(), "filename".to_owned()),
+                ("North Star".to_owned(), "alias".to_owned()),
+                ("Nowhere".to_owned(), "unresolved".to_owned()),
+                ("Harbor#Top".to_owned(), "filename".to_owned()),
+            ]
+        );
+    }
+
+    #[test]
+    fn scoped_resolution_leaves_other_documents_alone() {
+        let (_directory, connection) = database();
+        upsert(&connection, &import_note("Notes/Harbor.md", b"")).expect("insert target");
+        let first = upsert(&connection, &import_note("Notes/First.md", b"[[Harbor]]\n"))
+            .expect("insert first");
+        upsert(
+            &connection,
+            &import_note("Notes/Second.md", b"[[Harbor]]\n"),
+        )
+        .expect("insert second");
+
+        super::resolve_links_from(&connection, first.id).expect("resolve only the first");
+
+        assert_eq!(
+            link_resolutions(&connection),
+            vec![
+                ("Harbor".to_owned(), "filename".to_owned()),
+                ("Harbor".to_owned(), "unresolved".to_owned()),
+            ]
+        );
+    }
+
+    fn link_resolutions(connection: &Connection) -> Vec<(String, String)> {
+        connection
+            .prepare(
+                "SELECT target_raw, resolution FROM links
+                 ORDER BY source_document_id, occurrence_index",
+            )
+            .expect("prepare")
+            .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))
+            .expect("query")
+            .collect::<Result<_, _>>()
+            .expect("collect")
     }
 
     #[test]

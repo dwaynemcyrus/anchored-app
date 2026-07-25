@@ -19,8 +19,17 @@ fn map_error(context: &'static str) -> impl FnOnce(rusqlite::Error) -> VaultErro
     move |error| VaultError::state(format!("{context}: {error}"))
 }
 
+/// The one place a vault root becomes a database path.
+///
+/// The root is canonicalized first because two spellings of the same directory
+/// — `/var/…` and `/private/var/…`, or a path reached through a symlink —
+/// would otherwise each get their own database, silently splitting the index
+/// in two. Commands already canonicalize before they get here; this makes the
+/// guarantee independent of them.
 pub(crate) fn database_path(root: &Path) -> std::path::PathBuf {
-    root.join(crate::continuity::INTERNAL_DIRECTORY_NAME)
+    std::fs::canonicalize(root)
+        .unwrap_or_else(|_| root.to_path_buf())
+        .join(crate::continuity::INTERNAL_DIRECTORY_NAME)
         .join(DATABASE_NAME)
 }
 
@@ -64,6 +73,66 @@ pub(crate) fn import_vault(
         .commit()
         .map_err(map_error("The vault import could not be committed"))?;
     Ok(present.len())
+}
+
+/// Re-imports a named set of paths in one transaction, dropping the row for
+/// any that is no longer on disk.
+///
+/// Used after Anchored changes files itself, so the index does not depend on
+/// a filesystem event making the round trip back to the app.
+pub(crate) fn import_paths(root: &Path, relative_paths: &[String]) -> Result<(), VaultError> {
+    if relative_paths.is_empty() {
+        return Ok(());
+    }
+
+    let mut connection = open(&database_path(root))?;
+    let transaction = connection
+        .transaction()
+        .map_err(map_error("The vault index could not be updated"))?;
+
+    let mut touched = Vec::with_capacity(relative_paths.len());
+    let mut document_set_changed = false;
+    for relative_path in relative_paths {
+        match std::fs::read(root.join(relative_path)) {
+            Ok(bytes) => {
+                let document = if is_markdown_path(relative_path) {
+                    import::import_note(relative_path, &bytes)
+                } else {
+                    import::import_asset(relative_path, &bytes)
+                };
+                let upserted = documents::upsert(&transaction, &document)?;
+                document_set_changed |= upserted.created;
+                touched.push(upserted.id);
+            }
+            Err(_) => {
+                documents::delete_by_path(&transaction, relative_path)?;
+                document_set_changed = true;
+            }
+        }
+    }
+
+    // Adding or removing a document changes what *other* notes' links point
+    // at, so everything is re-resolved. An edit in place can only change the
+    // links leaving that one note, and re-resolving the whole table on every
+    // autosave would scale with vault size instead of with the change.
+    if document_set_changed {
+        documents::resolve_links(&transaction)?;
+    } else {
+        for id in touched {
+            documents::resolve_links_from(&transaction, id)?;
+        }
+    }
+
+    transaction
+        .commit()
+        .map_err(map_error("The vault index could not be committed"))
+}
+
+fn is_markdown_path(relative_path: &str) -> bool {
+    std::path::Path::new(relative_path)
+        .extension()
+        .and_then(|extension| extension.to_str())
+        .is_some_and(|extension| extension.eq_ignore_ascii_case("md"))
 }
 
 /// Opens the vault database, applying pragmas and any pending migrations.
@@ -144,6 +213,45 @@ mod tests {
         connection
             .query_row("PRAGMA user_version", [], |row| row.get(0))
             .expect("read user_version")
+    }
+
+    /// Guards the scoped-resolution rule. Re-resolving every link on each
+    /// autosave would make a save cost grow with vault size; this pins that an
+    /// edit in place stays cheap on a vault far larger than the fixture.
+    #[test]
+    fn an_edit_in_place_does_not_scale_with_vault_size() {
+        use std::time::Instant;
+        let vault = tempdir().expect("create fixture vault");
+        crate::continuity::ensure_vault_identity(vault.path()).expect("create identity");
+        let mut connection = open(&super::database_path(vault.path())).expect("create database");
+        let mut paths = Vec::new();
+        for index in 0..600 {
+            let name = format!("Note {index:04}.md");
+            let body = format!(
+                "# Note {index}\n[[Note {:04}]]\n[[Note {:04}]]\n",
+                (index + 1) % 600,
+                (index + 7) % 600
+            );
+            std::fs::write(vault.path().join(&name), body).expect("write note");
+            paths.push(name);
+        }
+        super::import_vault(&mut connection, vault.path(), &paths, &[]).expect("seed the index");
+        drop(connection);
+
+        let edited = vec![paths[42].clone()];
+        for _ in 0..3 {
+            super::import_paths(vault.path(), &edited).expect("warm");
+        }
+        let start = Instant::now();
+        for _ in 0..25 {
+            super::import_paths(vault.path(), &edited).expect("index one save");
+        }
+        let each = start.elapsed() / 25;
+
+        assert!(
+            each.as_millis() < 60,
+            "indexing one save over 600 notes took {each:?}"
+        );
     }
 
     #[test]

@@ -1197,6 +1197,27 @@ fn build_vault_snapshot(
     Ok(snapshot)
 }
 
+/// Keeps the index in step with files Anchored just changed itself, without
+/// waiting for a filesystem event to make the round trip back to the app.
+///
+/// Files are still canonical, so a failure here is reported and left for the
+/// next scan to repair rather than failing the operation the user asked for.
+fn index_changed_paths(root: &Path, relative_paths: &[String]) {
+    if let Err(error) = crate::db::import_paths(root, relative_paths) {
+        eprintln!("The vault index could not be updated: {}", error.message);
+    }
+}
+
+/// Re-indexes the whole vault. Used after an operation that can rewrite links
+/// in arbitrary other files, where the changed set is not known up front.
+fn index_whole_vault(root: &Path) {
+    let indexed = scan_vault(root)
+        .and_then(|snapshot| import_vault_snapshot(root, &snapshot).map(|()| snapshot));
+    if let Err(error) = indexed {
+        eprintln!("The vault index could not be rebuilt: {}", error.message);
+    }
+}
+
 /// Mirrors the scan into the database. Files are still canonical, so an import
 /// failure must not stop the vault from opening — it is reported and the next
 /// scan retries.
@@ -1447,10 +1468,31 @@ fn build_vault_patch(
     let vault_id = ensure_vault_identity(&root)?;
     prepare_metadata_cache(app, &vault_id, cache)?;
     let patch = scan_vault_paths_patch(&root, &vault_id, relative_paths, cache)?;
-    if !patch.requires_full_rescan {
-        persist_metadata_cache(app, cache)?;
+    if patch.requires_full_rescan {
+        // The targeted scan gave up, so the index cannot be trusted either.
+        index_whole_vault(&root);
+        return Ok(patch);
     }
+    persist_metadata_cache(app, cache)?;
+    index_patched_paths(&root, &patch, relative_paths);
     Ok(patch)
+}
+
+/// Indexes exactly what the targeted scan reported. A newly-appeared directory
+/// is scanned as a subtree, so its files arrive in the patch rather than in the
+/// requested paths, and both sets have to be covered.
+fn index_patched_paths(root: &Path, patch: &VaultPatch, requested_paths: &[String]) {
+    let mut paths: Vec<String> = requested_paths.to_vec();
+    for file in &patch.upserted_files {
+        paths.push(file.relative_path.clone());
+    }
+    for asset in &patch.upserted_assets {
+        paths.push(asset.relative_path.clone());
+    }
+    paths.extend(patch.removed_paths.iter().cloned());
+    paths.sort();
+    paths.dedup();
+    index_changed_paths(root, &paths);
 }
 
 #[tauri::command]
@@ -3201,6 +3243,7 @@ fn create_conflict_copy(
         write_result?;
         let metadata = fs::metadata(&destination)
             .map_err(|error| VaultError::io("The conflict copy could not be inspected", error))?;
+        index_changed_paths(root, std::slice::from_ref(&relative_path));
         return Ok(vault_document(
             content.clone(),
             relative_path,
@@ -3289,6 +3332,7 @@ fn save_markdown_file(
     let metadata = fs::metadata(&canonical_file)
         .map_err(|error| VaultError::io("The Markdown file could not be inspected", error))?;
     let size_bytes = content.len() as u64;
+    index_changed_paths(root, std::slice::from_ref(&relative_path.to_owned()));
     Ok(vault_document(
         content,
         relative_path.to_owned(),
@@ -3430,6 +3474,7 @@ fn transition_markdown_lifecycle(
 
     let metadata = fs::metadata(&canonical_file)
         .map_err(|error| VaultError::io("The Markdown file could not be inspected", error))?;
+    index_changed_paths(root, std::slice::from_ref(&relative_path.to_owned()));
     Ok(vault_document(
         updated,
         relative_path.to_owned(),
@@ -3513,6 +3558,7 @@ fn create_markdown_file(
     let metadata = fs::metadata(&destination).map_err(|error| {
         VaultError::io("The created Markdown file could not be inspected", error)
     })?;
+    index_changed_paths(root, std::slice::from_ref(&relative_path));
     Ok(vault_document(
         content,
         relative_path,
@@ -3881,6 +3927,9 @@ fn rename_markdown_file_with_content(
     }
 
     commit_rename_transaction(&root, &entries, fail_after_installations)?;
+    // A rename rewrites links in an unknown set of other notes, so the changed
+    // set cannot be named — the whole vault is re-indexed instead.
+    index_whole_vault(&root);
     Ok(RenameOutcome {
         relative_path: new_relative_path,
         updated_files,
@@ -4617,6 +4666,75 @@ mod tests {
         assert!(!saved.content.contains("published_at: 2026-01-02T03:04:05Z"));
         assert!(saved.content.contains("updated_at:"));
         assert!(saved.content.ends_with("# Updated\n"));
+    }
+
+    /// Saves and creates update the index directly, without waiting for a
+    /// filesystem event to reach the app. That matters because self-written
+    /// changes will stop producing usable watcher events once the projection
+    /// starts recognising its own writes.
+    #[test]
+    fn indexes_its_own_writes_without_a_watcher() {
+        let vault = tempdir().expect("create fixture vault");
+        let root = vault.path();
+        crate::continuity::ensure_vault_identity(root).expect("create identity");
+        drop(crate::db::open(&crate::db::database_path(root)).expect("create database"));
+
+        create_markdown_file(root, &root.join("Harbor.md"), "# Harbor\n").expect("create note");
+        assert!(indexed_body(root, "Harbor.md")
+            .expect("a created note should be indexed immediately")
+            .contains("# Harbor"),);
+
+        let saved = read_markdown_file(root, "Harbor.md").expect("read back");
+        save_markdown_file(root, "Harbor.md", "# Harbor\n\nEdited\n", &saved.content)
+            .expect("save note");
+        assert!(
+            indexed_body(root, "Harbor.md")
+                .expect("a saved note should still be indexed")
+                .contains("Edited"),
+            "a saved note should be indexed immediately"
+        );
+    }
+
+    /// A rename rewrites links in other notes, so the index has to follow both
+    /// the moved note and every note that pointed at it.
+    #[test]
+    fn reindexes_the_vault_after_a_rename_rewrites_links() {
+        let vault = tempdir().expect("create fixture vault");
+        let root = vault.path();
+        crate::continuity::ensure_vault_identity(root).expect("create identity");
+        drop(crate::db::open(&crate::db::database_path(root)).expect("create database"));
+        create_markdown_file(root, &root.join("Harbor.md"), "# Harbor\n").expect("create target");
+        create_markdown_file(root, &root.join("Source.md"), "[[Harbor]]\n").expect("create source");
+
+        rename_markdown_file(root, "Harbor.md", &root.join("Anchorage.md"), None)
+            .expect("rename target");
+
+        assert_eq!(indexed_body(root, "Harbor.md"), None, "old path is gone");
+        assert!(
+            indexed_body(root, "Anchorage.md").is_some(),
+            "new path is in"
+        );
+        let connection = crate::db::open(&crate::db::database_path(root)).expect("open database");
+        let (target_raw, resolution): (String, String) = connection
+            .query_row("SELECT target_raw, resolution FROM links", [], |row| {
+                Ok((row.get(0)?, row.get(1)?))
+            })
+            .expect("read the rewritten link");
+        assert_eq!(target_raw, "Anchorage");
+        // A root-level note is addressable as a path, which outranks the
+        // filename rule.
+        assert_eq!(resolution, "path");
+    }
+
+    fn indexed_body(root: &std::path::Path, relative_path: &str) -> Option<String> {
+        let connection = crate::db::open(&crate::db::database_path(root)).expect("open database");
+        connection
+            .query_row(
+                "SELECT body FROM documents WHERE relative_path = ?1",
+                [relative_path],
+                |row| row.get(0),
+            )
+            .ok()
     }
 
     /// The database must not disagree with the scan about any note. Both read

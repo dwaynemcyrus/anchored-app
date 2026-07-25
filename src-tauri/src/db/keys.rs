@@ -82,7 +82,10 @@ mod tests {
     fn resolves_a_link_past_its_heading_or_block_anchor() {
         use super::link_target_key;
 
-        assert_eq!(link_target_key("Markdown Guide#Frontmatter"), "markdown guide");
+        assert_eq!(
+            link_target_key("Markdown Guide#Frontmatter"),
+            "markdown guide"
+        );
         assert_eq!(link_target_key("Notes/Harbor#^block-id"), "notes/harbor");
         assert_eq!(link_target_key("  Harbor  "), "harbor");
         assert_eq!(link_target_key("Harbor"), "harbor");
