@@ -2,12 +2,13 @@ import {
   DEFAULT_MARKDOWN_SETTINGS,
   type EditorFontSize,
   type EditorLineLength,
+  type FrontmatterValidationSettings,
   type MarkdownSettings,
 } from "./types";
 import { isThemeId } from "../theme/types";
 
 const STORAGE_KEY = "anchored.markdown-settings.v1";
-const STORAGE_VERSION = 5;
+const STORAGE_VERSION = 6;
 
 type SettingsStorage = Pick<Storage, "getItem" | "setItem">;
 
@@ -23,6 +24,16 @@ function isEditorLineLength(value: unknown): value is EditorLineLength {
   return value === 48 || value === 56 || value === 64 || value === 72;
 }
 
+function isFrontmatterValidationSettings(
+  value: unknown,
+): value is FrontmatterValidationSettings {
+  return (
+    !!value &&
+    typeof value === "object" &&
+    isBoolean((value as Partial<FrontmatterValidationSettings>).enabled)
+  );
+}
+
 function parseSettings(value: unknown): MarkdownSettings | null {
   if (!value || typeof value !== "object") return null;
   const candidate = value as Partial<MarkdownSettings> & { version?: unknown };
@@ -31,18 +42,23 @@ function parseSettings(value: unknown): MarkdownSettings | null {
       candidate.version !== 2 &&
       candidate.version !== 3 &&
       candidate.version !== 4 &&
+      candidate.version !== 5 &&
       candidate.version !== STORAGE_VERSION) ||
     !isBoolean(candidate.autoLinkUrls) ||
     !isBoolean(candidate.emoji) ||
     !isBoolean(candidate.mermaid) ||
     !isBoolean(candidate.smartTypography) ||
     !isBoolean(candidate.syntaxHighlighting) ||
-    (candidate.version === STORAGE_VERSION &&
+    ((candidate.version === 5 || candidate.version === STORAGE_VERSION) &&
       !isEditorFontSize(candidate.editorFontSize)) ||
-    (candidate.version === STORAGE_VERSION &&
+    ((candidate.version === 5 || candidate.version === STORAGE_VERSION) &&
       !isEditorLineLength(candidate.editorLineLength)) ||
-    ((candidate.version === 4 || candidate.version === STORAGE_VERSION) &&
+    ((candidate.version === 4 ||
+      candidate.version === 5 ||
+      candidate.version === STORAGE_VERSION) &&
       !isBoolean(candidate.updateTypeOnExternalMove)) ||
+    (candidate.version === STORAGE_VERSION &&
+      !isFrontmatterValidationSettings(candidate.frontmatterValidation)) ||
     (candidate.theme !== undefined && !isThemeId(candidate.theme))
   ) {
     return null;
@@ -54,20 +70,26 @@ function parseSettings(value: unknown): MarkdownSettings | null {
   return {
     autoLinkUrls: candidate.autoLinkUrls,
     backslashLineBreaks:
-      candidate.version === STORAGE_VERSION
+      candidate.version === 5 || candidate.version === STORAGE_VERSION
         ? candidate.backslashLineBreaks === true
         : DEFAULT_MARKDOWN_SETTINGS.backslashLineBreaks,
     editorFontSize,
     editorLineLength:
-      candidate.version === STORAGE_VERSION &&
+      (candidate.version === 5 || candidate.version === STORAGE_VERSION) &&
       isEditorLineLength(candidate.editorLineLength)
         ? candidate.editorLineLength
         : DEFAULT_MARKDOWN_SETTINGS.editorLineLength,
     emoji: candidate.emoji,
+    frontmatterValidation:
+      candidate.version === STORAGE_VERSION &&
+      isFrontmatterValidationSettings(candidate.frontmatterValidation)
+        ? candidate.frontmatterValidation
+        : DEFAULT_MARKDOWN_SETTINGS.frontmatterValidation,
     mermaid: candidate.mermaid,
     showFileExtensions:
       candidate.version === 3 ||
       candidate.version === 4 ||
+      candidate.version === 5 ||
       candidate.version === STORAGE_VERSION
         ? candidate.showFileExtensions === true
         : DEFAULT_MARKDOWN_SETTINGS.showFileExtensions,
@@ -77,7 +99,9 @@ function parseSettings(value: unknown): MarkdownSettings | null {
       ? candidate.theme
       : DEFAULT_MARKDOWN_SETTINGS.theme,
     updateTypeOnExternalMove:
-      candidate.version === 4 || candidate.version === STORAGE_VERSION
+      candidate.version === 4 ||
+      candidate.version === 5 ||
+      candidate.version === STORAGE_VERSION
         ? candidate.updateTypeOnExternalMove === true
         : DEFAULT_MARKDOWN_SETTINGS.updateTypeOnExternalMove,
   };

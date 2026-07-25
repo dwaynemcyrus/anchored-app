@@ -71,6 +71,7 @@ import {
   DEFAULT_MARKDOWN_SETTINGS,
   type MarkdownSettings,
 } from "./markdown/types";
+import { lintFrontmatter } from "./markdown/frontmatterLint";
 import { applyTheme } from "./theme/apply";
 import {
   hasNonUnixLineEndings,
@@ -137,6 +138,7 @@ import { saveConflictSnapshot } from "./conflictSnapshots";
 
 const ACTIVITY_REFRESH_INTERVAL_MS = 60_000;
 const MINOR_NOTICE_DURATION_MS = 12_000;
+const FRONTMATTER_LINT_NOTIFICATION_DELAY_MS = 1_500;
 
 type DocumentLoadState =
   | { status: "idle" }
@@ -474,6 +476,27 @@ export function App() {
     },
     [addHistoryEntry],
   );
+
+  useEffect(() => {
+    if (!markdownSettings.frontmatterValidation.enabled) return;
+    if (!activeDocument?.sourceText) return;
+    const document = activeDocument;
+
+    const timeout = window.setTimeout(() => {
+      const diagnostics = lintFrontmatter(document.sourceText ?? "");
+      if (diagnostics.length === 0) return;
+      const summary =
+        diagnostics.length === 1
+          ? diagnostics[0].message
+          : `${diagnostics.length} frontmatter issues, including: ${diagnostics[0].message}`;
+      addHistoryEntry(`${document.name}: ${summary}`, {
+        kind: "frontmatter",
+        sourceId: document.id,
+      });
+    }, FRONTMATTER_LINT_NOTIFICATION_DELAY_MS);
+
+    return () => window.clearTimeout(timeout);
+  }, [activeDocument, addHistoryEntry, markdownSettings.frontmatterValidation.enabled]);
 
   useEffect(() => {
     const activeNoticeIds = new Set(vaultNotices.map((notice) => notice.id));

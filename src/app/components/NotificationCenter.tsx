@@ -18,6 +18,7 @@ type NotificationCenterProps = {
 const KIND_LABELS: Record<NotificationKind, string> = {
   conflict: "Conflict",
   error: "Error",
+  frontmatter: "Frontmatter",
   identity: "Identity",
   link: "Link",
   rename: "Rename",

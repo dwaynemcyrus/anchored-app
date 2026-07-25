@@ -113,6 +113,56 @@ describe("Markdown settings", () => {
     expect(loadMarkdownSettings(target).editorLineLength).toBe(72);
   });
 
+  it("defaults frontmatter validation on for version five settings without it", () => {
+    const target = storage();
+    target.setItem(
+      "anchored.markdown-settings.v1",
+      JSON.stringify({
+        version: 5,
+        autoLinkUrls: true,
+        editorFontSize: 14,
+        editorLineLength: 64,
+        emoji: true,
+        mermaid: true,
+        showFileExtensions: false,
+        smartTypography: true,
+        syntaxHighlighting: true,
+        theme: "anchored",
+        updateTypeOnExternalMove: true,
+      }),
+    );
+
+    expect(loadMarkdownSettings(target).frontmatterValidation).toEqual({
+      enabled: true,
+    });
+  });
+
+  it("loads frontmatter validation from version six settings", () => {
+    const target = storage();
+    target.setItem(
+      "anchored.markdown-settings.v1",
+      JSON.stringify({
+        version: 6,
+        autoLinkUrls: true,
+        backslashLineBreaks: true,
+        editorFontSize: 14,
+        editorLineLength: 64,
+        emoji: true,
+        frontmatterValidation: { enabled: false },
+        mermaid: true,
+        showFileExtensions: false,
+        smartTypography: true,
+        syntaxHighlighting: true,
+        theme: "anchored",
+        updateTypeOnExternalMove: true,
+      }),
+    );
+
+    expect(loadMarkdownSettings(target).frontmatterValidation).toEqual({
+      enabled: false,
+    });
+  });
+
   it("rejects an unknown theme and falls back to the default", () => {
     const target = storage();
     target.setItem(

@@ -284,6 +284,30 @@ export function SettingsModal({
           </label>
         </section>
         <section className="settings-section">
+          <h3>Frontmatter validation</h3>
+          <p>
+            Warn about malformed frontmatter YAML while typing &mdash;
+            duplicate keys, missing delimiters, and invalid structure.
+            Warnings never block saving.
+          </p>
+          <label className="settings-toggle">
+            <input
+              checked={markdownSettings.frontmatterValidation.enabled}
+              type="checkbox"
+              onChange={(event) =>
+                onMarkdownSettingsChange({
+                  ...markdownSettings,
+                  frontmatterValidation: {
+                    ...markdownSettings.frontmatterValidation,
+                    enabled: event.target.checked,
+                  },
+                })
+              }
+            />
+            <span>Validate frontmatter YAML</span>
+          </label>
+        </section>
+        <section className="settings-section">
           <h3>Frontmatter timestamps</h3>
           <p>
             Normalize exact timestamp values to RFC 3339 with your local offset,
