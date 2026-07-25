@@ -2,6 +2,7 @@ import {
   lazy,
   Suspense,
   useEffect,
+  useMemo,
   useRef,
   useState,
   type FormEvent,
@@ -11,6 +12,7 @@ import {
 import type { AnchoredDocument } from "../documents";
 import { displayFileName } from "../fileTypes";
 import type { WikilinkCandidate } from "../linkCandidates";
+import { lintFrontmatter } from "../markdown/frontmatterLint";
 import type { MarkdownSettings } from "../markdown/types";
 import { Backlinks } from "./Backlinks";
 import type { EditorCursorPosition } from "./MarkdownEditor";
@@ -162,6 +164,14 @@ export function EditorSurface({
   const displayName = document
     ? displayFileName(document.name, markdownSettings.showFileExtensions)
     : "";
+  const frontmatterDiagnostics = useMemo(
+    () =>
+      markdownSettings.frontmatterValidation.enabled &&
+      document?.sourceText !== undefined
+        ? lintFrontmatter(document.sourceText)
+        : [],
+    [document?.sourceText, markdownSettings.frontmatterValidation.enabled],
+  );
   if (!document) {
     return (
       <main className="editor-surface">
@@ -273,6 +283,21 @@ export function EditorSurface({
             </button>
           )}
         </span>
+        {frontmatterDiagnostics.length > 0 ? (
+          <details className="editor-surface__frontmatter-status">
+            <summary>
+              {frontmatterDiagnostics.length} frontmatter issue
+              {frontmatterDiagnostics.length === 1 ? "" : "s"}
+            </summary>
+            <ul>
+              {frontmatterDiagnostics.map((diagnostic, index) => (
+                <li key={`${diagnostic.rule}-${index}`}>
+                  {diagnostic.message}
+                </li>
+              ))}
+            </ul>
+          </details>
+        ) : null}
         <div className="editor-surface__actions">
           {document.relativePath && !archived ? (
             <button
@@ -465,6 +490,9 @@ export function EditorSurface({
                 editorLineLength={markdownSettings.editorLineLength}
                 findRequest={findRequest}
                 focusAtBodyStart={focusDocumentId === document.id}
+                frontmatterValidationEnabled={
+                  markdownSettings.frontmatterValidation.enabled
+                }
                 label={`${displayName} Markdown editor`}
                 value={document.sourceText}
                 wikilinkCandidates={wikilinkCandidates}

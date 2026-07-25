@@ -15,7 +15,14 @@ const MAX_SCOPE_LENGTH = 128;
 type NotificationStorage = Pick<Storage, "getItem" | "setItem">;
 
 export type NotificationKind =
-  "conflict" | "error" | "identity" | "link" | "rename" | "trash" | "vault";
+  | "conflict"
+  | "error"
+  | "frontmatter"
+  | "identity"
+  | "link"
+  | "rename"
+  | "trash"
+  | "vault";
 
 export type NotificationHistoryEntry = {
   count: number;
@@ -52,6 +59,7 @@ function validKind(value: unknown): value is NotificationKind {
   return (
     value === "conflict" ||
     value === "error" ||
+    value === "frontmatter" ||
     value === "identity" ||
     value === "link" ||
     value === "rename" ||

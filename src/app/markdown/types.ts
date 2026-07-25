@@ -25,12 +25,17 @@ export const EDITOR_LINE_LENGTHS = [48, 56, 64, 72] as const;
 
 export type EditorLineLength = (typeof EDITOR_LINE_LENGTHS)[number];
 
+export type FrontmatterValidationSettings = {
+  enabled: boolean;
+};
+
 export type MarkdownSettings = {
   autoLinkUrls: boolean;
   backslashLineBreaks: boolean;
   editorFontSize: EditorFontSize;
   editorLineLength: EditorLineLength;
   emoji: boolean;
+  frontmatterValidation: FrontmatterValidationSettings;
   mermaid: boolean;
   showFileExtensions: boolean;
   smartTypography: boolean;
@@ -45,6 +50,7 @@ export const DEFAULT_MARKDOWN_SETTINGS: MarkdownSettings = {
   editorFontSize: 14,
   editorLineLength: 64,
   emoji: true,
+  frontmatterValidation: { enabled: true },
   mermaid: true,
   showFileExtensions: false,
   smartTypography: true,

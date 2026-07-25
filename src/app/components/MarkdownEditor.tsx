@@ -27,6 +27,10 @@ import {
   anchoredMarkdownSyntaxHighlighting,
 } from "../markdown/editorLanguage";
 import {
+  frontmatterLintGutter,
+  frontmatterLinter,
+} from "../markdown/frontmatterLintExtension";
+import {
   activeAutoPairAt,
   addPairEffect,
   autoPairState,
@@ -53,6 +57,7 @@ type MarkdownEditorProps = {
   editorFontSize: EditorFontSize;
   editorLineLength?: EditorLineLength;
   findRequest: number;
+  frontmatterValidationEnabled?: boolean;
   label: string;
   value: string;
   wikilinkCandidates: WikilinkCandidate[];
@@ -74,6 +79,7 @@ export default function MarkdownEditor({
   editorFontSize,
   editorLineLength = 64,
   findRequest,
+  frontmatterValidationEnabled = true,
   label,
   value,
   wikilinkCandidates,
@@ -225,6 +231,9 @@ export default function MarkdownEditor({
           autoPairState,
           markdownEditorDecorations,
           frontMatterEditorDecorations,
+          ...(frontmatterValidationEnabled
+            ? [frontmatterLinter, frontmatterLintGutter]
+            : []),
           highlightSelectionMatches(),
           EditorView.lineWrapping,
           EditorView.contentAttributes.of({ "aria-label": label }),
@@ -448,7 +457,14 @@ export default function MarkdownEditor({
       editorRef.current = null;
       view.destroy();
     };
-  }, [autoFocus, documentId, focusAtBodyStart, focusAtEnd, label]);
+  }, [
+    autoFocus,
+    documentId,
+    focusAtBodyStart,
+    focusAtEnd,
+    frontmatterValidationEnabled,
+    label,
+  ]);
 
   useEffect(() => {
     const view = editorRef.current;
