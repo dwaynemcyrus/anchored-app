@@ -2214,6 +2214,7 @@ describe("App", () => {
           relativePath: "New.md",
         },
       ],
+      upsertedFolders: [],
       vaultId: "vault-1",
     });
     render(<App />);
@@ -2240,7 +2241,59 @@ describe("App", () => {
     expect(mockedRescanVault).not.toHaveBeenCalled();
   });
 
-  it("falls back to a full rescan when a watcher change is a new folder", async () => {
+  it("merges a new folder subtree into the file tree without a full rescan", async () => {
+    const user = userEvent.setup();
+    mockedSelectVault.mockResolvedValue({
+      files: [],
+      folders: [],
+      name: "My Vault",
+      vaultId: "vault-1",
+      warnings: noWarnings,
+    });
+    mockedRescanVaultPaths.mockResolvedValue({
+      removedPaths: [],
+      requiresFullRescan: false,
+      upsertedAssets: [],
+      upsertedFiles: [
+        {
+          name: "Child.md",
+          parent: "Nested",
+          relativePath: "Nested/Child.md",
+        },
+      ],
+      upsertedFolders: ["Nested"],
+      vaultId: "vault-1",
+    });
+    render(<App />);
+
+    await user.click(screen.getByRole("button", { name: "Open vault" }));
+    await user.click(
+      screen.getByRole("button", { name: "Open file explorer" }),
+    );
+    await user.click(screen.getByRole("button", { name: "Files" }));
+    await waitFor(() => expect(eventHandlers.has("vault-changed")).toBe(true));
+    await act(async () => {
+      eventHandlers.get("vault-changed")?.({
+        payload: {
+          vaultId: "vault-1",
+          changes: [{ kind: "created", relativePath: "Nested" }],
+        },
+      });
+    });
+
+    await waitFor(() =>
+      expect(mockedRescanVaultPaths).toHaveBeenCalledWith(["Nested"]),
+    );
+    expect(await screen.findByRole("button", { name: "Nested" })).toBeVisible();
+    // Newly-discovered folders start collapsed, same as any other folder.
+    await user.click(screen.getByRole("button", { name: "Expand Nested" }));
+    expect(
+      await screen.findByRole("button", { name: "Child.md" }),
+    ).toBeVisible();
+    expect(mockedRescanVault).not.toHaveBeenCalled();
+  });
+
+  it("falls back to a full rescan when the backend reports requiresFullRescan", async () => {
     const user = userEvent.setup();
     mockedSelectVault.mockResolvedValue({
       files: [],
@@ -2254,6 +2307,7 @@ describe("App", () => {
       requiresFullRescan: true,
       upsertedAssets: [],
       upsertedFiles: [],
+      upsertedFolders: [],
       vaultId: "vault-1",
     });
     mockedRescanVault.mockResolvedValue({

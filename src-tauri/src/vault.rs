@@ -102,9 +102,10 @@ pub struct VaultSnapshot {
 }
 
 /// A targeted update for a small set of relative paths, produced without
-/// walking the whole vault. `requires_full_rescan` is set instead of trying
-/// to enumerate a newly-appeared or newly-removed folder's contents; callers
-/// should fall back to a full `rescan_vault` in that case.
+/// walking the whole vault. A newly-appeared directory is scanned as its own
+/// subtree rather than triggering a full rescan; `requires_full_rescan` is
+/// reserved for a subtree that itself exceeds the safe scan limits, so
+/// callers should fall back to a full `rescan_vault` only in that case.
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct VaultPatch {
@@ -112,6 +113,7 @@ pub struct VaultPatch {
     pub requires_full_rescan: bool,
     pub upserted_assets: Vec<VaultAsset>,
     pub upserted_files: Vec<VaultFile>,
+    pub upserted_folders: Vec<String>,
     pub vault_id: String,
 }
 
@@ -1188,7 +1190,10 @@ fn build_vault_snapshot(
 }
 
 enum SinglePathScan {
-    Directory,
+    Directory {
+        canonical_path: PathBuf,
+        relative_path: String,
+    },
     File(Box<VaultPathEntry>),
     Removed,
 }
@@ -1242,7 +1247,26 @@ fn scan_single_vault_path(root: &Path, relative_path: &str) -> Result<SinglePath
         return Ok(SinglePathScan::Removed);
     }
     if metadata.is_dir() {
-        return Ok(SinglePathScan::Directory);
+        let canonical_directory = fs::canonicalize(&candidate)
+            .map_err(|error| VaultError::io("A vault folder could not be opened", error))?;
+        if !canonical_directory.starts_with(root) {
+            return Err(VaultError::invalid(
+                "A vault folder resolved outside the selected directory.",
+            ));
+        }
+        let canonical_relative_path = {
+            let relative = canonical_directory.strip_prefix(root).map_err(|_| {
+                VaultError::invalid("A vault folder could not be made relative to the vault root.")
+            })?;
+            let Some(relative_path) = relative.to_str() else {
+                return Ok(SinglePathScan::Removed);
+            };
+            relative_path.to_owned()
+        };
+        return Ok(SinglePathScan::Directory {
+            canonical_path: canonical_directory,
+            relative_path: canonical_relative_path,
+        });
     }
     if !metadata.is_file() {
         return Ok(SinglePathScan::Removed);
@@ -1319,18 +1343,38 @@ fn scan_vault_paths_patch(
     let mut removed_paths = Vec::new();
     let mut upserted_files = Vec::new();
     let mut upserted_assets = Vec::new();
+    let mut upserted_folders = Vec::new();
 
     for relative_path in relative_paths {
         match scan_single_vault_path(root, relative_path)? {
             SinglePathScan::Removed => removed_paths.push(relative_path.clone()),
-            SinglePathScan::Directory => {
-                return Ok(VaultPatch {
-                    removed_paths: Vec::new(),
-                    requires_full_rescan: true,
-                    upserted_assets: Vec::new(),
-                    upserted_files: Vec::new(),
-                    vault_id: vault_id.to_owned(),
-                });
+            SinglePathScan::Directory {
+                canonical_path,
+                relative_path: subtree_relative_path,
+            } => {
+                // A pathological subtree (too deep or too many entries) falls
+                // back to a full rescan instead of failing the whole batch —
+                // the same safety net this code already had, just triggered
+                // far less often now that an ordinary new folder is scanned
+                // directly.
+                match scan_vault_subtree(root, &subtree_relative_path, canonical_path) {
+                    Ok(subtree) => {
+                        upserted_folders.push(subtree_relative_path);
+                        upserted_folders.extend(subtree.folders);
+                        upserted_files.extend(subtree.files);
+                        upserted_assets.extend(subtree.assets);
+                    }
+                    Err(_) => {
+                        return Ok(VaultPatch {
+                            removed_paths: Vec::new(),
+                            requires_full_rescan: true,
+                            upserted_assets: Vec::new(),
+                            upserted_files: Vec::new(),
+                            upserted_folders: Vec::new(),
+                            vault_id: vault_id.to_owned(),
+                        });
+                    }
+                }
             }
             SinglePathScan::File(entry) => match *entry {
                 VaultPathEntry::Markdown(file) => upserted_files.push(file),
@@ -1347,12 +1391,15 @@ fn scan_vault_paths_patch(
     if !upserted_files.is_empty() {
         upsert_metadata_cache_entries(root, &mut upserted_files, cache)?;
     }
+    upserted_folders.sort_by_key(|path| path.to_lowercase());
+    upserted_folders.dedup();
 
     Ok(VaultPatch {
         removed_paths,
         requires_full_rescan: false,
         upserted_assets,
         upserted_files,
+        upserted_folders,
         vault_id: vault_id.to_owned(),
     })
 }
@@ -2408,15 +2455,25 @@ fn delete_empty_folder(root: &Path, folder_path: &str) -> Result<(), VaultError>
     sync_directory(parent)
 }
 
-fn scan_vault(root: &Path) -> Result<VaultSnapshot, VaultError> {
-    let root = canonical_vault_root(root)?;
-    let mut files = Vec::new();
-    let mut assets = Vec::new();
-    let mut folders = Vec::new();
-    let mut stack = vec![(root.clone(), 0_usize)];
-    let mut visited_entries = 0_usize;
-    let mut skipped_non_utf8_paths = 0_usize;
-    let mut skipped_symlinks = 0_usize;
+/// Shared directory-walk core used by both a full vault scan (seeded at the
+/// vault root, depth 0) and a single-subtree scan (seeded at some already-
+/// existing directory and its real depth from the vault root, so
+/// `MAX_VAULT_DEPTH`/`MAX_VAULT_ENTRIES` stay genuine absolute caps either
+/// way). `root` is always the vault root, used to compute every relative
+/// path and to bound canonicalized files with `starts_with`.
+#[allow(clippy::too_many_arguments)]
+fn walk_vault_subtree(
+    root: &Path,
+    start: PathBuf,
+    start_depth: usize,
+    files: &mut Vec<VaultFile>,
+    assets: &mut Vec<VaultAsset>,
+    folders: &mut Vec<String>,
+    visited_entries: &mut usize,
+    skipped_non_utf8_paths: &mut usize,
+    skipped_symlinks: &mut usize,
+) -> Result<(), VaultError> {
+    let mut stack = vec![(start, start_depth)];
 
     while let Some((directory, depth)) = stack.pop() {
         if depth > MAX_VAULT_DEPTH {
@@ -2438,8 +2495,8 @@ fn scan_vault(root: &Path) -> Result<VaultSnapshot, VaultError> {
             if depth == 0 && is_trash_component(&entry.file_name()) {
                 continue;
             }
-            visited_entries += 1;
-            if visited_entries > MAX_VAULT_ENTRIES {
+            *visited_entries += 1;
+            if *visited_entries > MAX_VAULT_ENTRIES {
                 return Err(VaultError::too_large());
             }
 
@@ -2448,12 +2505,12 @@ fn scan_vault(root: &Path) -> Result<VaultSnapshot, VaultError> {
                 .map_err(|error| VaultError::io("A vault entry could not be inspected", error))?;
 
             if file_type.is_symlink() {
-                skipped_symlinks += 1;
+                *skipped_symlinks += 1;
                 continue;
             }
 
             if file_type.is_dir() {
-                if let Ok(relative) = entry.path().strip_prefix(&root) {
+                if let Ok(relative) = entry.path().strip_prefix(root) {
                     if let Some(relative_path) = relative.to_str() {
                         folders.push(relative_path.to_owned());
                     }
@@ -2468,17 +2525,17 @@ fn scan_vault(root: &Path) -> Result<VaultSnapshot, VaultError> {
 
             let canonical_file = fs::canonicalize(entry.path())
                 .map_err(|error| VaultError::io("A Markdown file could not be opened", error))?;
-            if !canonical_file.starts_with(&root) {
+            if !canonical_file.starts_with(root) {
                 return Err(VaultError::invalid(
                     "A vault file resolved outside the selected directory.",
                 ));
             }
 
-            let relative = canonical_file.strip_prefix(&root).map_err(|_| {
+            let relative = canonical_file.strip_prefix(root).map_err(|_| {
                 VaultError::invalid("A vault file could not be made relative to the vault root.")
             })?;
             let Some(relative_path) = relative.to_str() else {
-                skipped_non_utf8_paths += 1;
+                *skipped_non_utf8_paths += 1;
                 continue;
             };
             let name = entry.file_name().to_string_lossy().into_owned();
@@ -2522,6 +2579,30 @@ fn scan_vault(root: &Path) -> Result<VaultSnapshot, VaultError> {
         }
     }
 
+    Ok(())
+}
+
+fn scan_vault(root: &Path) -> Result<VaultSnapshot, VaultError> {
+    let root = canonical_vault_root(root)?;
+    let mut files = Vec::new();
+    let mut assets = Vec::new();
+    let mut folders = Vec::new();
+    let mut visited_entries = 0_usize;
+    let mut skipped_non_utf8_paths = 0_usize;
+    let mut skipped_symlinks = 0_usize;
+
+    walk_vault_subtree(
+        &root,
+        root.clone(),
+        0,
+        &mut files,
+        &mut assets,
+        &mut folders,
+        &mut visited_entries,
+        &mut skipped_non_utf8_paths,
+        &mut skipped_symlinks,
+    )?;
+
     files.sort_by(|left, right| {
         left.relative_path
             .to_lowercase()
@@ -2550,6 +2631,52 @@ fn scan_vault(root: &Path) -> Result<VaultSnapshot, VaultError> {
             skipped_non_utf8_paths,
             skipped_symlinks,
         },
+    })
+}
+
+struct VaultSubtreeScan {
+    assets: Vec<VaultAsset>,
+    files: Vec<VaultFile>,
+    folders: Vec<String>,
+}
+
+/// Scans a single already-existing subtree (a newly-appeared folder found by
+/// `scan_single_vault_path`) instead of walking the whole vault. `start_depth`
+/// must be the subtree's real depth from the vault root — the number of path
+/// components in `subtree_relative_path` — so the shared depth/entry limits
+/// stay meaningful absolute caps.
+fn scan_vault_subtree(
+    root: &Path,
+    subtree_relative_path: &str,
+    start: PathBuf,
+) -> Result<VaultSubtreeScan, VaultError> {
+    let start_depth = subtree_relative_path
+        .split('/')
+        .filter(|segment| !segment.is_empty())
+        .count();
+    let mut files = Vec::new();
+    let mut assets = Vec::new();
+    let mut folders = Vec::new();
+    let mut visited_entries = 0_usize;
+    let mut skipped_non_utf8_paths = 0_usize;
+    let mut skipped_symlinks = 0_usize;
+
+    walk_vault_subtree(
+        root,
+        start,
+        start_depth,
+        &mut files,
+        &mut assets,
+        &mut folders,
+        &mut visited_entries,
+        &mut skipped_non_utf8_paths,
+        &mut skipped_symlinks,
+    )?;
+
+    Ok(VaultSubtreeScan {
+        assets,
+        files,
+        folders,
     })
 }
 
@@ -4293,7 +4420,8 @@ mod tests {
         validate_folder_name, validate_markdown_filename, validate_new_vault_name,
         vault_tree_signature, write_rename_journal, LifecycleTransition, RenameJournal,
         RenameJournalEntry, RenameJournalPhase, RenameOutcome, TimestampMigrationTarget,
-        VaultMetadataCache, MAX_MARKDOWN_FILE_BYTES, MAX_SEARCH_RESULTS, RENAME_JOURNAL_NAME,
+        VaultMetadataCache, MAX_MARKDOWN_FILE_BYTES, MAX_SEARCH_RESULTS, MAX_VAULT_DEPTH,
+        RENAME_JOURNAL_NAME,
     };
 
     #[test]
@@ -4653,7 +4781,7 @@ mod tests {
     }
 
     #[test]
-    fn incremental_patch_requests_a_full_rescan_for_a_new_folder() {
+    fn incremental_patch_scans_a_new_folder_subtree() {
         let (vault, cache) = seeded_patch_fixture();
         fs::create_dir(vault.path().join("Notes/Nested")).expect("create nested folder");
         fs::write(vault.path().join("Notes/Nested/Child.md"), "# Child note")
@@ -4667,10 +4795,84 @@ mod tests {
         )
         .expect("patch a directory path");
 
+        assert!(!patch.requires_full_rescan);
+        assert!(patch.removed_paths.is_empty());
+        assert_eq!(patch.upserted_folders, vec!["Notes/Nested".to_owned()]);
+        assert_eq!(patch.upserted_files.len(), 1);
+        assert_eq!(
+            patch.upserted_files[0].relative_path,
+            "Notes/Nested/Child.md"
+        );
+        assert!(patch.upserted_assets.is_empty());
+    }
+
+    #[test]
+    fn incremental_patch_scans_a_multi_level_new_folder_subtree() {
+        let (vault, cache) = seeded_patch_fixture();
+        fs::create_dir_all(vault.path().join("Notes/Nested/Deeper"))
+            .expect("create nested folders");
+        fs::write(vault.path().join("Notes/Nested/Child.md"), "# Child note")
+            .expect("write nested note");
+        fs::write(
+            vault.path().join("Notes/Nested/Deeper/Grandchild.md"),
+            "# Grandchild note",
+        )
+        .expect("write deeper nested note");
+        fs::write(vault.path().join("Notes/Nested/asset.txt"), "not markdown")
+            .expect("write nested asset");
+
+        let patch = scan_vault_paths_patch(
+            vault.path(),
+            "test-vault",
+            &["Notes/Nested".to_owned()],
+            &cache,
+        )
+        .expect("patch a multi-level directory path");
+
+        assert!(!patch.requires_full_rescan);
+        let mut folders = patch.upserted_folders.clone();
+        folders.sort();
+        assert_eq!(folders, vec!["Notes/Nested", "Notes/Nested/Deeper"]);
+        let mut file_paths = patch
+            .upserted_files
+            .iter()
+            .map(|file| file.relative_path.clone())
+            .collect::<Vec<_>>();
+        file_paths.sort();
+        assert_eq!(
+            file_paths,
+            vec!["Notes/Nested/Child.md", "Notes/Nested/Deeper/Grandchild.md"]
+        );
+        assert_eq!(patch.upserted_assets.len(), 1);
+        assert_eq!(
+            patch.upserted_assets[0].relative_path,
+            "Notes/Nested/asset.txt"
+        );
+    }
+
+    #[test]
+    fn incremental_patch_falls_back_to_full_rescan_when_a_subtree_is_too_deep() {
+        let (vault, cache) = seeded_patch_fixture();
+        let mut nested = vault.path().join("Notes/Nested");
+        fs::create_dir(&nested).expect("create nested folder");
+        for index in 0..MAX_VAULT_DEPTH {
+            nested = nested.join(format!("Level{index}"));
+            fs::create_dir(&nested).expect("create deeply nested folder");
+        }
+
+        let patch = scan_vault_paths_patch(
+            vault.path(),
+            "test-vault",
+            &["Notes/Nested".to_owned()],
+            &cache,
+        )
+        .expect("patch an over-deep directory path without erroring");
+
         assert!(patch.requires_full_rescan);
         assert!(patch.removed_paths.is_empty());
         assert!(patch.upserted_files.is_empty());
         assert!(patch.upserted_assets.is_empty());
+        assert!(patch.upserted_folders.is_empty());
     }
 
     #[test]

@@ -6,6 +6,13 @@ Git commit. The format follows [Keep a Changelog], and releases follow
 
 ## [Unreleased]
 
+### Changed
+
+- A newly-created folder reported by the native watcher is now scanned
+  directly and merged into the file tree, instead of always falling back to
+  a full vault rescan. A subtree that is itself too deep or too large still
+  falls back to a full rescan.
+
 ## [0.1.3-alpha] - 2026-07-25
 
 ### Added
