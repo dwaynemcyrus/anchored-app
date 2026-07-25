@@ -165,6 +165,19 @@ fn write_projection(
     document_id: i64,
     revision: i64,
 ) -> Result<(), VaultError> {
+    // Kept before the file is touched, not after. Writing an identity is a
+    // small change, but it is still Anchored changing a file the user did not
+    // ask it to change, and the version before it must stay recoverable.
+    let previous = std::fs::read_to_string(path).unwrap_or_default();
+    documents::record_version(
+        connection,
+        document_id,
+        revision,
+        &previous,
+        &import::content_hash(previous.as_bytes()),
+        documents::ChangeOrigin::Anchored,
+    )?;
+
     crate::vault::write_markdown_atomically(path, content)?;
 
     let metadata = std::fs::metadata(path)
@@ -395,6 +408,24 @@ mod tests {
         assert!(updated.contains("tags:   [one,  two]"), "spacing survives");
         assert!(updated.contains("\n\nstatus: inbox"), "blank lines survive");
         assert!(updated.contains("# Harbor\n"));
+    }
+
+    /// Writing an identity changes a file the user did not ask to change, so
+    /// what it held first has to stay recoverable.
+    #[test]
+    fn keeps_the_version_that_preceded_the_identity_it_wrote() {
+        let source = "# Harbor\n\nBody\n";
+        let (directory, connection) = vault(&[("Harbor.md", source)]);
+
+        project_pending_identities(directory.path(), &connection).expect("project");
+
+        let (content, origin): (String, String) = connection
+            .query_row("SELECT content, origin FROM document_versions", [], |row| {
+                Ok((row.get(0)?, row.get(1)?))
+            })
+            .expect("a version should be recorded");
+        assert_eq!(content, source, "the note as it was before Anchored wrote");
+        assert_eq!(origin, "anchored");
     }
 
     #[test]

@@ -65,6 +65,13 @@ pub(crate) fn upsert(
         _ => document.uuid.clone(),
     };
 
+    // Whatever the row is about to be replaced with, keep what it held first.
+    // Anything reaching the importer is a change Anchored did not make — its
+    // own writes are recognised and skipped before this point.
+    if let Some((id, _)) = &existing {
+        snapshot_replaced_content(connection, *id, &document.content_hash)?;
+    }
+
     let created = existing.is_none();
     let id = match existing {
         Some((id, _)) => {
@@ -152,6 +159,43 @@ pub(crate) fn upsert(
     replace_aliases(connection, id, document)?;
     replace_links(connection, id, document)?;
     Ok(Upserted { id, created })
+}
+
+/// Keeps a copy of what a note held before an incoming change replaces it.
+///
+/// Skipped when the content is unchanged, so re-importing a note that only
+/// moved, or whose metadata was touched, does not fill the history with
+/// identical copies.
+fn snapshot_replaced_content(
+    connection: &Connection,
+    document_id: i64,
+    incoming_hash: &str,
+) -> Result<(), VaultError> {
+    let current: Option<(String, String, String, i64)> = connection
+        .query_row(
+            "SELECT frontmatter_text, body, content_hash, revision
+             FROM documents WHERE id = ?1",
+            params![document_id],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+        )
+        .optional()
+        .map_err(map_error("A note version could not be read"))?;
+
+    let Some((frontmatter, body, hash, revision)) = current else {
+        return Ok(());
+    };
+    if hash == incoming_hash {
+        return Ok(());
+    }
+
+    record_version(
+        connection,
+        document_id,
+        revision,
+        &format!("{frontmatter}{body}"),
+        &hash,
+        ChangeOrigin::ExternalFile,
+    )
 }
 
 /// Resolves only the links leaving one document. Used after an edit that did
@@ -255,6 +299,76 @@ pub(crate) fn resolve_links(connection: &Connection) -> Result<(), VaultError> {
         .execute(RESOLVE_LINKS_SQL, params![None::<i64>])
         .map(drop)
         .map_err(map_error("Document links could not be resolved"))
+}
+
+/// Where a change came from. Recorded with every version so a user can tell
+/// an edit they made in Anchored from one that arrived through another editor
+/// or a Git checkout.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ChangeOrigin {
+    /// Imported from the file, which is any change Anchored did not make.
+    ExternalFile,
+    /// Written by Anchored's own projection.
+    Anchored,
+}
+
+impl ChangeOrigin {
+    fn as_str(self) -> &'static str {
+        match self {
+            ChangeOrigin::ExternalFile => "external_file",
+            ChangeOrigin::Anchored => "anchored",
+        }
+    }
+}
+
+/// How many versions of a note are kept. Enough to recover from a bad edit or
+/// a mistaken Git checkout, few enough that a large note edited all day cannot
+/// grow the database without bound.
+const MAX_VERSIONS_PER_DOCUMENT: usize = 20;
+
+/// Records what a note held before it is overwritten, then drops the oldest
+/// versions beyond the retention limit.
+///
+/// Called before the update, not after, so the content stored is the version
+/// being replaced rather than the one replacing it.
+pub(crate) fn record_version(
+    connection: &Connection,
+    document_id: i64,
+    revision: i64,
+    content: &str,
+    content_hash: &str,
+    origin: ChangeOrigin,
+) -> Result<(), VaultError> {
+    connection
+        .execute(
+            "INSERT INTO document_versions (
+                document_id, revision, content, content_hash, origin, created_millis
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            params![
+                document_id,
+                revision,
+                content,
+                content_hash,
+                origin.as_str(),
+                now_millis(),
+            ],
+        )
+        .map_err(map_error("A note version could not be recorded"))?;
+
+    connection
+        .execute(
+            "DELETE FROM document_versions
+             WHERE document_id = ?1
+               AND id NOT IN (
+                    SELECT id FROM document_versions
+                    WHERE document_id = ?1
+                    ORDER BY revision DESC, id DESC
+                    LIMIT ?2
+               )",
+            params![document_id, MAX_VERSIONS_PER_DOCUMENT as i64],
+        )
+        .map(drop)
+        .map_err(map_error("Old note versions could not be pruned"))
 }
 
 /// How a document's row and its file currently stand relative to each other.
@@ -796,6 +910,108 @@ mod tests {
             .expect("query")
             .collect::<Result<_, _>>()
             .expect("collect")
+    }
+
+    fn versions(connection: &Connection) -> Vec<(String, String)> {
+        connection
+            .prepare("SELECT content, origin FROM document_versions ORDER BY id")
+            .expect("prepare")
+            .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))
+            .expect("query")
+            .collect::<Result<_, _>>()
+            .expect("collect")
+    }
+
+    /// What a note held before a change must survive the change, or an edit
+    /// arriving from another program is unrecoverable.
+    #[test]
+    fn keeps_what_a_note_held_before_it_was_replaced() {
+        let (_directory, connection) = database();
+        upsert(&connection, &import_note("Notes/Harbor.md", b"# Harbor\n")).expect("first import");
+
+        upsert(
+            &connection,
+            &import_note("Notes/Harbor.md", b"# Harbor rewritten\n"),
+        )
+        .expect("second import");
+
+        assert_eq!(
+            versions(&connection),
+            vec![("# Harbor\n".to_owned(), "external_file".to_owned())],
+            "the replaced content is kept, not the replacement"
+        );
+    }
+
+    #[test]
+    fn does_not_record_a_version_when_nothing_changed() {
+        let (_directory, connection) = database();
+        let source = b"# Harbor\n";
+        upsert(&connection, &import_note("Notes/Harbor.md", source)).expect("first import");
+
+        upsert(&connection, &import_note("Notes/Harbor.md", source)).expect("re-import");
+
+        assert!(
+            versions(&connection).is_empty(),
+            "re-importing identical content must not fill the history"
+        );
+    }
+
+    #[test]
+    fn keeps_a_version_of_a_note_that_moved_and_changed() {
+        let (_directory, connection) = database();
+        let id = format!("---\nid: {ID}\n---\n");
+        upsert(
+            &connection,
+            &import_note("Notes/Harbor.md", format!("{id}# Harbor\n").as_bytes()),
+        )
+        .expect("first import");
+
+        upsert(
+            &connection,
+            &import_note(
+                "Archive/Harbor.md",
+                format!("{id}# Harbor moved\n").as_bytes(),
+            ),
+        )
+        .expect("import at the new path");
+
+        assert_eq!(
+            versions(&connection).len(),
+            1,
+            "a move that also edits is kept"
+        );
+    }
+
+    #[test]
+    fn keeps_history_bounded() {
+        let (_directory, connection) = database();
+        for revision in 0..30 {
+            let content = format!("# Harbor {revision}\n");
+            upsert(
+                &connection,
+                &import_note("Notes/Harbor.md", content.as_bytes()),
+            )
+            .expect("import");
+        }
+
+        let kept = versions(&connection);
+        assert_eq!(kept.len(), super::MAX_VERSIONS_PER_DOCUMENT);
+        assert_eq!(
+            kept.last().map(|(content, _)| content.as_str()),
+            Some("# Harbor 28\n"),
+            "the most recent replaced version is the one kept"
+        );
+    }
+
+    #[test]
+    fn drops_a_notes_history_when_the_note_is_removed() {
+        let (_directory, connection) = database();
+        upsert(&connection, &import_note("Notes/Gone.md", b"# One\n")).expect("import");
+        upsert(&connection, &import_note("Notes/Gone.md", b"# Two\n")).expect("import again");
+
+        delete_missing(&connection, &[]).expect("remove every document");
+
+        assert!(versions(&connection).is_empty());
     }
 
     #[test]
