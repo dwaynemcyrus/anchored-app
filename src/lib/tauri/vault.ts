@@ -62,6 +62,7 @@ export type VaultPatch = {
   requiresFullRescan: boolean;
   upsertedAssets: VaultAsset[];
   upsertedFiles: VaultFile[];
+  upsertedFolders: string[];
   vaultId: string;
 };
 

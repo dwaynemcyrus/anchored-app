@@ -225,3 +225,18 @@ export function folderPathsFromVault(snapshot: VaultSnapshot): string[] {
     left.localeCompare(right, undefined, { sensitivity: "base" }),
   );
 }
+
+/// Merges newly-discovered folder paths (from a targeted `VaultPatch`) into
+/// the current folder list, using the same dedupe/sort as
+/// `folderPathsFromVault` so a patch and a full snapshot produce the same
+/// ordering.
+export function mergeFolderPaths(
+  currentFolders: string[],
+  newFolders: string[],
+): string[] {
+  if (newFolders.length === 0) return currentFolders;
+  return Array.from(new Set([...currentFolders, ...newFolders])).sort(
+    (left, right) =>
+      left.localeCompare(right, undefined, { sensitivity: "base" }),
+  );
+}

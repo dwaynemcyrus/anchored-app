@@ -5,6 +5,7 @@ import {
   applyVaultPatch,
   documentsFromVault,
   mergeDocumentsFromVault,
+  mergeFolderPaths,
   newNoteFilename,
 } from "./documents";
 
@@ -217,5 +218,20 @@ describe("vault documents", () => {
       relativePath: "Dirty.md",
       sourceText: "Unsaved local edit",
     });
+  });
+
+  it("merges new folder paths in with the existing sort order", () => {
+    const merged = mergeFolderPaths(
+      ["Archive", "Notes"],
+      ["Notes/Nested", "archive"],
+    );
+
+    expect(merged).toEqual(["Archive", "archive", "Notes", "Notes/Nested"]);
+  });
+
+  it("returns the same folder list when there is nothing new to merge", () => {
+    const current = ["Notes"];
+
+    expect(mergeFolderPaths(current, [])).toBe(current);
   });
 });

@@ -39,6 +39,7 @@ import {
   createUntitledDocument,
   documentsFromVault,
   folderPathsFromVault,
+  mergeFolderPaths,
   mergeDocumentsFromVault,
   type AnchoredDocument,
   type DocumentSaveState,
@@ -1425,6 +1426,11 @@ export function App() {
         return;
       }
       setDocuments((current) => applyVaultPatch(current, patch));
+      if (patch.upsertedFolders.length > 0) {
+        setFolderPaths((current) =>
+          mergeFolderPaths(current, patch.upsertedFolders),
+        );
+      }
     },
     [addHistoryEntry, addVaultNotice, refreshVault, vaultSelected],
   );
