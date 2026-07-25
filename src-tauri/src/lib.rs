@@ -64,6 +64,7 @@ pub fn run() {
             vault::save_vault_file,
             vault::create_vault_conflict_copy,
             vault::list_vault_conflicts,
+            vault::list_vault_note_versions,
             vault::archive_vault_file,
             vault::restore_archived_vault_file,
             vault::move_vault_file_to_workbench,

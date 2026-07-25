@@ -89,6 +89,51 @@ pub(crate) fn list(connection: &Connection) -> Result<Vec<VaultConflict>, VaultE
         .map_err(map_error("Vault conflicts could not be read"))
 }
 
+/// One earlier copy of a note, newest first when listed.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NoteVersion {
+    pub revision: i64,
+    pub content: String,
+    /// `anchored` for a change Anchored made, `external_file` for one that
+    /// arrived from another program or a Git checkout.
+    pub origin: String,
+    pub created_millis: i64,
+}
+
+/// The kept versions of one note, newest first.
+pub(crate) fn versions_for(
+    connection: &Connection,
+    relative_path: &str,
+) -> Result<Vec<NoteVersion>, VaultError> {
+    let mut statement = connection
+        .prepare(
+            "SELECT document_versions.revision, document_versions.content,
+                    document_versions.origin, document_versions.created_millis
+             FROM document_versions
+             JOIN documents ON documents.id = document_versions.document_id
+             WHERE documents.path_key = ?1
+             ORDER BY document_versions.created_millis DESC, document_versions.id DESC",
+        )
+        .map_err(map_error("Note versions could not be prepared"))?;
+    let rows = statement
+        .query_map(
+            rusqlite::params![super::keys::path_key(relative_path)],
+            |row| {
+                Ok(NoteVersion {
+                    revision: row.get(0)?,
+                    content: row.get(1)?,
+                    origin: row.get(2)?,
+                    created_millis: row.get(3)?,
+                })
+            },
+        )
+        .map_err(map_error("Note versions could not be read"))?;
+
+    rows.collect::<Result<_, _>>()
+        .map_err(map_error("Note versions could not be read"))
+}
+
 /// Clears the preserved copies for a note once it is no longer in conflict.
 pub(crate) fn discard(root: &Path, uuid: &str) {
     let directory = conflicts_directory(root);

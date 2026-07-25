@@ -335,6 +335,41 @@ export function applyVaultTimestampMigration(
   );
 }
 
+export type VaultConflict = {
+  uuid: string;
+  relativePath: string;
+  name: string;
+  /** Vault-relative path to the copy holding what Anchored had stored. */
+  databaseCopyPath: string;
+  /** Vault-relative path to the copy holding what was on disk. */
+  fileCopyPath: string;
+  detectedMillis: number;
+};
+
+export type NoteVersion = {
+  revision: number;
+  content: string;
+  /** "anchored" for a change Anchored made, "external_file" for one that
+   * arrived from another program or a Git checkout. */
+  origin: string;
+  createdMillis: number;
+};
+
+/** Notes changed both in Anchored and on disk. Both versions of each are
+ * preserved and readable from the returned paths. */
+export function listVaultConflicts(): Promise<VaultConflict[]> {
+  return invokeVault<VaultConflict[]>("list_vault_conflicts");
+}
+
+/** The earlier copies Anchored kept of one note, newest first. */
+export function listVaultNoteVersions(
+  relativePath: string,
+): Promise<NoteVersion[]> {
+  return invokeVault<NoteVersion[]>("list_vault_note_versions", {
+    relativePath,
+  });
+}
+
 export function listVaultTrash(): Promise<TrashEntry[]> {
   return invokeVault<TrashEntry[]>("list_vault_trash");
 }

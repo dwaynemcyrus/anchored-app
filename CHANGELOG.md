@@ -22,6 +22,11 @@ Git commit. The format follows [Keep a Changelog], and releases follow
   and by Anchored — different Unicode composition, or a different letter
   case — is recognized as one note rather than two.
 
+- A Recovery panel, reached from the bottom of the file rail, shows notes
+  that changed both in Anchored and on disk, and the earlier copies kept of
+  whichever note is open. Conflicting copies are named by their location
+  rather than opened, because they live in the vault's hidden folder.
+
 ### Changed
 
 - Notes that had no `id` in their front matter can now be given one, written

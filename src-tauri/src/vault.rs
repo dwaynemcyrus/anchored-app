@@ -1641,6 +1641,16 @@ pub async fn list_vault_conflicts(
     crate::db::list_conflicts(&root)
 }
 
+/// The earlier copies Anchored kept of one note, newest first.
+#[tauri::command]
+pub async fn list_vault_note_versions(
+    state: State<'_, VaultState>,
+    relative_path: String,
+) -> Result<Vec<crate::db::NoteVersion>, VaultError> {
+    let root = selected_vault_root(&state, "listing note versions")?;
+    crate::db::note_versions(&root, &relative_path)
+}
+
 #[tauri::command]
 pub async fn create_vault_conflict_copy(
     state: State<'_, VaultState>,

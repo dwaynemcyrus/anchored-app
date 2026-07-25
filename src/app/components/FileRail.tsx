@@ -104,6 +104,7 @@ type FileRailProps = {
   onMoveDocumentRequest: (documentId: string) => void;
   onMoveFolderRequest: (folderPath: string) => void;
   onOpenTrash: () => void;
+  onOpenRecovery: () => void;
   onOpenScratchpad: () => void;
   onQueryChange: (query: string) => void;
   onRenameDocument: (documentId: string) => void;
@@ -980,6 +981,7 @@ export function FileRail({
   onMoveDocumentToWorkbench,
   onOpenScratchpad,
   onOpenTrash,
+  onOpenRecovery,
   onQueryChange,
   onPreviewDocument,
   onRenameDocument,
@@ -1701,6 +1703,9 @@ export function FileRail({
           <span className="file-rail__scope">{vaultName}</span>
           <button type="button" onClick={onOpenTrash}>
             Trash{trashCount > 0 ? ` (${trashCount})` : ""}
+          </button>
+          <button type="button" onClick={onOpenRecovery}>
+            Recovery
           </button>
         </footer>
       ) : null}

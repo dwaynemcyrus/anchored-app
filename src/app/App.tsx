@@ -23,6 +23,7 @@ import { SettingsModal } from "./components/SettingsModal";
 import { StatusBar } from "./components/StatusBar";
 import type { EditorCursorPosition } from "./components/MarkdownEditor";
 import { TitleBar } from "./components/TitleBar";
+import { RecoveryPanel } from "./components/RecoveryPanel";
 import { TrashPanel } from "./components/TrashPanel";
 import { VaultSwitcher } from "./components/VaultSwitcher";
 import { readErrorMessage } from "./errors";
@@ -33,6 +34,7 @@ import { useNotifications } from "./useNotifications";
 import { useRetrievalPalettes } from "./useRetrievalPalettes";
 import { useSidebarState } from "./useSidebarState";
 import { useTimestampMigration } from "./useTimestampMigration";
+import { useRecoveryPanel } from "./useRecoveryPanel";
 import { useTrashPanel } from "./useTrashPanel";
 import { useVaultSwitcher } from "./useVaultSwitcher";
 import { VaultSearchPalette } from "./components/VaultSearchPalette";
@@ -1071,6 +1073,7 @@ export function App() {
     setDocumentLoad({ status: "idle" });
   }, [setActiveDocument, setFocusDocument]);
 
+  const recovery = useRecoveryPanel();
   const trash = useTrashPanel({
     addHistoryEntry: notifications.addHistoryEntry,
     addVaultNotice: notifications.addVaultNotice,
@@ -2586,6 +2589,9 @@ export function App() {
           }}
           onMoveFolderRequest={setMoveFolderPath}
           onOpenTrash={trash.openTrashPanel}
+          onOpenRecovery={() =>
+            recovery.openRecoveryPanel(activeDocument?.relativePath)
+          }
           onOpenScratchpad={() => openScratchpadWindow("list")}
           onQueryChange={setQuery}
           onPreviewDocument={(documentId) => {
@@ -3033,6 +3039,16 @@ export function App() {
           restoringId={trash.restoringTrashId}
           onClose={() => trash.setTrashVisible(false)}
           onRestore={(entry) => void trash.restoreTrashEntry(entry)}
+        />
+      ) : null}
+      {recovery.recoveryVisible ? (
+        <RecoveryPanel
+          conflicts={recovery.conflicts}
+          error={recovery.recoveryError}
+          loading={recovery.recoveryLoading}
+          versions={recovery.versions}
+          versionsFor={recovery.versionsFor}
+          onClose={() => recovery.setRecoveryVisible(false)}
         />
       ) : null}
       {retrieval.quickOpenVisible ? (

@@ -466,6 +466,12 @@ export async function invokeDevelopmentFixture<T>(
       return [] as T;
     case "list_vault_trash":
       return [] as T;
+    // The fixture has no index behind it, so there is nothing conflicted and
+    // no history to show. Empty is the honest answer, and it keeps the browser
+    // build from throwing on a command the desktop app answers properly.
+    case "list_vault_conflicts":
+    case "list_vault_note_versions":
+      return [] as T;
     case "stop_vault_file_watch":
     case "stop_vault_tree_watch":
     case "watch_vault_file":

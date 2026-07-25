@@ -10,7 +10,7 @@ mod projection;
 mod schema;
 mod search;
 
-pub(crate) use conflicts::VaultConflict;
+pub(crate) use conflicts::{NoteVersion, VaultConflict};
 
 use std::path::Path;
 
@@ -249,6 +249,17 @@ pub(crate) fn save_note(
         return Ok(false);
     }
     projection::save(&mut connection, root, relative_path, content).map(|()| true)
+}
+
+/// The kept earlier copies of one note, newest first.
+pub(crate) fn note_versions(
+    root: &Path,
+    relative_path: &str,
+) -> Result<Vec<conflicts::NoteVersion>, VaultError> {
+    let Ok(connection) = open(&database_path(root)) else {
+        return Ok(Vec::new());
+    };
+    conflicts::versions_for(&connection, relative_path)
 }
 
 /// Every note currently changed in two places at once. Both versions of each
