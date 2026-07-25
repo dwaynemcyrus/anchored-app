@@ -2,12 +2,15 @@
 //! `AppHandle` so the whole module is unit-testable against a temporary file,
 //! following the same split `scan_vault_paths_patch` already uses in `vault`.
 
+mod conflicts;
 mod documents;
 mod import;
 mod keys;
 mod projection;
 mod schema;
 mod search;
+
+pub(crate) use conflicts::VaultConflict;
 
 use std::path::Path;
 
@@ -209,6 +212,15 @@ pub(crate) fn project_vault(root: &Path) -> Result<usize, VaultError> {
     projection::project_pending_identities(root, &connection)
 }
 
+/// Every note currently changed in two places at once. Both versions of each
+/// are preserved under `.anchored/conflicts/` and readable from there.
+pub(crate) fn list_conflicts(root: &Path) -> Result<Vec<conflicts::VaultConflict>, VaultError> {
+    let Ok(connection) = open(&database_path(root)) else {
+        return Ok(Vec::new());
+    };
+    conflicts::list(&connection)
+}
+
 /// Classifies how every note's row and file stand, without changing either.
 /// Runs when a vault opens, after the import has caught the index up.
 pub(crate) fn reconcile_vault(root: &Path) -> Result<projection::Reconciliation, VaultError> {
@@ -406,42 +418,53 @@ mod tests {
             .expect("read user_version")
     }
 
-    /// Guards the scoped-resolution rule. Re-resolving every link on each
-    /// autosave would make a save cost grow with vault size; this pins that an
-    /// edit in place stays cheap on a vault far larger than the fixture.
+    /// Guards the scoped-resolution rule: re-resolving every link on each
+    /// autosave would make a save cost grow with vault size.
+    ///
+    /// Deliberately a comparison rather than a wall-clock budget. An absolute
+    /// millisecond limit fails intermittently whenever the suite runs in
+    /// parallel on a busy machine, whereas both halves of a ratio feel the
+    /// same load.
     #[test]
     fn an_edit_in_place_does_not_scale_with_vault_size() {
-        use std::time::Instant;
-        let vault = tempdir().expect("create fixture vault");
-        crate::continuity::ensure_vault_identity(vault.path()).expect("create identity");
-        let mut connection = open(&super::database_path(vault.path())).expect("create database");
-        let mut paths = Vec::new();
-        for index in 0..600 {
-            let name = format!("Note {index:04}.md");
-            let body = format!(
-                "# Note {index}\n[[Note {:04}]]\n[[Note {:04}]]\n",
-                (index + 1) % 600,
-                (index + 7) % 600
-            );
-            std::fs::write(vault.path().join(&name), body).expect("write note");
-            paths.push(name);
-        }
-        super::import_vault(&mut connection, vault.path(), &paths, &[]).expect("seed the index");
-        drop(connection);
+        fn time_one_save(note_count: usize) -> std::time::Duration {
+            let vault = tempdir().expect("create fixture vault");
+            crate::continuity::ensure_vault_identity(vault.path()).expect("create identity");
+            let mut connection =
+                open(&super::database_path(vault.path())).expect("create database");
+            let mut paths = Vec::new();
+            for index in 0..note_count {
+                let name = format!("Note {index:04}.md");
+                let body = format!(
+                    "# Note {index}\n[[Note {:04}]]\n[[Note {:04}]]\n",
+                    (index + 1) % note_count,
+                    (index + 7) % note_count
+                );
+                std::fs::write(vault.path().join(&name), body).expect("write note");
+                paths.push(name);
+            }
+            super::import_vault(&mut connection, vault.path(), &paths, &[]).expect("seed");
+            drop(connection);
 
-        let edited = vec![paths[42].clone()];
-        for _ in 0..3 {
-            super::import_paths(vault.path(), &edited).expect("warm");
+            let edited = vec![paths[note_count / 2].clone()];
+            for _ in 0..3 {
+                super::import_paths(vault.path(), &edited).expect("warm");
+            }
+            let start = std::time::Instant::now();
+            for _ in 0..20 {
+                super::import_paths(vault.path(), &edited).expect("index one save");
+            }
+            start.elapsed() / 20
         }
-        let start = Instant::now();
-        for _ in 0..25 {
-            super::import_paths(vault.path(), &edited).expect("index one save");
-        }
-        let each = start.elapsed() / 25;
 
+        let small = time_one_save(20);
+        let large = time_one_save(600);
+
+        // Thirty times the notes. Resolving only the edited note's links keeps
+        // this nearly flat; re-resolving the whole table would not.
         assert!(
-            each.as_millis() < 60,
-            "indexing one save over 600 notes took {each:?}"
+            large < small * 4,
+            "one save cost {large:?} over 600 notes against {small:?} over 20"
         );
     }
 

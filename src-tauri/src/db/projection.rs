@@ -14,7 +14,7 @@ use std::path::Path;
 
 use rusqlite::{params, Connection};
 
-use super::{documents, import, map_error};
+use super::{conflicts, documents, import, map_error};
 use crate::metadata::{add_note_identity, IdentityMutationError};
 use crate::vault::VaultError;
 
@@ -35,9 +35,9 @@ pub(crate) fn reconcile(
 
     let mut statement = connection
         .prepare(
-            "SELECT documents.id, documents.relative_path, documents.content_hash,
-                    documents.revision, sync_records.projected_hash,
-                    sync_records.projected_revision
+            "SELECT documents.id, documents.uuid, documents.relative_path,
+                    documents.content_hash, documents.revision,
+                    sync_records.projected_hash, sync_records.projected_revision
              FROM documents
              LEFT JOIN sync_records ON sync_records.document_id = documents.id
              WHERE documents.is_markdown = 1 AND documents.deleted_at IS NULL",
@@ -49,9 +49,10 @@ pub(crate) fn reconcile(
                 row.get::<_, i64>(0)?,
                 row.get::<_, String>(1)?,
                 row.get::<_, String>(2)?,
-                row.get::<_, i64>(3)?,
-                row.get::<_, Option<String>>(4)?,
-                row.get::<_, Option<i64>>(5)?,
+                row.get::<_, String>(3)?,
+                row.get::<_, i64>(4)?,
+                row.get::<_, Option<String>>(5)?,
+                row.get::<_, Option<i64>>(6)?,
             ))
         })
         .map_err(map_error("The vault could not be reconciled"))?
@@ -59,7 +60,7 @@ pub(crate) fn reconcile(
         .map_err(map_error("The vault could not be reconciled"))?;
     drop(statement);
 
-    for (id, relative_path, row_hash, revision, projected_hash, projected_revision) in rows {
+    for (id, uuid, relative_path, row_hash, revision, projected_hash, projected_revision) in rows {
         let Ok(bytes) = std::fs::read(root.join(&relative_path)) else {
             summary.missing_files += 1;
             continue;
@@ -71,20 +72,26 @@ pub(crate) fn reconcile(
         if file_hash == row_hash || Some(&file_hash) == projected_hash.as_ref() {
             summary.synced += 1;
             documents::set_sync_state(connection, id, documents::SyncState::Synced)?;
+            conflicts::discard(root, &uuid);
             continue;
         }
 
         // The file moved on. Whether that is a conflict depends on whether the
         // row also moved on since the last agreement.
         let database_moved_on = projected_revision.is_some_and(|projected| revision != projected);
-        let state = if database_moved_on {
-            summary.conflicts += 1;
-            documents::SyncState::Conflict
-        } else {
+        if !database_moved_on {
             summary.file_changed += 1;
-            documents::SyncState::FileChanged
-        };
-        documents::set_sync_state(connection, id, state)?;
+            documents::set_sync_state(connection, id, documents::SyncState::FileChanged)?;
+            continue;
+        }
+
+        // Both sides changed. Preserve them before anything else can touch
+        // either, so a later mistake cannot lose the version the user wanted.
+        summary.conflicts += 1;
+        let stored = stored_content(connection, id)?;
+        let on_disk = String::from_utf8_lossy(&bytes).into_owned();
+        conflicts::preserve(root, &uuid, &stored, &on_disk)?;
+        documents::set_sync_state(connection, id, documents::SyncState::Conflict)?;
     }
 
     Ok(summary)
@@ -96,6 +103,18 @@ pub(crate) struct Reconciliation {
     pub file_changed: usize,
     pub conflicts: usize,
     pub missing_files: usize,
+}
+
+/// The note exactly as Anchored has it stored, reassembled from the two
+/// columns it is kept in.
+fn stored_content(connection: &Connection, document_id: i64) -> Result<String, VaultError> {
+    connection
+        .query_row(
+            "SELECT frontmatter_text || body FROM documents WHERE id = ?1",
+            params![document_id],
+            |row| row.get(0),
+        )
+        .map_err(map_error("The stored note could not be read"))
 }
 
 /// A note whose row holds an identity its file does not carry yet.
@@ -324,6 +343,67 @@ mod tests {
             "the file is what Anchored meant to write"
         );
         assert_eq!(summary.conflicts, 0);
+    }
+
+    /// The guarantee that matters: when both sides changed, neither is lost.
+    #[test]
+    fn preserves_both_sides_of_a_conflict_and_lists_it() {
+        let (directory, connection) = vault(&[("Harbor.md", "# Harbor\n")]);
+        project_pending_identities(directory.path(), &connection).expect("project");
+        connection
+            .execute(
+                "UPDATE documents SET body = '# Written in Anchored\n', revision = revision + 5",
+                [],
+            )
+            .expect("simulate a change in the app");
+        std::fs::write(directory.path().join("Harbor.md"), "# Written on disk\n")
+            .expect("simulate a change on disk");
+
+        super::reconcile(directory.path(), &connection).expect("reconcile");
+
+        let listed = crate::db::conflicts::list(&connection).expect("list conflicts");
+        assert_eq!(listed.len(), 1);
+        assert_eq!(listed[0].relative_path, "Harbor.md");
+
+        let preserved = crate::db::conflicts::conflicts_directory(directory.path());
+        let stored =
+            std::fs::read_to_string(preserved.join(format!("{}_database.md", listed[0].uuid)))
+                .expect("read the preserved stored copy");
+        let on_disk =
+            std::fs::read_to_string(preserved.join(format!("{}_file.md", listed[0].uuid)))
+                .expect("read the preserved disk copy");
+        assert!(stored.contains("# Written in Anchored"));
+        assert_eq!(on_disk, "# Written on disk\n");
+        assert_eq!(
+            std::fs::read_to_string(directory.path().join("Harbor.md")).expect("read the note"),
+            "# Written on disk\n",
+            "the note itself is left exactly as it was found"
+        );
+    }
+
+    #[test]
+    fn clears_preserved_copies_once_a_note_agrees_again() {
+        let (directory, connection) = vault(&[("Harbor.md", "# Harbor\n")]);
+        project_pending_identities(directory.path(), &connection).expect("project");
+        let uuid: String = connection
+            .query_row("SELECT uuid FROM documents", [], |row| row.get(0))
+            .expect("read identity");
+        crate::db::conflicts::preserve(directory.path(), &uuid, "stored\n", "disk\n")
+            .expect("preserve a conflict");
+
+        // The note now matches what Anchored last wrote, so it is settled.
+        super::reconcile(directory.path(), &connection).expect("reconcile");
+
+        assert_eq!(
+            std::fs::read_dir(crate::db::conflicts::conflicts_directory(directory.path()))
+                .expect("read the conflicts directory")
+                .count(),
+            0,
+            "a settled note should not leave conflicting copies behind"
+        );
+        assert!(crate::db::conflicts::list(&connection)
+            .expect("list conflicts")
+            .is_empty());
     }
 
     #[test]

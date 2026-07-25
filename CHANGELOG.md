@@ -35,8 +35,11 @@ Git commit. The format follows [Keep a Changelog], and releases follow
   or Anchored itself. Up to twenty versions are kept per note, each recording
   where the change came from. Nothing surfaces this yet.
 - Opening a vault now records how each note's file and its stored copy stand
-  relative to each other, including noticing a note changed in both places.
-  Nothing is resolved automatically and no file is rewritten.
+  relative to each other. A note changed in both places has both versions
+  preserved under `.anchored/conflicts/` before anything else touches it, and
+  the note itself is left exactly as found. Nothing is resolved automatically:
+  Anchored never picks a winner. Preserved copies are cleared once a note
+  agrees with itself again. No interface surfaces these yet.
 - Only one copy of Anchored can now run at a time. A second launch raises the
   existing window instead of opening a rival window that would fight the first
   one over the same vault.

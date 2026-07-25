@@ -1662,6 +1662,17 @@ pub async fn save_vault_file(
     save_markdown_file(&root, &relative_path, &content, &expected_content)
 }
 
+/// Lists notes changed in two places at once. Both versions of each are
+/// preserved under `.anchored/conflicts/`, so the interface can show them
+/// side by side and let the user decide.
+#[tauri::command]
+pub async fn list_vault_conflicts(
+    state: State<'_, VaultState>,
+) -> Result<Vec<crate::db::VaultConflict>, VaultError> {
+    let root = selected_vault_root(&state, "listing conflicts")?;
+    crate::db::list_conflicts(&root)
+}
+
 #[tauri::command]
 pub async fn create_vault_conflict_copy(
     state: State<'_, VaultState>,
