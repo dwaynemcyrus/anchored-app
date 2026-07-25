@@ -283,7 +283,7 @@ describe("App", () => {
   it("restores the current vault and note from saved session state", async () => {
     const sessionVault = {
       available: true,
-      id: "01JZQ7K8P4A6F2M9V3C5T7X1BY",
+      id: "019f989c-2dc0-7b01-8a11-1c2d3e4f5061",
       lastOpenedAt: Date.UTC(2026, 6, 17, 8),
       name: "My Vault",
     };
@@ -654,7 +654,7 @@ describe("App", () => {
     const user = userEvent.setup();
     const rememberedVault = {
       available: true,
-      id: "01JZQ7K8P4A6F2M9V3C5T7X1BY",
+      id: "019f989c-2dc0-7b01-8a11-1c2d3e4f5061",
       lastOpenedAt: Date.UTC(2026, 6, 17, 8),
       name: "Second Vault",
     };
@@ -698,7 +698,7 @@ describe("App", () => {
     mockedCreateVault.mockResolvedValue({
       files: [],
       name: "Second Brain",
-      vaultId: "01JZQ7K8P4A6F2M9V3C5T7X1BY",
+      vaultId: "019f989c-2dc0-7b01-8a11-1c2d3e4f5061",
       warnings: noWarnings,
     });
     render(<App />);
@@ -727,14 +727,14 @@ describe("App", () => {
       files: [],
       folders: [],
       name: "My Vault",
-      vaultId: "01JZQ7K8P4A6F2M9V3C5T7X1BY",
+      vaultId: "019f989c-2dc0-7b01-8a11-1c2d3e4f5061",
       warnings: noWarnings,
     });
     mockedCreateVaultFolder.mockResolvedValue({
       files: [],
       folders: ["Projects"],
       name: "My Vault",
-      vaultId: "01JZQ7K8P4A6F2M9V3C5T7X1BY",
+      vaultId: "019f989c-2dc0-7b01-8a11-1c2d3e4f5061",
       warnings: noWarnings,
     });
     render(<App />);
@@ -768,14 +768,14 @@ describe("App", () => {
       files: [],
       folders: ["Projects"],
       name: "My Vault",
-      vaultId: "01JZQ7K8P4A6F2M9V3C5T7X1BY",
+      vaultId: "019f989c-2dc0-7b01-8a11-1c2d3e4f5061",
       warnings: noWarnings,
     });
     mockedCreateVaultFolder.mockResolvedValue({
       files: [],
       folders: ["Projects", "Projects/Inbox"],
       name: "My Vault",
-      vaultId: "01JZQ7K8P4A6F2M9V3C5T7X1BY",
+      vaultId: "019f989c-2dc0-7b01-8a11-1c2d3e4f5061",
       warnings: noWarnings,
     });
     render(<App />);
@@ -811,14 +811,14 @@ describe("App", () => {
       files: [],
       folders: ["Projects", "Projects/Inbox"],
       name: "My Vault",
-      vaultId: "01JZQ7K8P4A6F2M9V3C5T7X1BY",
+      vaultId: "019f989c-2dc0-7b01-8a11-1c2d3e4f5061",
       warnings: noWarnings,
     });
     mockedRenameVaultFolder.mockResolvedValue({
       files: [],
       folders: ["Archive", "Archive/Inbox"],
       name: "My Vault",
-      vaultId: "01JZQ7K8P4A6F2M9V3C5T7X1BY",
+      vaultId: "019f989c-2dc0-7b01-8a11-1c2d3e4f5061",
       warnings: noWarnings,
     });
     render(<App />);
@@ -857,14 +857,14 @@ describe("App", () => {
       files: [],
       folders: ["Archive"],
       name: "My Vault",
-      vaultId: "01JZQ7K8P4A6F2M9V3C5T7X1BY",
+      vaultId: "019f989c-2dc0-7b01-8a11-1c2d3e4f5061",
       warnings: noWarnings,
     });
     mockedDeleteVaultFolder.mockResolvedValue({
       files: [],
       folders: [],
       name: "My Vault",
-      vaultId: "01JZQ7K8P4A6F2M9V3C5T7X1BY",
+      vaultId: "019f989c-2dc0-7b01-8a11-1c2d3e4f5061",
       warnings: noWarnings,
     });
     render(<App />);
@@ -902,7 +902,7 @@ describe("App", () => {
         },
       ],
       name: "My Vault",
-      vaultId: "01JZQ7K8P4A6F2M9V3C5T7X1CA",
+      vaultId: "019f989c-2dc0-7b06-9a66-6c7d8e9fa0b6",
       warnings: noWarnings,
     });
     mockedReadVaultFile.mockResolvedValue({
@@ -956,13 +956,13 @@ describe("App", () => {
   it("opens an on-demand Markdown preview and follows rendered wikilinks", async () => {
     const user = userEvent.setup();
     const leadership = {
-      id: "01JZQ7K8P4A6F2M9V3C5T7X1BY",
+      id: "019f989c-2dc0-7b01-8a11-1c2d3e4f5061",
       name: "Leadership.md",
       parent: "Notes",
       relativePath: "Notes/Leadership.md",
     };
     const other = {
-      id: "01JZQ91T3AA6F2M9V3C5T7X1BZ",
+      id: "019f989c-2dc0-7b02-9a22-2c3d4e5f6072",
       name: "Other.md",
       parent: "Notes",
       relativePath: "Notes/Other.md",
@@ -1018,7 +1018,7 @@ describe("App", () => {
         },
       ],
       name: "My Vault",
-      vaultId: "01JZQ7K8P4A6F2M9V3C5T7X1CA",
+      vaultId: "019f989c-2dc0-7b06-9a66-6c7d8e9fa0b6",
       warnings: noWarnings,
     });
     mockedReadVaultFile.mockResolvedValue({
@@ -1059,15 +1059,15 @@ describe("App", () => {
 
   it("moves a saved note to the vault Trash", async () => {
     const user = userEvent.setup();
-    const vaultId = "01JZQ7K8P4A6F2M9V3C5T7X1BY";
+    const vaultId = "019f989c-2dc0-7b01-8a11-1c2d3e4f5061";
     const file = {
-      id: "01JZQ91T3AA6F2M9V3C5T7X1BZ",
+      id: "019f989c-2dc0-7b02-9a22-2c3d4e5f6072",
       name: "Leadership.md",
       parent: "Notes",
       relativePath: "Notes/Leadership.md",
     };
     const trashEntry = {
-      id: "01JZQC4G61A6F2M9V3C5T7X1CA",
+      id: "019f989c-2dc0-7b03-aa33-3c4d5e6f7083",
       name: file.name,
       originalPath: file.relativePath,
       trashedAt: Date.UTC(2026, 6, 17, 9),
@@ -1109,7 +1109,7 @@ describe("App", () => {
   });
 
   it("drags a saved note into another folder", async () => {
-    const vaultId = "01JZQ7K8P4A6F2M9V3C5T7X1BY";
+    const vaultId = "019f989c-2dc0-7b01-8a11-1c2d3e4f5061";
     const original = {
       content: "# Leadership",
       relativePath: "Notes/Leadership.md",
@@ -1184,7 +1184,7 @@ describe("App", () => {
 
   it("moves a saved note through the move dialog", async () => {
     const user = userEvent.setup();
-    const vaultId = "01JZQ7K8P4A6F2M9V3C5T7X1BY";
+    const vaultId = "019f989c-2dc0-7b01-8a11-1c2d3e4f5061";
     const original = {
       content: "# Leadership",
       relativePath: "Notes/Leadership.md",
@@ -1255,15 +1255,15 @@ describe("App", () => {
 
   it("restores a trashed note to its original path", async () => {
     const user = userEvent.setup();
-    const vaultId = "01JZQ7K8P4A6F2M9V3C5T7X1BY";
+    const vaultId = "019f989c-2dc0-7b01-8a11-1c2d3e4f5061";
     const trashEntry = {
-      id: "01JZQC4G61A6F2M9V3C5T7X1CA",
+      id: "019f989c-2dc0-7b03-aa33-3c4d5e6f7083",
       name: "Leadership.md",
       originalPath: "Notes/Leadership.md",
       trashedAt: Date.UTC(2026, 6, 17, 9),
     };
     const restoredFile = {
-      id: "01JZQ91T3AA6F2M9V3C5T7X1BZ",
+      id: "019f989c-2dc0-7b02-9a22-2c3d4e5f6072",
       name: trashEntry.name,
       parent: "Notes",
       relativePath: trashEntry.originalPath,
@@ -2039,7 +2039,7 @@ describe("App", () => {
   it("creates a real vault note through Save As", async () => {
     const user = userEvent.setup();
     const identifiedContent =
-      "---\nid: 01JZQ7K8P4A6F2M9V3C5T7X1BY\n---\n\n# Created";
+      "---\nid: 019f989c-2dc0-7b01-8a11-1c2d3e4f5061\n---\n\n# Created";
     mockedSelectVault.mockResolvedValue({
       files: [],
       name: "My Vault",
@@ -2071,7 +2071,9 @@ describe("App", () => {
       await screen.findByRole("textbox", {
         name: "Created.md Markdown editor",
       }),
-    ).toHaveTextContent("---id: 01JZQ7K8P4A6F2M9V3C5T7X1BY---# Created");
+    ).toHaveTextContent(
+      "---id: 019f989c-2dc0-7b01-8a11-1c2d3e4f5061---# Created",
+    );
     expect(screen.getByRole("button", { name: "Created.md" })).toHaveAttribute(
       "aria-current",
       "page",

@@ -10,7 +10,7 @@ import type {
   VaultSnapshot,
 } from "./vault";
 
-const FIXTURE_VAULT_ID = "01JZQ7K8P4A6F2M9V3C5T7X1BY";
+const FIXTURE_VAULT_ID = "019f989c-2dc0-7b01-8a11-1c2d3e4f5061";
 const FIXTURE_VAULT_NAME = "Anchored Development Fixture";
 const fixtureSources = import.meta.glob("../../../fixtures/dev-vault/**/*", {
   eager: true,
@@ -465,6 +465,12 @@ export async function invokeDevelopmentFixture<T>(
     case "forget_vault":
       return [] as T;
     case "list_vault_trash":
+      return [] as T;
+    // The fixture has no index behind it, so there is nothing conflicted and
+    // no history to show. Empty is the honest answer, and it keeps the browser
+    // build from throwing on a command the desktop app answers properly.
+    case "list_vault_conflicts":
+    case "list_vault_note_versions":
       return [] as T;
     case "stop_vault_file_watch":
     case "stop_vault_tree_watch":

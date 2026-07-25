@@ -2450,3 +2450,113 @@ Keep the implementation in focused verified chunks, normally:
   Linux packages are deferred; and the seven-day observation is incomplete.
 - **Follow-up:** Complete Chunk 13 using `docs/ALPHA_STABILITY_LOG.md` on a
   backed-up representative vault copy before primary-vault use.
+
+## Follow-up plan: database-first hybrid architecture
+
+### Outcome
+
+SQLite at `<vault>/.anchored/vault.db` becomes the canonical store, and
+Markdown files become a continuously synchronized, user-owned projection of
+it. Files stay real, portable, and editable in Obsidian; the database supplies
+indexed search, queryable backlinks, version history, and transactional
+multi-file operations.
+
+This is Model B with continuous materialization from
+`docs/STORAGE_MODEL_ANALYSIS.md`. It supersedes the 2026-07-16 database-free
+decision, which is recorded as superseded in `PROJECT.md` rather than removed.
+
+### Approved decisions
+
+- UUIDv7 replaces ULID for note, vault, and trash identities.
+- The vault keeps its arbitrary folder structure. No `Notes/`, `Daily/`, or
+  `Projects/` taxonomy is imposed, and virtual collections keep working from a
+  `status` column.
+- Storage architecture only. `documents`, `sync_records`, `document_versions`,
+  `links`, `aliases`, `tags`, `attachments`, `saved_searches`, and `settings`
+  are created; tasks, projects, boards, and reader tables are not.
+- All internal state moves under `.anchored/`, including trash and a new
+  `template/` directory. Vaults are disposable at this stage, so the previous
+  trash location is dropped rather than migrated.
+
+### Architecture rules
+
+Three rules depart deliberately from the supplied specification, each because
+the existing code already offers something better.
+
+1. **Projection is a surgical byte edit, never a render of a database row.**
+   `mutate_lifecycle_properties` already replaces byte ranges rather than
+   re-serializing YAML, so comments, key order, quote style, indentation, BOM,
+   and line endings survive by construction. Only `id` and `created_at`
+   (minted once) and `updated_at`, `status`, `type`, and `archived_at`
+   (managed) are written. Everything else is imported and never rewritten.
+   `revision` is database-only and never appears in a file.
+2. **Self-writes are recognised by content hash, not a frontmatter token.** A
+   `_write_token` would dirty a git line on every save, render as a visible
+   Obsidian property, and be unreadable in exactly the malformed files where
+   classification matters most. The durable authority is
+   `sync_records.projected_hash`; an in-memory per-path hash ring with a short
+   TTL is only a fast path in front of it.
+3. **Path keys are NFC-normalized and case-folded.** APFS is
+   case-insensitive-but-preserving and Finder returns NFD, so a raw path key
+   would let one file match two rows and mint duplicate identities.
+
+### Implementation sequence
+
+1. **UUIDv7 replaces ULID.** Independent of the database. The subtle breakage
+   is the vault identity, not note identities: the metadata reader and the
+   registry validator both hard-error on a non-UUID id, so vault metadata
+   moves to version 2 with an explicit re-mint path and the registry prunes
+   entries it can no longer resolve.
+2. **Amend the contract.** `PROJECT.md` and `OVERVIEW.md` record the reversal
+   before any dependent code lands.
+3. **Dependencies, `db/` module, schema v1.** Connection, pragmas, a
+   `user_version` migration runner, and the full schema including
+   `document_versions` and FTS5. `.anchored/` scaffolding lands here.
+4. **Importer, shadow only.** Files stay canonical; parity tests assert every
+   row matches the uncached scan path.
+5. **Continuous import.** Every mutating command and watcher batch feeds the
+   importer. Import is idempotent while files remain canonical, so the whole
+   path is exercised at zero risk before anything depends on it.
+6. **Invert reads.** Snapshot, patch, search, and backlinks come from SQL and
+   FTS5, behind a settings kill switch that keeps the scan path available.
+7. **Invert writes.** Saves commit to the database first and project to disk
+   atomically. Self-write detection, startup reconciliation, template-seeded
+   creation, and rename-journal retirement land together.
+8. **Trash relocation and database integration.** Restore must reattach the
+   existing row; re-importing would mint a new identity and orphan backlinks.
+9. **Retire the JSON metadata cache** and the kill switch.
+
+### Risks and safeguards
+
+- Continuous import must precede inverted reads. Serving reads from a database
+  that mutating commands do not maintain goes stale within seconds.
+- The watcher resets its debounce deadline for every event, including ones it
+  filters out. Putting the database inside the watched tree would let write-ahead
+  log activity starve genuine external changes indefinitely. `.anchored/` must
+  be excluded at the notify level.
+- FTS5 changes search from substring to token/prefix matching, which is
+  user-visible and needs a query-rewrite layer and a changelog entry. It also
+  cannot return line numbers, so matched bodies are still scanned in Rust.
+- Two Anchored processes would each keep their own in-memory hash map and could
+  ping-pong projections. Single-instance enforcement or an advisory lock is
+  required.
+- `rusqlite` with `bundled` compiles C against the ambient deployment target,
+  which Cargo does not derive from the Tauri configuration. It must be pinned
+  to 12.0 or the build silently stops running on the 2015 MacBook Pro.
+- A folder-copy backup can capture the database and its write-ahead log at
+  different instants. Because Markdown remains a complete projection, database
+  loss must be a tested recovery path rather than data loss.
+- `devFixture.ts` reimplements the backend for browser development, including
+  its own frontmatter parser. Every semantic change needs a parity pass or
+  browser development silently diverges.
+- The development vault is wiped and re-copied on every launch, so migrations
+  are never exercised against populated data without an opt-out.
+
+### Expected notable entries for `[Unreleased]`
+
+Identity format change and vault-metadata re-minting; database-backed storage
+with Markdown projection; search behavior change; trash relocation; templates.
+
+### Version impact
+
+None yet. This plan does not prepare a release.

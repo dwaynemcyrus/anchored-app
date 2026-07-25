@@ -6,13 +6,13 @@ import { VaultSwitcher } from "./VaultSwitcher";
 
 const current = {
   available: true,
-  id: "01JZQ7K8P4A6F2M9V3C5T7X1BY",
+  id: "019f989c-2dc0-7b01-8a11-1c2d3e4f5061",
   lastOpenedAt: Date.UTC(2026, 6, 17, 9),
   name: "Current Vault",
 };
 const unavailable = {
   available: false,
-  id: "01JZQ91T3AA6F2M9V3C5T7X1BZ",
+  id: "019f989c-2dc0-7b02-9a22-2c3d4e5f6072",
   lastOpenedAt: Date.UTC(2026, 6, 16, 9),
   name: "Moved Vault",
 };

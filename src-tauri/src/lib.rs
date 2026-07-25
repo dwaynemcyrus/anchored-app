@@ -1,4 +1,5 @@
 mod continuity;
+mod db;
 pub mod links;
 pub mod metadata;
 mod vault;
@@ -6,7 +7,22 @@ mod watcher;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default()
+    let builder = tauri::Builder::default();
+
+    // Registered before any other plugin so a second launch is turned away
+    // before it can touch a vault. Two processes projecting the same vault
+    // would each treat the other's writes as external edits and rewrite them
+    // back, indefinitely. A second launch raises the existing window instead.
+    #[cfg(desktop)]
+    let builder = builder.plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
+        use tauri::Manager;
+        if let Some(window) = app.webview_windows().values().next() {
+            let _ = window.unminimize();
+            let _ = window.set_focus();
+        }
+    }));
+
+    builder
         .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
             #[cfg(desktop)]
@@ -47,6 +63,8 @@ pub fn run() {
             vault::stop_vault_tree_watch,
             vault::save_vault_file,
             vault::create_vault_conflict_copy,
+            vault::list_vault_conflicts,
+            vault::list_vault_note_versions,
             vault::archive_vault_file,
             vault::restore_archived_vault_file,
             vault::move_vault_file_to_workbench,

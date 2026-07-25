@@ -89,10 +89,18 @@ fn run_event_loop(
         match message_receiver.recv_timeout(timeout) {
             Ok(WatcherMessage::Stop) | Err(RecvTimeoutError::Disconnected) => break,
             Ok(WatcherMessage::Event(event)) => {
-                if let Ok(event) = event {
-                    pending.extend(normalize_event(&root, event));
+                // Only a change the vault can actually see may extend the
+                // debounce window. The database and its write-ahead log live
+                // inside the watched tree, so resetting the deadline for every
+                // raw event would let a steady stream of database writes push
+                // the flush forward indefinitely and starve real edits.
+                let visible = event
+                    .map(|event| normalize_event(&root, event))
+                    .unwrap_or_default();
+                if !visible.is_empty() {
+                    pending.extend(visible);
+                    flush_at = Some(Instant::now() + DEBOUNCE_WINDOW);
                 }
-                flush_at = Some(Instant::now() + DEBOUNCE_WINDOW);
             }
             Err(RecvTimeoutError::Timeout) => {
                 emit_pending(&app, &vault_id, &mut pending);
@@ -219,6 +227,32 @@ mod tests {
             relative_visible_path(root, Path::new("/vault/trash/opaque.md")),
             None
         );
+    }
+
+    /// The debounce deadline is only extended for events that survive
+    /// filtering. That guard is only safe while database writes produce no
+    /// visible change at all — otherwise a busy write-ahead log would keep
+    /// pushing the flush forward and real external edits would never arrive.
+    #[test]
+    fn treats_database_writes_as_no_change_at_all() {
+        let root = Path::new("/vault");
+        for name in [
+            "vault.db",
+            "vault.db-wal",
+            "vault.db-shm",
+            "vault.db-journal",
+        ] {
+            let event = Event {
+                kind: EventKind::Modify(ModifyKind::Data(notify::event::DataChange::Content)),
+                paths: vec![format!("/vault/.anchored/{name}").into()],
+                attrs: Default::default(),
+            };
+
+            assert!(
+                normalize_event(root, event).is_empty(),
+                "{name} must not register as a vault change"
+            );
+        }
     }
 
     #[test]

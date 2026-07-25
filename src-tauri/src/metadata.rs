@@ -1,7 +1,7 @@
 use std::{fmt, ops::Range};
 
 use chrono::{DateTime, Local};
-use ulid::Ulid;
+use uuid::Uuid;
 use yaml_rust2::{Yaml, YamlLoader};
 
 const UTF8_BOM: &str = "\u{feff}";
@@ -44,7 +44,7 @@ impl fmt::Display for IdentityMutationError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         let message = match self {
             Self::ExistingIdentity => "the note already has a different identity",
-            Self::InvalidIdentity => "the proposed note identity is not a canonical ULID",
+            Self::InvalidIdentity => "the proposed note identity is not a canonical UUIDv7",
             Self::UnsafeFrontMatter => "the note front matter cannot be changed safely",
         };
         formatter.write_str(message)
@@ -99,7 +99,15 @@ pub struct TimestampNormalization {
 }
 
 pub fn generate_note_id() -> String {
-    Ulid::new().to_string()
+    Uuid::now_v7().to_string()
+}
+
+/// Accepts only canonical lowercase hyphenated UUIDv7. Rejecting every other
+/// shape — including the ULIDs earlier builds wrote — is what lets the
+/// importer recognise a note as needing a freshly minted identity.
+pub fn is_canonical_note_id(id: &str) -> bool {
+    Uuid::try_parse(id)
+        .is_ok_and(|parsed| parsed.get_version_num() == 7 && parsed.hyphenated().to_string() == id)
 }
 
 pub fn inspect_note_identity(content: &str) -> NoteIdentityStatus {
@@ -129,10 +137,7 @@ pub fn inspect_note_identity(content: &str) -> NoteIdentityStatus {
     let Yaml::String(id) = value else {
         return NoteIdentityStatus::Invalid;
     };
-    let Ok(parsed) = Ulid::from_string(id) else {
-        return NoteIdentityStatus::Invalid;
-    };
-    if parsed.to_string() != *id {
+    if !is_canonical_note_id(id) {
         return NoteIdentityStatus::Invalid;
     }
 
@@ -834,8 +839,7 @@ fn is_escaped(bytes: &[u8], index: usize) -> bool {
 }
 
 pub fn add_note_identity(content: &str, id: &str) -> Result<String, IdentityMutationError> {
-    let parsed = Ulid::from_string(id).map_err(|_| IdentityMutationError::InvalidIdentity)?;
-    if parsed.to_string() != id {
+    if !is_canonical_note_id(id) {
         return Err(IdentityMutationError::InvalidIdentity);
     }
 
@@ -866,8 +870,7 @@ pub fn add_note_identity(content: &str, id: &str) -> Result<String, IdentityMuta
 }
 
 pub fn assign_new_note_identity(content: &str, id: &str) -> Result<String, IdentityMutationError> {
-    let parsed = Ulid::from_string(id).map_err(|_| IdentityMutationError::InvalidIdentity)?;
-    if parsed.to_string() != id {
+    if !is_canonical_note_id(id) {
         return Err(IdentityMutationError::InvalidIdentity);
     }
 
@@ -1006,21 +1009,30 @@ mod tests {
     use super::{
         add_note_identity, archive_note, assign_new_note_identity, generate_note_id,
         inspect_note_aliases, inspect_note_identity, inspect_note_properties,
-        inspect_wikilink_occurrences, inspect_wikilinks, normalize_front_matter_timestamps,
-        restore_note, rewrite_wikilink_targets, split_note_source, stamp_note_created_at,
-        stamp_note_updated_at, update_note_type, IdentityMutationError, LifecycleMutationError,
-        NoteIdentityStatus,
+        inspect_wikilink_occurrences, inspect_wikilinks, is_canonical_note_id,
+        normalize_front_matter_timestamps, restore_note, rewrite_wikilink_targets,
+        split_note_source, stamp_note_created_at, stamp_note_updated_at, update_note_type,
+        IdentityMutationError, LifecycleMutationError, NoteIdentityStatus,
     };
 
-    const ID: &str = "01JZQ7K8P4A6F2M9V3C5T7X1BY";
+    const ID: &str = "019f989c-2dc0-7a01-8b2c-4d5e6f708192";
 
     #[test]
-    fn generates_canonical_unprefixed_ulids() {
+    fn generates_canonical_unprefixed_uuid_v7s() {
         let id = generate_note_id();
 
-        assert_eq!(id.len(), 26);
+        assert_eq!(id.len(), 36);
         assert!(!id.starts_with("note_"));
-        assert!(id.parse::<ulid::Ulid>().is_ok());
+        assert!(is_canonical_note_id(&id));
+    }
+
+    #[test]
+    fn refuses_ulids_and_other_uuid_versions() {
+        assert!(!is_canonical_note_id("01JZQ7K8P4A6F2M9V3C5T7X1BY"));
+        assert!(!is_canonical_note_id(
+            "f47ac10b-58cc-4372-a567-0e02b2c3d479"
+        ));
+        assert!(!is_canonical_note_id("019f989c2dc07a018b2c4d5e6f708192"));
     }
 
     #[test]
@@ -1411,7 +1423,7 @@ mod tests {
     #[test]
     fn refuses_invalid_duplicate_and_malformed_identity_data() {
         let invalid = "---\nid: short\n---\nBody\n";
-        let duplicate = format!("---\nid: {ID}\nid: 01JZQ91T3AA6F2M9V3C5T7X1BZ\n---\n");
+        let duplicate = format!("---\nid: {ID}\nid: 019f989c-2dc0-7a02-9c3d-5e6f70819243\n---\n");
         let malformed = "---\ntags: [one\n---\nBody\n";
 
         assert_eq!(inspect_note_identity(invalid), NoteIdentityStatus::Invalid);
@@ -1431,7 +1443,7 @@ mod tests {
 
     #[test]
     fn refuses_to_replace_a_different_existing_identity() {
-        let original = "---\nid: 01JZQ91T3AA6F2M9V3C5T7X1BZ\n---\n";
+        let original = "---\nid: 019f989c-2dc0-7a02-9c3d-5e6f70819243\n---\n";
 
         assert_eq!(
             add_note_identity(original, ID),
@@ -1440,16 +1452,16 @@ mod tests {
     }
 
     #[test]
-    fn refuses_noncanonical_lowercase_ulids() {
+    fn refuses_noncanonical_uppercase_identities() {
         assert_eq!(
-            add_note_identity("# Note\n", &ID.to_lowercase()),
+            add_note_identity("# Note\n", &ID.to_uppercase()),
             Err(IdentityMutationError::InvalidIdentity)
         );
     }
 
     #[test]
     fn gives_a_saved_copy_a_fresh_identity_without_reformatting_yaml() {
-        let replacement = "01JZQA02MVA6F2M9V3C5T7X1BW";
+        let replacement = "019f989c-2dc0-7a03-a4be-6f7081924354";
         let original = format!(
             "---\n# retained\nid: '{ID}' # permanent identity\naliases: [Example]\n---\nBody\n"
         );

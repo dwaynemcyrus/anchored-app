@@ -8,7 +8,7 @@ Product scope remains governed by `OVERVIEW.md`.
 - **Overview:** `OVERVIEW.md`
 - **Overview status:** approved on 2026-07-16
 - **Additional source documents:** `anchor-stuff.md`
-- **Contract last reviewed:** 2026-07-24
+- **Contract last reviewed:** 2026-07-25
 - **Blocking decisions:** none for the private in-house alpha. Public website
   distribution remains deferred until Developer ID signing and notarization
   prerequisites are available.
@@ -45,8 +45,9 @@ Product scope remains governed by `OVERVIEW.md`.
   from the filesystem.
 - Create, open, edit, save, save-as, and autosave Markdown files safely.
 - Parse YAML front matter and preserve unsupported content verbatim.
-- Resolve wikilinks and aliases through a cached path, filename, and alias
-  index without requiring note IDs.
+- Resolve wikilinks and aliases through queryable path, filename, and alias
+  indexes, with backlinks read from stored relationships rather than re-parsed
+  from file text.
 - Update affected references when a filename changes; changing only the YAML
   `title` must not rewrite references.
 - Provide file exploration, recent files, search, visible unsaved state, and
@@ -76,8 +77,13 @@ Product scope remains governed by `OVERVIEW.md`.
   navigated by folder, recent file, search, wikilink, and alias.
 - Markdown files can be created and edited; manual save, save-as, and autosave
   preserve exact user content and visibly report unsaved state.
-- Existing note IDs remain byte-preserved but inert; the MVP neither requires
-  nor writes note IDs during ordinary vault use.
+- Every document has a stable UUIDv7 `id`, minted on import when absent and
+  never rewritten afterwards; renaming or moving a file does not change it.
+- Deleting `.anchored/vault.db` and reopening the vault reconstructs every
+  document, link, and collection from the Markdown files alone.
+- A note carrying comments, custom properties, unusual quoting, CRLF endings,
+  or a byte-order mark survives an import and projection byte-identically
+  apart from the front-matter keys Anchored manages.
 - Renaming a file updates affected supported references and backlinks without
   changing references merely because YAML `title` changed.
 - Front matter, tags, linked attachments, and unsupported Obsidian syntax are
@@ -102,11 +108,13 @@ Product scope remains governed by `OVERVIEW.md`.
   adapters, DOMPurify, KaTeX, highlight.js, and Mermaid loaded only for
   explicit Preview rendering
 - **Package manager:** npm, using the committed lockfile
-- **Persistence:** Markdown and attachments in the selected vault; additive
-  `.anchored` vault identity and reversible-trash metadata; native app-data JSON
-  for remembered vault paths; local interface storage for scoped history and
-  recent files
-- **Database:** none for the initial Markdown-editor MVP
+- **Persistence:** SQLite at `<vault>/.anchored/vault.db` is the canonical
+  store; Markdown and attachments in the selected vault are a continuously
+  synchronized, user-owned projection of it. Internal state lives under
+  `.anchored/` (`vault.db`, `vault.json`, `trash/`, `template/`, `conflicts/`).
+  Native app-data JSON holds remembered vault paths; local interface storage
+  holds scoped history and recent files
+- **Database:** SQLite, bundled through `rusqlite`, with FTS5 for search
 - **Hosting:** local desktop application only
 - **External services:** none
 
@@ -127,6 +135,8 @@ when a major-version change is intentionally adopted.
 ├── src-tauri/              Tauri configuration and trusted Rust boundary
 │   ├── capabilities/       Explicit desktop permissions
 │   └── src/                Commands and filesystem operations
+│       ├── db/             Schema, migrations, and repositories
+│       └── sync/           Import, projection, and reconciliation
 ├── tests/                  Cross-feature and integration tests
 ├── docs/design/            Approved visual concepts and design notes
 ├── docs/ai/                Optional project guides
@@ -137,6 +147,24 @@ when a major-version change is intentionally adopted.
 
 Feature folders own their UI, state, types, and targeted tests. Shared code
 moves into `lib` only after it has more than one genuine consumer.
+
+A vault keeps every piece of internal state under one hidden directory. The
+visible folder structure stays whatever the user already has — Anchored never
+imposes a folder taxonomy on an existing Obsidian vault.
+
+```text
+<vault>/
+├── …                       User folders, unchanged and user-controlled
+└── .anchored/
+    ├── vault.db            Canonical store (git-ignored)
+    ├── vault.json          Vault identity, version 2
+    ├── trash/              Soft-deleted payloads and index
+    ├── template/           User-authored note templates
+    └── conflicts/          Preserved conflicting copies
+```
+
+Templates are ordinary Markdown files, not documents: they get no database
+row, no identity, and no search or link indexing.
 
 ## Commands
 
@@ -162,8 +190,12 @@ These scripts must exist in `package.json` after the scaffold chunk.
 - **Main modules:** app shell, vault/files, Markdown editor and Preview,
   Markdown parser/settings adapters, link registry and resolver, search,
   settings/recent files, and the typed Tauri bridge.
-- **Source of truth:** Files in the user-selected vault are authoritative for
-  authored content. Anchored metadata must remain additive and portable.
+- **Source of truth:** `<vault>/.anchored/vault.db` is authoritative. Markdown
+  files are a continuously synchronized projection of it, and an external edit
+  to a file is an incoming change the sync engine imports — never a write that
+  is discarded. Every file the projection writes must stay readable and
+  editable outside Anchored, and the database must be fully rebuildable from
+  the files alone.
 - **Trusted boundary:** React never receives unrestricted filesystem access.
   Rust commands validate and canonicalize paths, constrain operations to the
   selected vault, and perform filesystem mutations.
@@ -180,10 +212,12 @@ These scripts must exist in `package.json` after the scaffold chunk.
 
 ## Data and security
 
-- **Stored data:** User Markdown, YAML front matter, attachments, vault-local
-  `.anchored` vault identity and reversible-trash data, native-only remembered
-  paths, lightweight local settings, scoped notification history, recent-file
-  references, and rebuildable derived indexes.
+- **Stored data:** User Markdown, YAML front matter, attachments, the
+  vault-local `.anchored` database, vault identity, reversible-trash data,
+  templates and preserved conflict copies, native-only remembered paths,
+  lightweight local settings, scoped notification history, and recent-file
+  references. Saved searches, settings, and version history are the only
+  database contents not reconstructible from the Markdown files.
 - **Sensitive data:** The personal vault may contain private writing and
   attachments. Its content must not be logged, uploaded, or exposed to third
   parties.
@@ -307,24 +341,29 @@ These scripts must exist in `package.json` after the scaffold chunk.
 | 2026-07-16 | Use React, TypeScript, and Vite | Matches the source brief, Tauri's supported templates, and the modular UI needs |
 | 2026-07-16 | Use CodeMirror 6 | Purpose-built, extensible editor with a smaller scope than building editing behavior directly |
 | 2026-07-16 | Use npm and commit its lockfile | Node and npm are installed; one package manager reduces setup ambiguity |
-| 2026-07-16 | Keep the initial MVP database-free | Authored Markdown is the source of truth and structured operational modules are out of scope |
+| 2026-07-16 | ~~Keep the initial MVP database-free~~ *(superseded 2026-07-25)* | Authored Markdown is the source of truth and structured operational modules are out of scope |
 | 2026-07-16 | Put filesystem mutation behind Rust commands | Limits permissions and centralizes path and write-safety validation |
 | 2026-07-16 | Use stable IDs with filename-triggered link updates | Preserves identity while matching the approved Obsidian-style rename behavior |
-| 2026-07-16 | Store full 26-character ULIDs in note front matter without a prefix | Keeps permanent identity portable while filenames and aliases remain human-readable |
+| 2026-07-16 | ~~Store full 26-character ULIDs in note front matter without a prefix~~ *(superseded 2026-07-25)* | Keeps permanent identity portable while filenames and aliases remain human-readable |
 | 2026-07-16 | Baseline existing vaults before automatic ID insertion | Existing ID-less notes require a previewed migration; genuinely new Finder-added notes receive an ID only after safe validation |
 | 2026-07-16 | Autosave after one second of idle time | Confirmed by Dwayne; Command-S remains an immediate save |
 | 2026-07-16 | Preserve local edits on external change | Confirmed by Dwayne; present a recoverable conflict instead of auto-reloading |
 | 2026-07-16 | Use a minimal white-on-black design | Explicit product requirement; reduces visual chrome and prioritizes writing |
 | 2026-07-16 | Use Tauri configuration as the app version source | The desktop bundle configuration defines the application version; npm and Rust manifests mirror it |
 | 2026-07-17 | Use stable vault IDs and native-only remembered paths | Notification history follows a moved vault without exposing absolute paths to the interface |
-| 2026-07-23 | Use vault-root `trash/` for reversible deletion | Trash remains a reserved system folder while keeping its opaque entries and conflict-safe restore data outside active vault indexes; legacy `.anchored/trash/` data is migrated on access |
+| 2026-07-23 | ~~Use vault-root `trash/` for reversible deletion~~ *(superseded 2026-07-25)* | Trash remains a reserved system folder while keeping its opaque entries and conflict-safe restore data outside active vault indexes; legacy `.anchored/trash/` data is migrated on access |
 | 2026-07-17 | Package `0.1.0-alpha` as a private ad-hoc-signed Intel alpha | Supports local testing on Dwayne's 2015 MacBook Pro without implying public Gatekeeper or notarization readiness |
 | 2026-07-18 | Use a browser-safe Markdown-it adapter for Preview | It supports the required syntax and render-only settings directly in the existing Tauri WebView while keeping source persistence independent of parser tokens |
 | 2026-07-17 | Defer public website, Apple Silicon, and Linux packages | These delivery targets require separate prerequisites and verification and are outside the current private-alpha scope |
 | 2026-07-17 | Release the source under MIT | Keeps Anchored permissive for use, modification, and redistribution while preserving copyright notice requirements |
-| 2026-07-19 | Defer note IDs and preserve existing values as inert metadata | Removes identity errors and scan work now while leaving a future reviewed Supabase UID migration possible; supersedes the three 2026-07-16 note-ID decisions |
+| 2026-07-19 | ~~Defer note IDs and preserve existing values as inert metadata~~ *(superseded 2026-07-25)* | Removes identity errors and scan work now while leaving a future reviewed Supabase UID migration possible; supersedes the three 2026-07-16 note-ID decisions |
 | 2026-07-19 | Use virtual lifecycle collections as the default navigation | Inbox, Workbench, Archive, and Assets reflect note meaning while Files preserves physical-vault access and portability |
 | 2026-07-22 | Write lifecycle timestamps with the Mac's local offset | Values such as `2026-11-28T15:48:32+01:00` match the user's local time while remaining RFC 3339 timestamps; existing `Z` values remain readable |
 | 2026-07-23 | Normalize all exact timestamp-valued front matter through a previewed migration | Keeps future timestamp properties consistent without guessing about date-only, malformed, fractional, or ambiguous metadata; preserves represented instants and protects external edits |
 | 2026-07-19 | Keep global Scratchpad shortcuts and asset copying deferred | Local capture ships only after performance work; GitHub issues #41 and #40 own the later operating-system and import workflows |
 | 2026-07-25 | Fix the updater endpoint repo and release bundle target | Every release through `0.1.2-alpha` pointed the updater at the wrong GitHub repository and never published `latest.json`/signature artifacts, so no installed copy could ever find or apply an update |
+| 2026-07-25 | Make SQLite canonical and Markdown a synchronized projection | Supersedes the 2026-07-16 database-free decision. Linear-scan search, whole-vault rescans, re-parsed backlinks, and non-transactional multi-file renames are all bounded by vault size rather than change size; a database fixes them at their root. Files stay real and externally editable, so portability and Obsidian compatibility are preserved |
+| 2026-07-25 | Use UUIDv7 for note, vault, and trash identities | Supersedes the 2026-07-16 ULID decision. Keeps time-ordered ids while adopting a format with first-class database and tooling support. Vault metadata moves to version 2; readable version 1 files are re-minted rather than rejected |
+| 2026-07-25 | Keep frontmatter projection a surgical byte edit | `metadata.rs` already mutates front matter by replacing byte ranges rather than re-serializing YAML, so comments, key order, quote style, and line endings survive by construction. Only `id`, `created_at`, `updated_at`, `status`, `type`, and `archived_at` are written; every other key is imported and never rewritten. `revision` stays out of files entirely so no save dirties a git line the user did not author |
+| 2026-07-25 | Detect Anchored's own writes by content hash, not a frontmatter token | A per-write token in front matter would produce a git diff on every save, render as a visible Obsidian property, and be unreadable in exactly the malformed files where classification matters most. A durable `sync_records.projected_hash` degrades a crash mid-projection to ordinary startup reconciliation |
+| 2026-07-25 | Move trash to `.anchored/trash/` | Supersedes the 2026-07-23 vault-root decision. Consolidates all internal state under one hidden directory, and inherits the existing dotfile exclusion so trash stops generating watcher events. Vaults are disposable at this stage, so the legacy location is dropped rather than migrated |

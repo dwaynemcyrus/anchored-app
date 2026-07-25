@@ -5,7 +5,7 @@ import { describe, expect, it, vi } from "vitest";
 import { TrashPanel } from "./TrashPanel";
 
 const entry = {
-  id: "01JZQC4G61A6F2M9V3C5T7X1CA",
+  id: "019f989c-2dc0-7b03-aa33-3c4d5e6f7083",
   name: "Leadership.md",
   originalPath: "Notes/Leadership.md",
   trashedAt: Date.UTC(2026, 6, 17, 9),

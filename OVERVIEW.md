@@ -8,7 +8,7 @@ does not authorize technical setup or implementation.
 
 - **Status:** approved
 - **Owner:** Dwayne Cyrus
-- **Last reviewed:** 2026-07-19
+- **Last reviewed:** 2026-07-25
 - **Source documents or links:** `anchor-stuff.md`
 
 ## 1. Project
@@ -68,9 +68,8 @@ as the initial MVP in the source brief. It must include:
   the physical vault tree retained as a secondary Files view.
 - A lightweight Scratchpad capture window that creates separate Inbox notes
   and supports wikilink authoring without loading the full editor surface.
-- Existing note `id` fields remain preserved as ordinary front matter, but
-  note-ID generation, migration, validation, warnings, and runtime dependency
-  are deferred until a future database-backed phase.
+- Every document carries a stable UUIDv7 `id` in its front matter, minted on
+  import when absent and never rewritten afterwards.
 - Rename-safe links: changing a file name must not break wikilinks, aliases,
   backlinks, or other references to that item.
 - References in linked files and areas must remain correct and update when a
@@ -85,7 +84,9 @@ as the initial MVP in the source brief. It must include:
 
 The following are explicitly outside the initial MVP:
 
-- Habits, tasks, projects, and journal-specific workflows.
+- Habits, tasks, projects, boards, and journal-specific workflows. The
+  database-first architecture makes room for them; this phase does not build
+  them, and no storage is created for them ahead of time.
 - Qur'an reader and Qur'an reflection features.
 - PDF or EPUB reading, read-later workflows, highlights, and annotations;
   non-Markdown files are listed only as Assets in this phase.
@@ -95,20 +96,19 @@ The following are explicitly outside the initial MVP:
   publishing, and a plugin system.
 - Full replication of Obsidian or any other reference application.
 - Advanced formatting at the expense of editor speed or reliability.
-- Database-backed object identities, Supabase integration, global macOS
-  Scratchpad shortcuts, and copying imported assets into a physical asset
-  folder.
+- Supabase integration, global macOS Scratchpad shortcuts, and copying
+  imported assets into a physical asset folder.
 
 These ideas remain part of the long-term source brief, not the first release.
 
 ## 6. Product behavior
 
 - **User accounts:** No for the initial local, single-user MVP.
-- **Stored data:** Yes. Human-authored content remains in the user's existing
-  Markdown files with YAML front matter. The application may store local
-  recent-file information, settings, and rebuildable indexes, but those
-  mechanisms must not replace the Markdown files as the source of truth for
-  authored content.
+- **Stored data:** Yes. A vault-local SQLite database holds the canonical
+  state, and human-authored content is continuously written out to the user's
+  Markdown files with YAML front matter. The database must never become the
+  only copy: the files stay complete enough to rebuild it, and an edit made in
+  another tool is imported rather than discarded.
 - **Payments:** No.
 - **External services:** None for the initial MVP.
 - **Notifications or email:** None.
@@ -116,7 +116,8 @@ These ideas remain part of the long-term source brief, not the first release.
 - **Offline behavior:** All first-version writing and navigation workflows
   must work without an internet connection.
 - **File ownership:** Dwayne retains direct ownership of Markdown files and
-  can read or edit them with other compatible tools.
+  can read or edit them with other compatible tools. Anchored rewrites only
+  the front-matter keys it manages and leaves every other byte untouched.
 
 ## 7. Platform and design
 
@@ -208,14 +209,16 @@ It is ready for handoff or release when:
 
 - Local-first: cloud sync may be added later but must not become the sole
   source of truth.
-- Markdown-first, not Markdown-only: human-authored knowledge belongs in
-  Markdown; future structured operational data may use SQLite.
+- Database-first, Markdown-always: SQLite holds the canonical state, and every
+  document is continuously projected to a real Markdown file the user owns.
+  Neither half is optional. A Markdown file must always be readable and
+  editable by other tools, an edit made in another tool must always flow back
+  in, and the database must always be rebuildable from the files alone.
 - Universal linking: future linkable objects should be navigable through one
   coherent wikilink and backlink system regardless of storage type.
-- Permanent identities: a future database-backed phase may assign stable UIDs
-  to linkable objects through a reviewed migration. The current Markdown MVP
-  must not depend on, generate, validate, or repair note IDs. Filename changes
-  update affected references; front-matter title changes do not.
+- Permanent identities: every document carries a stable UUIDv7 that survives
+  renames and moves. Filename changes update affected references;
+  front-matter title changes do not.
 - Portable and modular: future modules must not sacrifice ownership, speed,
   offline use, or simplicity.
 - Purposeful scope: a feature belongs only if it improves thinking, writing,
@@ -231,8 +234,9 @@ It is ready for handoff or release when:
 - `[ASSUMPTION]` The initial MVP is a local, single-user application with no
   account because it is for Dwayne personally and the source brief places
   accounts in a later browser-companion phase.
-- Existing note `id` fields are inert user metadata in the current phase and
-  remain untouched unless the user edits them directly.
+- An existing note `id` that is not a canonical UUIDv7 is treated as
+  unrecognised metadata; the note is given a UUIDv7 identity of its own on
+  import rather than having its existing value reinterpreted.
 - `[ASSUMPTION]` The source brief's technical choices other than the required
   Tauri 2 desktop wrapper remain recommendations until technical planning.
 

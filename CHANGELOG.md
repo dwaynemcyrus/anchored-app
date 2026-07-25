@@ -6,6 +6,88 @@ Git commit. The format follows [Keep a Changelog], and releases follow
 
 ## [Unreleased]
 
+### Added
+
+- Each vault now carries a SQLite database at `.anchored/vault.db`, created
+  and migrated when the vault is opened. Nothing reads from it yet; this is
+  the foundation for the database-first storage work. Opening a vault also
+  creates `.anchored/template/` for note templates, `.anchored/conflicts/`
+  for preserved conflicting copies, and a `.anchored/.gitignore` so a vault
+  kept in Git does not commit database bytes.
+- Opening or rescanning a vault now also indexes it into that database,
+  including each note's front matter, body, aliases, wikilinks, and
+  lifecycle timestamps. Files remain the source of truth and nothing reads
+  back from the index yet, so there is no visible change in behavior. Notes
+  are matched by a normalized path so a name spelled differently by Finder
+  and by Anchored — different Unicode composition, or a different letter
+  case — is recognized as one note rather than two.
+
+- A Recovery panel, reached from the bottom of the file rail, shows notes
+  that changed both in Anchored and on disk, and the earlier copies kept of
+  whichever note is open. Each version can be expanded to read in full, and
+  the list keeps up as you save. Conflicting copies are named by their
+  location rather than opened, because they live in the vault's hidden
+  folder. Comparing a version against the note, and restoring one, are not
+  built yet.
+
+### Changed
+
+- Notes that had no `id` in their front matter can now be given one, written
+  into the file itself so the note keeps its identity when it is renamed or
+  moved in Finder or another editor. Front matter is edited in place, so
+  comments, key order, quote style, and spacing are left exactly as written,
+  and a note whose front matter is malformed is never rewritten. This is off
+  by default in this release.
+- A note sent to the Trash now keeps its history and its identity while it is
+  there, so restoring it brings back the same note rather than a fresh copy of
+  it, with its earlier versions and backlinks intact.
+- Anchored no longer keeps a separate JSON metadata cache beside the vault.
+  The vault index replaced it, and holding two stores in step with each other
+  was a source of disagreement rather than speed. Existing cache files are
+  simply left unused.
+- Saving a note now records it and writes the file as a single operation,
+  instead of writing the file and then reading it back to catch up. A save
+  that cannot be written leaves nothing behind, and a save is no longer
+  mistaken for an edit made in another program.
+- Anchored now keeps the previous copy of a note whenever its contents are
+  replaced, whether the change arrived from another editor, a Git checkout,
+  or Anchored itself. Up to twenty versions are kept per note, each recording
+  where the change came from. Nothing surfaces this yet.
+- Opening a vault now records how each note's file and its stored copy stand
+  relative to each other. A note changed in both places has both versions
+  preserved under `.anchored/conflicts/` before anything else touches it, and
+  the note itself is left exactly as found. Nothing is resolved automatically:
+  Anchored never picks a winner. Preserved copies are cleared once a note
+  agrees with itself again. No interface surfaces these yet.
+- Only one copy of Anchored can now run at a time. A second launch raises the
+  existing window instead of opening a rival window that would fight the first
+  one over the same vault.
+- Opening or rescanning a vault no longer reads every note to collect its
+  metadata. Aliases, links, status, type, and lifecycle timestamps are read
+  from the index instead, and a note whose size and modification time are
+  unchanged is not opened at all. Folders with no notes in them still appear,
+  and if the index cannot answer for any note the previous file-reading path
+  is used instead.
+- Search now runs against the vault index instead of reading every file on
+  every query, and results are ranked by relevance rather than returned in
+  path order. Matches that ranking cannot express — text in the middle of a
+  word, punctuation, or an exact phrase — are still found: a direct scan of
+  the indexed text runs whenever ranking turns up nothing. Front matter
+  remains searchable and line numbers still count from the top of the file.
+  Search is no longer capped at 64 MB of files read per query.
+- The vault index is now kept up to date continuously rather than only on a
+  full scan. Saving, creating, archiving, restoring, renaming, and moving a
+  note all update it directly, and edits made in another program are picked
+  up through the existing watcher. A note keeps its identity when it is
+  renamed or moved, so anything attached to that identity follows it.
+- Note, vault, and trash identities are now UUIDv7 instead of ULID, in
+  preparation for the database-backed storage phase. A vault written by an
+  earlier build still opens: its identity file is quietly re-minted in the
+  new format on first use, and remembered-vault entries that can no longer
+  be resolved are dropped from the recent list rather than making the whole
+  list unreadable. Notes keep whatever `id` they already have; existing ULID
+  values are treated as unrecognised metadata and left untouched.
+
 ## [0.1.4-alpha] - 2026-07-25
 
 ### Added

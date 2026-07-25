@@ -11,7 +11,7 @@ import {
 describe("Anchored editor language", () => {
   it("parses YAML front matter separately from Markdown content", () => {
     const state = EditorState.create({
-      doc: "---\nid: 01JZQ7K8P4A6F2M9V3C5T7X1BY\ntags: [writing]\n---\n# Heading\n",
+      doc: "---\nid: 019f989c-2dc0-7b01-8a11-1c2d3e4f5061\ntags: [writing]\n---\n# Heading\n",
       extensions: [anchoredMarkdownLanguage],
     });
     const tree = ensureSyntaxTree(state, state.doc.length, 10000);
@@ -55,7 +55,7 @@ describe("Anchored editor language", () => {
 
   it("highlights block Markdown and YAML front matter", () => {
     const source =
-      "---\nid: 01JZQ7K8P4A6F2M9V3C5T7X1BY\ntags: [writing]\n# metadata comment\n---\n# Heading\n> Quoted text\n- List item\n\n---\n\n```rust\nfn main() {}\n```\n";
+      "---\nid: 019f989c-2dc0-7b01-8a11-1c2d3e4f5061\ntags: [writing]\n# metadata comment\n---\n# Heading\n> Quoted text\n- List item\n\n---\n\n```rust\nfn main() {}\n```\n";
     const state = EditorState.create({
       doc: source,
       extensions: [anchoredMarkdownLanguage],

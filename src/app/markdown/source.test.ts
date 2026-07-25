@@ -38,7 +38,7 @@ describe("Markdown source policies", () => {
   });
 
   it("keeps local typing when a new note receives its identity", () => {
-    const persisted = "---\nid: 01JZQ7K8P4A6F2M9V3C5T7X1BY\n---\n";
+    const persisted = "---\nid: 019f989c-2dc0-7b01-8a11-1c2d3e4f5061\n---\n";
 
     expect(mergeCreatedMarkdownSource("", persisted, "# Draft")).toBe(
       `${persisted}# Draft`,
