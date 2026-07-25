@@ -45,7 +45,12 @@ type FrontMatterBounds = {
 
 type FrontMatterScan =
   | { kind: "absent" }
-  | { kind: "malformed"; from: number; to: number; reason: "opening" | "closing" }
+  | {
+      kind: "malformed";
+      from: number;
+      to: number;
+      reason: "opening" | "closing";
+    }
   | { kind: "present"; bounds: FrontMatterBounds };
 
 function scanFrontMatterBounds(content: string): FrontMatterScan {

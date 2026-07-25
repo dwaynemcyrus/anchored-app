@@ -86,9 +86,7 @@ describe("lintFrontmatter", () => {
     it.each(["status", "type", "created_at", "updated_at", "archived_at"])(
       "flags a non-scalar value for %s",
       (key) => {
-        const source = ["---", `${key}: [archived]`, "---", "Body"].join(
-          "\n",
-        );
+        const source = ["---", `${key}: [archived]`, "---", "Body"].join("\n");
         const diagnostics = lintFrontmatter(source);
         expect(diagnostics).toHaveLength(1);
         expect(diagnostics[0].rule).toBe("invalid-property-shape");
@@ -113,9 +111,13 @@ describe("lintFrontmatter", () => {
     );
 
     it("flags a mapping value for a known scalar key", () => {
-      const source = ["---", "status:", "  nested: archived", "---", "Body"].join(
-        "\n",
-      );
+      const source = [
+        "---",
+        "status:",
+        "  nested: archived",
+        "---",
+        "Body",
+      ].join("\n");
       const diagnostics = lintFrontmatter(source);
       expect(diagnostics).toHaveLength(1);
       expect(diagnostics[0].rule).toBe("invalid-property-shape");
@@ -127,9 +129,14 @@ describe("lintFrontmatter", () => {
     });
 
     it("accepts a list of string aliases", () => {
-      const source = ["---", "aliases:", "  - Alt Name", "  - Other", "---", "Body"].join(
-        "\n",
-      );
+      const source = [
+        "---",
+        "aliases:",
+        "  - Alt Name",
+        "  - Other",
+        "---",
+        "Body",
+      ].join("\n");
       expect(lintFrontmatter(source)).toEqual([]);
     });
 
@@ -139,9 +146,14 @@ describe("lintFrontmatter", () => {
     });
 
     it("flags a list of aliases containing a non-string item", () => {
-      const source = ["---", "aliases:", "  - Alt Name", "  - 42", "---", "Body"].join(
-        "\n",
-      );
+      const source = [
+        "---",
+        "aliases:",
+        "  - Alt Name",
+        "  - 42",
+        "---",
+        "Body",
+      ].join("\n");
       const diagnostics = lintFrontmatter(source);
       expect(diagnostics).toHaveLength(1);
       expect(diagnostics[0].rule).toBe("invalid-property-shape");
@@ -149,9 +161,13 @@ describe("lintFrontmatter", () => {
     });
 
     it("flags a mapping value for aliases", () => {
-      const source = ["---", "aliases:", "  primary: Alt Name", "---", "Body"].join(
-        "\n",
-      );
+      const source = [
+        "---",
+        "aliases:",
+        "  primary: Alt Name",
+        "---",
+        "Body",
+      ].join("\n");
       const diagnostics = lintFrontmatter(source);
       expect(diagnostics).toHaveLength(1);
       expect(diagnostics[0].rule).toBe("invalid-property-shape");
@@ -186,12 +202,9 @@ describe("lintFrontmatter", () => {
     });
 
     it("flags both a duplicate and a blank item in the same list", () => {
-      const source = [
-        "---",
-        'aliases: [Foo, "", Foo]',
-        "---",
-        "Body",
-      ].join("\n");
+      const source = ["---", 'aliases: [Foo, "", Foo]', "---", "Body"].join(
+        "\n",
+      );
       const diagnostics = lintFrontmatter(source);
       expect(diagnostics).toHaveLength(2);
       expect(diagnostics.map((d) => d.rule).sort()).toEqual([

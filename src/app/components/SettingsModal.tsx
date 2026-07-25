@@ -286,9 +286,9 @@ export function SettingsModal({
         <section className="settings-section">
           <h3>Frontmatter validation</h3>
           <p>
-            Warn about malformed frontmatter YAML while typing &mdash;
-            duplicate keys, missing delimiters, and invalid structure.
-            Warnings never block saving.
+            Warn about malformed frontmatter YAML while typing &mdash; duplicate
+            keys, missing delimiters, and invalid structure. Warnings never
+            block saving.
           </p>
           <label className="settings-toggle">
             <input
