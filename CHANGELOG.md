@@ -24,8 +24,11 @@ Git commit. The format follows [Keep a Changelog], and releases follow
 
 - A Recovery panel, reached from the bottom of the file rail, shows notes
   that changed both in Anchored and on disk, and the earlier copies kept of
-  whichever note is open. Conflicting copies are named by their location
-  rather than opened, because they live in the vault's hidden folder.
+  whichever note is open. Each version can be expanded to read in full, and
+  the list keeps up as you save. Conflicting copies are named by their
+  location rather than opened, because they live in the vault's hidden
+  folder. Comparing a version against the note, and restoring one, are not
+  built yet.
 
 ### Changed
 

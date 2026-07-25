@@ -81,6 +81,18 @@ describe("RecoveryPanel", () => {
     ).toBeInTheDocument();
   });
 
+  it("lets the reader see the whole version, not just a summary of it", () => {
+    renderPanel({ versions: [version], versionsFor: "Notes/Harbor.md" });
+
+    // Collapsed by default so a long note does not bury the list, but present
+    // — a version you cannot read is not recovery.
+    expect(screen.getByText("Show this version")).toBeInTheDocument();
+    // Matched on the element's own text, because the testing library
+    // normalises whitespace and a note's line breaks are the point.
+    const shown = document.querySelector(".recovery-version__content");
+    expect(shown?.textContent).toBe(version.content);
+  });
+
   it("asks the reader to open a note before showing versions", () => {
     renderPanel({});
 

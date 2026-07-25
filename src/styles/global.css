@@ -1680,6 +1680,31 @@ input:focus-visible,
   white-space: nowrap;
 }
 
+.recovery-version summary {
+  color: var(--color-text-subtle);
+  cursor: pointer;
+  font-size: 10px;
+  padding: 2px 0;
+}
+
+/* The version's own text, kept scrollable so a long note cannot push the
+   panel's other entries out of reach. */
+.recovery-version__content {
+  max-height: 220px;
+  margin: 4px 0 0;
+  padding: 8px 10px;
+  overflow: auto;
+  border: 1px solid var(--color-rule);
+  border-radius: 4px;
+  background: var(--color-surface-sunken, transparent);
+  color: var(--color-text);
+  font-family: "SFMono-Regular", Consolas, monospace;
+  font-size: 10px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
 .continuity-record__copy span,
 .continuity-record__copy time {
   color: var(--color-text-subtle);

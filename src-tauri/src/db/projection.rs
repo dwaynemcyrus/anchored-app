@@ -126,6 +126,9 @@ pub(crate) fn save(
         .map_err(map_error("The note could not be saved"))?;
 
     let mut document = import::import_note(relative_path, content.as_bytes());
+    // This is Anchored saving, not a change arriving from elsewhere, and the
+    // version kept below has to say so.
+    document.origin = documents::ChangeOrigin::Anchored;
     let upserted = documents::upsert(&transaction, &document)?;
 
     let path = root.join(relative_path);
@@ -475,6 +478,45 @@ mod tests {
             .query_row("SELECT revision FROM documents", [], |row| row.get(0))
             .expect("read revision");
         assert_eq!(after, revision, "a save must not count as a change twice");
+    }
+
+    /// A save is Anchored changing the note, and its kept version has to say
+    /// so. Labelling it as a change from elsewhere would tell the reader their
+    /// own typing arrived from another program.
+    #[test]
+    fn a_saved_version_is_recorded_as_anchored_own_change() {
+        let (directory, connection) = vault(&[("Harbor.md", "# Harbor\n")]);
+        let mut connection = connection;
+
+        super::save(
+            &mut connection,
+            directory.path(),
+            "Harbor.md",
+            "# Harbor edited\n",
+        )
+        .expect("save");
+
+        let origin: String = connection
+            .query_row("SELECT origin FROM document_versions", [], |row| row.get(0))
+            .expect("a version should be recorded");
+        assert_eq!(origin, "anchored");
+    }
+
+    /// An edit arriving through the importer is not Anchored's own, and must
+    /// stay distinguishable from one that is.
+    #[test]
+    fn an_imported_change_is_still_recorded_as_external() {
+        let (_directory, connection) = vault(&[("Harbor.md", "# Harbor\n")]);
+        documents::upsert(
+            &connection,
+            &import_note("Harbor.md", b"# Changed elsewhere\n"),
+        )
+        .expect("import an outside change");
+
+        let origin: String = connection
+            .query_row("SELECT origin FROM document_versions", [], |row| row.get(0))
+            .expect("a version should be recorded");
+        assert_eq!(origin, "external_file");
     }
 
     #[test]

@@ -11,6 +11,7 @@ import {
 export type RecoveryPanelApi = {
   conflicts: VaultConflict[];
   openRecoveryPanel: (relativePath?: string) => void;
+  refreshRecovery: () => void;
   recoveryError: string | undefined;
   recoveryLoading: boolean;
   recoveryVisible: boolean;
@@ -24,9 +25,9 @@ export type RecoveryPanelApi = {
  * Loads what Recovery shows: notes changed in two places at once, and the
  * earlier copies kept of whichever note is open.
  *
- * Both are read on open rather than kept live. Nothing here changes a note,
- * so a stale view costs nothing, and polling the index while the user types
- * would.
+ * Read when the panel opens, and again whenever the caller says something has
+ * changed. Not polled: nothing here changes a note, so asking the index
+ * repeatedly while someone types would cost more than it is worth.
  */
 export function useRecoveryPanel(): RecoveryPanelApi {
   const [conflicts, setConflicts] = useState<VaultConflict[]>([]);
@@ -47,33 +48,55 @@ export function useRecoveryPanel(): RecoveryPanelApi {
     setRecoveryVisible(false);
   }, []);
 
-  const openRecoveryPanel = useCallback((relativePath?: string) => {
-    setRecoveryVisible(true);
-    setRecoveryLoading(true);
-    setRecoveryError(undefined);
-    setVersionsFor(relativePath);
+  const load = useCallback(
+    (relativePath: string | undefined, showLoading: boolean) => {
+      if (showLoading) setRecoveryLoading(true);
+      setRecoveryError(undefined);
 
-    void (async () => {
-      try {
-        const [foundConflicts, foundVersions] = await Promise.all([
-          listVaultConflicts(),
-          relativePath
-            ? listVaultNoteVersions(relativePath)
-            : Promise.resolve<NoteVersion[]>([]),
-        ]);
-        setConflicts(foundConflicts);
-        setVersions(foundVersions);
-      } catch (error) {
-        setRecoveryError(readErrorMessage(error));
-      } finally {
-        setRecoveryLoading(false);
-      }
-    })();
-  }, []);
+      void (async () => {
+        try {
+          const [foundConflicts, foundVersions] = await Promise.all([
+            listVaultConflicts(),
+            relativePath
+              ? listVaultNoteVersions(relativePath)
+              : Promise.resolve<NoteVersion[]>([]),
+          ]);
+          setConflicts(foundConflicts);
+          setVersions(foundVersions);
+        } catch (error) {
+          setRecoveryError(readErrorMessage(error));
+        } finally {
+          if (showLoading) setRecoveryLoading(false);
+        }
+      })();
+    },
+    [],
+  );
+
+  const openRecoveryPanel = useCallback(
+    (relativePath?: string) => {
+      setRecoveryVisible(true);
+      setVersionsFor(relativePath);
+      load(relativePath, true);
+    },
+    [load],
+  );
+
+  /**
+   * Re-reads without the loading state, so a save landing while the panel is
+   * open updates the list in place instead of blanking it.
+   */
+  const refreshRecovery = useCallback(() => {
+    setVersionsFor((current) => {
+      load(current, false);
+      return current;
+    });
+  }, [load]);
 
   return {
     conflicts,
     openRecoveryPanel,
+    refreshRecovery,
     recoveryError,
     recoveryLoading,
     recoveryVisible,

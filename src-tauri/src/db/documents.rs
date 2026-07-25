@@ -65,11 +65,10 @@ pub(crate) fn upsert(
         _ => document.uuid.clone(),
     };
 
-    // Whatever the row is about to be replaced with, keep what it held first.
-    // Anything reaching the importer is a change Anchored did not make — its
-    // own writes are recognised and skipped before this point.
+    // Whatever the row is about to be replaced with, keep what it held first,
+    // recorded with where the change came from.
     if let Some((id, _)) = &existing {
-        snapshot_replaced_content(connection, *id, &document.content_hash)?;
+        snapshot_replaced_content(connection, *id, &document.content_hash, document.origin)?;
     }
 
     let created = existing.is_none();
@@ -170,6 +169,7 @@ fn snapshot_replaced_content(
     connection: &Connection,
     document_id: i64,
     incoming_hash: &str,
+    origin: ChangeOrigin,
 ) -> Result<(), VaultError> {
     let current: Option<(String, String, String, i64)> = connection
         .query_row(
@@ -194,7 +194,7 @@ fn snapshot_replaced_content(
         revision,
         &format!("{frontmatter}{body}"),
         &hash,
-        ChangeOrigin::ExternalFile,
+        origin,
     )
 }
 

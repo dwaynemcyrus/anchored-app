@@ -196,6 +196,14 @@ export function RecoveryPanel({
                         >
                           {formatWhen(version.createdMillis)}
                         </time>
+                        {/* The whole version, not a summary of it. A list of
+                            timestamps you cannot read is not recovery. */}
+                        <details className="recovery-version">
+                          <summary>Show this version</summary>
+                          <pre className="recovery-version__content">
+                            {version.content}
+                          </pre>
+                        </details>
                       </div>
                     </li>
                   ))}

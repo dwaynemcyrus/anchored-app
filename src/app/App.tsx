@@ -1074,6 +1074,16 @@ export function App() {
   }, [setActiveDocument, setFocusDocument]);
 
   const recovery = useRecoveryPanel();
+  // A save records a version, so Recovery must not keep showing what it read
+  // when it opened. Driven by the save landing rather than a timer: nothing
+  // else changes what this panel shows.
+  const refreshRecovery = recovery.refreshRecovery;
+  const recoveryVisible = recovery.recoveryVisible;
+  useEffect(() => {
+    if (!recoveryVisible || saveState !== "saved") return;
+    refreshRecovery();
+  }, [recoveryVisible, saveState, refreshRecovery]);
+
   const trash = useTrashPanel({
     addHistoryEntry: notifications.addHistoryEntry,
     addVaultNotice: notifications.addVaultNotice,

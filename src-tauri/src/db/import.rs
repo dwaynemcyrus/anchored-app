@@ -39,6 +39,10 @@ pub(crate) struct ImportedDocument {
     /// Filled in by the caller from the file's metadata. Together with
     /// `size_bytes` this is what lets an import skip an unchanged file.
     pub mtime_millis: u64,
+    /// Where the change came from. Defaults to a change Anchored did not
+    /// make, because that is what reaching the importer means; a save sets it
+    /// to `Anchored` before writing.
+    pub origin: super::documents::ChangeOrigin,
     pub status: Option<String>,
     pub note_type: Option<String>,
     pub archived_at: Option<String>,
@@ -95,6 +99,7 @@ pub(crate) fn import_note(relative_path: &str, bytes: &[u8]) -> ImportedDocument
         content_hash: content_hash(bytes),
         size_bytes,
         mtime_millis: 0,
+        origin: super::documents::ChangeOrigin::ExternalFile,
         status: None,
         note_type: None,
         archived_at: None,
@@ -168,6 +173,7 @@ pub(crate) fn import_asset(relative_path: &str, bytes: &[u8]) -> ImportedDocumen
         content_hash: content_hash(bytes),
         size_bytes: bytes.len() as u64,
         mtime_millis: 0,
+        origin: super::documents::ChangeOrigin::ExternalFile,
         status: None,
         note_type: None,
         archived_at: None,
