@@ -212,6 +212,24 @@ pub(crate) fn project_vault(root: &Path) -> Result<usize, VaultError> {
     projection::project_pending_identities(root, &connection)
 }
 
+/// Saves a note: commits the contents and writes the file together.
+///
+/// `Ok(false)` means the index could not be opened and the caller should write
+/// the file the old way. Saving must never be the thing that fails.
+pub(crate) fn save_note(
+    root: &Path,
+    relative_path: &str,
+    content: &str,
+) -> Result<bool, VaultError> {
+    let Ok(mut connection) = open(&database_path(root)) else {
+        return Ok(false);
+    };
+    if read_source(&connection) == ReadSource::Scan {
+        return Ok(false);
+    }
+    projection::save(&mut connection, root, relative_path, content).map(|()| true)
+}
+
 /// Every note currently changed in two places at once. Both versions of each
 /// are preserved under `.anchored/conflicts/` and readable from there.
 pub(crate) fn list_conflicts(root: &Path) -> Result<Vec<conflicts::VaultConflict>, VaultError> {

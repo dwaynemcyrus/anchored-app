@@ -30,6 +30,10 @@ Git commit. The format follows [Keep a Changelog], and releases follow
   comments, key order, quote style, and spacing are left exactly as written,
   and a note whose front matter is malformed is never rewritten. This is off
   by default in this release.
+- Saving a note now records it and writes the file as a single operation,
+  instead of writing the file and then reading it back to catch up. A save
+  that cannot be written leaves nothing behind, and a save is no longer
+  mistaken for an edit made in another program.
 - Anchored now keeps the previous copy of a note whenever its contents are
   replaced, whether the change arrived from another editor, a Git checkout,
   or Anchored itself. Up to twenty versions are kept per note, each recording

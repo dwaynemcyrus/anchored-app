@@ -3405,19 +3405,24 @@ fn save_markdown_file(
         return Err(VaultError::file_too_large());
     }
 
-    let metadata = fs::metadata(&canonical_file)
-        .map_err(|error| VaultError::io("The Markdown file could not be inspected", error))?;
-    let temporary_path = temporary_sibling_path(&canonical_file)?;
-    let write_result = write_atomically(&temporary_path, &canonical_file, &content, &metadata);
-    if write_result.is_err() {
-        let _ = fs::remove_file(&temporary_path);
+    // The index commits the contents and writes the file together, so there is
+    // no second pass reading back what was just written. If it cannot, the
+    // file is written directly and indexed after, as before.
+    if !crate::db::save_note(root, relative_path, &content)? {
+        let metadata = fs::metadata(&canonical_file)
+            .map_err(|error| VaultError::io("The Markdown file could not be inspected", error))?;
+        let temporary_path = temporary_sibling_path(&canonical_file)?;
+        let write_result = write_atomically(&temporary_path, &canonical_file, &content, &metadata);
+        if write_result.is_err() {
+            let _ = fs::remove_file(&temporary_path);
+        }
+        write_result?;
+        index_changed_paths(root, std::slice::from_ref(&relative_path.to_owned()));
     }
-    write_result?;
 
     let metadata = fs::metadata(&canonical_file)
         .map_err(|error| VaultError::io("The Markdown file could not be inspected", error))?;
     let size_bytes = content.len() as u64;
-    index_changed_paths(root, std::slice::from_ref(&relative_path.to_owned()));
     Ok(vault_document(
         content,
         relative_path.to_owned(),

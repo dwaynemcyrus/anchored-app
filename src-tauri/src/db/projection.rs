@@ -105,6 +105,74 @@ pub(crate) struct Reconciliation {
     pub missing_files: usize,
 }
 
+/// Commits a note's new contents and writes the file, as one operation.
+///
+/// The row is updated first and the file written inside the same transaction,
+/// so a failed write rolls the row back and neither side moves alone. That
+/// replaces writing the file and then reading it back in to re-index it: the
+/// content is already known, so there is nothing to discover by re-reading.
+///
+/// The resulting size and time are recorded on the row before returning, which
+/// is what stops the watcher's report of this write from looking like an edit
+/// made somewhere else.
+pub(crate) fn save(
+    connection: &mut Connection,
+    root: &Path,
+    relative_path: &str,
+    content: &str,
+) -> Result<(), VaultError> {
+    let transaction = connection
+        .transaction()
+        .map_err(map_error("The note could not be saved"))?;
+
+    let mut document = import::import_note(relative_path, content.as_bytes());
+    let upserted = documents::upsert(&transaction, &document)?;
+
+    let path = root.join(relative_path);
+    crate::vault::write_markdown_atomically(&path, content)?;
+
+    let metadata = std::fs::metadata(&path)
+        .map_err(|error| VaultError::io("The saved note could not be inspected", error))?;
+    let (size_bytes, mtime_millis) = super::file_signature(&metadata);
+    document.mtime_millis = mtime_millis;
+    transaction
+        .execute(
+            "UPDATE documents SET mtime_millis = ?2, size_bytes = ?3 WHERE id = ?1",
+            params![upserted.id, mtime_millis as i64, size_bytes as i64],
+        )
+        .map_err(map_error("The saved note could not be recorded"))?;
+    // Read back rather than assumed: `upsert` increments the revision, and the
+    // sync record has to name the revision that was actually projected or
+    // reconciliation would read a stale one as a conflict.
+    let revision: i64 = transaction
+        .query_row(
+            "SELECT revision FROM documents WHERE id = ?1",
+            params![upserted.id],
+            |row| row.get(0),
+        )
+        .map_err(map_error("The saved note could not be read back"))?;
+    documents::record_synced(
+        &transaction,
+        upserted.id,
+        &document.content_hash,
+        size_bytes,
+        mtime_millis,
+        revision,
+    )?;
+
+    // A new note changes what other notes' links resolve to; an edit in place
+    // only changes its own.
+    if upserted.created {
+        documents::resolve_links(&transaction)?;
+    } else {
+        documents::resolve_links_from(&transaction, upserted.id)?;
+    }
+
+    transaction
+        .commit()
+        .map_err(map_error("The note could not be saved"))
+}
+
 /// The note exactly as Anchored has it stored, reassembled from the two
 /// columns it is kept in.
 fn stored_content(connection: &Connection, document_id: i64) -> Result<String, VaultError> {
@@ -343,6 +411,112 @@ mod tests {
             "the file is what Anchored meant to write"
         );
         assert_eq!(summary.conflicts, 0);
+    }
+
+    #[test]
+    fn saving_writes_the_file_and_the_row_together() {
+        let (directory, connection) = vault(&[("Harbor.md", "# Harbor\n")]);
+        let mut connection = connection;
+
+        super::save(
+            &mut connection,
+            directory.path(),
+            "Harbor.md",
+            "# Harbor edited\n",
+        )
+        .expect("save");
+
+        assert_eq!(
+            std::fs::read_to_string(directory.path().join("Harbor.md")).expect("read note"),
+            "# Harbor edited\n"
+        );
+        let (body, state): (String, String) = connection
+            .query_row(
+                "SELECT documents.body, sync_records.state
+                 FROM documents JOIN sync_records ON sync_records.document_id = documents.id",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .expect("read the row and its sync state");
+        assert_eq!(body, "# Harbor edited\n");
+        assert_eq!(state, "synced", "the file and the row agree immediately");
+    }
+
+    /// A save must not come back around as an edit made somewhere else, or
+    /// every save would be re-imported and counted as an external change.
+    #[test]
+    fn a_saved_note_is_not_re_imported_as_an_external_edit() {
+        // A real vault layout, because this exercises the same lookup the
+        // watcher-driven re-import uses.
+        let directory = TempDir::new().expect("create fixture vault");
+        crate::continuity::ensure_vault_identity(directory.path()).expect("create identity");
+        std::fs::write(directory.path().join("Harbor.md"), "# Harbor\n").expect("write note");
+        let mut connection =
+            open(&crate::db::database_path(directory.path())).expect("create database");
+
+        super::save(
+            &mut connection,
+            directory.path(),
+            "Harbor.md",
+            "# Harbor edited\n",
+        )
+        .expect("save");
+        let revision: i64 = connection
+            .query_row("SELECT revision FROM documents", [], |row| row.get(0))
+            .expect("read revision");
+        drop(connection);
+
+        // Exactly what the watcher reports moments after a save.
+        crate::db::import_paths(directory.path(), &["Harbor.md".to_owned()])
+            .expect("re-import the saved path");
+
+        let connection = open(&crate::db::database_path(directory.path())).expect("reopen");
+        let after: i64 = connection
+            .query_row("SELECT revision FROM documents", [], |row| row.get(0))
+            .expect("read revision");
+        assert_eq!(after, revision, "a save must not count as a change twice");
+    }
+
+    #[test]
+    fn saving_keeps_what_the_note_held_before() {
+        let (directory, connection) = vault(&[("Harbor.md", "# Harbor\n")]);
+        let mut connection = connection;
+
+        super::save(
+            &mut connection,
+            directory.path(),
+            "Harbor.md",
+            "# Rewritten\n",
+        )
+        .expect("save");
+
+        let kept: String = connection
+            .query_row("SELECT content FROM document_versions", [], |row| {
+                row.get(0)
+            })
+            .expect("a version should be kept");
+        assert_eq!(kept, "# Harbor\n");
+    }
+
+    /// A note saved into a folder that does not exist cannot be written, and
+    /// the row must not be left claiming a change the file never received.
+    #[test]
+    fn a_failed_write_leaves_the_row_unchanged() {
+        let (directory, connection) = vault(&[("Harbor.md", "# Harbor\n")]);
+        let mut connection = connection;
+
+        let result = super::save(
+            &mut connection,
+            directory.path(),
+            "Missing Folder/Harbor.md",
+            "# Never written\n",
+        );
+
+        assert!(result.is_err(), "writing into a missing folder should fail");
+        let rows: i64 = connection
+            .query_row("SELECT count(*) FROM documents", [], |row| row.get(0))
+            .expect("count documents");
+        assert_eq!(rows, 1, "the failed save must not leave a row behind");
     }
 
     /// The guarantee that matters: when both sides changed, neither is lost.
