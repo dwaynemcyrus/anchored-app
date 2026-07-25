@@ -6,6 +6,25 @@ Git commit. The format follows [Keep a Changelog], and releases follow
 
 ## [Unreleased]
 
+## [0.1.4-alpha] - 2026-07-25
+
+### Added
+
+- Frontmatter is now validated live as you type, with problems surfaced as
+  inline editor diagnostics, a debounced Notification Center entry, and an
+  issue-count badge in the editor header. Coverage includes structural
+  problems (malformed YAML, duplicate top-level keys, bad delimiters),
+  invalid values for known properties (`status`, `type`, `created_at`,
+  `updated_at`, `archived_at`, aliases), and list hygiene (duplicate or empty
+  entries in any list-shaped property). Warnings never block saving, and the
+  feature can be turned off in Settings.
+- Notes now keep a stable identity across renames, whether renamed in
+  Anchored or in Finder, so version history and notification history entries
+  stay attached to the right note instead of orphaning. An id is assigned
+  quietly the first time a note without one is saved, created, or
+  archived/restored; notes with missing, invalid, or duplicate id metadata
+  simply fall back to the previous path-based behavior.
+
 ### Changed
 
 - A newly-created folder reported by the native watcher is now scanned
