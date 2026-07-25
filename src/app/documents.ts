@@ -6,6 +6,7 @@ export type DocumentSaveState =
 export type AnchoredDocument = {
   archivedAt?: string;
   id: string;
+  noteId?: string;
   name: string;
   outgoingLinks: string[];
   folder: string;
@@ -76,6 +77,7 @@ export function documentsFromVault(
 ): AnchoredDocument[] {
   const notes = snapshot.files.map((file) => ({
     id: `vault-path:${file.relativePath}`,
+    noteId: file.identity,
     isRecoveryCopy: file.isRecoveryCopy,
     archivedAt: file.archivedAt,
     name: file.name,
@@ -126,6 +128,7 @@ function mergeScannedFields(
     folder: incoming.folder,
     folderPath: incoming.folderPath,
     id: incoming.id,
+    noteId: incoming.noteId ?? current.noteId,
     isRecoveryCopy: incoming.isRecoveryCopy,
     name: incoming.name,
     noteType: incoming.noteType,

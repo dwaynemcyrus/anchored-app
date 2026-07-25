@@ -42,6 +42,59 @@ describe("vault documents", () => {
     });
   });
 
+  it("carries a note's stable identity from the backend into noteId", () => {
+    const snapshot: VaultSnapshot = {
+      files: [
+        {
+          identity: "01JZQ7K8P4A6F2M9V3C5T7X1BY",
+          name: "Leadership.md",
+          parent: "Notes",
+          relativePath: "Notes/Leadership.md",
+        },
+      ],
+      name: "Personal",
+      warnings,
+    };
+
+    expect(documentsFromVault(snapshot)[0]).toMatchObject({
+      id: "vault-path:Notes/Leadership.md",
+      noteId: "01JZQ7K8P4A6F2M9V3C5T7X1BY",
+    });
+  });
+
+  it("keeps a note's stable id even when a rescan omits it", () => {
+    const withId = documentsFromVault({
+      files: [
+        {
+          identity: "01JZQ7K8P4A6F2M9V3C5T7X1BY",
+          name: "Leadership.md",
+          parent: "Notes",
+          relativePath: "Notes/Leadership.md",
+        },
+      ],
+      name: "Personal",
+      warnings,
+    });
+
+    // A rescan pass that doesn't report an identity (e.g. a transient read)
+    // must never drop a previously seen one.
+    const rescanned = mergeDocumentsFromVault(withId, {
+      files: [
+        {
+          name: "Leadership.md",
+          parent: "Notes",
+          relativePath: "Notes/Leadership.md",
+        },
+      ],
+      name: "Personal",
+      warnings,
+    });
+
+    expect(rescanned[0]).toMatchObject({
+      noteId: "01JZQ7K8P4A6F2M9V3C5T7X1BY",
+    });
+  });
+
   it("retains local edits when indexed metadata refreshes", () => {
     const original: VaultSnapshot = {
       files: [

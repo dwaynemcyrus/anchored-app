@@ -27,9 +27,11 @@ use crate::continuity::{
 };
 use crate::links::{plan_rename_link_rewrites_by_path, LinkNote, LinkSource};
 use crate::metadata::{
-    archive_note, archive_note_with_type, inspect_note_aliases, inspect_note_properties,
+    add_note_identity, archive_note, archive_note_with_type, assign_new_note_identity,
+    generate_note_id, inspect_note_aliases, inspect_note_identity, inspect_note_properties,
     inspect_wikilinks, normalize_front_matter_timestamps, restore_note, restore_note_with_type,
     split_note_source, stamp_note_created_at, stamp_note_updated_at, update_note_type,
+    NoteIdentityStatus,
 };
 use crate::watcher::VaultWatcher;
 
@@ -62,6 +64,8 @@ pub struct VaultFile {
     pub is_recovery_copy: bool,
     #[serde(skip)]
     signature: Option<FileSignature>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub identity: Option<String>,
     pub outgoing_links: Vec<String>,
     pub name: String,
     pub parent: String,
@@ -191,6 +195,7 @@ struct CachedNoteMetadata {
     aliases: Vec<String>,
     archived_at: Option<String>,
     created_at: Option<String>,
+    identity: Option<String>,
     note_type: Option<String>,
     outgoing_links: Vec<String>,
     signature: FileSignature,
@@ -222,6 +227,8 @@ pub struct VaultDocument {
     pub is_recovery_copy: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub created_at: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub identity: Option<String>,
     pub modified_millis: u64,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub note_type: Option<String>,
@@ -1200,7 +1207,7 @@ enum SinglePathScan {
 
 enum VaultPathEntry {
     Asset(VaultAsset),
-    Markdown(VaultFile),
+    Markdown(Box<VaultFile>),
 }
 
 /// Builds the vault-relative candidate path for `relative_path` without
@@ -1300,10 +1307,11 @@ fn scan_single_vault_path(root: &Path, relative_path: &str) -> Result<SinglePath
 
     if is_markdown(&candidate) {
         Ok(SinglePathScan::File(Box::new(VaultPathEntry::Markdown(
-            VaultFile {
+            Box::new(VaultFile {
                 aliases: Vec::new(),
                 archived_at: None,
                 created_at: None,
+                identity: None,
                 modified_millis: signature.modified_millis,
                 is_recovery_copy: is_recovery_copy_name(&name),
                 signature: Some(signature),
@@ -1314,7 +1322,7 @@ fn scan_single_vault_path(root: &Path, relative_path: &str) -> Result<SinglePath
                 status: None,
                 note_type: None,
                 updated_at: None,
-            },
+            }),
         ))))
     } else {
         Ok(SinglePathScan::File(Box::new(VaultPathEntry::Asset(
@@ -1377,7 +1385,7 @@ fn scan_vault_paths_patch(
                 }
             }
             SinglePathScan::File(entry) => match *entry {
-                VaultPathEntry::Markdown(file) => upserted_files.push(file),
+                VaultPathEntry::Markdown(file) => upserted_files.push(*file),
                 VaultPathEntry::Asset(asset) => upserted_assets.push(asset),
             },
         }
@@ -2554,6 +2562,7 @@ fn walk_vault_subtree(
                     aliases: Vec::new(),
                     archived_at: None,
                     created_at: None,
+                    identity: None,
                     modified_millis: signature.modified_millis,
                     is_recovery_copy: is_recovery_copy_name(&name),
                     signature: Some(signature),
@@ -2804,7 +2813,7 @@ fn prepare_metadata_cache(
     let persisted = fs::read(path)
         .ok()
         .and_then(|bytes| serde_json::from_slice::<PersistedVaultIndex>(&bytes).ok())
-        .filter(|index| index.version == 2 && index.vault_id == vault_id);
+        .filter(|index| index.version == 3 && index.vault_id == vault_id);
     cache.vault_id = vault_id.to_owned();
     cache.entries = persisted
         .map(|index| index.entries.into_iter().collect())
@@ -2830,7 +2839,7 @@ fn persist_metadata_cache(
             .map(|(path, metadata)| (path.clone(), metadata.clone()))
             .collect(),
         vault_id: cache.vault_id.clone(),
-        version: 2,
+        version: 3,
     };
     let bytes = serde_json::to_vec(&payload)
         .map_err(|error| VaultError::state(format!("The vault index is invalid: {error}")))?;
@@ -2894,6 +2903,7 @@ fn compute_metadata_updates(
         file.aliases.clone_from(&metadata.aliases);
         file.archived_at.clone_from(&metadata.archived_at);
         file.created_at.clone_from(&metadata.created_at);
+        file.identity.clone_from(&metadata.identity);
         file.note_type.clone_from(&metadata.note_type);
         file.outgoing_links.clone_from(&metadata.outgoing_links);
         file.status.clone_from(&metadata.status);
@@ -2956,6 +2966,7 @@ fn read_cached_note_metadata(
         aliases: Vec::new(),
         archived_at: None,
         created_at: None,
+        identity: None,
         note_type: None,
         outgoing_links: Vec::new(),
         signature,
@@ -2975,11 +2986,57 @@ fn read_cached_note_metadata(
     metadata.aliases = inspect_note_aliases(&content);
     metadata.archived_at = properties.archived_at;
     metadata.created_at = properties.created_at;
+    metadata.identity = identity_from_content(&content);
     metadata.note_type = properties.note_type;
     metadata.outgoing_links = inspect_wikilinks(&content);
     metadata.status = properties.status;
     metadata.updated_at = properties.updated_at;
     Ok(metadata)
+}
+
+/// Reads a note's stable identity if its front matter carries a valid,
+/// unambiguous `id`. Missing/invalid/duplicate/malformed front matter all
+/// collapse to `None` here so callers never need to branch on *why* an id
+/// is unavailable — they just fall back to path-based behavior.
+fn identity_from_content(content: &str) -> Option<String> {
+    match inspect_note_identity(content) {
+        NoteIdentityStatus::Present(id) => Some(id),
+        NoteIdentityStatus::Missing
+        | NoteIdentityStatus::Invalid
+        | NoteIdentityStatus::Duplicate
+        | NoteIdentityStatus::MalformedFrontMatter => None,
+    }
+}
+
+/// Opportunistically gives a note a stable id the next time it's written,
+/// without ever failing the write: only a note with no `id` at all gets one
+/// assigned, and any error from `add_note_identity` (which should not occur
+/// here since we only call it on `Missing`) just leaves the content as-is.
+fn ensure_note_identity(content: String) -> String {
+    if matches!(inspect_note_identity(&content), NoteIdentityStatus::Missing) {
+        add_note_identity(&content, &generate_note_id()).unwrap_or(content)
+    } else {
+        content
+    }
+}
+
+/// Gives a conflict copy its own identity, distinct from the note it was
+/// copied from, since it becomes an independent file going forward. Invalid,
+/// duplicate, or malformed front matter is left untouched rather than
+/// repaired here.
+fn ensure_fresh_note_identity(content: &str) -> String {
+    let id = generate_note_id();
+    match inspect_note_identity(content) {
+        NoteIdentityStatus::Present(_) => {
+            assign_new_note_identity(content, &id).unwrap_or_else(|_| content.to_owned())
+        }
+        NoteIdentityStatus::Missing => {
+            add_note_identity(content, &id).unwrap_or_else(|_| content.to_owned())
+        }
+        NoteIdentityStatus::Invalid
+        | NoteIdentityStatus::Duplicate
+        | NoteIdentityStatus::MalformedFrontMatter => content.to_owned(),
+    }
 }
 
 fn file_signature_from_metadata(metadata: &fs::Metadata) -> FileSignature {
@@ -3060,6 +3117,7 @@ fn vault_document(
     modified_millis: u64,
 ) -> VaultDocument {
     let properties = inspect_note_properties(&content);
+    let identity = identity_from_content(&content);
     VaultDocument {
         archived_at: properties.archived_at,
         content,
@@ -3068,6 +3126,7 @@ fn vault_document(
             .next()
             .is_some_and(is_recovery_copy_name),
         created_at: properties.created_at,
+        identity,
         modified_millis,
         note_type: properties.note_type,
         relative_path,
@@ -3087,6 +3146,7 @@ fn create_conflict_copy(
     if content.len() as u64 > MAX_MARKDOWN_FILE_BYTES {
         return Err(VaultError::file_too_large());
     }
+    let content = ensure_fresh_note_identity(content);
     let original = Path::new(relative_path);
     let parent_relative = original.parent().and_then(Path::to_str).unwrap_or_default();
     let parent = resolve_vault_directory(root, parent_relative)?;
@@ -3109,7 +3169,7 @@ fn create_conflict_copy(
         }
         let (destination, relative_path) = resolve_new_vault_markdown_file(root, &destination)?;
         let temporary_path = temporary_sibling_path(&destination)?;
-        let write_result = write_new_atomically(&temporary_path, &destination, content);
+        let write_result = write_new_atomically(&temporary_path, &destination, &content);
         if write_result.is_err() {
             let _ = fs::remove_file(&temporary_path);
         }
@@ -3117,7 +3177,7 @@ fn create_conflict_copy(
         let metadata = fs::metadata(&destination)
             .map_err(|error| VaultError::io("The conflict copy could not be inspected", error))?;
         return Ok(vault_document(
-            content.to_owned(),
+            content.clone(),
             relative_path,
             metadata.len(),
             file_signature_from_metadata(&metadata).modified_millis,
@@ -3187,6 +3247,7 @@ fn save_markdown_file(
     } else {
         content.to_owned()
     };
+    let content = ensure_note_identity(content);
     if content.len() as u64 > MAX_MARKDOWN_FILE_BYTES {
         return Err(VaultError::file_too_large());
     }
@@ -3295,6 +3356,7 @@ fn transition_markdown_lifecycle(
             "Anchored could not update this note's lifecycle metadata: {error}."
         ))
     })?;
+    let updated = ensure_note_identity(updated);
     if updated.len() as u64 > MAX_MARKDOWN_FILE_BYTES {
         return Err(VaultError::file_too_large());
     }
@@ -3410,6 +3472,7 @@ fn create_markdown_file(
             ))
         })?
         .content;
+    content = ensure_note_identity(content);
     if content.len() as u64 > MAX_MARKDOWN_FILE_BYTES {
         return Err(VaultError::file_too_large());
     }
@@ -4659,6 +4722,36 @@ mod tests {
         assert_eq!(cache.lock().expect("read cache").last_refresh_reads, 1);
     }
 
+    #[test]
+    fn carries_note_identity_through_a_cache_hit() {
+        let vault = tempdir().expect("create fixture vault");
+        fs::write(
+            vault.path().join("Note.md"),
+            "---\nid: 01JZQ7K8P4A6F2M9V3C5T7X1BY\n---\n# Body\n",
+        )
+        .expect("write fixture note with an id");
+
+        let cache = Mutex::new(VaultMetadataCache::default());
+        let mut first = scan_vault(vault.path()).expect("scan first fixture");
+        enrich_vault_metadata_cached(vault.path(), &mut first.files, &cache)
+            .expect("index first fixture");
+        assert_eq!(
+            first.files[0].identity.as_deref(),
+            Some("01JZQ7K8P4A6F2M9V3C5T7X1BY")
+        );
+
+        // Rescanning without touching the file must reuse the cached entry
+        // (zero reads) and still report the same identity.
+        let mut warm = scan_vault(vault.path()).expect("scan warm fixture");
+        enrich_vault_metadata_cached(vault.path(), &mut warm.files, &cache)
+            .expect("reuse fixture metadata");
+        assert_eq!(cache.lock().expect("read cache").last_refresh_reads, 0);
+        assert_eq!(
+            warm.files[0].identity.as_deref(),
+            Some("01JZQ7K8P4A6F2M9V3C5T7X1BY")
+        );
+    }
+
     fn seeded_patch_fixture() -> (tempfile::TempDir, Mutex<VaultMetadataCache>) {
         let vault = tempdir().expect("create fixture vault");
         fs::create_dir(vault.path().join("Notes")).expect("create Notes folder");
@@ -5320,13 +5413,15 @@ mod tests {
         assert!(second.is_recovery_copy);
         assert_ne!(first.relative_path, second.relative_path);
         assert!(first.relative_path.contains(" (Anchored conflict "));
-        assert_eq!(
-            fs::read_to_string(vault.path().join(&first.relative_path)).unwrap(),
-            "# Local revision\n"
-        );
-        assert_eq!(
-            fs::read_to_string(vault.path().join(&second.relative_path)).unwrap(),
-            "# Local revision 2\n"
+        let first_content = fs::read_to_string(vault.path().join(&first.relative_path)).unwrap();
+        let second_content = fs::read_to_string(vault.path().join(&second.relative_path)).unwrap();
+        assert!(first_content.ends_with("# Local revision\n"));
+        assert!(second_content.ends_with("# Local revision 2\n"));
+        let first_id = first.identity.expect("first conflict copy gets an id");
+        let second_id = second.identity.expect("second conflict copy gets an id");
+        assert_ne!(
+            first_id, second_id,
+            "each conflict copy is an independent note and must get its own id"
         );
         assert_eq!(fs::read_to_string(&note).unwrap(), "# External revision\n");
     }
@@ -5606,6 +5701,69 @@ mod tests {
             fs::read_to_string(&note).expect("read protected note"),
             document.content
         );
+    }
+
+    #[test]
+    fn assigns_an_id_to_a_note_that_lacks_one_on_save() {
+        let vault = tempdir().expect("create fixture vault");
+        let note = vault.path().join("Note.md");
+        let original = "# Before\n";
+        fs::write(&note, original).expect("write note without an id");
+
+        let document =
+            save_markdown_file(vault.path(), "Note.md", "# After\n", original).expect("save note");
+
+        let id = document
+            .identity
+            .clone()
+            .expect("note is opportunistically given an id");
+        assert!(document.content.contains(&format!("id: {id}")));
+        assert_eq!(
+            fs::read_to_string(&note).expect("read saved note"),
+            document.content
+        );
+
+        let unchanged = save_markdown_file(
+            vault.path(),
+            "Note.md",
+            &document.content,
+            &document.content,
+        )
+        .expect("save again without local changes");
+        assert_eq!(
+            unchanged.identity,
+            Some(id),
+            "a note that already has an id keeps it across further saves"
+        );
+    }
+
+    #[test]
+    fn assigns_an_id_to_a_newly_created_note() {
+        let vault = tempdir().expect("create fixture vault");
+        let destination = vault.path().join("New.md");
+
+        let document =
+            create_markdown_file(vault.path(), &destination, "# New note\n").expect("create note");
+
+        assert!(document.identity.is_some());
+    }
+
+    #[test]
+    fn never_repairs_malformed_or_duplicate_identity_on_an_unchanged_save() {
+        let vault = tempdir().expect("create fixture vault");
+        let note = vault.path().join("Note.md");
+        let original = "---\nid: one\nid: two\n---\n# Before\n";
+        fs::write(&note, original).expect("write note with a duplicate id key");
+
+        // Re-saving unchanged content skips lifecycle stamping entirely, so
+        // this exercises identity handling in isolation: a duplicate `id`
+        // key must never block the save or get silently rewritten.
+        let document = save_markdown_file(vault.path(), "Note.md", original, original)
+            .expect("save without an identity error or repair");
+
+        assert!(document.identity.is_none());
+        assert!(document.content.contains("id: one"));
+        assert!(document.content.contains("id: two"));
     }
 
     #[test]

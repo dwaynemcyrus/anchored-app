@@ -25,6 +25,7 @@ export type VaultFile = {
   aliases?: string[];
   archivedAt?: string;
   createdAt?: string;
+  identity?: string;
   modifiedMillis?: number;
   isRecoveryCopy?: boolean;
   name: string;
@@ -135,6 +136,7 @@ export type VaultDocument = {
   content: string;
   isRecoveryCopy?: boolean;
   createdAt?: string;
+  identity?: string;
   modifiedMillis?: number;
   noteType?: string;
   relativePath: string;
