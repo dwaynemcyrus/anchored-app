@@ -1,5 +1,5 @@
 ---
-id: 01JZQ7K8P4A6F2M9V3C5T7X1BY
+id: 019f989c-2dc0-7b01-8a11-1c2d3e4f5061
 aliases: [Safe Harbor, North Star]
 related: "[[Writing/Field Notes]]"
 tags: [fictional, test-fixture]

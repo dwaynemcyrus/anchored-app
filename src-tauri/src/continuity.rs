@@ -10,12 +10,15 @@ use std::{
 
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Manager};
-use ulid::Ulid;
+use uuid::Uuid;
 
+use crate::metadata::is_canonical_note_id;
 use crate::vault::VaultError;
 
 pub(crate) const INTERNAL_DIRECTORY_NAME: &str = ".anchored";
 const VAULT_METADATA_NAME: &str = "vault.json";
+/// Bumped from 1 when vault and trash identities moved from ULID to UUIDv7.
+const VAULT_METADATA_VERSION: u32 = 2;
 const REGISTRY_NAME: &str = "vault-registry.json";
 pub(crate) const TRASH_DIRECTORY_NAME: &str = "trash";
 const TRASH_INDEX_NAME: &str = "index.json";
@@ -178,14 +181,33 @@ pub(crate) fn ensure_vault_identity(root: &Path) -> Result<String, VaultError> {
 
     let metadata_path = directory.join(VAULT_METADATA_NAME);
     if metadata_path.exists() {
-        return read_vault_identity(&metadata_path);
+        if let Some(id) = read_vault_identity(&metadata_path)? {
+            return Ok(id);
+        }
+        // A readable identity in a superseded shape (version 1, ULID). Re-mint
+        // rather than fail, so a vault written by an earlier build still opens.
+        let metadata = new_vault_metadata();
+        let bytes = encode_json(&metadata, "The vault identity could not be encoded")?;
+        write_json_atomically(
+            &metadata_path,
+            &bytes,
+            "The vault identity could not be written",
+        )?;
+        return Ok(metadata.id);
     }
 
-    let id = Ulid::new().to_string();
-    let metadata = VaultMetadata { id, version: 1 };
+    let metadata = new_vault_metadata();
     let bytes = encode_json(&metadata, "The vault identity could not be encoded")?;
     write_new_json_atomically(&metadata_path, &bytes)?;
-    read_vault_identity(&metadata_path)
+    read_vault_identity(&metadata_path)?
+        .ok_or_else(|| VaultError::state("The vault identity is invalid."))
+}
+
+fn new_vault_metadata() -> VaultMetadata {
+    VaultMetadata {
+        id: Uuid::now_v7().to_string(),
+        version: VAULT_METADATA_VERSION,
+    }
 }
 
 pub(crate) fn load_vault_identity(root: &Path) -> Result<String, VaultError> {
@@ -201,10 +223,14 @@ pub(crate) fn load_vault_identity(root: &Path) -> Result<String, VaultError> {
             "The .anchored path must be a normal directory.",
         ));
     }
-    read_vault_identity(&directory.join(VAULT_METADATA_NAME))
+    read_vault_identity(&directory.join(VAULT_METADATA_NAME))?
+        .ok_or_else(|| VaultError::state("The vault identity is invalid."))
 }
 
-fn read_vault_identity(path: &Path) -> Result<String, VaultError> {
+/// `Ok(None)` means the file parsed but carries a superseded identity shape,
+/// which only [`ensure_vault_identity`] may repair. Genuinely damaged metadata
+/// still errors so it is never silently replaced.
+fn read_vault_identity(path: &Path) -> Result<Option<String>, VaultError> {
     let metadata = fs::symlink_metadata(path)
         .map_err(|error| VaultError::io("The vault identity could not be inspected", error))?;
     if metadata.file_type().is_symlink() || !metadata.is_file() {
@@ -219,12 +245,10 @@ fn read_vault_identity(path: &Path) -> Result<String, VaultError> {
         .map_err(|error| VaultError::io("The vault identity could not be read", error))?;
     let metadata: VaultMetadata = serde_json::from_slice(&bytes)
         .map_err(|error| VaultError::state(format!("The vault identity is invalid: {error}")))?;
-    let parsed = Ulid::from_string(&metadata.id)
-        .map_err(|_| VaultError::state("The vault identity is invalid."))?;
-    if metadata.version != 1 || parsed.to_string() != metadata.id {
-        return Err(VaultError::state("The vault identity is invalid."));
+    if metadata.version != VAULT_METADATA_VERSION || !is_canonical_note_id(&metadata.id) {
+        return Ok(None);
     }
-    Ok(metadata.id)
+    Ok(Some(metadata.id))
 }
 
 pub(crate) fn registry_path(app: &AppHandle) -> Result<PathBuf, VaultError> {
@@ -343,7 +367,7 @@ pub(crate) fn move_note_to_trash(
         ));
     }
 
-    let id = Ulid::new().to_string();
+    let id = Uuid::now_v7().to_string();
     let destination = trash_file_path(&trash_directory, &id);
     let entry = StoredTrashEntry {
         id: id.clone(),
@@ -423,7 +447,7 @@ pub(crate) fn move_folder_to_trash(
             "The Anchored trash index has reached its safe entry limit.",
         ));
     }
-    let id = Ulid::new().to_string();
+    let id = Uuid::now_v7().to_string();
     let destination = trash_folder_path(&trash_directory, &id);
     let entry = StoredTrashEntry {
         id: id.clone(),
@@ -853,9 +877,7 @@ fn public_registry(registry: &VaultRegistry) -> Vec<RememberedVault> {
 }
 
 fn validate_vault_id(id: &str) -> Result<(), VaultError> {
-    let parsed =
-        Ulid::from_string(id).map_err(|_| VaultError::state("The vault identity is invalid."))?;
-    if parsed.to_string() != id {
+    if !is_canonical_note_id(id) {
         return Err(VaultError::state("The vault identity is invalid."));
     }
     Ok(())
@@ -880,17 +902,18 @@ fn load_registry(path: &Path) -> Result<VaultRegistry, VaultError> {
     if bytes.len() as u64 > MAX_METADATA_BYTES {
         return Err(VaultError::state("The remembered vault list is too large."));
     }
-    let registry: VaultRegistry = serde_json::from_slice(&bytes).map_err(|error| {
+    let mut registry: VaultRegistry = serde_json::from_slice(&bytes).map_err(|error| {
         VaultError::state(format!("The remembered vault list is invalid: {error}"))
     })?;
-    if registry.version != 1
-        || registry
-            .vaults
-            .iter()
-            .any(|entry| validate_vault_id(&entry.id).is_err() || entry.name.is_empty())
-    {
+    if registry.version != 1 {
         return Err(VaultError::state("The remembered vault list is invalid."));
     }
+    // Entries written before UUIDv7 name a vault that can no longer be resolved
+    // by id. Drop them so the rest of the list still opens; reselecting the
+    // vault re-registers it under its re-minted identity.
+    registry
+        .vaults
+        .retain(|entry| validate_vault_id(&entry.id).is_ok() && !entry.name.is_empty());
     Ok(registry)
 }
 
@@ -1023,13 +1046,58 @@ mod tests {
         let second = ensure_vault_identity(vault.path()).expect("reuse identity");
 
         assert_eq!(first, second);
-        assert_eq!(first.len(), 26);
+        assert_eq!(first.len(), 36);
         assert_eq!(load_vault_identity(vault.path()).unwrap(), first);
         assert!(vault
             .path()
             .join(INTERNAL_DIRECTORY_NAME)
             .join("vault.json")
             .is_file());
+    }
+
+    #[test]
+    fn remints_a_superseded_ulid_vault_identity() {
+        let vault = tempdir().expect("create fixture vault");
+        let internal = vault.path().join(INTERNAL_DIRECTORY_NAME);
+        fs::create_dir(&internal).expect("create hidden directory");
+        fs::write(
+            internal.join("vault.json"),
+            r#"{"id":"01JZQ7K8P4A6F2M9V3C5T7X1BY","version":1}"#,
+        )
+        .expect("write legacy metadata");
+
+        let id = ensure_vault_identity(vault.path()).expect("re-mint legacy identity");
+
+        assert_eq!(id.len(), 36);
+        assert_ne!(id, "01JZQ7K8P4A6F2M9V3C5T7X1BY");
+        assert_eq!(load_vault_identity(vault.path()).unwrap(), id);
+        assert_eq!(
+            ensure_vault_identity(vault.path()).expect("reuse re-minted identity"),
+            id
+        );
+    }
+
+    #[test]
+    fn drops_superseded_registry_entries_instead_of_failing() {
+        let parent = tempdir().expect("create fixture parent");
+        let registry = parent.path().join("registry.json");
+        let current = parent.path().join("Current");
+        fs::create_dir(&current).expect("create vault");
+        let current_id = ensure_vault_identity(&current).expect("create identity");
+        fs::write(
+            &registry,
+            format!(
+                r#"{{"vaults":[{{"id":"01JZQ7K8P4A6F2M9V3C5T7X1BY","lastOpenedAt":1,"name":"Legacy","path":"{}"}},{{"id":"{current_id}","lastOpenedAt":2,"name":"Current","path":"{}"}}],"version":1}}"#,
+                parent.path().join("Legacy").display(),
+                current.display()
+            ),
+        )
+        .expect("write mixed registry");
+
+        let remembered = list_remembered_vaults(&registry).expect("list remembered vaults");
+
+        assert_eq!(remembered.len(), 1);
+        assert_eq!(remembered[0].id, current_id);
     }
 
     #[test]

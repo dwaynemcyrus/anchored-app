@@ -50,7 +50,7 @@ const snapshot: VaultSnapshot = {
     },
   ],
   name: "Personal",
-  vaultId: "01JZQ7K8P4A6F2M9V3C5T7X1BY",
+  vaultId: "019f989c-2dc0-7b01-8a11-1c2d3e4f5061",
   warnings: {
     skippedNonUtf8Paths: 0,
     skippedSymlinks: 0,
@@ -129,7 +129,7 @@ describe("vault bridge", () => {
     const remembered = [
       {
         available: true,
-        id: "01JZQ7K8P4A6F2M9V3C5T7X1BY",
+        id: "019f989c-2dc0-7b01-8a11-1c2d3e4f5061",
         lastOpenedAt: 100,
         name: "Personal",
       },
@@ -177,7 +177,7 @@ describe("vault bridge", () => {
 
   it("lists, trashes, and restores notes through narrow native commands", async () => {
     const entry = {
-      id: "01JZQ91T3AA6F2M9V3C5T7X1BZ",
+      id: "019f989c-2dc0-7b02-9a22-2c3d4e5f6072",
       name: "Leadership.md",
       originalPath: "Notes/Leadership.md",
       trashedAt: 200,

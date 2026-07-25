@@ -10,7 +10,7 @@ import type {
   VaultSnapshot,
 } from "./vault";
 
-const FIXTURE_VAULT_ID = "01JZQ7K8P4A6F2M9V3C5T7X1BY";
+const FIXTURE_VAULT_ID = "019f989c-2dc0-7b01-8a11-1c2d3e4f5061";
 const FIXTURE_VAULT_NAME = "Anchored Development Fixture";
 const fixtureSources = import.meta.glob("../../../fixtures/dev-vault/**/*", {
   eager: true,

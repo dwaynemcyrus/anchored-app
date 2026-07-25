@@ -48,7 +48,7 @@ describe("vault documents", () => {
     const snapshot: VaultSnapshot = {
       files: [
         {
-          identity: "01JZQ7K8P4A6F2M9V3C5T7X1BY",
+          identity: "019f989c-2dc0-7b01-8a11-1c2d3e4f5061",
           name: "Leadership.md",
           parent: "Notes",
           relativePath: "Notes/Leadership.md",
@@ -60,7 +60,7 @@ describe("vault documents", () => {
 
     expect(documentsFromVault(snapshot)[0]).toMatchObject({
       id: "vault-path:Notes/Leadership.md",
-      noteId: "01JZQ7K8P4A6F2M9V3C5T7X1BY",
+      noteId: "019f989c-2dc0-7b01-8a11-1c2d3e4f5061",
     });
   });
 
@@ -68,7 +68,7 @@ describe("vault documents", () => {
     const withId = documentsFromVault({
       files: [
         {
-          identity: "01JZQ7K8P4A6F2M9V3C5T7X1BY",
+          identity: "019f989c-2dc0-7b01-8a11-1c2d3e4f5061",
           name: "Leadership.md",
           parent: "Notes",
           relativePath: "Notes/Leadership.md",
@@ -93,7 +93,7 @@ describe("vault documents", () => {
     });
 
     expect(rescanned[0]).toMatchObject({
-      noteId: "01JZQ7K8P4A6F2M9V3C5T7X1BY",
+      noteId: "019f989c-2dc0-7b01-8a11-1c2d3e4f5061",
     });
   });
 

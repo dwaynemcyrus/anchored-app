@@ -27,12 +27,12 @@ describe("sessionState", () => {
 
     saveSessionState(storage, {
       activeRelativePath: "Notes/Leadership.md",
-      vaultId: "01JZQ7K8P4A6F2M9V3C5T7X1BY",
+      vaultId: "019f989c-2dc0-7b01-8a11-1c2d3e4f5061",
     });
 
     expect(loadSessionState(storage)).toEqual({
       activeRelativePath: "Notes/Leadership.md",
-      vaultId: "01JZQ7K8P4A6F2M9V3C5T7X1BY",
+      vaultId: "019f989c-2dc0-7b01-8a11-1c2d3e4f5061",
     });
   });
 
@@ -44,7 +44,7 @@ describe("sessionState", () => {
 
     saveSessionState(storage, {
       activeRelativePath: "Notes/Leadership.md",
-      vaultId: "01JZQ7K8P4A6F2M9V3C5T7X1BY",
+      vaultId: "019f989c-2dc0-7b01-8a11-1c2d3e4f5061",
     });
     clearSessionState(storage);
     expect(loadSessionState(storage)).toBeNull();

@@ -6,6 +6,16 @@ Git commit. The format follows [Keep a Changelog], and releases follow
 
 ## [Unreleased]
 
+### Changed
+
+- Note, vault, and trash identities are now UUIDv7 instead of ULID, in
+  preparation for the database-backed storage phase. A vault written by an
+  earlier build still opens: its identity file is quietly re-minted in the
+  new format on first use, and remembered-vault entries that can no longer
+  be resolved are dropped from the recent list rather than making the whole
+  list unreadable. Notes keep whatever `id` they already have; existing ULID
+  values are treated as unrecognised metadata and left untouched.
+
 ## [0.1.4-alpha] - 2026-07-25
 
 ### Added

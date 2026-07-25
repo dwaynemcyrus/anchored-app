@@ -50,7 +50,7 @@ describe("Markdown editor decorations", () => {
 
   it("styles YAML front matter keys, values, comments, and delimiters", () => {
     const source =
-      "---\nid: 01JZQ7K8P4A6F2M9V3C5T7X1BY\ntags:\n  - writing\n# metadata\n---\n# Heading";
+      "---\nid: 019f989c-2dc0-7b01-8a11-1c2d3e4f5061\ntags:\n  - writing\n# metadata\n---\n# Heading";
     const ranges = findFrontMatterDecorationRanges(source);
 
     expect(ranges.map((range) => range.className)).toEqual(
@@ -66,7 +66,7 @@ describe("Markdown editor decorations", () => {
       ranges.some(
         (range) =>
           range.className === "cm-anchored-frontmatter-value" &&
-          source.slice(range.from, range.to).includes("01JZQ7K8P4"),
+          source.slice(range.from, range.to).includes("019f989c-2dc0"),
       ),
     ).toBe(true);
   });

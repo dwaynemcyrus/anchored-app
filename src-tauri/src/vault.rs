@@ -4495,7 +4495,7 @@ mod tests {
         fs::write(vault.path().join("Zulu.md"), "# Zulu").expect("write root note");
         fs::write(
             vault.path().join("Notes/Alpha.MD"),
-            "---\nid: 01JZQ7K8P4A6F2M9V3C5T7X1BY\naliases: [First note]\nrelated: '[[Reading]]'\n---\n# Alpha\n[[Zulu]]",
+            "---\nid: 019f989c-2dc0-7a01-8b2c-4d5e6f708192\naliases: [First note]\nrelated: '[[Reading]]'\n---\n# Alpha\n[[Zulu]]",
         )
         .expect("write nested note");
         fs::write(vault.path().join("Notes/ignore.txt"), "ignored").expect("write ignored file");
@@ -4727,7 +4727,7 @@ mod tests {
         let vault = tempdir().expect("create fixture vault");
         fs::write(
             vault.path().join("Note.md"),
-            "---\nid: 01JZQ7K8P4A6F2M9V3C5T7X1BY\n---\n# Body\n",
+            "---\nid: 019f989c-2dc0-7a01-8b2c-4d5e6f708192\n---\n# Body\n",
         )
         .expect("write fixture note with an id");
 
@@ -4737,7 +4737,7 @@ mod tests {
             .expect("index first fixture");
         assert_eq!(
             first.files[0].identity.as_deref(),
-            Some("01JZQ7K8P4A6F2M9V3C5T7X1BY")
+            Some("019f989c-2dc0-7a01-8b2c-4d5e6f708192")
         );
 
         // Rescanning without touching the file must reuse the cached entry
@@ -4748,7 +4748,7 @@ mod tests {
         assert_eq!(cache.lock().expect("read cache").last_refresh_reads, 0);
         assert_eq!(
             warm.files[0].identity.as_deref(),
-            Some("01JZQ7K8P4A6F2M9V3C5T7X1BY")
+            Some("019f989c-2dc0-7a01-8b2c-4d5e6f708192")
         );
     }
 
@@ -5061,12 +5061,12 @@ mod tests {
         fs::create_dir(vault.path().join("Notes/Inbox")).expect("create Inbox folder");
         fs::write(
             vault.path().join("Notes/Inbox/Field.md"),
-            "---\nid: 01JZQ7K8P4A6F2M9V3C5T7X1BY\n---\n# Field\n",
+            "---\nid: 019f989c-2dc0-7a01-8b2c-4d5e6f708192\n---\n# Field\n",
         )
         .expect("write nested target note");
         fs::write(
             vault.path().join("Reference.md"),
-            "---\nid: 01JZQ91T3AA6F2M9V3C5T7X1BZ\n---\n[[Notes/Inbox/Field]]\n",
+            "---\nid: 019f989c-2dc0-7a02-9c3d-5e6f70819243\n---\n[[Notes/Inbox/Field]]\n",
         )
         .expect("write reference note");
 
@@ -5078,7 +5078,7 @@ mod tests {
         assert!(!vault.path().join("Notes").exists());
         assert_eq!(
             fs::read_to_string(vault.path().join("Reference.md")).expect("read reference note"),
-            "---\nid: 01JZQ91T3AA6F2M9V3C5T7X1BZ\n---\n[[Archive/Inbox/Field]]\n"
+            "---\nid: 019f989c-2dc0-7a02-9c3d-5e6f70819243\n---\n[[Archive/Inbox/Field]]\n"
         );
     }
 
@@ -5675,7 +5675,7 @@ mod tests {
     fn preserves_an_existing_id_field_in_a_saved_copy() {
         let vault = tempdir().expect("create fixture vault");
         let destination = vault.path().join("Copy.md");
-        let original_id = "01JZQ7K8P4A6F2M9V3C5T7X1BY";
+        let original_id = "019f989c-2dc0-7a01-8b2c-4d5e6f708192";
         let content = format!("---\nid: {original_id}\n---\n# Copy\n");
 
         let document =
@@ -5689,7 +5689,7 @@ mod tests {
     fn treats_an_existing_id_field_as_ordinary_user_metadata() {
         let vault = tempdir().expect("create fixture vault");
         let note = vault.path().join("Note.md");
-        let original = "---\nid: 01JZQ7K8P4A6F2M9V3C5T7X1BY\n---\n# Before\n";
+        let original = "---\nid: 019f989c-2dc0-7a01-8b2c-4d5e6f708192\n---\n# Before\n";
         fs::write(&note, original).expect("write identified note");
 
         let document = save_markdown_file(vault.path(), "Note.md", "# After\n", original)
@@ -5795,13 +5795,13 @@ mod tests {
         let destination = vault.path().join("New Name.md");
         fs::write(
             &original,
-            "---\nid: 01JZQ7K8P4A6F2M9V3C5T7X1BY\naliases: [Legacy]\n---\n# Note\n",
+            "---\nid: 019f989c-2dc0-7a01-8b2c-4d5e6f708192\naliases: [Legacy]\n---\n# Note\n",
         )
         .expect("write target note");
         fs::write(
             vault.path().join("Reference.md"),
             concat!(
-                "---\nid: 01JZQ91T3AA6F2M9V3C5T7X1BZ\n",
+                "---\nid: 019f989c-2dc0-7a02-9c3d-5e6f70819243\n",
                 "related: \"[[Legacy]]\"\n---\n",
                 "[[Old Name]] [[Old Name#Part|Shown]]\n",
             ),
@@ -5824,7 +5824,7 @@ mod tests {
         assert_eq!(
             fs::read_to_string(vault.path().join("Reference.md")).expect("read reference note"),
             concat!(
-                "---\nid: 01JZQ91T3AA6F2M9V3C5T7X1BZ\n",
+                "---\nid: 019f989c-2dc0-7a02-9c3d-5e6f70819243\n",
                 "related: \"[[New Name|Legacy]]\"\n---\n",
                 "[[New Name]] [[New Name#Part|Shown]]\n",
             )
@@ -5838,12 +5838,12 @@ mod tests {
         fs::create_dir(vault.path().join("Archive")).expect("create Archive folder");
         fs::write(
             vault.path().join("Notes/Field.md"),
-            "---\nid: 01JZQ7K8P4A6F2M9V3C5T7X1BY\n---\n# Field\n",
+            "---\nid: 019f989c-2dc0-7a01-8b2c-4d5e6f708192\n---\n# Field\n",
         )
         .expect("write target note");
         fs::write(
             vault.path().join("Reference.md"),
-            "---\nid: 01JZQ91T3AA6F2M9V3C5T7X1BZ\n---\n[[Notes/Field]]\n",
+            "---\nid: 019f989c-2dc0-7a02-9c3d-5e6f70819243\n---\n[[Notes/Field]]\n",
         )
         .expect("write reference note");
 
@@ -5862,7 +5862,7 @@ mod tests {
         assert!(vault.path().join("Archive/Field.md").exists());
         assert_eq!(
             fs::read_to_string(vault.path().join("Reference.md")).expect("read reference note"),
-            "---\nid: 01JZQ91T3AA6F2M9V3C5T7X1BZ\n---\n[[Archive/Field]]\n"
+            "---\nid: 019f989c-2dc0-7a02-9c3d-5e6f70819243\n---\n[[Archive/Field]]\n"
         );
     }
 
@@ -5921,12 +5921,12 @@ mod tests {
         let vault = tempdir().expect("create fixture vault");
         fs::write(
             vault.path().join("Case.md"),
-            "---\nid: 01JZQ7K8P4A6F2M9V3C5T7X1BY\n---\n# Note\n",
+            "---\nid: 019f989c-2dc0-7a01-8b2c-4d5e6f708192\n---\n# Note\n",
         )
         .expect("write target note");
         fs::write(
             vault.path().join("Reference.md"),
-            "---\nid: 01JZQ91T3AA6F2M9V3C5T7X1BZ\n---\n[[Case]]\n",
+            "---\nid: 019f989c-2dc0-7a02-9c3d-5e6f70819243\n---\n[[Case]]\n",
         )
         .expect("write reference note");
 
@@ -5936,15 +5936,15 @@ mod tests {
         assert!(vault.path().join("case.md").exists());
         assert_eq!(
             fs::read_to_string(vault.path().join("Reference.md")).expect("read reference"),
-            "---\nid: 01JZQ91T3AA6F2M9V3C5T7X1BZ\n---\n[[case]]\n"
+            "---\nid: 019f989c-2dc0-7a02-9c3d-5e6f70819243\n---\n[[case]]\n"
         );
     }
 
     #[test]
     fn refuses_to_replace_an_existing_note_during_rename() {
         let vault = tempdir().expect("create fixture vault");
-        let original = "---\nid: 01JZQ7K8P4A6F2M9V3C5T7X1BY\n---\n# Original\n";
-        let occupied = "---\nid: 01JZQ91T3AA6F2M9V3C5T7X1BZ\n---\n# Occupied\n";
+        let original = "---\nid: 019f989c-2dc0-7a01-8b2c-4d5e6f708192\n---\n# Original\n";
+        let occupied = "---\nid: 019f989c-2dc0-7a02-9c3d-5e6f70819243\n---\n# Occupied\n";
         fs::write(vault.path().join("Original.md"), original).expect("write original");
         fs::write(vault.path().join("Occupied.md"), occupied).expect("write occupied");
 
@@ -5970,7 +5970,7 @@ mod tests {
     #[test]
     fn blocks_rename_when_any_markdown_source_is_unreadable() {
         let vault = tempdir().expect("create fixture vault");
-        let original = "---\nid: 01JZQ7K8P4A6F2M9V3C5T7X1BY\n---\n# Original\n";
+        let original = "---\nid: 019f989c-2dc0-7a01-8b2c-4d5e6f708192\n---\n# Original\n";
         fs::write(vault.path().join("Original.md"), original).expect("write original");
         fs::write(vault.path().join("Binary.md"), [0xff, 0xfe]).expect("write binary note");
 
@@ -5994,8 +5994,9 @@ mod tests {
     #[test]
     fn restores_every_file_when_a_rename_is_interrupted() {
         let vault = tempdir().expect("create fixture vault");
-        let target_content = "---\nid: 01JZQ7K8P4A6F2M9V3C5T7X1BY\n---\n# Note\n";
-        let reference_content = "---\nid: 01JZQ91T3AA6F2M9V3C5T7X1BZ\n---\n[[Old Name]]\n";
+        let target_content = "---\nid: 019f989c-2dc0-7a01-8b2c-4d5e6f708192\n---\n# Note\n";
+        let reference_content =
+            "---\nid: 019f989c-2dc0-7a02-9c3d-5e6f70819243\n---\n[[Old Name]]\n";
         fs::write(vault.path().join("Old Name.md"), target_content).expect("write target note");
         fs::write(vault.path().join("Reference.md"), reference_content)
             .expect("write reference note");
