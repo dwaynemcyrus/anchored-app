@@ -27,6 +27,7 @@ import { TrashPanel } from "./components/TrashPanel";
 import { VaultSwitcher } from "./components/VaultSwitcher";
 import { readErrorMessage } from "./errors";
 import { useConflictResolution } from "./useConflictResolution";
+import { useFolderDialogs } from "./useFolderDialogs";
 import { useMissingWikilinkDialog } from "./useMissingWikilinkDialog";
 import { useSidebarState } from "./useSidebarState";
 import { useTimestampMigration } from "./useTimestampMigration";
@@ -40,6 +41,8 @@ import {
   applyVaultPatch,
   createUntitledDocument,
   documentsFromVault,
+  folderDisplayName,
+  folderName,
   folderPathsFromVault,
   mergeFolderPaths,
   mergeDocumentsFromVault,
@@ -99,19 +102,15 @@ import {
 import {
   archiveVaultFile,
   createVaultConflictCopy,
-  createVaultFolder,
   createUntitledVaultFile,
   createVaultFile,
-  deleteVaultFolder,
   moveVaultFileToFolder,
   moveVaultFileToWorkbench,
-  moveVaultFolderToTrash,
   moveVaultFolder,
   openDevelopmentVault,
   openRememberedVault,
   readVaultFile,
   reconcileVaultFileMove,
-  renameVaultFolder,
   renameVaultFile,
   rescanVault,
   rescanVaultPaths,
@@ -177,14 +176,6 @@ function documentHasUnfinishedEdits(document: AnchoredDocument): boolean {
   );
 }
 
-function folderDisplayName(folderPath: string): string {
-  return folderPath || "Vault root";
-}
-
-function folderName(folderPath: string): string {
-  return folderPath.split("/").pop() ?? folderPath;
-}
-
 function initialMarkdownSettings(): MarkdownSettings {
   try {
     return loadMarkdownSettings(window.localStorage);
@@ -225,30 +216,6 @@ export function App() {
   const [markdownSettings, setMarkdownSettings] = useState<MarkdownSettings>(
     initialMarkdownSettings,
   );
-  const [creatingFolder, setCreatingFolder] = useState(false);
-  const [createFolderParentPath, setCreateFolderParentPath] = useState<
-    string | undefined
-  >();
-  const [createFolderVisible, setCreateFolderVisible] = useState(false);
-  const [createFolderError, setCreateFolderError] = useState<
-    string | undefined
-  >();
-  const [renamingFolderPath, setRenamingFolderPath] = useState<
-    string | undefined
-  >();
-  const [renameFolderVisible, setRenameFolderVisible] = useState(false);
-  const [renameFolderError, setRenameFolderError] = useState<
-    string | undefined
-  >();
-  const [renameFolderPending, setRenameFolderPending] = useState(false);
-  const [deletingFolderPath, setDeletingFolderPath] = useState<
-    string | undefined
-  >();
-  const [deleteFolderVisible, setDeleteFolderVisible] = useState(false);
-  const [deleteFolderError, setDeleteFolderError] = useState<
-    string | undefined
-  >();
-  const [deleteFolderPending, setDeleteFolderPending] = useState(false);
   const [reloadingApp, setReloadingApp] = useState(false);
   const [availableUpdate, setAvailableUpdate] = useState<Update | null>(null);
   const [updateStatus, setUpdateStatus] = useState<
@@ -349,17 +316,6 @@ export function App() {
       ),
     [documents],
   );
-  const deletingFolderContents = useMemo(() => {
-    if (!deletingFolderPath) return { fileCount: 0, folderCount: 0 };
-    const prefix = `${deletingFolderPath}/`;
-    return {
-      fileCount: documents.filter((document) =>
-        (document.folderPath ?? "").startsWith(prefix),
-      ).length,
-      folderCount: folderPaths.filter((folder) => folder.startsWith(prefix))
-        .length,
-    };
-  }, [deletingFolderPath, documents, folderPaths]);
   const saveState: DocumentSaveState = activeDocument?.saveState ?? "saved";
   const deferredDocuments = useDeferredValue(documents);
   const linkIndex = useMemo(
@@ -1244,6 +1200,17 @@ export function App() {
     adoptVaultSnapshot,
     documentsRef,
     onActiveDocumentTrashed,
+  });
+
+  const folderDialogs = useFolderDialogs({
+    addTrashEntry: trash.addTrashEntry,
+    addVaultNotice,
+    adoptVaultSnapshot,
+    documents,
+    folderPaths,
+    hasUnfinishedEdits,
+    setExpandedFolders: sidebar.setExpandedFolders,
+    vaultSelected,
   });
 
   const timestampMigration = useTimestampMigration({
@@ -2508,133 +2475,6 @@ export function App() {
     );
   }
 
-  async function createNewFolder(name: string) {
-    if (!vaultSelected) {
-      addVaultNotice("Open a vault before creating a folder.");
-      return;
-    }
-    setCreatingFolder(true);
-    setCreateFolderError(undefined);
-
-    try {
-      const snapshot = await createVaultFolder({
-        name,
-        parentPath: createFolderParentPath,
-      });
-      adoptVaultSnapshot(snapshot);
-      setCreateFolderVisible(false);
-      setCreateFolderParentPath(undefined);
-      addVaultNotice(`${name.trim()} created.`, {
-        history: { kind: "rename" },
-      });
-    } catch (error) {
-      setCreateFolderError(readErrorMessage(error));
-    } finally {
-      setCreatingFolder(false);
-    }
-  }
-
-  async function renameExistingFolder(name: string) {
-    if (!vaultSelected || !renamingFolderPath) {
-      addVaultNotice("Open a vault before renaming a folder.");
-      return;
-    }
-    if (hasUnfinishedEdits()) {
-      addVaultNotice("Save all open note changes before renaming a folder.");
-      return;
-    }
-
-    const originalFolderPath = renamingFolderPath;
-    setRenameFolderPending(true);
-    setRenameFolderError(undefined);
-    try {
-      const snapshot = await renameVaultFolder({
-        folderPath: originalFolderPath,
-        name,
-      });
-      const nextName = name.trim();
-      const parentPath = originalFolderPath.split("/").slice(0, -1).join("/");
-      const renamedFolderPath = parentPath
-        ? `${parentPath}/${nextName}`
-        : nextName;
-      adoptVaultSnapshot(snapshot);
-      sidebar.setExpandedFolders((currentFolders) => {
-        const nextFolders = new Set(currentFolders);
-        return new Set(
-          Array.from(nextFolders, (folderPath) =>
-            folderPath === originalFolderPath
-              ? renamedFolderPath
-              : folderPath.startsWith(`${originalFolderPath}/`)
-                ? `${renamedFolderPath}${folderPath.slice(
-                    originalFolderPath.length,
-                  )}`
-                : folderPath,
-          ),
-        );
-      });
-      setRenameFolderVisible(false);
-      setRenamingFolderPath(undefined);
-      addVaultNotice(`${folderName(originalFolderPath)} renamed.`, {
-        history: { kind: "rename" },
-      });
-    } catch (error) {
-      setRenameFolderError(readErrorMessage(error));
-    } finally {
-      setRenameFolderPending(false);
-    }
-  }
-
-  async function deleteExistingFolder(confirmation = "") {
-    if (!vaultSelected || !deletingFolderPath) {
-      addVaultNotice("Open a vault before deleting a folder.");
-      return;
-    }
-
-    const targetFolderPath = deletingFolderPath;
-    setDeleteFolderPending(true);
-    setDeleteFolderError(undefined);
-    try {
-      if (
-        deletingFolderContents.fileCount > 0 ||
-        deletingFolderContents.folderCount > 0
-      ) {
-        const result = await moveVaultFolderToTrash(
-          targetFolderPath,
-          confirmation,
-        );
-        adoptVaultSnapshot(result.snapshot);
-        trash.addTrashEntry(result.entry);
-      } else {
-        const snapshot = await deleteVaultFolder(targetFolderPath);
-        adoptVaultSnapshot(snapshot);
-      }
-      sidebar.setExpandedFolders((currentFolders) => {
-        const nextFolders = new Set(currentFolders);
-        Array.from(nextFolders).forEach((folderPath) => {
-          if (
-            folderPath === targetFolderPath ||
-            folderPath.startsWith(`${targetFolderPath}/`)
-          ) {
-            nextFolders.delete(folderPath);
-          }
-        });
-        return nextFolders;
-      });
-      setDeleteFolderVisible(false);
-      setDeletingFolderPath(undefined);
-      addVaultNotice(
-        `${folderName(targetFolderPath)} ${confirmation ? "moved to Trash" : "deleted"}.`,
-        {
-          history: { kind: confirmation ? "trash" : "rename" },
-        },
-      );
-    } catch (error) {
-      setDeleteFolderError(readErrorMessage(error));
-    } finally {
-      setDeleteFolderPending(false);
-    }
-  }
-
   async function handleCheckForUpdates() {
     setUpdateStatus("checking");
     setUpdateError(undefined);
@@ -2825,14 +2665,14 @@ export function App() {
             void createNoteInFolder(folderPath)
           }
           onCreateFolder={(parentPath) => {
-            setCreateFolderParentPath(parentPath);
-            setCreateFolderError(undefined);
-            setCreateFolderVisible(true);
+            folderDialogs.setCreateFolderParentPath(parentPath);
+            folderDialogs.setCreateFolderError(undefined);
+            folderDialogs.setCreateFolderVisible(true);
           }}
           onDeleteFolder={(folderPath) => {
-            setDeletingFolderPath(folderPath);
-            setDeleteFolderError(undefined);
-            setDeleteFolderVisible(true);
+            folderDialogs.setDeletingFolderPath(folderPath);
+            folderDialogs.setDeleteFolderError(undefined);
+            folderDialogs.setDeleteFolderVisible(true);
           }}
           onMoveDocument={(documentId, destinationFolderPath) =>
             void moveDocumentToFolder(documentId, destinationFolderPath)
@@ -2859,9 +2699,9 @@ export function App() {
             });
           }}
           onRenameFolder={(folderPath) => {
-            setRenamingFolderPath(folderPath);
-            setRenameFolderError(undefined);
-            setRenameFolderVisible(true);
+            folderDialogs.setRenamingFolderPath(folderPath);
+            folderDialogs.setRenameFolderError(undefined);
+            folderDialogs.setRenameFolderVisible(true);
           }}
           onRestoreDocument={(documentId, destinationStatus) =>
             requestRestoreArchivedDocument(documentId, destinationStatus)
@@ -3141,62 +2981,64 @@ export function App() {
           onReload={() => void reloadApp()}
         />
       ) : null}
-      {createFolderVisible ? (
+      {folderDialogs.createFolderVisible ? (
         <FolderDialog
           actionLabel="Create folder"
-          creating={creatingFolder}
-          description={`Create a folder inside ${folderDisplayName(createFolderParentPath ?? "")}.`}
-          error={createFolderError}
+          creating={folderDialogs.creatingFolder}
+          description={`Create a folder inside ${folderDisplayName(folderDialogs.createFolderParentPath ?? "")}.`}
+          error={folderDialogs.createFolderError}
           nameLabel="Folder name"
           placeholder="New folder"
           title="Create folder"
           onClose={() => {
-            if (!creatingFolder) {
-              setCreateFolderError(undefined);
-              setCreateFolderParentPath(undefined);
-              setCreateFolderVisible(false);
+            if (!folderDialogs.creatingFolder) {
+              folderDialogs.setCreateFolderError(undefined);
+              folderDialogs.setCreateFolderParentPath(undefined);
+              folderDialogs.setCreateFolderVisible(false);
             }
           }}
-          onCreate={(name) => void createNewFolder(name)}
+          onCreate={(name) => void folderDialogs.createNewFolder(name)}
         />
       ) : null}
-      {renameFolderVisible && renamingFolderPath ? (
+      {folderDialogs.renameFolderVisible && folderDialogs.renamingFolderPath ? (
         <FolderDialog
           actionLabel="Rename folder"
-          creating={renameFolderPending}
-          description={`Rename ${folderName(renamingFolderPath)} inside ${folderDisplayName(
-            renamingFolderPath.split("/").slice(0, -1).join("/"),
+          creating={folderDialogs.renameFolderPending}
+          description={`Rename ${folderName(folderDialogs.renamingFolderPath)} inside ${folderDisplayName(
+            folderDialogs.renamingFolderPath.split("/").slice(0, -1).join("/"),
           )}.`}
-          error={renameFolderError}
-          initialName={folderName(renamingFolderPath)}
+          error={folderDialogs.renameFolderError}
+          initialName={folderName(folderDialogs.renamingFolderPath)}
           nameLabel="New folder name"
           placeholder="Renamed folder"
           title="Rename folder"
           onClose={() => {
-            if (!renameFolderPending) {
-              setRenameFolderError(undefined);
-              setRenamingFolderPath(undefined);
-              setRenameFolderVisible(false);
+            if (!folderDialogs.renameFolderPending) {
+              folderDialogs.setRenameFolderError(undefined);
+              folderDialogs.setRenamingFolderPath(undefined);
+              folderDialogs.setRenameFolderVisible(false);
             }
           }}
-          onCreate={(name) => void renameExistingFolder(name)}
+          onCreate={(name) => void folderDialogs.renameExistingFolder(name)}
         />
       ) : null}
-      {deleteFolderVisible && deletingFolderPath ? (
+      {folderDialogs.deleteFolderVisible && folderDialogs.deletingFolderPath ? (
         <DeleteFolderDialog
-          deleting={deleteFolderPending}
-          error={deleteFolderError}
-          fileCount={deletingFolderContents.fileCount}
-          folderCount={deletingFolderContents.folderCount}
-          folderName={folderName(deletingFolderPath)}
+          deleting={folderDialogs.deleteFolderPending}
+          error={folderDialogs.deleteFolderError}
+          fileCount={folderDialogs.deletingFolderContents.fileCount}
+          folderCount={folderDialogs.deletingFolderContents.folderCount}
+          folderName={folderName(folderDialogs.deletingFolderPath)}
           onClose={() => {
-            if (!deleteFolderPending) {
-              setDeleteFolderError(undefined);
-              setDeletingFolderPath(undefined);
-              setDeleteFolderVisible(false);
+            if (!folderDialogs.deleteFolderPending) {
+              folderDialogs.setDeleteFolderError(undefined);
+              folderDialogs.setDeletingFolderPath(undefined);
+              folderDialogs.setDeleteFolderVisible(false);
             }
           }}
-          onDelete={(confirmation) => void deleteExistingFolder(confirmation)}
+          onDelete={(confirmation) =>
+            void folderDialogs.deleteExistingFolder(confirmation)
+          }
         />
       ) : null}
       {moveDocumentVisible && moveTargetDocument ? (
