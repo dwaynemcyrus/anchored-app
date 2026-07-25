@@ -68,6 +68,19 @@ describe("RecoveryPanel", () => {
     expect(screen.getByText("# Harbor as it was")).toBeInTheDocument();
   });
 
+  it("names the note the way the rest of the interface does", () => {
+    renderPanel({
+      versions: [version],
+      versionsFor: "inbox/Habit Experiments.md",
+    });
+
+    expect(
+      screen.getByRole("heading", {
+        name: "Earlier versions of Habit Experiments",
+      }),
+    ).toBeInTheDocument();
+  });
+
   it("asks the reader to open a note before showing versions", () => {
     renderPanel({});
 

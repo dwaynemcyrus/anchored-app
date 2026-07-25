@@ -56,6 +56,18 @@ function summarize(content: string): string {
   return firstLine.length > 80 ? `${firstLine.slice(0, 80)}…` : firstLine;
 }
 
+/**
+ * The note's name as the rest of the interface shows it.
+ *
+ * `versionsFor` carries a vault-relative path because that is what the index
+ * is queried by, but a heading reading `inbox/Habit Experiments.md` is not how
+ * this note is named anywhere else in Anchored.
+ */
+function displayName(relativePath: string): string {
+  const base = relativePath.split("/").pop() ?? relativePath;
+  return base.replace(/\.md$/i, "");
+}
+
 export function RecoveryPanel({
   conflicts,
   versions,
@@ -153,7 +165,7 @@ export function RecoveryPanel({
             <section aria-labelledby="recovery-versions">
               <h3 id="recovery-versions">
                 {versionsFor
-                  ? `Earlier versions of ${versionsFor}`
+                  ? `Earlier versions of ${displayName(versionsFor)}`
                   : "Earlier versions"}
               </h3>
               {!versionsFor ? (
