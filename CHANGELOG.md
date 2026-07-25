@@ -30,6 +30,13 @@ Git commit. The format follows [Keep a Changelog], and releases follow
   comments, key order, quote style, and spacing are left exactly as written,
   and a note whose front matter is malformed is never rewritten. This is off
   by default in this release.
+- A note sent to the Trash now keeps its history and its identity while it is
+  there, so restoring it brings back the same note rather than a fresh copy of
+  it, with its earlier versions and backlinks intact.
+- Anchored no longer keeps a separate JSON metadata cache beside the vault.
+  The vault index replaced it, and holding two stores in step with each other
+  was a source of disagreement rather than speed. Existing cache files are
+  simply left unused.
 - Saving a note now records it and writes the file as a single operation,
   instead of writing the file and then reading it back to catch up. A save
   that cannot be written leaves nothing behind, and a save is no longer

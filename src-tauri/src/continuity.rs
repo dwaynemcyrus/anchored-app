@@ -450,6 +450,10 @@ pub(crate) fn move_note_to_trash(
         return Err(error);
     }
 
+    // Soft-deleted rather than removed, so the note keeps its identity and its
+    // version history while it sits in the trash.
+    crate::db::trash_note(root, relative_path, &id);
+
     Ok(TrashEntry {
         id,
         is_folder: false,
@@ -580,6 +584,10 @@ pub(crate) fn restore_note_from_trash(
         }
         return Err(error);
     }
+
+    // Re-attaches the row the note had before it was trashed, so backlinks and
+    // history follow it back rather than a fresh row being minted for it.
+    crate::db::restore_note(root, &entry.id, &entry.original_path);
 
     Ok(TrashEntry {
         id: entry.id,

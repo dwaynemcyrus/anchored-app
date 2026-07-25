@@ -1,11 +1,11 @@
 use std::{
-    collections::{BTreeMap, HashMap, HashSet},
+    collections::{BTreeMap, HashSet},
     fs,
     fs::OpenOptions,
     path::{Component, Path, PathBuf},
     sync::{
         atomic::{AtomicU64, Ordering},
-        Arc, Mutex, RwLock,
+        Mutex, RwLock,
     },
 };
 
@@ -46,7 +46,6 @@ static TEMPORARY_FILE_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 #[derive(Default)]
 pub struct VaultState {
-    metadata_cache: Arc<Mutex<VaultMetadataCache>>,
     rename_transaction: Mutex<()>,
     root: RwLock<Option<PathBuf>>,
     watcher: Mutex<Option<VaultWatcher>>,
@@ -201,21 +200,6 @@ struct CachedNoteMetadata {
     signature: FileSignature,
     status: Option<String>,
     updated_at: Option<String>,
-}
-
-#[derive(Debug, Default)]
-struct VaultMetadataCache {
-    entries: HashMap<String, CachedNoteMetadata>,
-    last_refresh_reads: usize,
-    vault_id: String,
-}
-
-#[derive(Debug, Deserialize, Serialize)]
-#[serde(rename_all = "camelCase")]
-struct PersistedVaultIndex {
-    entries: BTreeMap<String, CachedNoteMetadata>,
-    vault_id: String,
-    version: u32,
 }
 
 #[derive(Debug, Serialize)]
@@ -493,7 +477,7 @@ pub async fn create_vault_folder(
     let root = selected_vault_root(&state, "creating a folder")?;
     recover_rename_transaction(&root)?;
     create_folder(&root, parent_path.as_deref(), &name)?;
-    build_vault_snapshot(&app, &root, state.metadata_cache.as_ref())
+    build_vault_snapshot(&app, &root)
 }
 
 #[tauri::command]
@@ -510,7 +494,7 @@ pub async fn rename_vault_folder(
     let root = selected_vault_root(&state, "renaming a folder")?;
     recover_rename_transaction(&root)?;
     rename_folder(&root, &folder_path, &name)?;
-    build_vault_snapshot(&app, &root, state.metadata_cache.as_ref())
+    build_vault_snapshot(&app, &root)
 }
 
 #[tauri::command]
@@ -527,7 +511,7 @@ pub async fn move_vault_folder(
     let root = selected_vault_root(&state, "moving a folder")?;
     recover_rename_transaction(&root)?;
     move_folder(&root, &folder_path, &destination_folder)?;
-    build_vault_snapshot(&app, &root, state.metadata_cache.as_ref())
+    build_vault_snapshot(&app, &root)
 }
 
 #[tauri::command]
@@ -543,7 +527,7 @@ pub async fn delete_vault_folder(
     let root = selected_vault_root(&state, "deleting a folder")?;
     recover_rename_transaction(&root)?;
     delete_empty_folder(&root, &folder_path)?;
-    build_vault_snapshot(&app, &root, state.metadata_cache.as_ref())
+    build_vault_snapshot(&app, &root)
 }
 
 #[tauri::command]
@@ -565,7 +549,7 @@ pub async fn move_vault_folder_to_trash(
     let root = selected_vault_root(&state, "moving a folder to Trash")?;
     recover_rename_transaction(&root)?;
     let entry = move_folder_to_trash(&root, &folder_path, current_time_millis())?;
-    let snapshot = build_vault_snapshot(&app, &root, state.metadata_cache.as_ref())?;
+    let snapshot = build_vault_snapshot(&app, &root)?;
     Ok(TrashMutationResult { entry, snapshot })
 }
 
@@ -615,12 +599,9 @@ pub async fn rescan_vault(
     let Some(root) = root else {
         return Ok(None);
     };
-    let cache = Arc::clone(&state.metadata_cache);
-    tauri::async_runtime::spawn_blocking(move || {
-        build_vault_snapshot(&app, &root, cache.as_ref()).map(Some)
-    })
-    .await
-    .map_err(|error| VaultError::state(format!("Vault refresh could not finish: {error}")))?
+    tauri::async_runtime::spawn_blocking(move || build_vault_snapshot(&app, &root).map(Some))
+        .await
+        .map_err(|error| VaultError::state(format!("Vault refresh could not finish: {error}")))?
 }
 
 #[tauri::command]
@@ -638,9 +619,8 @@ pub async fn rescan_vault_paths(
     let Some(root) = root else {
         return Ok(None);
     };
-    let cache = Arc::clone(&state.metadata_cache);
     tauri::async_runtime::spawn_blocking(move || {
-        build_vault_patch(&app, &root, &relative_paths, cache.as_ref()).map(Some)
+        build_vault_patch(&app, &root, &relative_paths).map(Some)
     })
     .await
     .map_err(|error| VaultError::state(format!("Vault refresh could not finish: {error}")))?
@@ -688,7 +668,7 @@ pub async fn apply_vault_timestamp_migration(
         .map_err(|_| VaultError::state("The timestamp migration lock could not be acquired."))?;
     let root = selected_vault_root(&state, "applying timestamp migration")?;
     let outcomes = apply_timestamp_migration(&root, &candidates)?;
-    let snapshot = build_vault_snapshot(&app, &root, state.metadata_cache.as_ref())?;
+    let snapshot = build_vault_snapshot(&app, &root)?;
     Ok(TimestampMigrationResult { outcomes, snapshot })
 }
 
@@ -710,7 +690,7 @@ pub async fn move_vault_file_to_trash(
         .map_err(|_| VaultError::state("The vault file operation lock could not be acquired."))?;
     let root = selected_vault_root(&state, "moving a note to Trash")?;
     let entry = move_note_to_trash(&root, &relative_path, current_time_millis())?;
-    let snapshot = build_vault_snapshot(&app, &root, state.metadata_cache.as_ref())?;
+    let snapshot = build_vault_snapshot(&app, &root)?;
     Ok(TrashMutationResult { entry, snapshot })
 }
 
@@ -726,7 +706,7 @@ pub async fn restore_vault_file_from_trash(
         .map_err(|_| VaultError::state("The vault file operation lock could not be acquired."))?;
     let root = selected_vault_root(&state, "restoring a note from Trash")?;
     let entry = restore_note_from_trash(&root, &trash_id)?;
-    let snapshot = build_vault_snapshot(&app, &root, state.metadata_cache.as_ref())?;
+    let snapshot = build_vault_snapshot(&app, &root)?;
     Ok(TrashMutationResult { entry, snapshot })
 }
 
@@ -742,7 +722,7 @@ pub async fn restore_vault_folder_from_trash(
         .map_err(|_| VaultError::state("The vault file operation lock could not be acquired."))?;
     let root = selected_vault_root(&state, "restoring a folder from Trash")?;
     let entry = restore_folder_from_trash(&root, &trash_id)?;
-    let snapshot = build_vault_snapshot(&app, &root, state.metadata_cache.as_ref())?;
+    let snapshot = build_vault_snapshot(&app, &root)?;
     Ok(TrashMutationResult { entry, snapshot })
 }
 
@@ -826,7 +806,7 @@ fn activate_vault(
     state: &State<'_, VaultState>,
     root: PathBuf,
 ) -> Result<VaultSnapshot, VaultError> {
-    let snapshot = build_vault_snapshot(app, &root, state.metadata_cache.as_ref())?;
+    let snapshot = build_vault_snapshot(app, &root)?;
     remember_vault(
         &registry_path(app)?,
         &root,
@@ -1181,15 +1161,12 @@ fn timestamp_migration_outcome(
     }
 }
 
-fn build_vault_snapshot(
-    app: &AppHandle,
-    root: &Path,
-    cache: &Mutex<VaultMetadataCache>,
-) -> Result<VaultSnapshot, VaultError> {
+fn build_vault_snapshot(app: &AppHandle, root: &Path) -> Result<VaultSnapshot, VaultError> {
+    let _ = app;
     let vault_id = ensure_vault_identity(root)?;
     recover_rename_transaction(root)?;
     let mut snapshot = scan_vault(root)?;
-    snapshot.vault_id = vault_id.clone();
+    snapshot.vault_id = vault_id;
 
     // The directory walk stays: it is the only thing that knows about folders
     // with no notes in them, which the index has no row for. What the index
@@ -1201,9 +1178,10 @@ fn build_vault_snapshot(
         return Ok(snapshot);
     }
 
-    prepare_metadata_cache(app, &vault_id, cache)?;
-    enrich_vault_metadata_cached(root, &mut snapshot.files, cache)?;
-    persist_metadata_cache(app, cache)?;
+    // The index could not answer, so the files are read directly. This used to
+    // go through a JSON cache alongside the vault; the index replaced it, and
+    // keeping a second store in step with the first was its own hazard.
+    enrich_vault_metadata(root, &mut snapshot.files)?;
     Ok(snapshot)
 }
 
@@ -1449,15 +1427,12 @@ fn scan_single_vault_path(root: &Path, relative_path: &str) -> Result<SinglePath
     }
 }
 
-/// Pure targeted-scan core, independent of the app-data-dir-backed cache
-/// persistence so it can be unit tested with an in-memory cache, the same
-/// way `scan_vault`/`enrich_vault_metadata_cached` are tested without
-/// `build_vault_snapshot`.
+/// Pure targeted-scan core, kept separate from anything needing an
+/// `AppHandle` so it can be unit tested without `build_vault_patch`.
 fn scan_vault_paths_patch(
     root: &Path,
     vault_id: &str,
     relative_paths: &[String],
-    cache: &Mutex<VaultMetadataCache>,
 ) -> Result<VaultPatch, VaultError> {
     let root = canonical_vault_root(root)?;
     let root = root.as_path();
@@ -1504,13 +1479,8 @@ fn scan_vault_paths_patch(
         }
     }
 
-    for relative_path in &removed_paths {
-        if let Ok(mut cache) = cache.lock() {
-            cache.entries.remove(relative_path);
-        }
-    }
     if !upserted_files.is_empty() {
-        upsert_metadata_cache_entries(root, &mut upserted_files, cache)?;
+        enrich_vault_metadata(root, &mut upserted_files)?;
     }
     upserted_folders.sort_by_key(|path| path.to_lowercase());
     upserted_folders.dedup();
@@ -1529,18 +1499,16 @@ fn build_vault_patch(
     app: &AppHandle,
     root: &Path,
     relative_paths: &[String],
-    cache: &Mutex<VaultMetadataCache>,
 ) -> Result<VaultPatch, VaultError> {
+    let _ = app;
     let root = canonical_vault_root(root)?;
     let vault_id = ensure_vault_identity(&root)?;
-    prepare_metadata_cache(app, &vault_id, cache)?;
-    let patch = scan_vault_paths_patch(&root, &vault_id, relative_paths, cache)?;
+    let patch = scan_vault_paths_patch(&root, &vault_id, relative_paths)?;
     if patch.requires_full_rescan {
         // The targeted scan gave up, so the index cannot be trusted either.
         index_whole_vault(&root);
         return Ok(patch);
     }
-    persist_metadata_cache(app, cache)?;
     index_patched_paths(&root, &patch, relative_paths);
     Ok(patch)
 }
@@ -1874,7 +1842,7 @@ pub async fn latest_scratchpad_note(
     state: State<'_, VaultState>,
 ) -> Result<Option<ScratchpadDocument>, VaultError> {
     let root = selected_vault_root(&state, "opening the previous Scratchpad note")?;
-    let snapshot = build_vault_snapshot(&app, &root, state.metadata_cache.as_ref())?;
+    let snapshot = build_vault_snapshot(&app, &root)?;
     let latest = snapshot
         .files
         .iter()
@@ -1902,7 +1870,7 @@ pub async fn list_scratchpad_notes(
     state: State<'_, VaultState>,
 ) -> Result<Vec<ScratchpadListItem>, VaultError> {
     let root = selected_vault_root(&state, "listing Scratchpad notes")?;
-    let snapshot = build_vault_snapshot(&app, &root, state.metadata_cache.as_ref())?;
+    let snapshot = build_vault_snapshot(&app, &root)?;
     let mut items = snapshot
         .files
         .into_iter()
@@ -1950,7 +1918,7 @@ pub async fn scratchpad_link_candidates(
     state: State<'_, VaultState>,
 ) -> Result<Vec<ScratchpadLinkCandidate>, VaultError> {
     let root = selected_vault_root(&state, "loading Scratchpad links")?;
-    let snapshot = build_vault_snapshot(&app, &root, state.metadata_cache.as_ref())?;
+    let snapshot = build_vault_snapshot(&app, &root)?;
     Ok(snapshot
         .files
         .into_iter()
@@ -2936,179 +2904,37 @@ fn search_snippet(line: &str, match_character_index: usize) -> String {
     snippet
 }
 
-fn metadata_index_path(app: &AppHandle, vault_id: &str) -> Result<PathBuf, VaultError> {
-    let directory = app
-        .path()
-        .app_data_dir()
-        .map_err(|error| {
-            VaultError::state(format!("The vault index location is unavailable: {error}"))
-        })?
-        .join("vault-indexes");
-    fs::create_dir_all(&directory)
-        .map_err(|error| VaultError::io("The vault index directory could not be created", error))?;
-    Ok(directory.join(format!("{vault_id}.json")))
-}
-
-fn prepare_metadata_cache(
-    app: &AppHandle,
-    vault_id: &str,
-    cache: &Mutex<VaultMetadataCache>,
-) -> Result<(), VaultError> {
-    let mut cache = cache
-        .lock()
-        .map_err(|_| VaultError::state("The vault metadata cache could not be prepared."))?;
-    if cache.vault_id == vault_id {
-        return Ok(());
-    }
-
-    let path = metadata_index_path(app, vault_id)?;
-    let persisted = fs::read(path)
-        .ok()
-        .and_then(|bytes| serde_json::from_slice::<PersistedVaultIndex>(&bytes).ok())
-        .filter(|index| index.version == 3 && index.vault_id == vault_id);
-    cache.vault_id = vault_id.to_owned();
-    cache.entries = persisted
-        .map(|index| index.entries.into_iter().collect())
-        .unwrap_or_default();
-    cache.last_refresh_reads = 0;
-    Ok(())
-}
-
-fn persist_metadata_cache(
-    app: &AppHandle,
-    cache: &Mutex<VaultMetadataCache>,
-) -> Result<(), VaultError> {
-    let cache = cache
-        .lock()
-        .map_err(|_| VaultError::state("The vault metadata cache could not be saved."))?;
-    if cache.vault_id.is_empty() {
-        return Ok(());
-    }
-    let payload = PersistedVaultIndex {
-        entries: cache
-            .entries
-            .iter()
-            .map(|(path, metadata)| (path.clone(), metadata.clone()))
-            .collect(),
-        vault_id: cache.vault_id.clone(),
-        version: 3,
-    };
-    let bytes = serde_json::to_vec(&payload)
-        .map_err(|error| VaultError::state(format!("The vault index is invalid: {error}")))?;
-    let path = metadata_index_path(app, &cache.vault_id)?;
-    let temporary_path = path.with_extension(format!(
-        "json.anchored-{}-{}.tmp",
-        std::process::id(),
-        TEMPORARY_FILE_COUNTER.fetch_add(1, Ordering::Relaxed)
-    ));
-    let mut file = OpenOptions::new()
-        .create_new(true)
-        .write(true)
-        .open(&temporary_path)
-        .map_err(|error| VaultError::io("A temporary vault index could not be created", error))?;
-    use std::io::Write;
-    file.write_all(&bytes)
-        .and_then(|_| file.sync_all())
-        .map_err(|error| VaultError::io("The vault index could not be written", error))?;
-    drop(file);
-    if let Err(error) = fs::rename(&temporary_path, &path) {
-        let _ = fs::remove_file(&temporary_path);
-        return Err(VaultError::io(
-            "The vault index could not be replaced",
-            error,
-        ));
-    }
-    sync_parent_directory(&path)
-}
-
+/// Reads each note's metadata from its file.
+///
+/// The fallback for when the index cannot answer. There is no cache in front
+/// of this any more: the index is the cache, and keeping a second one in step
+/// with it was a source of disagreement rather than speed.
 fn enrich_vault_metadata(root: &Path, files: &mut [VaultFile]) -> Result<(), VaultError> {
-    enrich_vault_metadata_cached(root, files, &Mutex::new(VaultMetadataCache::default()))
+    for file in files.iter_mut() {
+        let signature = file
+            .signature
+            .unwrap_or(vault_file_signature(root, &file.relative_path)?);
+        let metadata = read_cached_note_metadata(root, &file.relative_path, signature)?;
+        file.aliases = metadata.aliases;
+        file.archived_at = metadata.archived_at;
+        file.created_at = metadata.created_at;
+        file.identity = metadata.identity;
+        file.note_type = metadata.note_type;
+        file.outgoing_links = metadata.outgoing_links;
+        file.status = metadata.status;
+        file.updated_at = metadata.updated_at;
+        file.signature = Some(signature);
+    }
+    Ok(())
 }
 
 /// Computes fresh `CachedNoteMetadata` for each file, reusing `existing`
 /// entries whose signature still matches instead of re-reading content.
 /// Returns the computed entries (keyed by relative path) plus how many
 /// required an actual content read, without touching the shared cache.
-fn compute_metadata_updates(
-    root: &Path,
-    files: &mut [VaultFile],
-    existing: &HashMap<String, CachedNoteMetadata>,
-) -> Result<(HashMap<String, CachedNoteMetadata>, usize), VaultError> {
-    let mut next = HashMap::with_capacity(files.len());
-    let mut metadata_reads = 0;
-
-    for file in files.iter_mut() {
-        let signature = file
-            .signature
-            .unwrap_or(vault_file_signature(root, &file.relative_path)?);
-        let metadata = if let Some(cached) = existing.get(&file.relative_path) {
-            if cached.signature == signature {
-                cached.clone()
-            } else {
-                metadata_reads += 1;
-                read_cached_note_metadata(root, &file.relative_path, signature)?
-            }
-        } else {
-            metadata_reads += 1;
-            read_cached_note_metadata(root, &file.relative_path, signature)?
-        };
-        file.aliases.clone_from(&metadata.aliases);
-        file.archived_at.clone_from(&metadata.archived_at);
-        file.created_at.clone_from(&metadata.created_at);
-        file.identity.clone_from(&metadata.identity);
-        file.note_type.clone_from(&metadata.note_type);
-        file.outgoing_links.clone_from(&metadata.outgoing_links);
-        file.status.clone_from(&metadata.status);
-        file.updated_at.clone_from(&metadata.updated_at);
-        next.insert(file.relative_path.clone(), metadata);
-    }
-
-    Ok((next, metadata_reads))
-}
-
-fn enrich_vault_metadata_cached(
-    root: &Path,
-    files: &mut [VaultFile],
-    cache: &Mutex<VaultMetadataCache>,
-) -> Result<(), VaultError> {
-    let existing = cache
-        .lock()
-        .map_err(|_| VaultError::state("The vault metadata cache could not be read."))?
-        .entries
-        .clone();
-    let (next, metadata_reads) = compute_metadata_updates(root, files, &existing)?;
-
-    let mut cache = cache
-        .lock()
-        .map_err(|_| VaultError::state("The vault metadata cache could not be updated."))?;
-    cache.entries = next;
-    cache.last_refresh_reads = metadata_reads;
-    Ok(())
-}
-
 /// Like `enrich_vault_metadata_cached`, but merges the computed entries into
 /// the existing cache instead of replacing it wholesale, so unrelated cached
 /// notes are never evicted by a targeted, partial-file update.
-fn upsert_metadata_cache_entries(
-    root: &Path,
-    files: &mut [VaultFile],
-    cache: &Mutex<VaultMetadataCache>,
-) -> Result<(), VaultError> {
-    let existing = cache
-        .lock()
-        .map_err(|_| VaultError::state("The vault metadata cache could not be read."))?
-        .entries
-        .clone();
-    let (updates, metadata_reads) = compute_metadata_updates(root, files, &existing)?;
-
-    let mut cache = cache
-        .lock()
-        .map_err(|_| VaultError::state("The vault metadata cache could not be updated."))?;
-    cache.entries.extend(updates);
-    cache.last_refresh_reads = metadata_reads;
-    Ok(())
-}
-
 fn read_cached_note_metadata(
     root: &Path,
     relative_path: &str,
@@ -4646,7 +4472,6 @@ fn is_markdown(path: &Path) -> bool {
 #[cfg(test)]
 mod tests {
     use std::fs;
-    use std::sync::Mutex;
     use std::time::{Duration, Instant};
 
     use tempfile::tempdir;
@@ -4655,16 +4480,15 @@ mod tests {
         apply_timestamp_migration, canonical_vault_root, create_conflict_copy, create_folder,
         create_inbox_markdown_file, create_markdown_file, create_named_vault,
         create_scratchpad_markdown_file, create_untitled_markdown_file, delete_empty_folder,
-        derived_note_type, enrich_vault_metadata, enrich_vault_metadata_cached, move_folder,
-        move_markdown_file_to_folder, preview_timestamp_migration, read_markdown_file,
-        reconcile_external_markdown_move, recover_rename_transaction, rename_folder,
-        rename_markdown_file, resolve_new_vault_markdown_file, save_markdown_file,
-        save_scratchpad_markdown_file, scan_vault, scan_vault_paths_patch,
-        scratchpad_filename_sequence, search_markdown_files, transition_markdown_lifecycle,
-        validate_folder_name, validate_markdown_filename, validate_new_vault_name,
-        vault_tree_signature, write_rename_journal, LifecycleTransition, RenameJournal,
-        RenameJournalEntry, RenameJournalPhase, RenameOutcome, TimestampMigrationTarget,
-        VaultMetadataCache, MAX_MARKDOWN_FILE_BYTES, MAX_SEARCH_RESULTS, MAX_VAULT_DEPTH,
+        derived_note_type, enrich_vault_metadata, move_folder, move_markdown_file_to_folder,
+        preview_timestamp_migration, read_markdown_file, reconcile_external_markdown_move,
+        recover_rename_transaction, rename_folder, rename_markdown_file,
+        resolve_new_vault_markdown_file, save_markdown_file, save_scratchpad_markdown_file,
+        scan_vault, scan_vault_paths_patch, scratchpad_filename_sequence, search_markdown_files,
+        transition_markdown_lifecycle, validate_folder_name, validate_markdown_filename,
+        validate_new_vault_name, vault_tree_signature, write_rename_journal, LifecycleTransition,
+        RenameJournal, RenameJournalEntry, RenameJournalPhase, RenameOutcome,
+        TimestampMigrationTarget, MAX_MARKDOWN_FILE_BYTES, MAX_SEARCH_RESULTS, MAX_VAULT_DEPTH,
         RENAME_JOURNAL_NAME,
     };
 
@@ -5184,82 +5008,7 @@ mod tests {
         assert_eq!(result.searched_files, 1_000);
         assert!(started.elapsed() < Duration::from_secs(5));
     }
-
-    #[test]
-    fn reuses_metadata_for_an_unchanged_large_vault() {
-        let vault = tempdir().expect("create fixture vault");
-        for folder_index in 0..56 {
-            fs::create_dir(vault.path().join(format!("Folder {folder_index:02}")))
-                .expect("create fixture folder");
-        }
-        for note_index in 0..700 {
-            let folder = vault.path().join(format!("Folder {:02}", note_index % 56));
-            let links = (0..5)
-                .map(|offset| format!("[[Note {:04}]]", (note_index + offset + 1) % 700))
-                .collect::<Vec<_>>()
-                .join(" ");
-            fs::write(
-                folder.join(format!("Note {note_index:04}.md")),
-                format!("---\nstatus: active\ntype: Project\n---\n{links}\n"),
-            )
-            .expect("write fixture note");
-        }
-
-        let cache = Mutex::new(VaultMetadataCache::default());
-        let mut first = scan_vault(vault.path()).expect("scan first fixture");
-        enrich_vault_metadata_cached(vault.path(), &mut first.files, &cache)
-            .expect("index first fixture");
-        assert_eq!(cache.lock().expect("read cache").last_refresh_reads, 700);
-
-        let started = Instant::now();
-        let mut warm = scan_vault(vault.path()).expect("scan warm fixture");
-        enrich_vault_metadata_cached(vault.path(), &mut warm.files, &cache)
-            .expect("reuse fixture metadata");
-        assert_eq!(cache.lock().expect("read cache").last_refresh_reads, 0);
-        assert!(started.elapsed() < Duration::from_secs(1));
-
-        fs::write(
-            vault.path().join("Folder 00/Note 0000.md"),
-            "---\nstatus: archived\ntype: Project\n---\nChanged content and size.\n",
-        )
-        .expect("change one fixture note");
-        let mut changed = scan_vault(vault.path()).expect("scan changed fixture");
-        enrich_vault_metadata_cached(vault.path(), &mut changed.files, &cache)
-            .expect("refresh changed metadata");
-        assert_eq!(cache.lock().expect("read cache").last_refresh_reads, 1);
-    }
-
-    #[test]
-    fn carries_note_identity_through_a_cache_hit() {
-        let vault = tempdir().expect("create fixture vault");
-        fs::write(
-            vault.path().join("Note.md"),
-            "---\nid: 019f989c-2dc0-7a01-8b2c-4d5e6f708192\n---\n# Body\n",
-        )
-        .expect("write fixture note with an id");
-
-        let cache = Mutex::new(VaultMetadataCache::default());
-        let mut first = scan_vault(vault.path()).expect("scan first fixture");
-        enrich_vault_metadata_cached(vault.path(), &mut first.files, &cache)
-            .expect("index first fixture");
-        assert_eq!(
-            first.files[0].identity.as_deref(),
-            Some("019f989c-2dc0-7a01-8b2c-4d5e6f708192")
-        );
-
-        // Rescanning without touching the file must reuse the cached entry
-        // (zero reads) and still report the same identity.
-        let mut warm = scan_vault(vault.path()).expect("scan warm fixture");
-        enrich_vault_metadata_cached(vault.path(), &mut warm.files, &cache)
-            .expect("reuse fixture metadata");
-        assert_eq!(cache.lock().expect("read cache").last_refresh_reads, 0);
-        assert_eq!(
-            warm.files[0].identity.as_deref(),
-            Some("019f989c-2dc0-7a01-8b2c-4d5e6f708192")
-        );
-    }
-
-    fn seeded_patch_fixture() -> (tempfile::TempDir, Mutex<VaultMetadataCache>) {
+    fn seeded_patch_fixture() -> tempfile::TempDir {
         let vault = tempdir().expect("create fixture vault");
         fs::create_dir(vault.path().join("Notes")).expect("create Notes folder");
         for index in 0..5 {
@@ -5269,40 +5018,33 @@ mod tests {
             )
             .expect("write fixture note");
         }
-        let cache = Mutex::new(VaultMetadataCache::default());
         let mut snapshot = scan_vault(vault.path()).expect("scan fixture vault");
-        enrich_vault_metadata_cached(vault.path(), &mut snapshot.files, &cache)
-            .expect("index fixture vault");
-        (vault, cache)
+        enrich_vault_metadata(vault.path(), &mut snapshot.files).expect("index fixture vault");
+        vault
     }
 
     #[test]
     fn incremental_patch_updates_only_the_modified_note() {
-        let (vault, cache) = seeded_patch_fixture();
+        let vault = seeded_patch_fixture();
         fs::write(
             vault.path().join("Notes/Note 0.md"),
             "---\nstatus: archived\n---\nChanged body.\n",
         )
         .expect("modify one fixture note");
 
-        let patch = scan_vault_paths_patch(
-            vault.path(),
-            "test-vault",
-            &["Notes/Note 0.md".to_owned()],
-            &cache,
-        )
-        .expect("patch one changed path");
+        let patch =
+            scan_vault_paths_patch(vault.path(), "test-vault", &["Notes/Note 0.md".to_owned()])
+                .expect("patch one changed path");
 
         assert!(!patch.requires_full_rescan);
         assert!(patch.removed_paths.is_empty());
         assert_eq!(patch.upserted_files.len(), 1);
         assert_eq!(patch.upserted_files[0].status.as_deref(), Some("archived"));
-        assert_eq!(cache.lock().expect("read cache").last_refresh_reads, 1);
     }
 
     #[test]
     fn incremental_patch_adds_a_new_note_in_an_existing_folder() {
-        let (vault, cache) = seeded_patch_fixture();
+        let vault = seeded_patch_fixture();
         fs::write(
             vault.path().join("Notes/Note New.md"),
             "---\nstatus: inbox\n---\nBrand new note.\n",
@@ -5313,7 +5055,6 @@ mod tests {
             vault.path(),
             "test-vault",
             &["Notes/Note New.md".to_owned()],
-            &cache,
         )
         .expect("patch one new path");
 
@@ -5321,39 +5062,30 @@ mod tests {
         assert!(patch.removed_paths.is_empty());
         assert_eq!(patch.upserted_files.len(), 1);
         assert_eq!(patch.upserted_files[0].relative_path, "Notes/Note New.md");
-        assert!(cache
-            .lock()
-            .expect("read cache")
-            .entries
-            .contains_key("Notes/Note New.md"));
+        assert_eq!(
+            patch.upserted_files[0].status.as_deref(),
+            Some("inbox"),
+            "a newly-seen note has its metadata read, not left blank"
+        );
     }
 
     #[test]
     fn incremental_patch_reports_a_deleted_note_and_evicts_its_cache_entry() {
-        let (vault, cache) = seeded_patch_fixture();
+        let vault = seeded_patch_fixture();
         fs::remove_file(vault.path().join("Notes/Note 1.md")).expect("delete fixture note");
 
-        let patch = scan_vault_paths_patch(
-            vault.path(),
-            "test-vault",
-            &["Notes/Note 1.md".to_owned()],
-            &cache,
-        )
-        .expect("patch one deleted path");
+        let patch =
+            scan_vault_paths_patch(vault.path(), "test-vault", &["Notes/Note 1.md".to_owned()])
+                .expect("patch one deleted path");
 
         assert!(!patch.requires_full_rescan);
         assert_eq!(patch.removed_paths, vec!["Notes/Note 1.md".to_owned()]);
         assert!(patch.upserted_files.is_empty());
-        assert!(!cache
-            .lock()
-            .expect("read cache")
-            .entries
-            .contains_key("Notes/Note 1.md"));
     }
 
     #[test]
     fn incremental_patch_handles_a_rename_as_removed_plus_upserted() {
-        let (vault, cache) = seeded_patch_fixture();
+        let vault = seeded_patch_fixture();
         fs::rename(
             vault.path().join("Notes/Note 2.md"),
             vault.path().join("Notes/Note 2 Renamed.md"),
@@ -5367,7 +5099,6 @@ mod tests {
                 "Notes/Note 2.md".to_owned(),
                 "Notes/Note 2 Renamed.md".to_owned(),
             ],
-            &cache,
         )
         .expect("patch a renamed pair");
 
@@ -5382,18 +5113,14 @@ mod tests {
 
     #[test]
     fn incremental_patch_scans_a_new_folder_subtree() {
-        let (vault, cache) = seeded_patch_fixture();
+        let vault = seeded_patch_fixture();
         fs::create_dir(vault.path().join("Notes/Nested")).expect("create nested folder");
         fs::write(vault.path().join("Notes/Nested/Child.md"), "# Child note")
             .expect("write nested note");
 
-        let patch = scan_vault_paths_patch(
-            vault.path(),
-            "test-vault",
-            &["Notes/Nested".to_owned()],
-            &cache,
-        )
-        .expect("patch a directory path");
+        let patch =
+            scan_vault_paths_patch(vault.path(), "test-vault", &["Notes/Nested".to_owned()])
+                .expect("patch a directory path");
 
         assert!(!patch.requires_full_rescan);
         assert!(patch.removed_paths.is_empty());
@@ -5408,7 +5135,7 @@ mod tests {
 
     #[test]
     fn incremental_patch_scans_a_multi_level_new_folder_subtree() {
-        let (vault, cache) = seeded_patch_fixture();
+        let vault = seeded_patch_fixture();
         fs::create_dir_all(vault.path().join("Notes/Nested/Deeper"))
             .expect("create nested folders");
         fs::write(vault.path().join("Notes/Nested/Child.md"), "# Child note")
@@ -5421,13 +5148,9 @@ mod tests {
         fs::write(vault.path().join("Notes/Nested/asset.txt"), "not markdown")
             .expect("write nested asset");
 
-        let patch = scan_vault_paths_patch(
-            vault.path(),
-            "test-vault",
-            &["Notes/Nested".to_owned()],
-            &cache,
-        )
-        .expect("patch a multi-level directory path");
+        let patch =
+            scan_vault_paths_patch(vault.path(), "test-vault", &["Notes/Nested".to_owned()])
+                .expect("patch a multi-level directory path");
 
         assert!(!patch.requires_full_rescan);
         let mut folders = patch.upserted_folders.clone();
@@ -5452,7 +5175,7 @@ mod tests {
 
     #[test]
     fn incremental_patch_falls_back_to_full_rescan_when_a_subtree_is_too_deep() {
-        let (vault, cache) = seeded_patch_fixture();
+        let vault = seeded_patch_fixture();
         let mut nested = vault.path().join("Notes/Nested");
         fs::create_dir(&nested).expect("create nested folder");
         for index in 0..MAX_VAULT_DEPTH {
@@ -5460,13 +5183,9 @@ mod tests {
             fs::create_dir(&nested).expect("create deeply nested folder");
         }
 
-        let patch = scan_vault_paths_patch(
-            vault.path(),
-            "test-vault",
-            &["Notes/Nested".to_owned()],
-            &cache,
-        )
-        .expect("patch an over-deep directory path without erroring");
+        let patch =
+            scan_vault_paths_patch(vault.path(), "test-vault", &["Notes/Nested".to_owned()])
+                .expect("patch an over-deep directory path without erroring");
 
         assert!(patch.requires_full_rescan);
         assert!(patch.removed_paths.is_empty());

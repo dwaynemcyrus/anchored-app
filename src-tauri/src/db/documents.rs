@@ -582,6 +582,53 @@ pub(crate) fn indexed_signatures(
     Ok(signatures)
 }
 
+/// Marks a note as trashed rather than removing its row.
+///
+/// A hard delete would cascade away the note's versions and sync record, so
+/// restoring it would produce a note with no history. The row stays, hidden
+/// from everything that filters on `deleted_at`, and is re-attached on restore.
+pub(crate) fn soft_delete(
+    connection: &Connection,
+    relative_path: &str,
+    trash_entry_id: &str,
+) -> Result<(), VaultError> {
+    connection
+        .execute(
+            "UPDATE documents SET deleted_at = ?2, trash_entry_id = ?3
+             WHERE path_key = ?1 AND deleted_at IS NULL",
+            params![
+                super::keys::path_key(relative_path),
+                now_millis(),
+                trash_entry_id
+            ],
+        )
+        .map(drop)
+        .map_err(map_error("The note could not be moved to the trash"))
+}
+
+/// Re-attaches a trashed note's row to the path it was restored to, keeping
+/// the identity and history it had before it was trashed.
+pub(crate) fn restore_from_trash(
+    connection: &Connection,
+    trash_entry_id: &str,
+    relative_path: &str,
+) -> Result<(), VaultError> {
+    connection
+        .execute(
+            "UPDATE documents SET
+                deleted_at = NULL, trash_entry_id = NULL,
+                path_key = ?2, relative_path = ?3
+             WHERE trash_entry_id = ?1",
+            params![
+                trash_entry_id,
+                super::keys::path_key(relative_path),
+                relative_path
+            ],
+        )
+        .map(drop)
+        .map_err(map_error("The note could not be restored from the trash"))
+}
+
 /// Removes the row for one path, if it has one. Matching goes through the
 /// normalized key so a differently-spelled but equivalent path still hits.
 pub(crate) fn delete_by_path(
@@ -1012,6 +1059,68 @@ mod tests {
         delete_missing(&connection, &[]).expect("remove every document");
 
         assert!(versions(&connection).is_empty());
+    }
+
+    /// Trashing must not destroy a note's history. A hard delete cascades
+    /// versions and sync state away, so restoring would return a note that had
+    /// never existed before.
+    #[test]
+    fn trashing_a_note_keeps_its_row_history_and_identity() {
+        let (_directory, connection) = database();
+        upsert(&connection, &import_note("Notes/Harbor.md", b"# Harbor\n")).expect("import");
+        upsert(
+            &connection,
+            &import_note("Notes/Harbor.md", b"# Harbor edited\n"),
+        )
+        .expect("edit it so there is history");
+        let uuid: String = connection
+            .query_row("SELECT uuid FROM documents", [], |row| row.get(0))
+            .expect("read identity");
+
+        super::soft_delete(&connection, "Notes/Harbor.md", "trash-1").expect("trash the note");
+
+        assert_eq!(versions(&connection).len(), 1, "history survives trashing");
+        let (hidden, recorded): (i64, String) = connection
+            .query_row(
+                "SELECT count(*), COALESCE(MAX(trash_entry_id), '')
+                 FROM documents WHERE deleted_at IS NOT NULL",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .expect("read the trashed row");
+        assert_eq!(hidden, 1);
+        assert_eq!(recorded, "trash-1");
+
+        super::restore_from_trash(&connection, "trash-1", "Archive/Harbor.md")
+            .expect("restore it somewhere else");
+
+        let (restored_uuid, path, deleted): (String, String, Option<i64>) = connection
+            .query_row(
+                "SELECT uuid, relative_path, deleted_at FROM documents",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )
+            .expect("read the restored row");
+        assert_eq!(restored_uuid, uuid, "the same note comes back");
+        assert_eq!(path, "Archive/Harbor.md");
+        assert_eq!(deleted, None);
+        assert_eq!(versions(&connection).len(), 1, "history comes back with it");
+    }
+
+    /// A trashed note's file is gone from the vault, and the sweep that drops
+    /// rows for missing files must leave the trashed row alone.
+    #[test]
+    fn a_trashed_row_survives_the_sweep_for_missing_files() {
+        let (_directory, connection) = database();
+        upsert(&connection, &import_note("Notes/Harbor.md", b"# Harbor\n")).expect("import");
+        super::soft_delete(&connection, "Notes/Harbor.md", "trash-1").expect("trash it");
+
+        delete_missing(&connection, &[]).expect("sweep, with the file no longer present");
+
+        let remaining: i64 = connection
+            .query_row("SELECT count(*) FROM documents", [], |row| row.get(0))
+            .expect("count rows");
+        assert_eq!(remaining, 1, "a trashed note is not swept away");
     }
 
     #[test]

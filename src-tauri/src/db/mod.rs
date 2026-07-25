@@ -212,6 +212,27 @@ pub(crate) fn project_vault(root: &Path) -> Result<usize, VaultError> {
     projection::project_pending_identities(root, &connection)
 }
 
+/// Records that a note has gone to the trash, keeping its row, identity and
+/// history so a restore returns the same note rather than a copy of it.
+pub(crate) fn trash_note(root: &Path, relative_path: &str, trash_entry_id: &str) {
+    let Ok(connection) = open(&database_path(root)) else {
+        return;
+    };
+    if let Err(error) = documents::soft_delete(&connection, relative_path, trash_entry_id) {
+        eprintln!("The trashed note could not be recorded: {}", error.message);
+    }
+}
+
+/// Re-attaches a restored note to its row.
+pub(crate) fn restore_note(root: &Path, trash_entry_id: &str, relative_path: &str) {
+    let Ok(connection) = open(&database_path(root)) else {
+        return;
+    };
+    if let Err(error) = documents::restore_from_trash(&connection, trash_entry_id, relative_path) {
+        eprintln!("The restored note could not be recorded: {}", error.message);
+    }
+}
+
 /// Saves a note: commits the contents and writes the file together.
 ///
 /// `Ok(false)` means the index could not be opened and the caller should write
