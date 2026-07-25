@@ -1187,14 +1187,38 @@ fn build_vault_snapshot(
     cache: &Mutex<VaultMetadataCache>,
 ) -> Result<VaultSnapshot, VaultError> {
     let vault_id = ensure_vault_identity(root)?;
-    crate::db::ensure_vault_database(root)?;
     recover_rename_transaction(root)?;
     let mut snapshot = scan_vault(root)?;
     prepare_metadata_cache(app, &vault_id, cache)?;
     snapshot.vault_id = vault_id;
     enrich_vault_metadata_cached(root, &mut snapshot.files, cache)?;
     persist_metadata_cache(app, cache)?;
+    import_vault_snapshot(root, &snapshot)?;
     Ok(snapshot)
+}
+
+/// Mirrors the scan into the database. Files are still canonical, so an import
+/// failure must not stop the vault from opening — it is reported and the next
+/// scan retries.
+fn import_vault_snapshot(root: &Path, snapshot: &VaultSnapshot) -> Result<(), VaultError> {
+    let markdown_paths: Vec<String> = snapshot
+        .files
+        .iter()
+        .map(|file| file.relative_path.clone())
+        .collect();
+    let asset_paths: Vec<String> = snapshot
+        .assets
+        .iter()
+        .map(|asset| asset.relative_path.clone())
+        .collect();
+
+    let mut connection = crate::db::open(&crate::db::database_path(root))?;
+    if let Err(error) =
+        crate::db::import_vault(&mut connection, root, &markdown_paths, &asset_paths)
+    {
+        eprintln!("The vault index could not be refreshed: {}", error.message);
+    }
+    Ok(())
 }
 
 enum SinglePathScan {
@@ -4593,6 +4617,85 @@ mod tests {
         assert!(!saved.content.contains("published_at: 2026-01-02T03:04:05Z"));
         assert!(saved.content.contains("updated_at:"));
         assert!(saved.content.ends_with("# Updated\n"));
+    }
+
+    /// The database must not disagree with the scan about any note. Both read
+    /// the same `metadata` functions, and this pins that they stay wired to
+    /// each other. The comparison uses `enrich_vault_metadata`, which indexes
+    /// through a throwaway cache, so every file is genuinely re-read rather
+    /// than answered from a stale cached entry.
+    #[test]
+    fn imports_rows_that_match_a_fresh_scan_of_the_same_vault() {
+        let root =
+            std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../fixtures/test-vault");
+        let mut snapshot = scan_vault(&root).expect("scan checked-in synthetic test vault");
+        enrich_vault_metadata(&root, &mut snapshot.files).expect("index metadata");
+        // The database lives outside the read-only checked-in fixture.
+        let workspace = tempdir().expect("create fixture workspace");
+        let mut connection =
+            crate::db::open(&workspace.path().join("vault.db")).expect("create database");
+        let markdown: Vec<String> = snapshot
+            .files
+            .iter()
+            .map(|file| file.relative_path.clone())
+            .collect();
+
+        let imported = crate::db::import_vault(&mut connection, &root, &markdown, &[])
+            .expect("import the fixture vault");
+
+        assert_eq!(imported, snapshot.files.len());
+        for file in &snapshot.files {
+            let (uuid, status, note_type, created_at, updated_at, archived_at) = connection
+                .query_row(
+                    "SELECT uuid, status, note_type, created_at, updated_at, archived_at
+                     FROM documents WHERE relative_path = ?1",
+                    [&file.relative_path],
+                    |row| {
+                        Ok((
+                            row.get::<_, String>(0)?,
+                            row.get::<_, Option<String>>(1)?,
+                            row.get::<_, Option<String>>(2)?,
+                            row.get::<_, Option<String>>(3)?,
+                            row.get::<_, Option<String>>(4)?,
+                            row.get::<_, Option<String>>(5)?,
+                        ))
+                    },
+                )
+                .unwrap_or_else(|_| panic!("{} should have a row", file.relative_path));
+
+            let path = &file.relative_path;
+            if let Some(identity) = &file.identity {
+                assert_eq!(&uuid, identity, "{path} identity");
+            } else {
+                assert!(
+                    crate::metadata::is_canonical_note_id(&uuid),
+                    "{path} should be given a minted identity"
+                );
+            }
+            assert_eq!(status, file.status, "{path} status");
+            assert_eq!(note_type, file.note_type, "{path} type");
+            assert_eq!(created_at, file.created_at, "{path} created_at");
+            assert_eq!(updated_at, file.updated_at, "{path} updated_at");
+            assert_eq!(archived_at, file.archived_at, "{path} archived_at");
+
+            let aliases: Vec<String> = connection
+                .prepare("SELECT alias FROM aliases WHERE document_id = (SELECT id FROM documents WHERE relative_path = ?1) ORDER BY ordinal")
+                .expect("prepare aliases")
+                .query_map([path], |row| row.get(0))
+                .expect("query aliases")
+                .collect::<Result<_, _>>()
+                .expect("collect aliases");
+            assert_eq!(aliases, file.aliases, "{path} aliases");
+
+            let links: Vec<String> = connection
+                .prepare("SELECT target_raw FROM links WHERE source_document_id = (SELECT id FROM documents WHERE relative_path = ?1) ORDER BY occurrence_index")
+                .expect("prepare links")
+                .query_map([path], |row| row.get(0))
+                .expect("query links")
+                .collect::<Result<_, _>>()
+                .expect("collect links");
+            assert_eq!(links, file.outgoing_links, "{path} outgoing links");
+        }
     }
 
     #[test]

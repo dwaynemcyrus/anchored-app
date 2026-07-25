@@ -2,6 +2,9 @@
 //! `AppHandle` so the whole module is unit-testable against a temporary file,
 //! following the same split `scan_vault_paths_patch` already uses in `vault`.
 
+mod documents;
+mod import;
+mod keys;
 mod schema;
 
 use std::path::Path;
@@ -16,15 +19,51 @@ fn map_error(context: &'static str) -> impl FnOnce(rusqlite::Error) -> VaultErro
     move |error| VaultError::state(format!("{context}: {error}"))
 }
 
-/// Creates or migrates the database for a vault root, without holding the
-/// connection open. Callers that need to read or write take their own.
-pub(crate) fn ensure_vault_database(root: &Path) -> Result<(), VaultError> {
-    open(&database_path(root)).map(drop)
-}
-
 pub(crate) fn database_path(root: &Path) -> std::path::PathBuf {
     root.join(crate::continuity::INTERNAL_DIRECTORY_NAME)
         .join(DATABASE_NAME)
+}
+
+/// Imports every file in the vault in one transaction, then resolves links and
+/// drops rows for files that are no longer there.
+///
+/// Files remain canonical at this stage: nothing reads back from these rows.
+/// The import is idempotent, so running it repeatedly converges on whatever is
+/// on disk rather than accumulating.
+pub(crate) fn import_vault(
+    connection: &mut Connection,
+    root: &Path,
+    markdown_paths: &[String],
+    asset_paths: &[String],
+) -> Result<usize, VaultError> {
+    let transaction = connection
+        .transaction()
+        .map_err(map_error("The vault import could not be started"))?;
+
+    let mut present = Vec::with_capacity(markdown_paths.len() + asset_paths.len());
+    for (paths, is_markdown) in [(markdown_paths, true), (asset_paths, false)] {
+        for relative_path in paths {
+            // A file that vanished between the scan and the read is skipped
+            // rather than failing the import; the next pass will settle it.
+            let Ok(bytes) = std::fs::read(root.join(relative_path)) else {
+                continue;
+            };
+            let document = if is_markdown {
+                import::import_note(relative_path, &bytes)
+            } else {
+                import::import_asset(relative_path, &bytes)
+            };
+            documents::upsert(&transaction, &document)?;
+            present.push(document.path_key);
+        }
+    }
+
+    documents::resolve_links(&transaction)?;
+    documents::delete_missing(&transaction, &present)?;
+    transaction
+        .commit()
+        .map_err(map_error("The vault import could not be committed"))?;
+    Ok(present.len())
 }
 
 /// Opens the vault database, applying pragmas and any pending migrations.
@@ -187,11 +226,94 @@ mod tests {
     fn creates_the_database_inside_the_vaults_hidden_directory() {
         let vault = tempdir().expect("create fixture vault");
         crate::continuity::ensure_vault_identity(vault.path()).expect("create identity");
+        let path = super::database_path(vault.path());
 
-        super::ensure_vault_database(vault.path()).expect("create database");
+        drop(open(&path).expect("create database"));
 
         assert!(vault.path().join(".anchored").join("vault.db").is_file());
-        super::ensure_vault_database(vault.path()).expect("reopen an existing database");
+        drop(open(&path).expect("reopen an existing database"));
+    }
+
+    #[test]
+    fn imports_a_whole_vault_idempotently() {
+        let vault = tempdir().expect("create fixture vault");
+        crate::continuity::ensure_vault_identity(vault.path()).expect("create identity");
+        std::fs::write(vault.path().join("Harbor.md"), "# Harbor\n[[Planning]]\n")
+            .expect("write note");
+        std::fs::write(vault.path().join("Planning.md"), "# Planning\n").expect("write note");
+        let markdown = vec!["Harbor.md".to_owned(), "Planning.md".to_owned()];
+        let mut connection = open(&super::database_path(vault.path())).expect("create database");
+
+        let first =
+            super::import_vault(&mut connection, vault.path(), &markdown, &[]).expect("import");
+        let identities: Vec<String> = document_uuids(&connection);
+        let second =
+            super::import_vault(&mut connection, vault.path(), &markdown, &[]).expect("re-import");
+
+        assert_eq!((first, second), (2, 2));
+        assert_eq!(
+            identities,
+            document_uuids(&connection),
+            "re-importing must not mint new identities"
+        );
+        // A root-level note is addressable as a path, which outranks the
+        // filename rule; what matters here is that it stayed resolved.
+        let (resolution, target): (String, Option<i64>) = connection
+            .query_row(
+                "SELECT resolution, target_document_id FROM links WHERE target_raw = 'Planning'",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .expect("read link");
+        assert_eq!(resolution, "path");
+        assert!(
+            target.is_some(),
+            "re-import must not orphan a resolved link"
+        );
+    }
+
+    #[test]
+    fn drops_rows_for_files_removed_from_the_vault() {
+        let vault = tempdir().expect("create fixture vault");
+        crate::continuity::ensure_vault_identity(vault.path()).expect("create identity");
+        std::fs::write(vault.path().join("Harbor.md"), "# Harbor\n").expect("write note");
+        std::fs::write(vault.path().join("Gone.md"), "# Gone\n").expect("write note");
+        let mut connection = open(&super::database_path(vault.path())).expect("create database");
+        super::import_vault(
+            &mut connection,
+            vault.path(),
+            &["Harbor.md".to_owned(), "Gone.md".to_owned()],
+            &[],
+        )
+        .expect("first import");
+
+        std::fs::remove_file(vault.path().join("Gone.md")).expect("delete note");
+        super::import_vault(
+            &mut connection,
+            vault.path(),
+            &["Harbor.md".to_owned()],
+            &[],
+        )
+        .expect("second import");
+
+        let remaining: Vec<String> = connection
+            .prepare("SELECT relative_path FROM documents ORDER BY relative_path")
+            .expect("prepare")
+            .query_map([], |row| row.get(0))
+            .expect("query")
+            .collect::<Result<_, _>>()
+            .expect("collect");
+        assert_eq!(remaining, vec!["Harbor.md".to_owned()]);
+    }
+
+    fn document_uuids(connection: &Connection) -> Vec<String> {
+        connection
+            .prepare("SELECT uuid FROM documents ORDER BY path_key")
+            .expect("prepare")
+            .query_map([], |row| row.get(0))
+            .expect("query")
+            .collect::<Result<_, _>>()
+            .expect("collect")
     }
 
     #[test]

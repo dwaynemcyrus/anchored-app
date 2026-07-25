@@ -111,6 +111,9 @@ CREATE TABLE aliases (
     document_id INTEGER NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
     alias       TEXT    NOT NULL,
     alias_key   TEXT    NOT NULL,
+    -- Authored order. Without it the primary-key index would hand aliases back
+    -- alphabetically, quietly reordering what the user wrote.
+    ordinal     INTEGER NOT NULL,
     PRIMARY KEY (document_id, alias_key)
 ) STRICT;
 

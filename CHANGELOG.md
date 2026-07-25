@@ -14,6 +14,13 @@ Git commit. The format follows [Keep a Changelog], and releases follow
   creates `.anchored/template/` for note templates, `.anchored/conflicts/`
   for preserved conflicting copies, and a `.anchored/.gitignore` so a vault
   kept in Git does not commit database bytes.
+- Opening or rescanning a vault now also indexes it into that database,
+  including each note's front matter, body, aliases, wikilinks, and
+  lifecycle timestamps. Files remain the source of truth and nothing reads
+  back from the index yet, so there is no visible change in behavior. Notes
+  are matched by a normalized path so a name spelled differently by Finder
+  and by Anchored — different Unicode composition, or a different letter
+  case — is recognized as one note rather than two.
 
 ### Changed
 
