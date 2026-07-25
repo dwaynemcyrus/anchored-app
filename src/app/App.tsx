@@ -28,13 +28,11 @@ import { VaultSwitcher } from "./components/VaultSwitcher";
 import { readErrorMessage } from "./errors";
 import { useConflictResolution } from "./useConflictResolution";
 import { useMissingWikilinkDialog } from "./useMissingWikilinkDialog";
+import { useRetrievalPalettes } from "./useRetrievalPalettes";
 import { useSidebarState } from "./useSidebarState";
 import { useTimestampMigration } from "./useTimestampMigration";
 import { useTrashPanel } from "./useTrashPanel";
-import {
-  VaultSearchPalette,
-  type VaultSearchState,
-} from "./components/VaultSearchPalette";
+import { VaultSearchPalette } from "./components/VaultSearchPalette";
 import {
   applyVaultPatch,
   createUntitledDocument,
@@ -62,7 +60,6 @@ import {
   reconcileDocumentActivity,
   saveDocumentActivity,
 } from "./recentDocuments";
-import { rankQuickOpenResults } from "./retrieval";
 import {
   loadMarkdownSettings,
   saveMarkdownSettings,
@@ -117,7 +114,6 @@ import {
   rescanVault,
   rescanVaultPaths,
   saveVaultFile,
-  searchVault,
   selectVault,
   stopVault,
   watchVault,
@@ -212,14 +208,6 @@ export function App() {
     column: 1,
   });
   const [query, setQuery] = useState("");
-  const [quickOpenQuery, setQuickOpenQuery] = useState("");
-  const [quickOpenVisible, setQuickOpenVisible] = useState(false);
-  const [vaultSearchQuery, setVaultSearchQuery] = useState("");
-  const [vaultSearchState, setVaultSearchState] = useState<VaultSearchState>({
-    status: "idle",
-  });
-  const [vaultSearchVisible, setVaultSearchVisible] = useState(false);
-  const [findRequest, setFindRequest] = useState(0);
   const [vaultName, setVaultName] = useState("");
   const [vaultId, setVaultId] = useState("");
   const [folderPaths, setFolderPaths] = useState<string[]>([]);
@@ -312,7 +300,6 @@ export function App() {
   });
   const searchInputRef = useRef<HTMLInputElement>(null);
   const loadRequestRef = useRef(0);
-  const searchRequestRef = useRef(0);
   const rescanInFlightRef = useRef(false);
   const saveInFlightRef = useRef(new Set<string>());
   const externalCheckInFlightRef = useRef(new Set<string>());
@@ -396,24 +383,6 @@ export function App() {
     () =>
       buildWikilinkCandidates(deferredDocuments, documentActivity, linkIndex),
     [deferredDocuments, documentActivity, linkIndex],
-  );
-  const quickOpenResults = useMemo(
-    () =>
-      quickOpenVisible
-        ? rankQuickOpenResults(
-            wikilinkCandidates,
-            deferredDocuments,
-            quickOpenQuery,
-            activeDocumentId,
-          )
-        : [],
-    [
-      activeDocumentId,
-      deferredDocuments,
-      quickOpenQuery,
-      quickOpenVisible,
-      wikilinkCandidates,
-    ],
   );
   const notificationScopeId = vaultId || GENERAL_NOTIFICATION_SCOPE;
   const visibleNotificationHistory = useMemo(
@@ -1448,36 +1417,6 @@ export function App() {
     }
   }, [notificationHistory]);
 
-  useEffect(() => {
-    searchRequestRef.current += 1;
-    const requestId = searchRequestRef.current;
-    const query = vaultSearchQuery.trim();
-
-    if (!vaultSearchVisible || !vaultSelected || query.length === 0) {
-      setVaultSearchState({ status: "idle" });
-      return;
-    }
-
-    setVaultSearchState({ status: "searching" });
-    const timeout = window.setTimeout(() => {
-      void searchVault(query)
-        .then((result) => {
-          if (searchRequestRef.current === requestId) {
-            setVaultSearchState({ result, status: "success" });
-          }
-        })
-        .catch((error: unknown) => {
-          if (searchRequestRef.current === requestId) {
-            setVaultSearchState({
-              message: readErrorMessage(error),
-              status: "error",
-            });
-          }
-        });
-    }, 180);
-
-    return () => window.clearTimeout(timeout);
-  }, [vaultSearchQuery, vaultSearchVisible, vaultSelected]);
   const openScratchpadWindow = useCallback(
     (mode: ScratchpadMode) => {
       if (!vaultSelected) {
@@ -1491,78 +1430,6 @@ export function App() {
     [addVaultNotice, vaultSelected],
   );
 
-  useEffect(() => {
-    function handleKeyboardShortcut(event: KeyboardEvent) {
-      const commandKey = event.metaKey || event.ctrlKey;
-
-      if (event.ctrlKey && event.altKey && event.key.toLowerCase() === "n") {
-        event.preventDefault();
-        openScratchpadWindow("new");
-        return;
-      }
-
-      if (event.ctrlKey && event.altKey && event.key.toLowerCase() === "p") {
-        event.preventDefault();
-        openScratchpadWindow("previous");
-        return;
-      }
-
-      if (event.ctrlKey && event.altKey && event.key.toLowerCase() === "s") {
-        event.preventDefault();
-        openScratchpadWindow("list");
-        return;
-      }
-
-      if (commandKey && !event.altKey && event.key.toLowerCase() === "n") {
-        event.preventDefault();
-        createNote();
-      }
-
-      if (commandKey && !event.altKey && event.key.toLowerCase() === "p") {
-        event.preventDefault();
-        setQuickOpenQuery("");
-        setQuickOpenVisible(true);
-      }
-
-      if (commandKey && event.shiftKey && event.key.toLowerCase() === "f") {
-        event.preventDefault();
-        setVaultSearchQuery("");
-        setVaultSearchVisible(true);
-      }
-
-      if (
-        commandKey &&
-        !event.shiftKey &&
-        event.key.toLowerCase() === "f" &&
-        !event.defaultPrevented
-      ) {
-        event.preventDefault();
-        setFindRequest((current) => current + 1);
-      }
-
-      if (
-        commandKey &&
-        event.key.toLowerCase() === "s" &&
-        !event.defaultPrevented
-      ) {
-        event.preventDefault();
-        if (event.shiftKey) {
-          void saveDocumentAs(activeDocumentId);
-        } else {
-          void saveDocument(activeDocumentId);
-        }
-      }
-    }
-
-    window.addEventListener("keydown", handleKeyboardShortcut);
-    return () => window.removeEventListener("keydown", handleKeyboardShortcut);
-  }, [
-    activeDocumentId,
-    createNote,
-    openScratchpadWindow,
-    saveDocument,
-    saveDocumentAs,
-  ]);
   useEffect(() => {
     if (sessionRestoreStatusRef.current !== "done" && !vaultSelected) {
       return;
@@ -1882,6 +1749,95 @@ export function App() {
     setFocusDocument,
   });
 
+  const retrieval = useRetrievalPalettes({
+    activeDocumentId,
+    addHistoryEntry,
+    addVaultNotice,
+    adoptVaultSnapshot,
+    deferredDocuments,
+    documentsRef,
+    selectDocument,
+    vaultSelected,
+    wikilinkCandidates,
+  });
+
+  useEffect(() => {
+    function handleKeyboardShortcut(event: KeyboardEvent) {
+      const commandKey = event.metaKey || event.ctrlKey;
+
+      if (event.ctrlKey && event.altKey && event.key.toLowerCase() === "n") {
+        event.preventDefault();
+        openScratchpadWindow("new");
+        return;
+      }
+
+      if (event.ctrlKey && event.altKey && event.key.toLowerCase() === "p") {
+        event.preventDefault();
+        openScratchpadWindow("previous");
+        return;
+      }
+
+      if (event.ctrlKey && event.altKey && event.key.toLowerCase() === "s") {
+        event.preventDefault();
+        openScratchpadWindow("list");
+        return;
+      }
+
+      if (commandKey && !event.altKey && event.key.toLowerCase() === "n") {
+        event.preventDefault();
+        createNote();
+      }
+
+      if (commandKey && !event.altKey && event.key.toLowerCase() === "p") {
+        event.preventDefault();
+        retrieval.openQuickOpen();
+      }
+
+      if (commandKey && event.shiftKey && event.key.toLowerCase() === "f") {
+        event.preventDefault();
+        retrieval.openVaultSearch();
+      }
+
+      if (
+        commandKey &&
+        !event.shiftKey &&
+        event.key.toLowerCase() === "f" &&
+        !event.defaultPrevented
+      ) {
+        event.preventDefault();
+        retrieval.triggerFind();
+      }
+
+      if (
+        commandKey &&
+        event.key.toLowerCase() === "s" &&
+        !event.defaultPrevented
+      ) {
+        event.preventDefault();
+        if (event.shiftKey) {
+          void saveDocumentAs(activeDocumentId);
+        } else {
+          void saveDocument(activeDocumentId);
+        }
+      }
+    }
+
+    window.addEventListener("keydown", handleKeyboardShortcut);
+    return () => window.removeEventListener("keydown", handleKeyboardShortcut);
+    // retrieval's methods have stable identities; see the comment on
+    // activateVaultSnapshot's dependency array above.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    activeDocumentId,
+    createNote,
+    openScratchpadWindow,
+    retrieval.openQuickOpen,
+    retrieval.openVaultSearch,
+    retrieval.triggerFind,
+    saveDocument,
+    saveDocumentAs,
+  ]);
+
   async function reloadExternalDocument(documentId: string) {
     const document = documentsRef.current.find(
       (candidate) => candidate.id === documentId,
@@ -1990,39 +1946,6 @@ export function App() {
       void selectDocument(restoredDocument.id);
     }
   }, [activeDocumentId, documents, selectDocument, vaultSelected]);
-  async function openVaultSearchResult(relativePath: string) {
-    let document = documentsRef.current.find(
-      (candidate) => candidate.relativePath === relativePath,
-    );
-    if (!document) {
-      try {
-        const snapshot = await rescanVault();
-        if (snapshot) {
-          adoptVaultSnapshot(snapshot);
-          document = documentsRef.current.find(
-            (candidate) => candidate.relativePath === relativePath,
-          );
-        }
-      } catch (error) {
-        addVaultNotice(readErrorMessage(error), { persistent: true });
-        addHistoryEntry("A vault search result could not be reopened.", {
-          kind: "error",
-        });
-        return;
-      }
-    }
-
-    if (!document) {
-      addVaultNotice("That search result is no longer in the vault.", {
-        history: { kind: "error" },
-        persistent: true,
-      });
-      return;
-    }
-    setVaultSearchVisible(false);
-    await selectDocument(document.id);
-  }
-
   async function finishRelocatedDocument(
     outcome: {
       relativePath: string;
@@ -2876,10 +2799,7 @@ export function App() {
         onCreateNote={createNote}
         onOpenNotifications={() => setNotificationHistoryVisible(true)}
         onOpenScratchpad={() => openScratchpadWindow("new")}
-        onOpenSearch={() => {
-          setVaultSearchQuery("");
-          setVaultSearchVisible(true);
-        }}
+        onOpenSearch={retrieval.openVaultSearch}
         onOpenSettings={() => setSettingsVisible(true)}
         onSelectVault={() => {
           if (!vaultSelected && rememberedVaults.length === 0) {
@@ -2952,9 +2872,7 @@ export function App() {
           }
           onSelectDocument={selectDocument}
           onSearchDocument={(documentId) => {
-            void selectDocument(documentId).then(() =>
-              setFindRequest((current) => current + 1),
-            );
+            void selectDocument(documentId).then(() => retrieval.triggerFind());
           }}
           onSearchInFolder={(folderPath) => {
             setQuery(`${folderPath}/`);
@@ -2979,7 +2897,7 @@ export function App() {
           hasDocuments={documents.some(
             (document) => document.isMarkdown !== false,
           )}
-          findRequest={findRequest}
+          findRequest={retrieval.findRequest}
           loadState={
             documentLoad.status !== "idle" &&
             documentLoad.documentId === activeDocument?.id
@@ -3406,28 +3324,30 @@ export function App() {
           onRestore={(entry) => void trash.restoreTrashEntry(entry)}
         />
       ) : null}
-      {quickOpenVisible ? (
+      {retrieval.quickOpenVisible ? (
         <QuickOpenPalette
-          query={quickOpenQuery}
-          results={quickOpenResults}
+          query={retrieval.quickOpenQuery}
+          results={retrieval.quickOpenResults}
           showFileExtensions={markdownSettings.showFileExtensions}
-          onClose={() => setQuickOpenVisible(false)}
+          onClose={() => retrieval.setQuickOpenVisible(false)}
           onOpen={(documentId) => {
-            setQuickOpenVisible(false);
+            retrieval.setQuickOpenVisible(false);
             void selectDocument(documentId);
           }}
-          onQueryChange={setQuickOpenQuery}
+          onQueryChange={retrieval.setQuickOpenQuery}
         />
       ) : null}
-      {vaultSearchVisible ? (
+      {retrieval.vaultSearchVisible ? (
         <VaultSearchPalette
-          query={vaultSearchQuery}
-          searchState={vaultSearchState}
+          query={retrieval.vaultSearchQuery}
+          searchState={retrieval.vaultSearchState}
           vaultSelected={vaultSelected}
           showFileExtensions={markdownSettings.showFileExtensions}
-          onClose={() => setVaultSearchVisible(false)}
-          onOpen={(relativePath) => void openVaultSearchResult(relativePath)}
-          onQueryChange={setVaultSearchQuery}
+          onClose={() => retrieval.setVaultSearchVisible(false)}
+          onOpen={(relativePath) =>
+            void retrieval.openVaultSearchResult(relativePath)
+          }
+          onQueryChange={retrieval.setVaultSearchQuery}
         />
       ) : null}
       <StatusBar
