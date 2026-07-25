@@ -76,7 +76,8 @@ pub(crate) fn upsert(
                         size_bytes = ?11, status = ?12, note_type = ?13, archived_at = ?14,
                         created_at = ?15, updated_at = ?16, created_at_millis = ?17,
                         updated_at_millis = ?18, aliases_text = ?19, path_key = ?20,
-                        mtime_millis = ?21, revision = revision + 1
+                        mtime_millis = ?21, identity_in_file = ?22,
+                        revision = revision + 1
                      WHERE id = ?1",
                     params![
                         id,
@@ -100,6 +101,7 @@ pub(crate) fn upsert(
                         document.aliases_text(),
                         document.path_key,
                         document.mtime_millis as i64,
+                        !document.minted_identity,
                     ],
                 )
                 .map_err(map_error("A document could not be updated"))?;
@@ -112,10 +114,11 @@ pub(crate) fn upsert(
                         uuid, path_key, relative_path, name, name_key, parent, is_markdown,
                         frontmatter_text, body, content_hash, size_bytes, status, note_type,
                         archived_at, created_at, updated_at, created_at_millis,
-                        updated_at_millis, aliases_text, mtime_millis
+                        updated_at_millis, aliases_text, mtime_millis,
+                        identity_in_file
                      ) VALUES (
                         ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16,
-                        ?17, ?18, ?19, ?20
+                        ?17, ?18, ?19, ?20, ?21
                      )",
                     params![
                         uuid,
@@ -138,6 +141,7 @@ pub(crate) fn upsert(
                         document.updated_at_millis,
                         document.aliases_text(),
                         document.mtime_millis as i64,
+                        !document.minted_identity,
                     ],
                 )
                 .map_err(map_error("A document could not be recorded"))?;
@@ -251,6 +255,90 @@ pub(crate) fn resolve_links(connection: &Connection) -> Result<(), VaultError> {
         .execute(RESOLVE_LINKS_SQL, params![None::<i64>])
         .map(drop)
         .map_err(map_error("Document links could not be resolved"))
+}
+
+/// How a document's row and its file currently stand relative to each other.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum SyncState {
+    /// Row and file agree.
+    Synced,
+    /// The file changed underneath us and has not been imported yet.
+    FileChanged,
+    /// Both changed since the last agreement. Never resolved automatically.
+    Conflict,
+}
+
+impl SyncState {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            SyncState::Synced => "synced",
+            SyncState::FileChanged => "file_changed",
+            SyncState::Conflict => "conflict",
+        }
+    }
+}
+
+/// Records that the file on disk and the row now agree, and what was observed
+/// to reach that conclusion.
+///
+/// `projected_hash` is the durable record of what Anchored last wrote. It is
+/// what lets the importer recognise its own write when the watcher reports it
+/// moments later, and what makes a crash mid-projection recoverable as
+/// ordinary reconciliation rather than an unanswerable question.
+pub(crate) fn record_synced(
+    connection: &Connection,
+    document_id: i64,
+    hash: &str,
+    size_bytes: u64,
+    mtime_millis: u64,
+    revision: i64,
+) -> Result<(), VaultError> {
+    connection
+        .execute(
+            "INSERT INTO sync_records (
+                document_id, state, projected_hash, projected_size,
+                projected_mtime_millis, projected_revision, observed_hash,
+                observed_mtime_millis, last_error, updated_millis
+             ) VALUES (?1, 'synced', ?2, ?3, ?4, ?5, ?2, ?4, NULL, ?6)
+             ON CONFLICT(document_id) DO UPDATE SET
+                state = 'synced', projected_hash = ?2, projected_size = ?3,
+                projected_mtime_millis = ?4, projected_revision = ?5,
+                observed_hash = ?2, observed_mtime_millis = ?4,
+                last_error = NULL, updated_millis = ?6",
+            params![
+                document_id,
+                hash,
+                size_bytes as i64,
+                mtime_millis as i64,
+                revision,
+                now_millis(),
+            ],
+        )
+        .map(drop)
+        .map_err(map_error("The sync record could not be written"))
+}
+
+pub(crate) fn set_sync_state(
+    connection: &Connection,
+    document_id: i64,
+    state: SyncState,
+) -> Result<(), VaultError> {
+    connection
+        .execute(
+            "INSERT INTO sync_records (document_id, state, updated_millis)
+             VALUES (?1, ?2, ?3)
+             ON CONFLICT(document_id) DO UPDATE SET state = ?2, updated_millis = ?3",
+            params![document_id, state.as_str(), now_millis()],
+        )
+        .map(drop)
+        .map_err(map_error("The sync state could not be recorded"))
+}
+
+pub(crate) fn now_millis() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|elapsed| elapsed.as_millis().min(i64::MAX as u128) as i64)
+        .unwrap_or_default()
 }
 
 /// Everything the interface needs about a note that is not already known from

@@ -2,7 +2,20 @@
 //! and `PRAGMA user_version` records how many have run. Never edit a shipped
 //! migration; append a new one instead.
 
-pub(super) const MIGRATIONS: &[&str] = &[INITIAL_SCHEMA, RECORD_FILE_MTIME];
+pub(super) const MIGRATIONS: &[&str] =
+    &[INITIAL_SCHEMA, RECORD_FILE_MTIME, RECORD_IDENTITY_IN_FILE];
+
+/// Marks whether the file itself carries the identity its row holds. A note
+/// whose id was minted during import has one only in the database until the
+/// projection writes it back, and until then it cannot be recognised across a
+/// rename made in another program.
+///
+/// Existing rows default to 0 — "not known to be in the file" — because the
+/// honest answer is unknown. Projection reads the file, finds the id already
+/// present where it is, and corrects the flag without rewriting anything.
+const RECORD_IDENTITY_IN_FILE: &str = "
+ALTER TABLE documents ADD COLUMN identity_in_file INTEGER NOT NULL DEFAULT 0;
+";
 
 /// Lets a whole-vault import skip a file whose size and modification time
 /// still match what was indexed, instead of re-reading every note to discover

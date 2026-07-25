@@ -24,6 +24,18 @@ Git commit. The format follows [Keep a Changelog], and releases follow
 
 ### Changed
 
+- Notes that had no `id` in their front matter can now be given one, written
+  into the file itself so the note keeps its identity when it is renamed or
+  moved in Finder or another editor. Front matter is edited in place, so
+  comments, key order, quote style, and spacing are left exactly as written,
+  and a note whose front matter is malformed is never rewritten. This is off
+  by default in this release.
+- Opening a vault now records how each note's file and its stored copy stand
+  relative to each other, including noticing a note changed in both places.
+  Nothing is resolved automatically and no file is rewritten.
+- Only one copy of Anchored can now run at a time. A second launch raises the
+  existing window instead of opening a rival window that would fight the first
+  one over the same vault.
 - Opening or rescanning a vault no longer reads every note to collect its
   metadata. Aliases, links, status, type, and lifecycle timestamps are read
   from the index instead, and a note whose size and modification time are

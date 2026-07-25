@@ -1195,6 +1195,8 @@ fn build_vault_snapshot(
     // with no notes in them, which the index has no row for. What the index
     // replaces is opening every file to read its metadata.
     import_vault_snapshot(root, &snapshot)?;
+    reconcile_vault_state(root);
+    project_vault_identities(root);
     if enrich_vault_metadata_from_index(root, &mut snapshot.files)? {
         return Ok(snapshot);
     }
@@ -1203,6 +1205,30 @@ fn build_vault_snapshot(
     enrich_vault_metadata_cached(root, &mut snapshot.files, cache)?;
     persist_metadata_cache(app, cache)?;
     Ok(snapshot)
+}
+
+/// Records how each note's row and file stand when the vault opens. Reporting
+/// only — nothing is rewritten and no conflict is resolved here.
+fn reconcile_vault_state(root: &Path) {
+    match crate::db::reconcile_vault(root) {
+        Ok(summary) if summary.conflicts > 0 || summary.missing_files > 0 => eprintln!(
+            "Vault reconciliation: {} synced, {} changed outside Anchored, {} conflicted, {} missing.",
+            summary.synced, summary.file_changed, summary.conflicts, summary.missing_files
+        ),
+        Ok(_) => {}
+        Err(error) => eprintln!("The vault could not be reconciled: {}", error.message),
+    }
+}
+
+/// Writes minted identities back into notes that lack them, if projection is
+/// enabled. A failure here leaves the files untouched and is reported rather
+/// than stopping the vault from opening.
+fn project_vault_identities(root: &Path) {
+    match crate::db::project_vault(root) {
+        Ok(0) => {}
+        Ok(written) => eprintln!("Anchored recorded an identity in {written} note(s)."),
+        Err(error) => eprintln!("Note identities could not be recorded: {}", error.message),
+    }
 }
 
 /// Fills note metadata in from the index. Returns `false` when the index
@@ -4489,6 +4515,23 @@ fn temporary_sibling_path(destination: &Path) -> Result<PathBuf, VaultError> {
         ".{name}.anchored-{}-{counter}.tmp",
         std::process::id()
     )))
+}
+
+/// Replaces an existing Markdown file's contents atomically, keeping its
+/// permissions. For the projection, which edits notes that already exist and
+/// must never leave a half-written file behind if the app dies mid-write.
+pub(crate) fn write_markdown_atomically(
+    destination: &Path,
+    content: &str,
+) -> Result<(), VaultError> {
+    let metadata = fs::metadata(destination)
+        .map_err(|error| VaultError::io("The Markdown file could not be inspected", error))?;
+    let temporary_path = temporary_sibling_path(destination)?;
+    let result = write_atomically(&temporary_path, destination, content, &metadata);
+    if result.is_err() {
+        let _ = fs::remove_file(&temporary_path);
+    }
+    result
 }
 
 fn write_atomically(

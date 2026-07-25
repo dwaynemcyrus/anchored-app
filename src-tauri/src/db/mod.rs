@@ -5,6 +5,7 @@
 mod documents;
 mod import;
 mod keys;
+mod projection;
 mod schema;
 mod search;
 
@@ -107,10 +108,22 @@ pub(crate) fn import_paths(root: &Path, relative_paths: &[String]) -> Result<(),
         .transaction()
         .map_err(map_error("The vault index could not be updated"))?;
 
+    let indexed = documents::indexed_signatures(&transaction)?;
     let mut touched = Vec::with_capacity(relative_paths.len());
     let mut document_set_changed = false;
     for relative_path in relative_paths {
         let path = root.join(relative_path);
+
+        // Anchored's own writes record the resulting size and time on the row
+        // before the watcher can report them, so a file matching what was
+        // recorded is a write of ours coming back around, not an external edit.
+        // Skipping it is what stops a projection from re-importing itself.
+        if let Ok(metadata) = std::fs::metadata(&path) {
+            if indexed.get(&keys::path_key(relative_path)) == Some(&file_signature(&metadata)) {
+                continue;
+            }
+        }
+
         match std::fs::read(&path) {
             Ok(bytes) => {
                 let mut document = if is_markdown_path(relative_path) {
@@ -181,6 +194,69 @@ fn is_markdown_path(relative_path: &str) -> bool {
         .extension()
         .and_then(|extension| extension.to_str())
         .is_some_and(|extension| extension.eq_ignore_ascii_case("md"))
+}
+
+/// Writes identities the index holds back into the notes that lack them.
+///
+/// Returns how many files changed. Projection is off unless explicitly
+/// enabled, because this is the first thing in this work that modifies a
+/// user's notes rather than only reading them.
+pub(crate) fn project_vault(root: &Path) -> Result<usize, VaultError> {
+    let connection = open(&database_path(root))?;
+    if !projection_enabled(&connection) {
+        return Ok(0);
+    }
+    projection::project_pending_identities(root, &connection)
+}
+
+/// Classifies how every note's row and file stand, without changing either.
+/// Runs when a vault opens, after the import has caught the index up.
+pub(crate) fn reconcile_vault(root: &Path) -> Result<projection::Reconciliation, VaultError> {
+    let connection = open(&database_path(root))?;
+    projection::reconcile(root, &connection)
+}
+
+pub(crate) const PROJECTION_SETTING: &str = "writes.projection";
+const PROJECTION_ENV: &str = "ANCHORED_PROJECTION";
+
+/// Off by default. A vault is only written to when the setting or the
+/// environment variable turns it on, so the projection can be stopped without
+/// shipping a new build.
+fn projection_enabled(connection: &Connection) -> bool {
+    if let Ok(value) = std::env::var(PROJECTION_ENV) {
+        return is_enabled(&value);
+    }
+    connection
+        .query_row(
+            "SELECT value FROM settings WHERE key = ?1",
+            params![PROJECTION_SETTING],
+            |row| row.get::<_, String>(0),
+        )
+        .ok()
+        .is_some_and(|value| is_enabled(&value))
+}
+
+fn is_enabled(value: &str) -> bool {
+    matches!(
+        value.trim().to_ascii_lowercase().as_str(),
+        "1" | "on" | "true" | "yes"
+    )
+}
+
+#[cfg(test)]
+pub(crate) fn set_setting(
+    connection: &Connection,
+    key: &str,
+    value: &str,
+) -> Result<(), VaultError> {
+    connection
+        .execute(
+            "INSERT INTO settings (key, value, updated_millis) VALUES (?1, ?2, 0)
+             ON CONFLICT(key) DO UPDATE SET value = ?2",
+            params![key, value],
+        )
+        .map(drop)
+        .map_err(map_error("The setting could not be recorded"))
 }
 
 /// Searches the vault through the index.
@@ -531,6 +607,171 @@ mod tests {
         let after = revisions(&connection);
         assert_eq!(after[1], before[1], "the untouched note is left alone");
         assert_eq!(after[0], before[0] + 1, "the edited note is re-read");
+    }
+
+    /// The loop this has to avoid: projection writes a file, the watcher
+    /// reports it, the importer treats it as an external edit and re-imports
+    /// it, which marks the row changed and invites another projection.
+    #[test]
+    fn does_not_re_import_its_own_projected_write() {
+        let vault = tempdir().expect("create fixture vault");
+        let root = vault.path();
+        crate::continuity::ensure_vault_identity(root).expect("create identity");
+        std::fs::write(root.join("Harbor.md"), "# Harbor\n").expect("write note");
+        let paths = vec!["Harbor.md".to_owned()];
+        let mut connection = open(&super::database_path(root)).expect("create database");
+        super::import_vault(&mut connection, root, &paths, &[]).expect("index the note");
+        super::set_setting(&connection, super::PROJECTION_SETTING, "on")
+            .expect("enable projection");
+        drop(connection);
+
+        assert_eq!(super::project_vault(root).expect("project"), 1);
+        let connection = open(&super::database_path(root)).expect("reopen database");
+        let after_projection: i64 = connection
+            .query_row("SELECT revision FROM documents", [], |row| row.get(0))
+            .expect("read revision");
+        drop(connection);
+
+        // Exactly what the watcher would trigger moments after the write.
+        super::import_paths(root, &paths).expect("re-import the projected path");
+
+        let connection = open(&super::database_path(root)).expect("reopen database");
+        let (revision, state): (i64, String) = connection
+            .query_row(
+                "SELECT documents.revision, sync_records.state
+                 FROM documents JOIN sync_records ON sync_records.document_id = documents.id",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .expect("read revision and sync state");
+        assert_eq!(
+            revision, after_projection,
+            "Anchored's own write must not count as a change"
+        );
+        assert_eq!(state, "synced");
+    }
+
+    #[test]
+    fn still_imports_a_genuine_external_edit_after_projecting() {
+        let vault = tempdir().expect("create fixture vault");
+        let root = vault.path();
+        crate::continuity::ensure_vault_identity(root).expect("create identity");
+        std::fs::write(root.join("Harbor.md"), "# Harbor\n").expect("write note");
+        let paths = vec!["Harbor.md".to_owned()];
+        let mut connection = open(&super::database_path(root)).expect("create database");
+        super::import_vault(&mut connection, root, &paths, &[]).expect("index the note");
+        super::set_setting(&connection, super::PROJECTION_SETTING, "on")
+            .expect("enable projection");
+        drop(connection);
+        super::project_vault(root).expect("project");
+
+        let projected =
+            std::fs::read_to_string(root.join("Harbor.md")).expect("read the projected note");
+        std::fs::write(
+            root.join("Harbor.md"),
+            format!("{projected}\nEdited elsewhere\n"),
+        )
+        .expect("edit the note outside Anchored");
+        super::import_paths(root, &paths).expect("import the external edit");
+
+        let connection = open(&super::database_path(root)).expect("reopen database");
+        let body: String = connection
+            .query_row("SELECT body FROM documents", [], |row| row.get(0))
+            .expect("read body");
+        assert!(
+            body.contains("Edited elsewhere"),
+            "a real external edit must still be imported"
+        );
+    }
+
+    /// Mirrors what opening a vault actually does — import, reconcile,
+    /// project — and does it twice. The second open must change nothing on
+    /// disk. Verifying this against the development fixture is impossible
+    /// because that vault is deleted and re-copied on every launch.
+    #[test]
+    fn opening_a_vault_twice_leaves_every_file_byte_identical() {
+        let vault = tempdir().expect("create fixture vault");
+        let root = vault.path();
+        crate::continuity::ensure_vault_identity(root).expect("create identity");
+        let notes = [
+            ("Plain.md", "# Plain\n\nBody\n"),
+            (
+                "Stamped.md",
+                "---\nid: 019f989c-2dc0-7a01-8b2c-4d5e6f708192\n---\n# Stamped\n",
+            ),
+            (
+                "Hand Written.md",
+                "---\n# comment\ntitle: 'Kept'\n---\nBody\n",
+            ),
+            ("Broken.md", "---\nid: [\n---\n# Broken\n"),
+        ];
+        for (name, content) in notes {
+            std::fs::write(root.join(name), content).expect("write note");
+        }
+        let paths: Vec<String> = notes.iter().map(|(name, _)| (*name).to_owned()).collect();
+        let connection = open(&super::database_path(root)).expect("create database");
+        super::set_setting(&connection, super::PROJECTION_SETTING, "on")
+            .expect("enable projection");
+        drop(connection);
+
+        let open_vault = || {
+            let mut connection = open(&super::database_path(root)).expect("open database");
+            super::import_vault(&mut connection, root, &paths, &[]).expect("import");
+            drop(connection);
+            super::reconcile_vault(root).expect("reconcile");
+            super::project_vault(root).expect("project")
+        };
+        let read_all = || -> Vec<(String, String)> {
+            paths
+                .iter()
+                .map(|name| {
+                    (
+                        name.clone(),
+                        std::fs::read_to_string(root.join(name)).expect("read note"),
+                    )
+                })
+                .collect()
+        };
+
+        // Plain and Hand Written gain one; Stamped already has one and Broken
+        // cannot be edited safely.
+        assert_eq!(
+            open_vault(),
+            2,
+            "only the notes that can take one are written"
+        );
+        let after_first = read_all();
+
+        assert_eq!(open_vault(), 0, "a second open must write nothing");
+        assert_eq!(read_all(), after_first, "no file may change on reopen");
+
+        let summary = super::reconcile_vault(root).expect("reconcile");
+        assert_eq!(summary.conflicts, 0);
+        assert_eq!(summary.file_changed, 0);
+        assert_eq!(
+            std::fs::read_to_string(root.join("Broken.md")).expect("read note"),
+            "---\nid: [\n---\n# Broken\n",
+            "a note with unusable front matter is never rewritten"
+        );
+    }
+
+    #[test]
+    fn does_not_write_to_the_vault_unless_projection_is_turned_on() {
+        let vault = tempdir().expect("create fixture vault");
+        let root = vault.path();
+        crate::continuity::ensure_vault_identity(root).expect("create identity");
+        std::fs::write(root.join("Harbor.md"), "# Harbor\n").expect("write note");
+        let mut connection = open(&super::database_path(root)).expect("create database");
+        super::import_vault(&mut connection, root, &["Harbor.md".to_owned()], &[])
+            .expect("index the note");
+        drop(connection);
+
+        assert_eq!(super::project_vault(root).expect("project"), 0);
+        assert_eq!(
+            std::fs::read_to_string(root.join("Harbor.md")).expect("read note"),
+            "# Harbor\n",
+            "a note must not be touched while projection is off"
+        );
     }
 
     #[test]
