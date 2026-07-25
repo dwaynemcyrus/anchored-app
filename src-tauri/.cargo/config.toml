@@ -1,0 +1,6 @@
+[env]
+# Cargo does not read tauri.conf.json's macOS minimumSystemVersion, so the C
+# sources rusqlite bundles would otherwise compile against whatever SDK the
+# build host happens to run — producing a binary that will not launch on the
+# 2015 MacBook Pro baseline. CI builds on macos-15.
+MACOSX_DEPLOYMENT_TARGET = "12.0"

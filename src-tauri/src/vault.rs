@@ -1187,6 +1187,7 @@ fn build_vault_snapshot(
     cache: &Mutex<VaultMetadataCache>,
 ) -> Result<VaultSnapshot, VaultError> {
     let vault_id = ensure_vault_identity(root)?;
+    crate::db::ensure_vault_database(root)?;
     recover_rename_transaction(root)?;
     let mut snapshot = scan_vault(root)?;
     prepare_metadata_cache(app, &vault_id, cache)?;

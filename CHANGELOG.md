@@ -6,6 +6,15 @@ Git commit. The format follows [Keep a Changelog], and releases follow
 
 ## [Unreleased]
 
+### Added
+
+- Each vault now carries a SQLite database at `.anchored/vault.db`, created
+  and migrated when the vault is opened. Nothing reads from it yet; this is
+  the foundation for the database-first storage work. Opening a vault also
+  creates `.anchored/template/` for note templates, `.anchored/conflicts/`
+  for preserved conflicting copies, and a `.anchored/.gitignore` so a vault
+  kept in Git does not commit database bytes.
+
 ### Changed
 
 - Note, vault, and trash identities are now UUIDv7 instead of ULID, in

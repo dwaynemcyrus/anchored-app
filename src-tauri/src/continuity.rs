@@ -22,6 +22,9 @@ const VAULT_METADATA_VERSION: u32 = 2;
 const REGISTRY_NAME: &str = "vault-registry.json";
 pub(crate) const TRASH_DIRECTORY_NAME: &str = "trash";
 const TRASH_INDEX_NAME: &str = "index.json";
+pub(crate) const TEMPLATE_DIRECTORY_NAME: &str = "template";
+const CONFLICTS_DIRECTORY_NAME: &str = "conflicts";
+const INTERNAL_GITIGNORE: &str = "vault.db*\ncache/\n";
 const MAX_REMEMBERED_VAULTS: usize = 50;
 const MAX_TRASH_ENTRIES: usize = 10_000;
 const MAX_METADATA_BYTES: u64 = 64 * 1024;
@@ -179,6 +182,8 @@ pub(crate) fn ensure_vault_identity(root: &Path) -> Result<String, VaultError> {
         }
     }
 
+    ensure_internal_layout(&directory)?;
+
     let metadata_path = directory.join(VAULT_METADATA_NAME);
     if metadata_path.exists() {
         if let Some(id) = read_vault_identity(&metadata_path)? {
@@ -201,6 +206,45 @@ pub(crate) fn ensure_vault_identity(root: &Path) -> Result<String, VaultError> {
     write_new_json_atomically(&metadata_path, &bytes)?;
     read_vault_identity(&metadata_path)?
         .ok_or_else(|| VaultError::state("The vault identity is invalid."))
+}
+
+/// Creates the internal directories Anchored owns, and a `.gitignore` so a
+/// vault kept in Git does not commit database bytes. Trash is deliberately
+/// absent until it moves here; creating it early would collide with the
+/// vault-root trash the current loader still expects.
+fn ensure_internal_layout(directory: &Path) -> Result<(), VaultError> {
+    for name in [TEMPLATE_DIRECTORY_NAME, CONFLICTS_DIRECTORY_NAME] {
+        let path = directory.join(name);
+        match fs::symlink_metadata(&path) {
+            Ok(metadata) if metadata.is_dir() && !metadata.file_type().is_symlink() => {}
+            Ok(_) => {
+                return Err(VaultError::invalid(format!(
+                    "The .anchored/{name} path must be a normal directory."
+                )))
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                fs::create_dir(&path).map_err(|error| {
+                    VaultError::io("An internal Anchored directory could not be created", error)
+                })?;
+            }
+            Err(error) => {
+                return Err(VaultError::io(
+                    "An internal Anchored directory could not be inspected",
+                    error,
+                ))
+            }
+        }
+    }
+
+    let gitignore = directory.join(".gitignore");
+    if !gitignore.exists() {
+        write_json_atomically(
+            &gitignore,
+            INTERNAL_GITIGNORE.as_bytes(),
+            "The internal Anchored .gitignore could not be written",
+        )?;
+    }
+    sync_directory(directory)
 }
 
 fn new_vault_metadata() -> VaultMetadata {
@@ -1053,6 +1097,35 @@ mod tests {
             .join(INTERNAL_DIRECTORY_NAME)
             .join("vault.json")
             .is_file());
+    }
+
+    #[test]
+    fn scaffolds_the_internal_layout_once() {
+        let vault = tempdir().expect("create fixture vault");
+
+        ensure_vault_identity(vault.path()).expect("create identity");
+        fs::write(
+            vault
+                .path()
+                .join(INTERNAL_DIRECTORY_NAME)
+                .join("template")
+                .join("Daily.md"),
+            "# Daily\n",
+        )
+        .expect("author a template");
+        ensure_vault_identity(vault.path()).expect("reopen vault");
+
+        let internal = vault.path().join(INTERNAL_DIRECTORY_NAME);
+        assert!(internal.join("template").is_dir());
+        assert!(internal.join("conflicts").is_dir());
+        assert!(fs::read_to_string(internal.join(".gitignore"))
+            .expect("read gitignore")
+            .contains("vault.db*"));
+        assert_eq!(
+            fs::read_to_string(internal.join("template").join("Daily.md"))
+                .expect("template survives reopen"),
+            "# Daily\n"
+        );
     }
 
     #[test]
