@@ -6,6 +6,8 @@ Git commit. The format follows [Keep a Changelog], and releases follow
 
 ## [Unreleased]
 
+## [0.1.5-alpha] - 2026-07-26
+
 ### Added
 
 - Each vault now carries a SQLite database at `.anchored/vault.db`, created

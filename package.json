@@ -1,7 +1,7 @@
 {
   "name": "anchored",
   "private": true,
-  "version": "0.1.4-alpha",
+  "version": "0.1.5-alpha",
   "license": "MIT",
   "type": "module",
   "scripts": {
