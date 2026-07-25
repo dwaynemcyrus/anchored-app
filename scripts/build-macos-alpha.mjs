@@ -4,6 +4,7 @@ import {
   createReadStream,
   existsSync,
   readdirSync,
+  readFileSync,
   statSync,
   writeFileSync,
 } from "node:fs";
@@ -152,14 +153,28 @@ async function main() {
     );
   }
   if (!process.env.TAURI_SIGNING_PRIVATE_KEY) {
-    alphaEnvironment.TAURI_SIGNING_PRIVATE_KEY_PATH = localUpdaterKeyPath;
+    // The key's contents, not its path. Tauri reads only
+    // TAURI_SIGNING_PRIVATE_KEY; given a path alone it reports having found a
+    // public key but no private one, and ships the updater artifact unsigned.
+    alphaEnvironment.TAURI_SIGNING_PRIVATE_KEY = readFileSync(
+      localUpdaterKeyPath,
+      "utf8",
+    ).trim();
   }
+  // Set even when empty. Tauri otherwise tries to prompt for the passphrase,
+  // which fails outright when the build is not attached to a terminal.
+  alphaEnvironment.TAURI_SIGNING_PRIVATE_KEY_PASSWORD ??=
+    process.env.TAURI_SIGNING_PRIVATE_KEY_PASSWORD ?? "";
 
   console.log("Building Anchored as an Intel private alpha…");
   const buildStartedAt = Date.now();
   const build = spawnSync(
     process.execPath,
-    [tauriCli, "build", "--bundles", "dmg"],
+    // `app` alongside `dmg` because the updater artifacts — the signed
+    // .app.tar.gz and its signature — are only produced for an updater-enabled
+    // target. Building `dmg` alone makes Tauri warn and skip them, leaving a
+    // release the in-app updater cannot read.
+    [tauriCli, "build", "--bundles", "dmg,app"],
     {
       cwd: projectRoot,
       env: alphaEnvironment,
