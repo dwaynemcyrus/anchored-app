@@ -50,19 +50,35 @@ pub(crate) fn import_vault(
         .transaction()
         .map_err(map_error("The vault import could not be started"))?;
 
+    let indexed = documents::indexed_signatures(&transaction)?;
     let mut present = Vec::with_capacity(markdown_paths.len() + asset_paths.len());
     for (paths, is_markdown) in [(markdown_paths, true), (asset_paths, false)] {
         for relative_path in paths {
+            let path = root.join(relative_path);
             // A file that vanished between the scan and the read is skipped
             // rather than failing the import; the next pass will settle it.
-            let Ok(bytes) = std::fs::read(root.join(relative_path)) else {
+            let Ok(metadata) = std::fs::metadata(&path) else {
                 continue;
             };
-            let document = if is_markdown {
+            let signature = file_signature(&metadata);
+            let path_key = keys::path_key(relative_path);
+
+            // Reading a file only to discover it is unchanged is the cost this
+            // avoids: on a warm vault almost nothing needs opening.
+            if indexed.get(&path_key) == Some(&signature) {
+                present.push(path_key);
+                continue;
+            }
+
+            let Ok(bytes) = std::fs::read(&path) else {
+                continue;
+            };
+            let mut document = if is_markdown {
                 import::import_note(relative_path, &bytes)
             } else {
                 import::import_asset(relative_path, &bytes)
             };
+            document.mtime_millis = signature.1;
             documents::upsert(&transaction, &document)?;
             present.push(document.path_key);
         }
@@ -94,13 +110,17 @@ pub(crate) fn import_paths(root: &Path, relative_paths: &[String]) -> Result<(),
     let mut touched = Vec::with_capacity(relative_paths.len());
     let mut document_set_changed = false;
     for relative_path in relative_paths {
-        match std::fs::read(root.join(relative_path)) {
+        let path = root.join(relative_path);
+        match std::fs::read(&path) {
             Ok(bytes) => {
-                let document = if is_markdown_path(relative_path) {
+                let mut document = if is_markdown_path(relative_path) {
                     import::import_note(relative_path, &bytes)
                 } else {
                     import::import_asset(relative_path, &bytes)
                 };
+                document.mtime_millis = std::fs::metadata(&path)
+                    .map(|metadata| file_signature(&metadata).1)
+                    .unwrap_or_default();
                 let upserted = documents::upsert(&transaction, &document)?;
                 document_set_changed |= upserted.created;
                 touched.push(upserted.id);
@@ -127,6 +147,33 @@ pub(crate) fn import_paths(root: &Path, relative_paths: &[String]) -> Result<(),
     transaction
         .commit()
         .map_err(map_error("The vault index could not be committed"))
+}
+
+/// Size paired with modification time, the same staleness signal the JSON
+/// metadata cache used. Not a content hash: this only decides whether a file
+/// is worth opening.
+fn file_signature(metadata: &std::fs::Metadata) -> (u64, u64) {
+    let modified = metadata
+        .modified()
+        .ok()
+        .and_then(|time| time.duration_since(std::time::UNIX_EPOCH).ok())
+        .map(|elapsed| elapsed.as_millis().min(u128::from(u64::MAX)) as u64)
+        .unwrap_or_default();
+    (metadata.len(), modified)
+}
+
+/// Reads every note's indexed metadata, for filling in a snapshot without
+/// opening files. `Ok(None)` means the caller should read files instead.
+pub(crate) fn indexed_metadata(
+    root: &Path,
+) -> Result<Option<std::collections::HashMap<String, documents::IndexedMetadata>>, VaultError> {
+    let Ok(connection) = open(&database_path(root)) else {
+        return Ok(None);
+    };
+    if read_source(&connection) == ReadSource::Scan {
+        return Ok(None);
+    }
+    documents::indexed_metadata(&connection).map(Some)
 }
 
 fn is_markdown_path(relative_path: &str) -> bool {
@@ -446,6 +493,44 @@ mod tests {
             target.is_some(),
             "re-import must not orphan a resolved link"
         );
+    }
+
+    /// The whole point of recording size and modification time: a second
+    /// import of an unchanged vault must not open any file again.
+    #[test]
+    fn skips_reading_files_that_have_not_changed() {
+        let vault = tempdir().expect("create fixture vault");
+        crate::continuity::ensure_vault_identity(vault.path()).expect("create identity");
+        std::fs::write(vault.path().join("Harbor.md"), "# Harbor\n").expect("write note");
+        std::fs::write(vault.path().join("Planning.md"), "# Planning\n").expect("write note");
+        let markdown = vec!["Harbor.md".to_owned(), "Planning.md".to_owned()];
+        let mut connection = open(&super::database_path(vault.path())).expect("create database");
+        super::import_vault(&mut connection, vault.path(), &markdown, &[]).expect("first import");
+        fn revisions(connection: &Connection) -> Vec<i64> {
+            connection
+                .prepare("SELECT revision FROM documents ORDER BY path_key")
+                .expect("prepare")
+                .query_map([], |row| row.get(0))
+                .expect("query")
+                .collect::<Result<_, _>>()
+                .expect("collect")
+        }
+        let before = revisions(&connection);
+
+        super::import_vault(&mut connection, vault.path(), &markdown, &[]).expect("second import");
+
+        assert_eq!(
+            revisions(&connection),
+            before,
+            "an unchanged file must not be re-read and rewritten"
+        );
+
+        std::fs::write(vault.path().join("Harbor.md"), "# Harbor edited\n").expect("edit note");
+        super::import_vault(&mut connection, vault.path(), &markdown, &[]).expect("third import");
+
+        let after = revisions(&connection);
+        assert_eq!(after[1], before[1], "the untouched note is left alone");
+        assert_eq!(after[0], before[0] + 1, "the edited note is re-read");
     }
 
     #[test]

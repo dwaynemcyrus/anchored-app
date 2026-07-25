@@ -4,6 +4,8 @@
 //! boundary. A whole-vault import is one transaction; a single changed file is
 //! its own.
 
+use std::collections::HashMap;
+
 use rusqlite::{params, Connection, OptionalExtension};
 
 use super::import::ImportedDocument;
@@ -74,7 +76,7 @@ pub(crate) fn upsert(
                         size_bytes = ?11, status = ?12, note_type = ?13, archived_at = ?14,
                         created_at = ?15, updated_at = ?16, created_at_millis = ?17,
                         updated_at_millis = ?18, aliases_text = ?19, path_key = ?20,
-                        revision = revision + 1
+                        mtime_millis = ?21, revision = revision + 1
                      WHERE id = ?1",
                     params![
                         id,
@@ -97,6 +99,7 @@ pub(crate) fn upsert(
                         document.updated_at_millis,
                         document.aliases_text(),
                         document.path_key,
+                        document.mtime_millis as i64,
                     ],
                 )
                 .map_err(map_error("A document could not be updated"))?;
@@ -109,10 +112,10 @@ pub(crate) fn upsert(
                         uuid, path_key, relative_path, name, name_key, parent, is_markdown,
                         frontmatter_text, body, content_hash, size_bytes, status, note_type,
                         archived_at, created_at, updated_at, created_at_millis,
-                        updated_at_millis, aliases_text
+                        updated_at_millis, aliases_text, mtime_millis
                      ) VALUES (
                         ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16,
-                        ?17, ?18, ?19
+                        ?17, ?18, ?19, ?20
                      )",
                     params![
                         uuid,
@@ -134,6 +137,7 @@ pub(crate) fn upsert(
                         document.created_at_millis,
                         document.updated_at_millis,
                         document.aliases_text(),
+                        document.mtime_millis as i64,
                     ],
                 )
                 .map_err(map_error("A document could not be recorded"))?;
@@ -247,6 +251,133 @@ pub(crate) fn resolve_links(connection: &Connection) -> Result<(), VaultError> {
         .execute(RESOLVE_LINKS_SQL, params![None::<i64>])
         .map(drop)
         .map_err(map_error("Document links could not be resolved"))
+}
+
+/// Everything the interface needs about a note that is not already known from
+/// walking the directory tree.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub(crate) struct IndexedMetadata {
+    pub aliases: Vec<String>,
+    pub archived_at: Option<String>,
+    pub created_at: Option<String>,
+    pub identity: Option<String>,
+    pub note_type: Option<String>,
+    pub outgoing_links: Vec<String>,
+    pub status: Option<String>,
+    pub updated_at: Option<String>,
+}
+
+/// Reads every note's metadata in three queries rather than one per note, so
+/// building a snapshot does not scale in round trips with vault size.
+pub(crate) fn indexed_metadata(
+    connection: &Connection,
+) -> Result<HashMap<String, IndexedMetadata>, VaultError> {
+    let mut by_path: HashMap<String, IndexedMetadata> = HashMap::new();
+    let mut ids: HashMap<i64, String> = HashMap::new();
+
+    let mut statement = connection
+        .prepare(
+            "SELECT id, relative_path, uuid, status, note_type, archived_at, created_at,
+                    updated_at
+             FROM documents
+             WHERE is_markdown = 1 AND deleted_at IS NULL",
+        )
+        .map_err(map_error("Indexed metadata could not be prepared"))?;
+    let rows = statement
+        .query_map([], |row| {
+            Ok((
+                row.get::<_, i64>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, String>(2)?,
+                row.get::<_, Option<String>>(3)?,
+                row.get::<_, Option<String>>(4)?,
+                row.get::<_, Option<String>>(5)?,
+                row.get::<_, Option<String>>(6)?,
+                row.get::<_, Option<String>>(7)?,
+            ))
+        })
+        .map_err(map_error("Indexed metadata could not be read"))?;
+    for row in rows {
+        let (id, path, uuid, status, note_type, archived_at, created_at, updated_at) =
+            row.map_err(map_error("Indexed metadata could not be read"))?;
+        ids.insert(id, path.clone());
+        by_path.insert(
+            path,
+            IndexedMetadata {
+                identity: Some(uuid),
+                status,
+                note_type,
+                archived_at,
+                created_at,
+                updated_at,
+                ..IndexedMetadata::default()
+            },
+        );
+    }
+
+    let mut statement = connection
+        .prepare("SELECT document_id, alias FROM aliases ORDER BY document_id, ordinal")
+        .map_err(map_error("Indexed aliases could not be prepared"))?;
+    let rows = statement
+        .query_map([], |row| {
+            Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?))
+        })
+        .map_err(map_error("Indexed aliases could not be read"))?;
+    for row in rows {
+        let (id, alias) = row.map_err(map_error("Indexed aliases could not be read"))?;
+        if let Some(entry) = ids.get(&id).and_then(|path| by_path.get_mut(path)) {
+            entry.aliases.push(alias);
+        }
+    }
+
+    let mut statement = connection
+        .prepare(
+            "SELECT source_document_id, target_raw FROM links
+             ORDER BY source_document_id, occurrence_index",
+        )
+        .map_err(map_error("Indexed links could not be prepared"))?;
+    let rows = statement
+        .query_map([], |row| {
+            Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?))
+        })
+        .map_err(map_error("Indexed links could not be read"))?;
+    for row in rows {
+        let (id, target) = row.map_err(map_error("Indexed links could not be read"))?;
+        if let Some(entry) = ids.get(&id).and_then(|path| by_path.get_mut(path)) {
+            entry.outgoing_links.push(target);
+        }
+    }
+
+    Ok(by_path)
+}
+
+/// The size and modification time last recorded for each path, keyed the same
+/// way rows are matched.
+pub(crate) fn indexed_signatures(
+    connection: &Connection,
+) -> Result<HashMap<String, (u64, u64)>, VaultError> {
+    let mut statement = connection
+        .prepare(
+            "SELECT path_key, size_bytes, mtime_millis FROM documents WHERE deleted_at IS NULL",
+        )
+        .map_err(map_error("Indexed file signatures could not be prepared"))?;
+    let rows = statement
+        .query_map([], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, i64>(1)? as u64,
+                row.get::<_, i64>(2)? as u64,
+            ))
+        })
+        .map_err(map_error("Indexed file signatures could not be read"))?;
+
+    let mut signatures = HashMap::new();
+    for row in rows {
+        let (path_key, size, mtime) =
+            row.map_err(map_error("Indexed file signatures could not be read"))?;
+        signatures.insert(path_key, (size, mtime));
+    }
+    Ok(signatures)
 }
 
 /// Removes the row for one path, if it has one. Matching goes through the

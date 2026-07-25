@@ -1189,12 +1189,53 @@ fn build_vault_snapshot(
     let vault_id = ensure_vault_identity(root)?;
     recover_rename_transaction(root)?;
     let mut snapshot = scan_vault(root)?;
+    snapshot.vault_id = vault_id.clone();
+
+    // The directory walk stays: it is the only thing that knows about folders
+    // with no notes in them, which the index has no row for. What the index
+    // replaces is opening every file to read its metadata.
+    import_vault_snapshot(root, &snapshot)?;
+    if enrich_vault_metadata_from_index(root, &mut snapshot.files)? {
+        return Ok(snapshot);
+    }
+
     prepare_metadata_cache(app, &vault_id, cache)?;
-    snapshot.vault_id = vault_id;
     enrich_vault_metadata_cached(root, &mut snapshot.files, cache)?;
     persist_metadata_cache(app, cache)?;
-    import_vault_snapshot(root, &snapshot)?;
     Ok(snapshot)
+}
+
+/// Fills note metadata in from the index. Returns `false` when the index
+/// cannot answer — reads switched to the scan path, an unopenable database, or
+/// a note the index has not caught up with — so the caller reads files.
+fn enrich_vault_metadata_from_index(
+    root: &Path,
+    files: &mut [VaultFile],
+) -> Result<bool, VaultError> {
+    let Some(indexed) = crate::db::indexed_metadata(root)? else {
+        return Ok(false);
+    };
+    if files
+        .iter()
+        .any(|file| !indexed.contains_key(&file.relative_path))
+    {
+        return Ok(false);
+    }
+
+    for file in files.iter_mut() {
+        let Some(metadata) = indexed.get(&file.relative_path) else {
+            continue;
+        };
+        file.aliases.clone_from(&metadata.aliases);
+        file.archived_at.clone_from(&metadata.archived_at);
+        file.created_at.clone_from(&metadata.created_at);
+        file.identity.clone_from(&metadata.identity);
+        file.note_type.clone_from(&metadata.note_type);
+        file.outgoing_links.clone_from(&metadata.outgoing_links);
+        file.status.clone_from(&metadata.status);
+        file.updated_at.clone_from(&metadata.updated_at);
+    }
+    Ok(true)
 }
 
 /// Keeps the index in step with files Anchored just changed itself, without
@@ -4742,6 +4783,95 @@ mod tests {
                 |row| row.get(0),
             )
             .ok()
+    }
+
+    /// Filling a snapshot from the index must produce exactly what reading the
+    /// files produces. This is the comparison that decides whether serving
+    /// reads from the index is safe.
+    #[test]
+    fn index_enrichment_matches_reading_the_files() {
+        let source =
+            std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../fixtures/test-vault");
+        let vault = tempdir().expect("create fixture workspace");
+        let root = vault.path();
+        copy_directory(&source, root).expect("copy the fixture vault");
+        crate::continuity::ensure_vault_identity(root).expect("create identity");
+        super::index_whole_vault(root);
+
+        let mut from_files = scan_vault(root).expect("scan").files;
+        enrich_vault_metadata(root, &mut from_files).expect("read metadata from files");
+        let mut from_index = scan_vault(root).expect("scan").files;
+        let served = super::enrich_vault_metadata_from_index(root, &mut from_index)
+            .expect("read metadata from the index");
+
+        assert!(served, "the index should be able to answer");
+        assert!(!from_files.is_empty(), "the fixture should have notes");
+        for (indexed, scanned) in from_index.iter().zip(from_files.iter()) {
+            let path = &scanned.relative_path;
+            assert_eq!(indexed.relative_path, *path);
+            assert_eq!(indexed.aliases, scanned.aliases, "{path} aliases");
+            assert_eq!(
+                indexed.outgoing_links, scanned.outgoing_links,
+                "{path} outgoing links"
+            );
+            assert_eq!(indexed.status, scanned.status, "{path} status");
+            assert_eq!(indexed.note_type, scanned.note_type, "{path} type");
+            assert_eq!(indexed.created_at, scanned.created_at, "{path} created_at");
+            assert_eq!(indexed.updated_at, scanned.updated_at, "{path} updated_at");
+            assert_eq!(
+                indexed.archived_at, scanned.archived_at,
+                "{path} archived_at"
+            );
+            // A note without an id in its file has no identity from the scan,
+            // but the index has minted one for it. That is the one field the
+            // two are allowed to differ on, and only in that direction.
+            match (&scanned.identity, &indexed.identity) {
+                (Some(scanned_id), indexed_id) => {
+                    assert_eq!(indexed_id.as_ref(), Some(scanned_id), "{path} identity")
+                }
+                (None, indexed_id) => assert!(
+                    indexed_id
+                        .as_ref()
+                        .is_some_and(|id| crate::metadata::is_canonical_note_id(id)),
+                    "{path} should be given a minted identity"
+                ),
+            }
+        }
+    }
+
+    #[test]
+    fn index_enrichment_defers_to_files_for_a_note_it_has_not_seen() {
+        let vault = tempdir().expect("create fixture vault");
+        let root = vault.path();
+        crate::continuity::ensure_vault_identity(root).expect("create identity");
+        fs::write(root.join("Indexed.md"), "# Indexed\n").expect("write note");
+        super::index_whole_vault(root);
+        // Appears after the index was built, so the index cannot answer for it.
+        fs::write(root.join("Unindexed.md"), "# Unindexed\n").expect("write note");
+
+        let mut files = scan_vault(root).expect("scan").files;
+        let served =
+            super::enrich_vault_metadata_from_index(root, &mut files).expect("consult the index");
+
+        assert!(!served, "an incomplete index must not answer for the vault");
+    }
+
+    #[test]
+    fn index_enrichment_defers_to_files_when_reads_are_switched_to_scan() {
+        let vault = tempdir().expect("create fixture vault");
+        let root = vault.path();
+        crate::continuity::ensure_vault_identity(root).expect("create identity");
+        fs::write(root.join("Note.md"), "# Note\n").expect("write note");
+        super::index_whole_vault(root);
+        let connection = crate::db::open(&crate::db::database_path(root)).expect("open database");
+        crate::db::set_read_source(&connection, "scan").expect("switch reads to the scan path");
+        drop(connection);
+
+        let mut files = scan_vault(root).expect("scan").files;
+
+        assert!(
+            !super::enrich_vault_metadata_from_index(root, &mut files).expect("consult the index")
+        );
     }
 
     /// Index-backed search must find everything the file scan finds. Ordering

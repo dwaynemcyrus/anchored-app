@@ -2,7 +2,15 @@
 //! and `PRAGMA user_version` records how many have run. Never edit a shipped
 //! migration; append a new one instead.
 
-pub(super) const MIGRATIONS: &[&str] = &[INITIAL_SCHEMA];
+pub(super) const MIGRATIONS: &[&str] = &[INITIAL_SCHEMA, RECORD_FILE_MTIME];
+
+/// Lets a whole-vault import skip a file whose size and modification time
+/// still match what was indexed, instead of re-reading every note to discover
+/// that nothing changed. This is the same staleness rule the JSON metadata
+/// cache used, moved into the database that replaces it.
+const RECORD_FILE_MTIME: &str = "
+ALTER TABLE documents ADD COLUMN mtime_millis INTEGER NOT NULL DEFAULT 0;
+";
 
 /// Internal foreign keys use the rowid alias so `links` rows cost 8 bytes per
 /// reference instead of 36, and so external-content FTS5 has a stable rowid to

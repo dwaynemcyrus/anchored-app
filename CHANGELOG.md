@@ -24,6 +24,12 @@ Git commit. The format follows [Keep a Changelog], and releases follow
 
 ### Changed
 
+- Opening or rescanning a vault no longer reads every note to collect its
+  metadata. Aliases, links, status, type, and lifecycle timestamps are read
+  from the index instead, and a note whose size and modification time are
+  unchanged is not opened at all. Folders with no notes in them still appear,
+  and if the index cannot answer for any note the previous file-reading path
+  is used instead.
 - Search now runs against the vault index instead of reading every file on
   every query, and results are ranked by relevance rather than returned in
   path order. Matches that ranking cannot express — text in the middle of a
