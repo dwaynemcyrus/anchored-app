@@ -29,6 +29,7 @@ import { readErrorMessage } from "./errors";
 import { useConflictResolution } from "./useConflictResolution";
 import { useMissingWikilinkDialog } from "./useMissingWikilinkDialog";
 import { useSidebarState } from "./useSidebarState";
+import { useTimestampMigration } from "./useTimestampMigration";
 import { useTrashPanel } from "./useTrashPanel";
 import {
   VaultSearchPalette,
@@ -108,8 +109,6 @@ import {
   moveVaultFolder,
   openDevelopmentVault,
   openRememberedVault,
-  applyVaultTimestampMigration,
-  previewVaultTimestampMigration,
   readVaultFile,
   reconcileVaultFileMove,
   renameVaultFolder,
@@ -128,7 +127,6 @@ import {
   type RememberedVault,
   type VaultDocument,
   type VaultSnapshot,
-  type TimestampMigrationPreview,
 } from "../lib/tauri/vault";
 import { openScratchpad, type ScratchpadMode } from "../lib/tauri/scratchpad";
 import { checkForUpdate, installUpdate } from "./updater";
@@ -225,13 +223,6 @@ export function App() {
   const [vaultId, setVaultId] = useState("");
   const [folderPaths, setFolderPaths] = useState<string[]>([]);
   const [settingsVisible, setSettingsVisible] = useState(false);
-  const [timestampMigrationPreview, setTimestampMigrationPreview] =
-    useState<TimestampMigrationPreview>();
-  const [timestampMigrationBusy, setTimestampMigrationBusy] = useState(false);
-  const [timestampMigrationError, setTimestampMigrationError] =
-    useState<string>();
-  const [timestampMigrationMessage, setTimestampMigrationMessage] =
-    useState<string>();
   const [markdownSettings, setMarkdownSettings] = useState<MarkdownSettings>(
     initialMarkdownSettings,
   );
@@ -1255,6 +1246,12 @@ export function App() {
     onActiveDocumentTrashed,
   });
 
+  const timestampMigration = useTimestampMigration({
+    adoptVaultSnapshot,
+    documentsRef,
+    vaultSelected,
+  });
+
   const activateVaultSnapshot = useCallback(
     (snapshot: VaultSnapshot) => {
       const nextDocuments = documentsFromVault(snapshot);
@@ -1277,102 +1274,27 @@ export function App() {
       setQuery("");
       setDocumentLoad({ status: "idle" });
       setVaultNotices([]);
-      setTimestampMigrationPreview(undefined);
-      setTimestampMigrationError(undefined);
-      setTimestampMigrationMessage(undefined);
+      timestampMigration.reset();
       trash.reset();
       setNotificationHistoryVisible(false);
       recordSnapshotEvents(snapshot);
       const summary = vaultSummaryMessage(snapshot);
       if (summary) addVaultNotice(summary);
     },
-    // trash.reset has a stable identity (useCallback with no deps inside
-    // useTrashPanel); the trash object itself is recreated every render, so
-    // depending on it directly would defeat this memoization.
+    // trash.reset and timestampMigration.reset both have stable identities
+    // (useCallback with no deps inside their hooks); the containing objects
+    // are recreated every render, so depending on them directly would defeat
+    // this memoization.
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [
       addVaultNotice,
       recordSnapshotEvents,
       setActiveDocument,
       setFocusDocument,
+      timestampMigration.reset,
       trash.reset,
     ],
   );
-
-  const previewTimestampMigration = useCallback(async () => {
-    if (!vaultSelected) {
-      setTimestampMigrationError("Open a vault before previewing timestamps.");
-      return;
-    }
-    setTimestampMigrationBusy(true);
-    setTimestampMigrationError(undefined);
-    setTimestampMigrationMessage(undefined);
-    try {
-      setTimestampMigrationPreview(await previewVaultTimestampMigration());
-    } catch (error) {
-      setTimestampMigrationError(readErrorMessage(error));
-    } finally {
-      setTimestampMigrationBusy(false);
-    }
-  }, [vaultSelected]);
-
-  const applyTimestampMigration = useCallback(async () => {
-    const preview = timestampMigrationPreview;
-    if (!vaultSelected || !preview || timestampMigrationBusy) return;
-    if (
-      documentsRef.current.some(
-        (document) =>
-          document.saveState === "saving" || document.saveState === "conflict",
-      )
-    ) {
-      setTimestampMigrationError(
-        "Finish saving or resolving note conflicts before migrating timestamps.",
-      );
-      return;
-    }
-
-    setTimestampMigrationBusy(true);
-    setTimestampMigrationError(undefined);
-    setTimestampMigrationMessage(undefined);
-    try {
-      const result = await applyVaultTimestampMigration(
-        preview.candidates.map(
-          ({ expectedModifiedMillis, expectedSizeBytes, relativePath }) => ({
-            expectedModifiedMillis,
-            expectedSizeBytes,
-            relativePath,
-          }),
-        ),
-      );
-      adoptVaultSnapshot(result.snapshot);
-      const applied = result.outcomes.filter(
-        (outcome) => outcome.status === "applied",
-      );
-      const conflicts = result.outcomes.filter(
-        (outcome) => outcome.status === "conflict",
-      );
-      const errors = result.outcomes.filter(
-        (outcome) => outcome.status === "error",
-      );
-      setTimestampMigrationPreview(undefined);
-      setTimestampMigrationMessage(
-        `Normalized ${applied.length} file${applied.length === 1 ? "" : "s"}.` +
-          (conflicts.length > 0
-            ? ` ${conflicts.length} changed after preview.`
-            : "") +
-          (errors.length > 0 ? ` ${errors.length} could not be updated.` : ""),
-      );
-    } catch (error) {
-      setTimestampMigrationError(readErrorMessage(error));
-    } finally {
-      setTimestampMigrationBusy(false);
-    }
-  }, [
-    adoptVaultSnapshot,
-    timestampMigrationBusy,
-    timestampMigrationPreview,
-    vaultSelected,
-  ]);
 
   const refreshVault = useCallback(async () => {
     if (
@@ -3267,10 +3189,14 @@ export function App() {
               document.saveState === "saving" ||
               document.saveState === "conflict",
           )}
-          timestampMigrationBusy={timestampMigrationBusy}
-          timestampMigrationError={timestampMigrationError}
-          timestampMigrationMessage={timestampMigrationMessage}
-          timestampMigrationPreview={timestampMigrationPreview}
+          timestampMigrationBusy={timestampMigration.timestampMigrationBusy}
+          timestampMigrationError={timestampMigration.timestampMigrationError}
+          timestampMigrationMessage={
+            timestampMigration.timestampMigrationMessage
+          }
+          timestampMigrationPreview={
+            timestampMigration.timestampMigrationPreview
+          }
           updateError={updateError}
           updateNotes={availableUpdate?.body}
           updateStatus={updateStatus}
@@ -3284,8 +3210,12 @@ export function App() {
           onCheckForUpdates={() => void handleCheckForUpdates()}
           onInstallUpdate={() => void handleInstallUpdate()}
           onMarkdownSettingsChange={setMarkdownSettings}
-          onApplyTimestampMigration={() => void applyTimestampMigration()}
-          onPreviewTimestampMigration={() => void previewTimestampMigration()}
+          onApplyTimestampMigration={() =>
+            void timestampMigration.applyTimestampMigration()
+          }
+          onPreviewTimestampMigration={() =>
+            void timestampMigration.previewTimestampMigration()
+          }
           onReload={() => void reloadApp()}
         />
       ) : null}
