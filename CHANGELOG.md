@@ -24,6 +24,13 @@ Git commit. The format follows [Keep a Changelog], and releases follow
 
 ### Changed
 
+- Search now runs against the vault index instead of reading every file on
+  every query, and results are ranked by relevance rather than returned in
+  path order. Matches that ranking cannot express — text in the middle of a
+  word, punctuation, or an exact phrase — are still found: a direct scan of
+  the indexed text runs whenever ranking turns up nothing. Front matter
+  remains searchable and line numbers still count from the top of the file.
+  Search is no longer capped at 64 MB of files read per query.
 - The vault index is now kept up to date continuously rather than only on a
   full scan. Saving, creating, archiving, restoring, renaming, and moving a
   note all update it directly, and edits made in another program are picked

@@ -1566,9 +1566,16 @@ pub async fn search_vault(
         .clone()
         .ok_or_else(|| VaultError::state("Select a vault before searching Markdown files."))?;
 
-    tauri::async_runtime::spawn_blocking(move || search_markdown_files(&root, &query))
-        .await
-        .map_err(|error| VaultError::state(format!("Vault search could not finish: {error}")))?
+    tauri::async_runtime::spawn_blocking(move || match crate::db::search_vault(&root, &query) {
+        Ok(Some(result)) => Ok(result),
+        // Reads are switched to the scan path, or the index could not be
+        // opened. Searching files still works, so it is used rather than
+        // failing the search.
+        Ok(None) => search_markdown_files(&root, &query),
+        Err(error) => Err(error),
+    })
+    .await
+    .map_err(|error| VaultError::state(format!("Vault search could not finish: {error}")))?
 }
 
 #[tauri::command]
@@ -4735,6 +4742,95 @@ mod tests {
                 |row| row.get(0),
             )
             .ok()
+    }
+
+    /// Index-backed search must find everything the file scan finds. Ordering
+    /// differs by design — the index ranks by relevance while the scan walks
+    /// paths — so the comparison is on the set of matched lines.
+    #[test]
+    fn index_search_finds_everything_the_file_scan_finds() {
+        let source =
+            std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../fixtures/test-vault");
+        let vault = tempdir().expect("create fixture workspace");
+        let root = vault.path();
+        copy_directory(&source, root).expect("copy the fixture vault");
+        crate::continuity::ensure_vault_identity(root).expect("create identity");
+        super::index_whole_vault(root);
+
+        for query in [
+            "harbor",     // a plain word
+            "Harbor",     // the same word, different case
+            "arbo",       // mid-word, unreachable through the ranked pass
+            "fictional",  // present in more than one note
+            "safe link",  // two words, adjacent in the text
+            "aliases:",   // front matter, with punctuation FTS5 drops
+            "[[Harbor|",  // punctuation-heavy, no usable token at all
+            "North Star", // an alias value
+            "zzzznotpresent",
+        ] {
+            let scanned = search_markdown_files(root, query).expect("scan search");
+            let indexed = crate::db::search_vault(root, query)
+                .expect("index search")
+                .expect("the index should serve this search");
+
+            assert_eq!(
+                matched_lines(&indexed),
+                matched_lines(&scanned),
+                "searching {query:?} should find the same lines"
+            );
+            // Guards against the whole comparison passing because both sides
+            // found nothing — an empty index would look like agreement.
+            if query != "zzzznotpresent" {
+                assert!(
+                    !indexed.matches.is_empty(),
+                    "searching {query:?} should find something"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn search_falls_back_to_files_when_reads_are_switched_to_scan() {
+        let vault = tempdir().expect("create fixture vault");
+        let root = vault.path();
+        crate::continuity::ensure_vault_identity(root).expect("create identity");
+        let connection = crate::db::open(&crate::db::database_path(root)).expect("open database");
+        crate::db::set_read_source(&connection, "scan").expect("switch reads to the scan path");
+        drop(connection);
+
+        assert!(
+            crate::db::search_vault(root, "harbor")
+                .expect("search")
+                .is_none(),
+            "the caller should be told to scan files instead"
+        );
+    }
+
+    fn matched_lines(
+        result: &super::VaultSearchResult,
+    ) -> std::collections::BTreeSet<(String, usize)> {
+        result
+            .matches
+            .iter()
+            .map(|found| (found.relative_path.clone(), found.line))
+            .collect()
+    }
+
+    fn copy_directory(
+        source: &std::path::Path,
+        destination: &std::path::Path,
+    ) -> std::io::Result<()> {
+        for entry in fs::read_dir(source)? {
+            let entry = entry?;
+            let target = destination.join(entry.file_name());
+            if entry.file_type()?.is_dir() {
+                fs::create_dir_all(&target)?;
+                copy_directory(&entry.path(), &target)?;
+            } else {
+                fs::copy(entry.path(), &target)?;
+            }
+        }
+        Ok(())
     }
 
     /// The database must not disagree with the scan about any note. Both read

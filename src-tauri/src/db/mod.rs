@@ -6,10 +6,11 @@ mod documents;
 mod import;
 mod keys;
 mod schema;
+mod search;
 
 use std::path::Path;
 
-use rusqlite::Connection;
+use rusqlite::{params, Connection};
 
 use crate::vault::VaultError;
 
@@ -133,6 +134,73 @@ fn is_markdown_path(relative_path: &str) -> bool {
         .extension()
         .and_then(|extension| extension.to_str())
         .is_some_and(|extension| extension.eq_ignore_ascii_case("md"))
+}
+
+/// Searches the vault through the index.
+///
+/// `Ok(None)` means the caller should fall back to scanning files, either
+/// because reads are switched to the scan path or because the index is not
+/// usable. Search must not be the thing that makes a vault unopenable.
+pub(crate) fn search_vault(
+    root: &Path,
+    query: &str,
+) -> Result<Option<crate::vault::VaultSearchResult>, VaultError> {
+    let Ok(connection) = open(&database_path(root)) else {
+        return Ok(None);
+    };
+    if read_source(&connection) == ReadSource::Scan {
+        return Ok(None);
+    }
+    search::search(&connection, query).map(Some)
+}
+
+/// Where the interface's reads are served from.
+///
+/// Serving reads from the index is the first change in this work that a user
+/// can see go wrong, so the file-scanning path stays compiled and reachable
+/// until it has proven itself. The environment variable is checked first so a
+/// vault whose database is the problem can still be opened.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ReadSource {
+    Database,
+    Scan,
+}
+
+pub(crate) const READ_SOURCE_SETTING: &str = "reads.source";
+const READ_SOURCE_ENV: &str = "ANCHORED_READS";
+
+pub(crate) fn read_source(connection: &Connection) -> ReadSource {
+    if let Ok(value) = std::env::var(READ_SOURCE_ENV) {
+        return parse_read_source(&value);
+    }
+    connection
+        .query_row(
+            "SELECT value FROM settings WHERE key = ?1",
+            params![READ_SOURCE_SETTING],
+            |row| row.get::<_, String>(0),
+        )
+        .ok()
+        .map_or(ReadSource::Database, |value| parse_read_source(&value))
+}
+
+fn parse_read_source(value: &str) -> ReadSource {
+    if value.trim().eq_ignore_ascii_case("scan") {
+        ReadSource::Scan
+    } else {
+        ReadSource::Database
+    }
+}
+
+#[cfg(test)]
+pub(crate) fn set_read_source(connection: &Connection, value: &str) -> Result<(), VaultError> {
+    connection
+        .execute(
+            "INSERT INTO settings (key, value, updated_millis) VALUES (?1, ?2, 0)
+             ON CONFLICT(key) DO UPDATE SET value = ?2",
+            params![READ_SOURCE_SETTING, value],
+        )
+        .map(drop)
+        .map_err(map_error("The read source could not be recorded"))
 }
 
 /// Opens the vault database, applying pragmas and any pending migrations.
