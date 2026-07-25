@@ -28,6 +28,7 @@ import { VaultSwitcher } from "./components/VaultSwitcher";
 import { readErrorMessage } from "./errors";
 import { useConflictResolution } from "./useConflictResolution";
 import { useMissingWikilinkDialog } from "./useMissingWikilinkDialog";
+import { useNotifications } from "./useNotifications";
 import { useSidebarState } from "./useSidebarState";
 import { useTimestampMigration } from "./useTimestampMigration";
 import { useTrashPanel } from "./useTrashPanel";
@@ -84,15 +85,8 @@ import {
 } from "./sessionState";
 import { reloadAnchoredWindow } from "./windowActions";
 import {
-  clearResolvedNotifications,
   GENERAL_NOTIFICATION_SCOPE,
-  loadNotificationHistory,
   notificationHistoryForScope,
-  recordNotification,
-  resolveNotification,
-  resolveNotifications,
-  saveNotificationHistory,
-  type NewNotificationHistoryEntry,
 } from "./notificationHistory";
 import {
   archiveVaultFile,
@@ -136,23 +130,11 @@ import { mergeThreeWay } from "./threeWayMerge";
 import { saveConflictSnapshot } from "./conflictSnapshots";
 
 const ACTIVITY_REFRESH_INTERVAL_MS = 60_000;
-const MINOR_NOTICE_DURATION_MS = 12_000;
 
 type DocumentLoadState =
   | { status: "idle" }
   | { status: "loading"; documentId: string }
   | { status: "error"; documentId: string; message: string };
-
-type VaultNotice = {
-  id: number;
-  persistent: boolean;
-  text: string;
-};
-
-type VaultNoticeOptions = {
-  history?: Omit<NewNotificationHistoryEntry, "id" | "message" | "scopeId">;
-  persistent?: boolean;
-};
 
 type LifecycleTypeRequest = {
   action: "archive" | "workbench";
@@ -280,16 +262,6 @@ export function App() {
   >();
   const [lifecycleTypeRequest, setLifecycleTypeRequest] =
     useState<LifecycleTypeRequest>();
-  const [vaultNotices, setVaultNotices] = useState<VaultNotice[]>([]);
-  const [notificationHistoryVisible, setNotificationHistoryVisible] =
-    useState(false);
-  const [notificationHistory, setNotificationHistory] = useState(() => {
-    try {
-      return loadNotificationHistory(window.localStorage, Date.now());
-    } catch {
-      return [];
-    }
-  });
   const [documentLoad, setDocumentLoad] = useState<DocumentLoadState>({
     status: "idle",
   });
@@ -320,9 +292,6 @@ export function App() {
   const conflictCopyInFlightRef = useRef(new Set<string>());
   const focusRefreshTimeoutRef = useRef<number | undefined>(undefined);
   const vaultTreeRefreshTimeoutRef = useRef<number | undefined>(undefined);
-  const vaultNoticeIdRef = useRef(0);
-  const vaultNoticeTimeoutsRef = useRef<Map<number, number>>(new Map());
-  const notificationIdRef = useRef(0);
   const documentsRef = useRef(documents);
   const activeDocumentIdRef = useRef("");
   const focusDocumentIdRef = useRef<string | undefined>(undefined);
@@ -334,6 +303,7 @@ export function App() {
 
   const sidebar = useSidebarState();
   const conflictResolution = useConflictResolution();
+  const notifications = useNotifications({ vaultIdRef });
 
   documentsRef.current = documents;
   activeDocumentIdRef.current = activeDocumentId;
@@ -417,99 +387,12 @@ export function App() {
   );
   const notificationScopeId = vaultId || GENERAL_NOTIFICATION_SCOPE;
   const visibleNotificationHistory = useMemo(
-    () => notificationHistoryForScope(notificationHistory, notificationScopeId),
-    [notificationHistory, notificationScopeId],
-  );
-  const addHistoryEntry = useCallback(
-    (
-      message: string,
-      input: Omit<NewNotificationHistoryEntry, "id" | "message" | "scopeId">,
-    ) => {
-      const now = Date.now();
-      notificationIdRef.current += 1;
-      setNotificationHistory((current) =>
-        recordNotification(
-          current,
-          {
-            ...input,
-            id: `${now}-${notificationIdRef.current}`,
-            message,
-            scopeId: vaultIdRef.current || GENERAL_NOTIFICATION_SCOPE,
-          },
-          now,
-        ),
-      );
-    },
-    [],
-  );
-
-  const resolveHistorySource = useCallback((sourceId: string) => {
-    setNotificationHistory((current) =>
-      resolveNotifications(
-        current,
-        vaultIdRef.current || GENERAL_NOTIFICATION_SCOPE,
-        sourceId,
-        Date.now(),
+    () =>
+      notificationHistoryForScope(
+        notifications.notificationHistory,
+        notificationScopeId,
       ),
-    );
-  }, []);
-
-  const addVaultNotice = useCallback(
-    (text: string, options: VaultNoticeOptions = {}) => {
-      vaultNoticeIdRef.current += 1;
-      const notice = {
-        id: vaultNoticeIdRef.current,
-        persistent: options.persistent ?? false,
-        text,
-      };
-      setVaultNotices((currentNotices) => {
-        if (
-          currentNotices.some((currentNotice) => currentNotice.text === text)
-        ) {
-          return currentNotices;
-        }
-        return [notice, ...currentNotices];
-      });
-      if (options.history) addHistoryEntry(text, options.history);
-    },
-    [addHistoryEntry],
-  );
-
-  useEffect(() => {
-    const activeNoticeIds = new Set(vaultNotices.map((notice) => notice.id));
-
-    vaultNoticeTimeoutsRef.current.forEach((timeout, noticeId) => {
-      if (!activeNoticeIds.has(noticeId)) {
-        window.clearTimeout(timeout);
-        vaultNoticeTimeoutsRef.current.delete(noticeId);
-      }
-    });
-
-    vaultNotices.forEach((notice) => {
-      if (notice.persistent || vaultNoticeTimeoutsRef.current.has(notice.id)) {
-        return;
-      }
-
-      const timeout = window.setTimeout(() => {
-        vaultNoticeTimeoutsRef.current.delete(notice.id);
-        setVaultNotices((currentNotices) =>
-          currentNotices.filter(
-            (currentNotice) => currentNotice.id !== notice.id,
-          ),
-        );
-      }, MINOR_NOTICE_DURATION_MS);
-      vaultNoticeTimeoutsRef.current.set(notice.id, timeout);
-    });
-  }, [vaultNotices]);
-
-  useEffect(
-    () => () => {
-      vaultNoticeTimeoutsRef.current.forEach((timeout) =>
-        window.clearTimeout(timeout),
-      );
-      vaultNoticeTimeoutsRef.current.clear();
-    },
-    [],
+    [notifications.notificationHistory, notificationScopeId],
   );
 
   useEffect(() => {
@@ -630,7 +513,7 @@ export function App() {
                   value.length > 0 && values.indexOf(value) === index,
               ),
         );
-        resolveHistorySource(document.id);
+        notifications.resolveHistorySource(document.id);
       } catch (error) {
         setDocuments((currentDocuments) =>
           currentDocuments.map((current) =>
@@ -643,7 +526,7 @@ export function App() {
               : current,
           ),
         );
-        addHistoryEntry(`${document.name} could not be saved.`, {
+        notifications.addHistoryEntry(`${document.name} could not be saved.`, {
           kind: "error",
           sourceId: document.id,
         });
@@ -655,8 +538,8 @@ export function App() {
     // this callback's own calls to sidebar.setExpandedFolders.
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [
-      addHistoryEntry,
-      resolveHistorySource,
+      notifications.addHistoryEntry,
+      notifications.resolveHistorySource,
       setActiveDocument,
       setFocusDocument,
       sidebar.setExpandedFolders,
@@ -666,7 +549,7 @@ export function App() {
 
   const createNote = useCallback(() => {
     if (!vaultSelected) {
-      addVaultNotice("Open a vault before creating a note.");
+      notifications.addVaultNotice("Open a vault before creating a note.");
       return;
     }
     const nextDocument = createUntitledDocument();
@@ -703,7 +586,7 @@ export function App() {
     // including as a result of this callback's own calls below.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
-    addVaultNotice,
+    notifications.addVaultNotice,
     saveUntitledDocument,
     setActiveDocument,
     setFocusDocument,
@@ -719,7 +602,9 @@ export function App() {
       );
       if (!document || document.sourceText === undefined) return;
       if (document.status?.trim().toLocaleLowerCase() === "archived") {
-        addVaultNotice("Restore this archived note before saving a copy.");
+        notifications.addVaultNotice(
+          "Restore this archived note before saving a copy.",
+        );
         return;
       }
 
@@ -809,7 +694,7 @@ export function App() {
               ),
         );
         if (hasNewerEdit) {
-          addHistoryEntry(
+          notifications.addHistoryEntry(
             `${document.name} has unsaved changes because its file changed outside Anchored.`,
             {
               kind: "conflict",
@@ -818,7 +703,7 @@ export function App() {
             },
           );
         } else {
-          resolveHistorySource(document.id);
+          notifications.resolveHistorySource(document.id);
         }
       } catch (error) {
         setDocuments((currentDocuments) =>
@@ -832,7 +717,7 @@ export function App() {
               : current,
           ),
         );
-        addHistoryEntry(`${document.name} could not be saved.`, {
+        notifications.addHistoryEntry(`${document.name} could not be saved.`, {
           kind: "error",
           sourceId: document.id,
         });
@@ -842,9 +727,9 @@ export function App() {
     // see the comment on saveUntitledDocument's dependency array above.
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [
-      addHistoryEntry,
-      addVaultNotice,
-      resolveHistorySource,
+      notifications.addHistoryEntry,
+      notifications.addVaultNotice,
+      notifications.resolveHistorySource,
       sidebar.setExpandedFolders,
       vaultName,
     ],
@@ -877,7 +762,7 @@ export function App() {
         );
         return copy.relativePath;
       } catch (error) {
-        addVaultNotice(
+        notifications.addVaultNotice(
           `Anchored could not create a recovery copy: ${readErrorMessage(error)}`,
           { persistent: true },
         );
@@ -886,7 +771,10 @@ export function App() {
         conflictCopyInFlightRef.current.delete(documentId);
       }
     },
-    [addVaultNotice],
+    // notifications.addVaultNotice has a stable identity; see the comment
+    // on activateVaultSnapshot's dependency array above.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [notifications.addVaultNotice],
   );
 
   const checkExternalDocument = useCallback(
@@ -937,7 +825,7 @@ export function App() {
                 : candidate,
             ),
           );
-          resolveHistorySource(documentId);
+          notifications.resolveHistorySource(documentId);
           return;
         }
 
@@ -985,7 +873,7 @@ export function App() {
           ),
         );
         if (!wasAlreadyConflicted) {
-          addHistoryEntry(
+          notifications.addHistoryEntry(
             `${current.name} has unsaved changes because its file changed outside Anchored.`,
             {
               kind: "conflict",
@@ -1022,7 +910,15 @@ export function App() {
         externalCheckInFlightRef.current.delete(documentId);
       }
     },
-    [addHistoryEntry, createConflictCopyForDocument, resolveHistorySource],
+    // notifications.addHistoryEntry and notifications.resolveHistorySource
+    // both have stable identities; see the comment on
+    // activateVaultSnapshot's dependency array above.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [
+      notifications.addHistoryEntry,
+      createConflictCopyForDocument,
+      notifications.resolveHistorySource,
+    ],
   );
 
   const saveDocument = useCallback(
@@ -1034,7 +930,7 @@ export function App() {
         return;
       }
       if (document.status?.trim().toLocaleLowerCase() === "archived") {
-        addVaultNotice(
+        notifications.addVaultNotice(
           "Archived notes are read-only. Restore this note first.",
         );
         return;
@@ -1057,7 +953,7 @@ export function App() {
               : current,
           ),
         );
-        resolveHistorySource(document.id);
+        notifications.resolveHistorySource(document.id);
         return;
       }
 
@@ -1112,7 +1008,7 @@ export function App() {
               : current,
           ),
         );
-        resolveHistorySource(document.id);
+        notifications.resolveHistorySource(document.id);
       } catch (error) {
         const message = readErrorMessage(error);
         const nextSaveState =
@@ -1141,7 +1037,7 @@ export function App() {
               : current,
           ),
         );
-        addHistoryEntry(
+        notifications.addHistoryEntry(
           nextSaveState === "conflict"
             ? `${document.name} has unsaved changes because its file changed outside Anchored.`
             : `${document.name} could not be saved.`,
@@ -1158,12 +1054,16 @@ export function App() {
         }
       }
     },
+    // notifications.addHistoryEntry, notifications.addVaultNotice, and
+    // notifications.resolveHistorySource all have stable identities; see
+    // the comment on activateVaultSnapshot's dependency array above.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     [
-      addHistoryEntry,
-      addVaultNotice,
+      notifications.addHistoryEntry,
+      notifications.addVaultNotice,
       checkExternalDocument,
       createConflictCopyForDocument,
-      resolveHistorySource,
+      notifications.resolveHistorySource,
       saveDocumentAs,
     ],
   );
@@ -1171,7 +1071,7 @@ export function App() {
   const recordSnapshotEvents = useCallback(
     (snapshot: VaultSnapshot) => {
       if (snapshot.warnings.skippedSymlinks > 0) {
-        addHistoryEntry(
+        notifications.addHistoryEntry(
           `${snapshot.warnings.skippedSymlinks} symlink entr${
             snapshot.warnings.skippedSymlinks === 1 ? "y was" : "ies were"
           } skipped for safety.`,
@@ -1179,7 +1079,10 @@ export function App() {
         );
       }
     },
-    [addHistoryEntry],
+    // notifications.addHistoryEntry has a stable identity; see the comment
+    // on activateVaultSnapshot's dependency array above.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [notifications.addHistoryEntry],
   );
 
   const adoptVaultSnapshot = useCallback(
@@ -1219,13 +1122,13 @@ export function App() {
       });
       recordSnapshotEvents(snapshot);
       const summary = vaultSummaryMessage(snapshot);
-      if (summary) addVaultNotice(summary);
+      if (summary) notifications.addVaultNotice(summary);
     },
     // sidebar.setExpandedFolders is a raw useState setter (always stable);
     // see the comment on saveUntitledDocument's dependency array above.
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [
-      addVaultNotice,
+      notifications.addVaultNotice,
       recordSnapshotEvents,
       setActiveDocument,
       sidebar.setExpandedFolders,
@@ -1240,8 +1143,8 @@ export function App() {
   }, [setActiveDocument, setFocusDocument]);
 
   const trash = useTrashPanel({
-    addHistoryEntry,
-    addVaultNotice,
+    addHistoryEntry: notifications.addHistoryEntry,
+    addVaultNotice: notifications.addVaultNotice,
     adoptVaultSnapshot,
     documentsRef,
     onActiveDocumentTrashed,
@@ -1274,21 +1177,22 @@ export function App() {
       setFocusDocument(undefined);
       setQuery("");
       setDocumentLoad({ status: "idle" });
-      setVaultNotices([]);
+      notifications.reset();
       timestampMigration.reset();
       trash.reset();
-      setNotificationHistoryVisible(false);
       recordSnapshotEvents(snapshot);
       const summary = vaultSummaryMessage(snapshot);
-      if (summary) addVaultNotice(summary);
+      if (summary) notifications.addVaultNotice(summary);
     },
-    // trash.reset and timestampMigration.reset both have stable identities
-    // (useCallback with no deps inside their hooks); the containing objects
-    // are recreated every render, so depending on them directly would defeat
-    // this memoization.
+    // trash.reset, timestampMigration.reset, notifications.reset, and
+    // notifications.addVaultNotice all have stable identities (useCallback
+    // with no deps, or memoized, inside their hooks); the containing
+    // objects are recreated every render, so depending on them directly
+    // would defeat this memoization.
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [
-      addVaultNotice,
+      notifications.addVaultNotice,
+      notifications.reset,
       recordSnapshotEvents,
       setActiveDocument,
       setFocusDocument,
@@ -1311,14 +1215,25 @@ export function App() {
       if (!snapshot) return;
       adoptVaultSnapshot(snapshot);
     } catch (error) {
-      addVaultNotice(readErrorMessage(error), { persistent: true });
-      addHistoryEntry("Vault refresh could not be completed.", {
+      notifications.addVaultNotice(readErrorMessage(error), {
+        persistent: true,
+      });
+      notifications.addHistoryEntry("Vault refresh could not be completed.", {
         kind: "error",
       });
     } finally {
       rescanInFlightRef.current = false;
     }
-  }, [addHistoryEntry, addVaultNotice, adoptVaultSnapshot, vaultSelected]);
+    // notifications.addHistoryEntry and notifications.addVaultNotice both
+    // have stable identities; see the comment on activateVaultSnapshot's
+    // dependency array above.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    notifications.addHistoryEntry,
+    notifications.addVaultNotice,
+    adoptVaultSnapshot,
+    vaultSelected,
+  ]);
 
   const refreshVaultForPaths = useCallback(
     async (relativePaths: string[]) => {
@@ -1335,8 +1250,10 @@ export function App() {
         patch = await rescanVaultPaths(relativePaths);
       } catch (error) {
         rescanInFlightRef.current = false;
-        addVaultNotice(readErrorMessage(error), { persistent: true });
-        addHistoryEntry("Vault refresh could not be completed.", {
+        notifications.addVaultNotice(readErrorMessage(error), {
+          persistent: true,
+        });
+        notifications.addHistoryEntry("Vault refresh could not be completed.", {
           kind: "error",
         });
         return;
@@ -1354,7 +1271,16 @@ export function App() {
         );
       }
     },
-    [addHistoryEntry, addVaultNotice, refreshVault, vaultSelected],
+    // notifications.addHistoryEntry and notifications.addVaultNotice both
+    // have stable identities; see the comment on activateVaultSnapshot's
+    // dependency array above.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [
+      notifications.addHistoryEntry,
+      notifications.addVaultNotice,
+      refreshVault,
+      vaultSelected,
+    ],
   );
 
   useEffect(() => {
@@ -1390,7 +1316,9 @@ export function App() {
           ]);
         })
         .catch((error) => {
-          addVaultNotice(readErrorMessage(error), { persistent: true });
+          notifications.addVaultNotice(readErrorMessage(error), {
+            persistent: true,
+          });
         })
         .finally(() => {
           sessionRestoreStatusRef.current = "done";
@@ -1429,24 +1357,12 @@ export function App() {
     // activateVaultSnapshot's dependency array above.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
-    addVaultNotice,
+    notifications.addVaultNotice,
     activateVaultSnapshot,
     refreshRememberedVaults,
     rememberedVaultsLoading,
     trash.refreshTrashEntries,
   ]);
-
-  useEffect(() => {
-    try {
-      saveNotificationHistory(
-        window.localStorage,
-        notificationHistory,
-        Date.now(),
-      );
-    } catch {
-      // Notification history is optional and must never block the editor.
-    }
-  }, [notificationHistory]);
 
   useEffect(() => {
     searchRequestRef.current += 1;
@@ -1481,14 +1397,19 @@ export function App() {
   const openScratchpadWindow = useCallback(
     (mode: ScratchpadMode) => {
       if (!vaultSelected) {
-        addVaultNotice("Open a vault before using Scratchpad.");
+        notifications.addVaultNotice("Open a vault before using Scratchpad.");
         return;
       }
       void openScratchpad(mode).catch((error: unknown) => {
-        addVaultNotice(readErrorMessage(error), { persistent: true });
+        notifications.addVaultNotice(readErrorMessage(error), {
+          persistent: true,
+        });
       });
     },
-    [addVaultNotice, vaultSelected],
+    // notifications.addVaultNotice has a stable identity; see the comment
+    // on activateVaultSnapshot's dependency array above.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [notifications.addVaultNotice, vaultSelected],
   );
 
   useEffect(() => {
@@ -1661,7 +1582,7 @@ export function App() {
           await checkExternalDocument(nextDocumentId);
         }
         if (result.updatedLinks && result.updatedLinks > 0) {
-          addVaultNotice(
+          notifications.addVaultNotice(
             `${result.relativePath.split("/").pop() ?? result.relativePath} moved. ${
               result.updatedLinks
             } link${result.updatedLinks === 1 ? "" : "s"} updated across ${
@@ -1670,7 +1591,7 @@ export function App() {
           );
         }
       } catch (error) {
-        addVaultNotice(
+        notifications.addVaultNotice(
           `Anchored could not reconcile the moved note safely: ${readErrorMessage(error)}`,
           { persistent: true },
         );
@@ -1679,8 +1600,11 @@ export function App() {
         }
       }
     },
+    // notifications.addVaultNotice has a stable identity; see the comment
+    // on activateVaultSnapshot's dependency array above.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     [
-      addVaultNotice,
+      notifications.addVaultNotice,
       checkExternalDocument,
       markdownSettings.updateTypeOnExternalMove,
       setActiveDocument,
@@ -1774,7 +1698,7 @@ export function App() {
       },
     );
     void watchVault().catch((error) => {
-      if (!disposed) addVaultNotice(readErrorMessage(error));
+      if (!disposed) notifications.addVaultNotice(readErrorMessage(error));
     });
 
     return () => {
@@ -1786,8 +1710,11 @@ export function App() {
         vaultTreeRefreshTimeoutRef.current = undefined;
       }
     };
+    // notifications.addVaultNotice has a stable identity; see the comment
+    // on activateVaultSnapshot's dependency array above.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
-    addVaultNotice,
+    notifications.addVaultNotice,
     checkExternalDocument,
     reconcileExternalMove,
     refreshVault,
@@ -1913,9 +1840,11 @@ export function App() {
             : current,
         ),
       );
-      resolveHistorySource(documentId);
+      notifications.resolveHistorySource(documentId);
     } catch (error) {
-      addVaultNotice(readErrorMessage(error), { persistent: true });
+      notifications.addVaultNotice(readErrorMessage(error), {
+        persistent: true,
+      });
     }
   }
 
@@ -1947,10 +1876,10 @@ export function App() {
         ),
       );
       conflictResolution.closeConflictResolution();
-      resolveHistorySource(documentId);
+      notifications.resolveHistorySource(documentId);
       await refreshVault();
     } catch (error) {
-      addVaultNotice(
+      notifications.addVaultNotice(
         `The conflict changed again and was not overwritten: ${readErrorMessage(error)}`,
         { persistent: true },
       );
@@ -1972,7 +1901,9 @@ export function App() {
       );
       if (copy) await selectDocument(copy.id);
     } catch (error) {
-      addVaultNotice(readErrorMessage(error), { persistent: true });
+      notifications.addVaultNotice(readErrorMessage(error), {
+        persistent: true,
+      });
     }
   }
 
@@ -2004,19 +1935,27 @@ export function App() {
           );
         }
       } catch (error) {
-        addVaultNotice(readErrorMessage(error), { persistent: true });
-        addHistoryEntry("A vault search result could not be reopened.", {
-          kind: "error",
+        notifications.addVaultNotice(readErrorMessage(error), {
+          persistent: true,
         });
+        notifications.addHistoryEntry(
+          "A vault search result could not be reopened.",
+          {
+            kind: "error",
+          },
+        );
         return;
       }
     }
 
     if (!document) {
-      addVaultNotice("That search result is no longer in the vault.", {
-        history: { kind: "error" },
-        persistent: true,
-      });
+      notifications.addVaultNotice(
+        "That search result is no longer in the vault.",
+        {
+          history: { kind: "error" },
+          persistent: true,
+        },
+      );
       return;
     }
     setVaultSearchVisible(false);
@@ -2071,7 +2010,7 @@ export function App() {
     setActiveDocument(relocatedDocumentId);
     setFocusDocument(undefined);
     setDocumentLoad({ status: "idle" });
-    addVaultNotice(message, { history: { kind: "rename" } });
+    notifications.addVaultNotice(message, { history: { kind: "rename" } });
   }
 
   async function renameDocument(documentId: string, name: string) {
@@ -2087,11 +2026,15 @@ export function App() {
         candidate.id !== documentId && documentHasUnfinishedEdits(candidate),
     );
     if (otherDocumentsHaveUnfinishedEdits) {
-      addVaultNotice("Save all open note changes before renaming a note.");
+      notifications.addVaultNotice(
+        "Save all open note changes before renaming a note.",
+      );
       return;
     }
     if (!name.trim()) {
-      addVaultNotice("Enter a filename before renaming this note.");
+      notifications.addVaultNotice(
+        "Enter a filename before renaming this note.",
+      );
       return;
     }
 
@@ -2111,9 +2054,12 @@ export function App() {
           documentHasUnfinishedEdits(document) ||
           !document.relativePath
         ) {
-          addVaultNotice("Save the note successfully before renaming it.", {
-            persistent: true,
-          });
+          notifications.addVaultNotice(
+            "Save the note successfully before renaming it.",
+            {
+              persistent: true,
+            },
+          );
           return;
         }
         relativePath = document.relativePath;
@@ -2135,13 +2081,13 @@ export function App() {
       }.`;
       await finishRelocatedDocument(outcome, message);
     } catch (error) {
-      addVaultNotice(
+      notifications.addVaultNotice(
         renameCompleted
           ? `The note was renamed, but Anchored could not refresh it: ${readErrorMessage(error)}`
           : readErrorMessage(error),
         { persistent: true },
       );
-      addHistoryEntry(
+      notifications.addHistoryEntry(
         renameCompleted
           ? "A renamed note could not be refreshed."
           : "A note rename could not be completed safely.",
@@ -2166,7 +2112,9 @@ export function App() {
       return;
     }
     if (hasUnfinishedEdits()) {
-      addVaultNotice("Save all open note changes before moving a note.");
+      notifications.addVaultNotice(
+        "Save all open note changes before moving a note.",
+      );
       return;
     }
 
@@ -2188,13 +2136,13 @@ export function App() {
       setMoveDocumentVisible(false);
       setMoveDocumentId(undefined);
     } catch (error) {
-      addVaultNotice(
+      notifications.addVaultNotice(
         moveCompleted
           ? `The note was moved, but Anchored could not refresh it: ${readErrorMessage(error)}`
           : readErrorMessage(error),
         { persistent: true },
       );
-      addHistoryEntry(
+      notifications.addHistoryEntry(
         moveCompleted
           ? "A moved note could not be refreshed."
           : "A note move could not be completed safely.",
@@ -2251,7 +2199,7 @@ export function App() {
       return;
     }
     applyLifecycleDocument(documentId, result);
-    addVaultNotice(message, { history: { kind: "vault" } });
+    notifications.addVaultNotice(message, { history: { kind: "vault" } });
   }
 
   async function lifecycleExpectedContent(document: AnchoredDocument) {
@@ -2275,7 +2223,7 @@ export function App() {
       (document.sourceText !== undefined &&
         document.sourceText !== document.savedSourceText)
     ) {
-      addVaultNotice("Save this note before archiving it.");
+      notifications.addVaultNotice("Save this note before archiving it.");
       return;
     }
 
@@ -2293,10 +2241,15 @@ export function App() {
         `${document.name} moved to Archive.`,
       );
     } catch (error) {
-      addVaultNotice(readErrorMessage(error), { persistent: true });
-      addHistoryEntry(`${document.name} could not be archived safely.`, {
-        kind: "error",
+      notifications.addVaultNotice(readErrorMessage(error), {
+        persistent: true,
       });
+      notifications.addHistoryEntry(
+        `${document.name} could not be archived safely.`,
+        {
+          kind: "error",
+        },
+      );
     } finally {
       setTransitioningDocumentId(undefined);
     }
@@ -2340,10 +2293,15 @@ export function App() {
         }.`,
       );
     } catch (error) {
-      addVaultNotice(readErrorMessage(error), { persistent: true });
-      addHistoryEntry(`${document.name} could not be restored safely.`, {
-        kind: "error",
+      notifications.addVaultNotice(readErrorMessage(error), {
+        persistent: true,
       });
+      notifications.addHistoryEntry(
+        `${document.name} could not be restored safely.`,
+        {
+          kind: "error",
+        },
+      );
     } finally {
       setTransitioningDocumentId(undefined);
     }
@@ -2382,7 +2340,9 @@ export function App() {
         `${document.name} moved to Workbench.`,
       );
     } catch (error) {
-      addVaultNotice(readErrorMessage(error), { persistent: true });
+      notifications.addVaultNotice(readErrorMessage(error), {
+        persistent: true,
+      });
     } finally {
       setTransitioningDocumentId(undefined);
     }
@@ -2408,24 +2368,32 @@ export function App() {
               )?.name,
           )
           .filter((name): name is string => Boolean(name));
-        addVaultNotice(
+        notifications.addVaultNotice(
           `[[${target}]] is ambiguous${
             names.length > 0 ? `: ${names.join(", ")}.` : "."
           }`,
         );
-        addHistoryEntry("A wikilink was ambiguous and was not opened.", {
-          kind: "link",
-        });
+        notifications.addHistoryEntry(
+          "A wikilink was ambiguous and was not opened.",
+          {
+            kind: "link",
+          },
+        );
         return;
       }
       if (wikilinkCreationName(target)) {
         missingWikilink.openMissingWikilinkDialog(target);
         return;
       }
-      addVaultNotice(`[[${target}]] does not match a note or alias.`);
-      addHistoryEntry("A wikilink did not match a note or alias.", {
-        kind: "link",
-      });
+      notifications.addVaultNotice(
+        `[[${target}]] does not match a note or alias.`,
+      );
+      notifications.addHistoryEntry(
+        "A wikilink did not match a note or alias.",
+        {
+          kind: "link",
+        },
+      );
     },
     // missingWikilink.openMissingWikilinkDialog is a useCallback with an
     // empty deps array (always stable); depending on the whole
@@ -2434,8 +2402,8 @@ export function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [
       activeDocumentId,
-      addHistoryEntry,
-      addVaultNotice,
+      notifications.addHistoryEntry,
+      notifications.addVaultNotice,
       missingWikilink.openMissingWikilinkDialog,
       selectDocument,
     ],
@@ -2495,7 +2463,7 @@ export function App() {
 
   async function openVault() {
     if (vaultSelected && hasUnfinishedEdits()) {
-      addVaultNotice(
+      notifications.addVaultNotice(
         "Save or close all draft changes before switching vaults.",
       );
       return;
@@ -2512,7 +2480,7 @@ export function App() {
         trash.refreshTrashEntries(),
       ]);
     } catch {
-      addVaultNotice(
+      notifications.addVaultNotice(
         "Vault selection is available in the Anchored desktop app.",
         { history: { kind: "error" }, persistent: true },
       );
@@ -2523,7 +2491,7 @@ export function App() {
 
   async function createNewVault(name: string) {
     if (vaultSelected && hasUnfinishedEdits()) {
-      addVaultNotice(
+      notifications.addVaultNotice(
         "Save or close all draft changes before switching vaults.",
       );
       return;
@@ -2553,7 +2521,7 @@ export function App() {
 
   async function createNewFolder(name: string) {
     if (!vaultSelected) {
-      addVaultNotice("Open a vault before creating a folder.");
+      notifications.addVaultNotice("Open a vault before creating a folder.");
       return;
     }
     setCreatingFolder(true);
@@ -2567,7 +2535,7 @@ export function App() {
       adoptVaultSnapshot(snapshot);
       setCreateFolderVisible(false);
       setCreateFolderParentPath(undefined);
-      addVaultNotice(`${name.trim()} created.`, {
+      notifications.addVaultNotice(`${name.trim()} created.`, {
         history: { kind: "rename" },
       });
     } catch (error) {
@@ -2579,11 +2547,13 @@ export function App() {
 
   async function renameExistingFolder(name: string) {
     if (!vaultSelected || !renamingFolderPath) {
-      addVaultNotice("Open a vault before renaming a folder.");
+      notifications.addVaultNotice("Open a vault before renaming a folder.");
       return;
     }
     if (hasUnfinishedEdits()) {
-      addVaultNotice("Save all open note changes before renaming a folder.");
+      notifications.addVaultNotice(
+        "Save all open note changes before renaming a folder.",
+      );
       return;
     }
 
@@ -2617,9 +2587,12 @@ export function App() {
       });
       setRenameFolderVisible(false);
       setRenamingFolderPath(undefined);
-      addVaultNotice(`${folderName(originalFolderPath)} renamed.`, {
-        history: { kind: "rename" },
-      });
+      notifications.addVaultNotice(
+        `${folderName(originalFolderPath)} renamed.`,
+        {
+          history: { kind: "rename" },
+        },
+      );
     } catch (error) {
       setRenameFolderError(readErrorMessage(error));
     } finally {
@@ -2629,7 +2602,7 @@ export function App() {
 
   async function deleteExistingFolder(confirmation = "") {
     if (!vaultSelected || !deletingFolderPath) {
-      addVaultNotice("Open a vault before deleting a folder.");
+      notifications.addVaultNotice("Open a vault before deleting a folder.");
       return;
     }
 
@@ -2665,7 +2638,7 @@ export function App() {
       });
       setDeleteFolderVisible(false);
       setDeletingFolderPath(undefined);
-      addVaultNotice(
+      notifications.addVaultNotice(
         `${folderName(targetFolderPath)} ${confirmation ? "moved to Trash" : "deleted"}.`,
         {
           history: { kind: confirmation ? "trash" : "rename" },
@@ -2711,7 +2684,9 @@ export function App() {
     if (
       documentsRef.current.some((document) => document.saveState === "saving")
     ) {
-      addVaultNotice("Wait for the current save to finish before reloading.");
+      notifications.addVaultNotice(
+        "Wait for the current save to finish before reloading.",
+      );
       return;
     }
 
@@ -2722,9 +2697,12 @@ export function App() {
         (!document.relativePath && document.sourceText !== undefined),
     );
     if (blockedDocuments.length > 0) {
-      addVaultNotice("Resolve note save problems before reloading Anchored.", {
-        persistent: true,
-      });
+      notifications.addVaultNotice(
+        "Resolve note save problems before reloading Anchored.",
+        {
+          persistent: true,
+        },
+      );
       return;
     }
 
@@ -2747,7 +2725,7 @@ export function App() {
 
       const remaining = documentsRef.current.filter(documentHasUnfinishedEdits);
       if (remaining.length > 0) {
-        addVaultNotice(
+        notifications.addVaultNotice(
           "Anchored could not safely reload because some note changes still need attention.",
           { persistent: true },
         );
@@ -2771,7 +2749,7 @@ export function App() {
 
   async function openKnownVault(rememberedVaultId: string) {
     if (hasUnfinishedEdits()) {
-      addVaultNotice(
+      notifications.addVaultNotice(
         "Save or close all draft changes before switching vaults.",
       );
       return;
@@ -2842,7 +2820,9 @@ export function App() {
       setActiveDocument(documentId);
       setDocumentLoad({ status: "idle" });
     } catch (error) {
-      addVaultNotice(readErrorMessage(error), { persistent: true });
+      notifications.addVaultNotice(readErrorMessage(error), {
+        persistent: true,
+      });
     }
   }
 
@@ -2853,11 +2833,13 @@ export function App() {
       const snapshot = await moveVaultFolder(moveFolderPath, destinationFolder);
       adoptVaultSnapshot(snapshot);
       setMoveFolderPath(undefined);
-      addVaultNotice(`${folderName(moveFolderPath)} moved.`, {
+      notifications.addVaultNotice(`${folderName(moveFolderPath)} moved.`, {
         history: { kind: "vault" },
       });
     } catch (error) {
-      addVaultNotice(readErrorMessage(error), { persistent: true });
+      notifications.addVaultNotice(readErrorMessage(error), {
+        persistent: true,
+      });
     } finally {
       setMoveFolderPending(false);
     }
@@ -2874,7 +2856,9 @@ export function App() {
         vaultSelected={vaultSelected}
         vaultName={vaultName}
         onCreateNote={createNote}
-        onOpenNotifications={() => setNotificationHistoryVisible(true)}
+        onOpenNotifications={() =>
+          notifications.setNotificationHistoryVisible(true)
+        }
         onOpenScratchpad={() => openScratchpadWindow("new")}
         onOpenSearch={() => {
           setVaultSearchQuery("");
@@ -3041,9 +3025,9 @@ export function App() {
           trashing={trash.trashingDocumentId === activeDocument?.id}
         />
       </div>
-      {vaultNotices.length > 0 || activeDocument?.saveMessage ? (
+      {notifications.vaultNotices.length > 0 || activeDocument?.saveMessage ? (
         <div aria-label="Notifications" className="vault-notifications">
-          {vaultNotices.map((notice) => (
+          {notifications.vaultNotices.map((notice) => (
             <div className="vault-message" key={notice.id} role="status">
               <div className="vault-message__row">
                 <span>{notice.text}</span>
@@ -3051,13 +3035,7 @@ export function App() {
                   aria-label={`Dismiss notification: ${notice.text}`}
                   className="vault-message__dismiss"
                   type="button"
-                  onClick={() =>
-                    setVaultNotices((currentNotices) =>
-                      currentNotices.filter(
-                        (currentNotice) => currentNotice.id !== notice.id,
-                      ),
-                    )
-                  }
+                  onClick={() => notifications.dismissVaultNotice(notice.id)}
                 >
                   Dismiss
                 </button>
@@ -3156,34 +3134,13 @@ export function App() {
             );
           })()
         : null}
-      {notificationHistoryVisible ? (
+      {notifications.notificationHistoryVisible ? (
         <NotificationCenter
           entries={visibleNotificationHistory}
-          onClearResolved={() =>
-            setNotificationHistory((current) =>
-              clearResolvedNotifications(current, notificationScopeId),
-            )
-          }
-          onClose={() => setNotificationHistoryVisible(false)}
-          onDelete={(entryId) =>
-            setNotificationHistory((current) =>
-              current.filter(
-                (entry) =>
-                  entry.id !== entryId ||
-                  (entry.requiresAction && entry.resolvedAt === undefined),
-              ),
-            )
-          }
-          onResolve={(entryId) =>
-            setNotificationHistory((current) =>
-              resolveNotification(
-                current,
-                notificationScopeId,
-                entryId,
-                Date.now(),
-              ),
-            )
-          }
+          onClearResolved={notifications.clearResolvedHistory}
+          onClose={() => notifications.setNotificationHistoryVisible(false)}
+          onDelete={notifications.deleteHistoryEntry}
+          onResolve={notifications.resolveHistoryEntry}
         />
       ) : null}
       {settingsVisible ? (
