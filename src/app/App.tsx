@@ -31,6 +31,7 @@ import { useMissingWikilinkDialog } from "./useMissingWikilinkDialog";
 import { useSidebarState } from "./useSidebarState";
 import { useTimestampMigration } from "./useTimestampMigration";
 import { useTrashPanel } from "./useTrashPanel";
+import { useVaultSwitcher } from "./useVaultSwitcher";
 import {
   VaultSearchPalette,
   type VaultSearchState,
@@ -97,13 +98,10 @@ import {
 import {
   archiveVaultFile,
   createVaultConflictCopy,
-  createVault,
   createVaultFolder,
   createUntitledVaultFile,
   createVaultFile,
   deleteVaultFolder,
-  forgetVault,
-  listRememberedVaults,
   moveVaultFileToFolder,
   moveVaultFileToWorkbench,
   moveVaultFolderToTrash,
@@ -118,14 +116,12 @@ import {
   rescanVaultPaths,
   saveVaultFile,
   searchVault,
-  selectVault,
   stopVault,
   watchVault,
   type VaultChange,
   type VaultChangeBatch,
   isBrowserDevelopmentFixture,
   restoreArchivedVaultFile,
-  type RememberedVault,
   type VaultDocument,
   type VaultSnapshot,
 } from "../lib/tauri/vault";
@@ -227,9 +223,7 @@ export function App() {
   const [markdownSettings, setMarkdownSettings] = useState<MarkdownSettings>(
     initialMarkdownSettings,
   );
-  const [selectingVault, setSelectingVault] = useState(false);
   const [creatingFolder, setCreatingFolder] = useState(false);
-  const [creatingVault, setCreatingVault] = useState(false);
   const [createFolderParentPath, setCreateFolderParentPath] = useState<
     string | undefined
   >();
@@ -253,10 +247,6 @@ export function App() {
     string | undefined
   >();
   const [deleteFolderPending, setDeleteFolderPending] = useState(false);
-  const [createVaultVisible, setCreateVaultVisible] = useState(false);
-  const [createVaultError, setCreateVaultError] = useState<
-    string | undefined
-  >();
   const [reloadingApp, setReloadingApp] = useState(false);
   const [availableUpdate, setAvailableUpdate] = useState<Update | null>(null);
   const [updateStatus, setUpdateStatus] = useState<
@@ -264,17 +254,6 @@ export function App() {
   >("idle");
   const [updateError, setUpdateError] = useState<string>();
   const [vaultSelected, setVaultSelected] = useState(false);
-  const [vaultSwitcherVisible, setVaultSwitcherVisible] = useState(false);
-  const [rememberedVaults, setRememberedVaults] = useState<RememberedVault[]>(
-    [],
-  );
-  const [rememberedVaultsLoading, setRememberedVaultsLoading] = useState(true);
-  const [rememberedVaultsError, setRememberedVaultsError] = useState<
-    string | undefined
-  >();
-  const [openingRememberedVaultId, setOpeningRememberedVaultId] = useState<
-    string | undefined
-  >();
   const [transitioningDocumentId, setTransitioningDocumentId] = useState<
     string | undefined
   >();
@@ -524,20 +503,6 @@ export function App() {
     () => documentsRef.current.some(documentHasUnfinishedEdits),
     [],
   );
-
-  const refreshRememberedVaults = useCallback(async () => {
-    setRememberedVaultsLoading(true);
-    setRememberedVaultsError(undefined);
-    try {
-      setRememberedVaults(await listRememberedVaults());
-    } catch {
-      setRememberedVaultsError(
-        "Remembered vaults are available in the Anchored desktop app.",
-      );
-    } finally {
-      setRememberedVaultsLoading(false);
-    }
-  }, []);
 
   const saveUntitledDocument = useCallback(
     async (documentId: string) => {
@@ -1297,6 +1262,14 @@ export function App() {
     ],
   );
 
+  const vaultSwitcher = useVaultSwitcher({
+    activateVaultSnapshot,
+    addVaultNotice,
+    hasUnfinishedEdits,
+    refreshTrashEntries: trash.refreshTrashEntries,
+    vaultSelected,
+  });
+
   const refreshVault = useCallback(async () => {
     if (
       !vaultSelected ||
@@ -1366,13 +1339,16 @@ export function App() {
   }, [documentActivity]);
 
   useEffect(() => {
-    void refreshRememberedVaults();
-  }, [refreshRememberedVaults]);
+    void vaultSwitcher.refreshRememberedVaults();
+    // vaultSwitcher.refreshRememberedVaults has a stable identity; see the
+    // comment on activateVaultSnapshot's dependency array above.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [vaultSwitcher.refreshRememberedVaults]);
 
   useEffect(() => {
     if (
       sessionRestoreStatusRef.current !== "pending" ||
-      rememberedVaultsLoading
+      vaultSwitcher.rememberedVaultsLoading
     ) {
       return;
     }
@@ -1380,12 +1356,12 @@ export function App() {
 
     if (import.meta.env.DEV && import.meta.env.MODE !== "test") {
       pendingSessionRelativePathRef.current = undefined;
-      setOpeningRememberedVaultId("__development_fixture__");
+      vaultSwitcher.setOpeningRememberedVaultId("__development_fixture__");
       void openDevelopmentVault()
         .then(async (snapshot) => {
           activateVaultSnapshot(snapshot);
           await Promise.all([
-            refreshRememberedVaults(),
+            vaultSwitcher.refreshRememberedVaults(),
             trash.refreshTrashEntries(),
           ]);
         })
@@ -1394,7 +1370,7 @@ export function App() {
         })
         .finally(() => {
           sessionRestoreStatusRef.current = "done";
-          setOpeningRememberedVaultId(undefined);
+          vaultSwitcher.setOpeningRememberedVaultId(undefined);
         });
       return;
     }
@@ -1406,14 +1382,14 @@ export function App() {
     }
 
     pendingSessionRelativePathRef.current = session.activeRelativePath;
-    setOpeningRememberedVaultId(session.vaultId);
-    setRememberedVaultsError(undefined);
+    vaultSwitcher.setOpeningRememberedVaultId(session.vaultId);
+    vaultSwitcher.setRememberedVaultsError(undefined);
 
     void openRememberedVault(session.vaultId)
       .then(async (snapshot) => {
         activateVaultSnapshot(snapshot);
         await Promise.all([
-          refreshRememberedVaults(),
+          vaultSwitcher.refreshRememberedVaults(),
           trash.refreshTrashEntries(),
         ]);
       })
@@ -1423,16 +1399,19 @@ export function App() {
       })
       .finally(() => {
         sessionRestoreStatusRef.current = "done";
-        setOpeningRememberedVaultId(undefined);
+        vaultSwitcher.setOpeningRememberedVaultId(undefined);
       });
-    // trash.refreshTrashEntries has a stable identity; see the comment on
-    // activateVaultSnapshot's dependency array above.
+    // trash.refreshTrashEntries and vaultSwitcher's members have stable
+    // identities; see the comment on activateVaultSnapshot's dependency
+    // array above.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     addVaultNotice,
     activateVaultSnapshot,
-    refreshRememberedVaults,
-    rememberedVaultsLoading,
+    vaultSwitcher.refreshRememberedVaults,
+    vaultSwitcher.rememberedVaultsLoading,
+    vaultSwitcher.setOpeningRememberedVaultId,
+    vaultSwitcher.setRememberedVaultsError,
     trash.refreshTrashEntries,
   ]);
 
@@ -2493,64 +2472,6 @@ export function App() {
     );
   }
 
-  async function openVault() {
-    if (vaultSelected && hasUnfinishedEdits()) {
-      addVaultNotice(
-        "Save or close all draft changes before switching vaults.",
-      );
-      return;
-    }
-    setSelectingVault(true);
-
-    try {
-      const snapshot = await selectVault();
-      if (!snapshot) return;
-      activateVaultSnapshot(snapshot);
-      setVaultSwitcherVisible(false);
-      await Promise.all([
-        refreshRememberedVaults(),
-        trash.refreshTrashEntries(),
-      ]);
-    } catch {
-      addVaultNotice(
-        "Vault selection is available in the Anchored desktop app.",
-        { history: { kind: "error" }, persistent: true },
-      );
-    } finally {
-      setSelectingVault(false);
-    }
-  }
-
-  async function createNewVault(name: string) {
-    if (vaultSelected && hasUnfinishedEdits()) {
-      addVaultNotice(
-        "Save or close all draft changes before switching vaults.",
-      );
-      return;
-    }
-    setCreatingVault(true);
-    setCreateVaultError(undefined);
-
-    try {
-      const snapshot = await createVault({ name });
-      if (!snapshot) {
-        setCreateVaultVisible(false);
-        return;
-      }
-      activateVaultSnapshot(snapshot);
-      setCreateVaultVisible(false);
-      setVaultSwitcherVisible(false);
-      await Promise.all([
-        refreshRememberedVaults(),
-        trash.refreshTrashEntries(),
-      ]);
-    } catch (error) {
-      setCreateVaultError(readErrorMessage(error));
-    } finally {
-      setCreatingVault(false);
-    }
-  }
-
   async function createNewFolder(name: string) {
     if (!vaultSelected) {
       addVaultNotice("Open a vault before creating a folder.");
@@ -2769,40 +2690,6 @@ export function App() {
     }
   }
 
-  async function openKnownVault(rememberedVaultId: string) {
-    if (hasUnfinishedEdits()) {
-      addVaultNotice(
-        "Save or close all draft changes before switching vaults.",
-      );
-      return;
-    }
-
-    setOpeningRememberedVaultId(rememberedVaultId);
-    setRememberedVaultsError(undefined);
-    try {
-      const snapshot = await openRememberedVault(rememberedVaultId);
-      activateVaultSnapshot(snapshot);
-      setVaultSwitcherVisible(false);
-      await Promise.all([
-        refreshRememberedVaults(),
-        trash.refreshTrashEntries(),
-      ]);
-    } catch (error) {
-      setRememberedVaultsError(readErrorMessage(error));
-    } finally {
-      setOpeningRememberedVaultId(undefined);
-    }
-  }
-
-  async function forgetKnownVault(rememberedVaultId: string) {
-    setRememberedVaultsError(undefined);
-    try {
-      setRememberedVaults(await forgetVault(rememberedVaultId));
-    } catch (error) {
-      setRememberedVaultsError(readErrorMessage(error));
-    }
-  }
-
   function toggleFolder(folder: string) {
     sidebar.setExpandedFolders((currentFolders) => {
       const nextFolders = new Set(currentFolders);
@@ -2869,7 +2756,7 @@ export function App() {
         canCreateNote={vaultSelected}
         notificationCount={visibleNotificationHistory.length}
         saveState={activeDocument ? saveState : undefined}
-        selectingVault={selectingVault}
+        selectingVault={vaultSwitcher.selectingVault}
         sidebarOpen={sidebar.sidebarOpen}
         vaultSelected={vaultSelected}
         vaultName={vaultName}
@@ -2881,14 +2768,7 @@ export function App() {
           setVaultSearchVisible(true);
         }}
         onOpenSettings={() => setSettingsVisible(true)}
-        onSelectVault={() => {
-          if (!vaultSelected && rememberedVaults.length === 0) {
-            void openVault();
-            return;
-          }
-          setVaultSwitcherVisible(true);
-          void refreshRememberedVaults();
-        }}
+        onSelectVault={vaultSwitcher.openSwitcher}
         onToggleSidebar={() => sidebar.setSidebarOpen((isOpen) => !isOpen)}
       />
       <div className={`workspace${sidebar.sidebarOpen ? " sidebar-open" : ""}`}>
@@ -2995,8 +2875,8 @@ export function App() {
           }}
           onCloseDocument={closeDocument}
           onCreateVault={() => {
-            setCreateVaultError(undefined);
-            setCreateVaultVisible(true);
+            vaultSwitcher.setCreateVaultError(undefined);
+            vaultSwitcher.setCreateVaultVisible(true);
           }}
           onDocumentChange={updateDocumentContent}
           onCursorPosition={setCursorPosition}
@@ -3010,7 +2890,7 @@ export function App() {
               setMoveDocumentVisible(true);
             }
           }}
-          onOpenVault={() => void openVault()}
+          onOpenVault={() => void vaultSwitcher.openVault()}
           onOpenWikilink={openWikilink}
           onRetryDocument={() => {
             if (activeDocument) void selectDocument(activeDocument.id);
@@ -3352,39 +3232,39 @@ export function App() {
           }}
         />
       ) : null}
-      {vaultSwitcherVisible ? (
+      {vaultSwitcher.vaultSwitcherVisible ? (
         <VaultSwitcher
           currentVaultId={vaultId}
-          error={rememberedVaultsError}
-          loading={rememberedVaultsLoading}
-          openingVaultId={openingRememberedVaultId}
-          vaults={rememberedVaults}
-          onClose={() => setVaultSwitcherVisible(false)}
+          error={vaultSwitcher.rememberedVaultsError}
+          loading={vaultSwitcher.rememberedVaultsLoading}
+          openingVaultId={vaultSwitcher.openingRememberedVaultId}
+          vaults={vaultSwitcher.rememberedVaults}
+          onClose={() => vaultSwitcher.setVaultSwitcherVisible(false)}
           onCreateVault={() => {
-            setCreateVaultError(undefined);
-            setVaultSwitcherVisible(false);
-            setCreateVaultVisible(true);
+            vaultSwitcher.setCreateVaultError(undefined);
+            vaultSwitcher.setVaultSwitcherVisible(false);
+            vaultSwitcher.setCreateVaultVisible(true);
           }}
           onForget={(rememberedVaultId) =>
-            void forgetKnownVault(rememberedVaultId)
+            void vaultSwitcher.forgetKnownVault(rememberedVaultId)
           }
-          onOpenAnother={() => void openVault()}
+          onOpenAnother={() => void vaultSwitcher.openVault()}
           onOpenRemembered={(rememberedVaultId) =>
-            void openKnownVault(rememberedVaultId)
+            void vaultSwitcher.openKnownVault(rememberedVaultId)
           }
         />
       ) : null}
-      {createVaultVisible ? (
+      {vaultSwitcher.createVaultVisible ? (
         <CreateVaultDialog
-          creating={creatingVault}
-          error={createVaultError}
+          creating={vaultSwitcher.creatingVault}
+          error={vaultSwitcher.createVaultError}
           onClose={() => {
-            if (!creatingVault) {
-              setCreateVaultError(undefined);
-              setCreateVaultVisible(false);
+            if (!vaultSwitcher.creatingVault) {
+              vaultSwitcher.setCreateVaultError(undefined);
+              vaultSwitcher.setCreateVaultVisible(false);
             }
           }}
-          onCreate={(name) => void createNewVault(name)}
+          onCreate={(name) => void vaultSwitcher.createNewVault(name)}
         />
       ) : null}
       {missingWikilink.missingWikilinkTarget ? (
