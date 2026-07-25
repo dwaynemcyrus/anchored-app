@@ -4,6 +4,8 @@ import type { VaultSnapshot } from "../lib/tauri/vault";
 import {
   applyVaultPatch,
   documentsFromVault,
+  folderDisplayName,
+  folderName,
   mergeDocumentsFromVault,
   mergeFolderPaths,
   newNoteFilename,
@@ -233,5 +235,12 @@ describe("vault documents", () => {
     const current = ["Notes"];
 
     expect(mergeFolderPaths(current, [])).toBe(current);
+  });
+
+  it("labels the vault root and nested folders by their last segment", () => {
+    expect(folderDisplayName("")).toBe("Vault root");
+    expect(folderDisplayName("Notes/Archive")).toBe("Notes/Archive");
+    expect(folderName("Notes/Archive")).toBe("Archive");
+    expect(folderName("Notes")).toBe("Notes");
   });
 });

@@ -240,3 +240,11 @@ export function mergeFolderPaths(
       left.localeCompare(right, undefined, { sensitivity: "base" }),
   );
 }
+
+export function folderDisplayName(folderPath: string): string {
+  return folderPath || "Vault root";
+}
+
+export function folderName(folderPath: string): string {
+  return folderPath.split("/").pop() ?? folderPath;
+}
