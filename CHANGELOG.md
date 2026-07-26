@@ -6,6 +6,14 @@ Git commit. The format follows [Keep a Changelog], and releases follow
 
 ## [Unreleased]
 
+### Added
+
+- An interactive design prototype for a minimal four-pane shell — navigation,
+  note list, editor, and inspector — with drag-resizable panes and a no-vault
+  state that shows a wordmark, settings, and a call to action rather than
+  disabled controls. It lives at `docs/prototypes/four-pane-shell.html` and is
+  a design artifact only: the application interface is unchanged.
+
 ## [0.1.6-alpha] - 2026-07-26
 
 ### Fixed
