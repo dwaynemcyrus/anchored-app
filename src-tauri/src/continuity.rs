@@ -656,8 +656,7 @@ fn load_and_recover_trash(root: &Path) -> Result<(PathBuf, TrashIndex), VaultErr
     }
     ensure_normal_directory(&trash_directory)?;
     let index_path = trash_directory.join(TRASH_INDEX_NAME);
-    let mut index = load_trash_index(&index_path)?;
-    let mut changed = false;
+    let (mut index, mut changed) = load_trash_index(&trash_directory, &index_path)?;
     let mut recovered = Vec::with_capacity(index.entries.len());
 
     for mut entry in index.entries {
@@ -733,14 +732,17 @@ fn ensure_normal_directory(path: &Path) -> Result<(), VaultError> {
     }
 }
 
-fn load_trash_index(path: &Path) -> Result<TrashIndex, VaultError> {
+fn load_trash_index(trash_directory: &Path, path: &Path) -> Result<(TrashIndex, bool), VaultError> {
     let bytes = match fs::read(path) {
         Ok(bytes) => bytes,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-            return Ok(TrashIndex {
-                entries: Vec::new(),
-                version: 1,
-            })
+            return Ok((
+                TrashIndex {
+                    entries: Vec::new(),
+                    version: 1,
+                },
+                false,
+            ))
         }
         Err(error) => {
             return Err(VaultError::io(
@@ -758,15 +760,47 @@ fn load_trash_index(path: &Path) -> Result<TrashIndex, VaultError> {
     if index.version != 1 || index.entries.len() > MAX_TRASH_ENTRIES {
         return Err(VaultError::state("The Anchored trash index is invalid."));
     }
-    let mut ids = std::collections::HashSet::new();
     if index
         .entries
         .iter()
-        .any(|entry| validate_stored_trash_entry(entry).is_err() || !ids.insert(entry.id.as_str()))
+        .any(|entry| validate_stored_trash_shape(entry).is_err())
     {
         return Err(VaultError::state("The Anchored trash index is invalid."));
     }
-    Ok(index)
+    // Entries in a superseded shape (ULID identifiers, pre-dating the
+    // UUIDv7 switch). Re-mint each one's id rather than fail, so trash
+    // written by an earlier build still opens; the backing file moves
+    // under the new id alongside it.
+    let mut changed = false;
+    let mut entries = Vec::with_capacity(index.entries.len());
+    for mut entry in index.entries {
+        if !is_canonical_note_id(&entry.id) {
+            let old_path = trash_path(trash_directory, &entry);
+            let new_id = Uuid::now_v7().to_string();
+            let new_path = if entry.is_folder {
+                trash_folder_path(trash_directory, &new_id)
+            } else {
+                trash_file_path(trash_directory, &new_id)
+            };
+            fs::rename(&old_path, &new_path).map_err(|error| {
+                VaultError::io("A legacy Trash entry could not be re-minted", error)
+            })?;
+            entry.id = new_id;
+            changed = true;
+        }
+        entries.push(entry);
+    }
+    let mut ids = std::collections::HashSet::new();
+    if entries.iter().any(|entry| !ids.insert(entry.id.clone())) {
+        return Err(VaultError::state("The Anchored trash index is invalid."));
+    }
+    Ok((
+        TrashIndex {
+            entries,
+            version: index.version,
+        },
+        changed,
+    ))
 }
 
 fn write_trash_index(trash_directory: &Path, index: &TrashIndex) -> Result<(), VaultError> {
@@ -780,6 +814,10 @@ fn write_trash_index(trash_directory: &Path, index: &TrashIndex) -> Result<(), V
 
 fn validate_stored_trash_entry(entry: &StoredTrashEntry) -> Result<(), VaultError> {
     validate_vault_id(&entry.id)?;
+    validate_stored_trash_shape(entry)
+}
+
+fn validate_stored_trash_shape(entry: &StoredTrashEntry) -> Result<(), VaultError> {
     let original = Path::new(&entry.original_path);
     if entry.is_folder {
         validate_folder_path(original)?;
@@ -1332,7 +1370,8 @@ mod tests {
         let trashed = move_note_to_trash(vault.path(), "Note.md", 100).expect("trash note");
         let trash_directory = vault.path().join(TRASH_DIRECTORY_NAME);
         let index_path = trash_directory.join("index.json");
-        let mut index = load_trash_index(&index_path).expect("load trash index");
+        let (mut index, _) =
+            load_trash_index(&trash_directory, &index_path).expect("load trash index");
         index.entries[0].state = TrashEntryState::Moving;
         write_trash_index(&trash_directory, &index).expect("write moving phase");
 
@@ -1343,12 +1382,48 @@ mod tests {
 
         let trash_file = trash_file_path(&trash_directory, &trashed.id);
         fs::rename(&trash_file, &source).expect("simulate restored file installation");
-        let mut index = load_trash_index(&index_path).expect("reload trash index");
+        let (mut index, _) =
+            load_trash_index(&trash_directory, &index_path).expect("reload trash index");
         index.entries[0].state = TrashEntryState::Restoring;
         write_trash_index(&trash_directory, &index).expect("write restoring phase");
 
         assert!(list_trash_entries(vault.path()).unwrap().is_empty());
         assert_eq!(fs::read_to_string(source).unwrap(), "# Original");
+    }
+
+    #[test]
+    fn remints_a_superseded_ulid_trash_entry() {
+        let vault = tempdir().expect("create fixture vault");
+        let trash_directory = vault.path().join(TRASH_DIRECTORY_NAME);
+        fs::create_dir(&trash_directory).expect("create trash directory");
+        let legacy_id = "01KY0ZW4AFRR9GJ0K2JR150B5R";
+        fs::write(trash_directory.join(format!("{legacy_id}.md")), "# Trashed")
+            .expect("write legacy trashed note");
+        fs::write(
+            trash_directory.join("index.json"),
+            format!(
+                r#"{{"entries":[{{"id":"{legacy_id}","isFolder":false,"name":"Note.md","originalPath":"Note.md","state":"active","trashedAt":100}}],"version":1}}"#
+            ),
+        )
+        .expect("write legacy trash index");
+
+        let entries = list_trash_entries(vault.path()).expect("list trash with legacy id");
+
+        assert_eq!(entries.len(), 1);
+        assert_ne!(entries[0].id, legacy_id);
+        assert_eq!(entries[0].id.len(), 36);
+        assert!(!trash_directory.join(format!("{legacy_id}.md")).exists());
+        assert!(trash_directory
+            .join(format!("{}.md", entries[0].id))
+            .exists());
+
+        let restored = restore_note_from_trash(vault.path(), &entries[0].id)
+            .expect("restore re-minted trash entry");
+        assert_eq!(restored.original_path, "Note.md");
+        assert_eq!(
+            fs::read_to_string(vault.path().join("Note.md")).unwrap(),
+            "# Trashed"
+        );
     }
 
     #[cfg(unix)]
