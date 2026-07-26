@@ -6,6 +6,17 @@ Git commit. The format follows [Keep a Changelog], and releases follow
 
 ## [Unreleased]
 
+## [0.1.6-alpha] - 2026-07-26
+
+### Fixed
+
+- Moving a note or folder to Trash could fail with "The Anchored trash index
+  is invalid" in a vault that had trashed items from before Trash identities
+  moved to UUIDv7. Those older entries are now re-minted automatically
+  instead of blocking every Trash action.
+- Removed a stray light gutter bar along the left edge of the note editor,
+  left over from the frontmatter linter's default light-theme styling.
+
 ## [0.1.5-alpha] - 2026-07-26
 
 ### Added
