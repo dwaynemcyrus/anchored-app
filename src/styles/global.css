@@ -885,6 +885,12 @@ input:focus-visible,
   caret-color: var(--color-text);
 }
 
+.markdown-editor .cm-gutters {
+  border: none;
+  background: transparent;
+  color: var(--color-text-muted);
+}
+
 .markdown-editor .cm-line {
   padding: 0;
 }
