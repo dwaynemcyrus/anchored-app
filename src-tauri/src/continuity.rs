@@ -1397,11 +1397,8 @@ mod tests {
         let trash_directory = vault.path().join(TRASH_DIRECTORY_NAME);
         fs::create_dir(&trash_directory).expect("create trash directory");
         let legacy_id = "01KY0ZW4AFRR9GJ0K2JR150B5R";
-        fs::write(
-            trash_directory.join(format!("{legacy_id}.md")),
-            "# Trashed",
-        )
-        .expect("write legacy trashed note");
+        fs::write(trash_directory.join(format!("{legacy_id}.md")), "# Trashed")
+            .expect("write legacy trashed note");
         fs::write(
             trash_directory.join("index.json"),
             format!(
