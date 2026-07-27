@@ -278,22 +278,253 @@ input:focus-visible,
   content: "";
 }
 
+/* Four panes: navigation, note list, editor, inspector. The three side widths
+   are written by usePaneWidthVariables from the rendered widths, so a drag
+   costs one style write per frame instead of a re-render. */
 .workspace {
-  --file-rail-width: clamp(240px, 23.84vw, 378px);
+  --pane-navigation-width: 240px;
+  --pane-list-width: 300px;
+  --pane-inspector-width: 280px;
   position: relative;
   display: grid;
   min-width: 0;
   min-height: 0;
-  grid-template-columns: var(--file-rail-width) minmax(0, 1fr);
+  grid-template-columns:
+    var(--pane-navigation-width) var(--pane-list-width)
+    minmax(0, 1fr) var(--pane-inspector-width);
+}
+
+/* A pane closed by the ladder or by a narrow window keeps its grid column so
+   the column-to-pane mapping never shifts; it just has no width. */
+[data-pane][data-collapsed="true"] {
+  overflow: hidden;
+  border-right-width: 0;
+  visibility: hidden;
+}
+
+body[data-resizing-pane="true"] {
+  cursor: col-resize;
+  user-select: none;
+}
+
+/* The visible rule stays one pixel; only the grab target is wider. */
+.pane-splitter {
+  position: absolute;
+  z-index: 5;
+  top: 0;
+  right: -5px;
+  bottom: 0;
+  width: 9px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: col-resize;
+  touch-action: none;
+}
+
+.pane-splitter::after {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 4px;
+  width: 1px;
+  background: transparent;
+  content: "";
+  transition: background 140ms ease;
+}
+
+.pane-splitter:hover::after {
+  background: var(--color-focus);
+}
+
+/* Focus and drag widen the rule to the anchor line's two pixels, which the
+   design reference already defines as the focused-item cue. */
+.pane-splitter:focus-visible::after,
+.pane-splitter:active::after {
+  width: 2px;
+  background: var(--color-focus);
+}
+
+.pane-splitter:focus-visible {
+  outline: none;
+}
+
+[data-pane][data-collapsed="true"] .pane-splitter {
+  display: none;
 }
 
 .file-rail {
+  position: relative;
   display: flex;
   min-width: 0;
   min-height: 0;
   flex-direction: column;
   border-right: 1px solid var(--color-rule);
   background: var(--color-canvas);
+}
+
+/* ---------------------------------------------------------------- note list */
+
+.note-list {
+  position: relative;
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  flex-direction: column;
+  border-right: 1px solid var(--color-rule);
+  background: var(--color-canvas);
+}
+
+.note-list__header {
+  display: flex;
+  min-height: 44px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 8px 0 14px;
+  border-bottom: 1px solid var(--color-rule);
+  gap: 8px;
+}
+
+.note-list__title {
+  overflow: hidden;
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.note-list__meta {
+  display: flex;
+  flex: none;
+  align-items: center;
+  color: var(--color-text-subtle);
+  font-size: 11px;
+  gap: 4px;
+}
+
+.note-list__sort {
+  position: relative;
+}
+
+.note-list__sort-button {
+  display: flex;
+  min-height: 24px;
+  align-items: center;
+  padding: 0 6px;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--color-text-muted);
+  cursor: pointer;
+  font-size: 11px;
+  gap: 4px;
+}
+
+.note-list__sort-button:hover {
+  background: var(--color-row-hover);
+  color: var(--color-text);
+}
+
+.note-list__sort-button svg {
+  width: 12px;
+  height: 12px;
+}
+
+.note-list__sort-menu {
+  position: absolute;
+  top: 28px;
+  right: 0;
+  left: auto;
+}
+
+.note-list__sort-menu button[aria-checked="true"] {
+  color: var(--color-text);
+}
+
+.note-list__body {
+  min-height: 0;
+  flex: 1;
+  overflow-y: auto;
+}
+
+.note-list__rows {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.note-list__empty {
+  padding: 32px 16px;
+  color: var(--color-text-subtle);
+  font-size: 12px;
+  text-align: center;
+}
+
+.note-row {
+  position: relative;
+  display: block;
+  width: 100%;
+  padding: 11px 14px 12px;
+  border: 0;
+  border-bottom: 1px solid var(--color-rule);
+  background: transparent;
+  cursor: pointer;
+  text-align: left;
+}
+
+.note-row:hover {
+  background: var(--color-row-hover);
+}
+
+.note-row.is-active {
+  background: var(--color-row-active);
+}
+
+/* The anchor line: the one signature motif, marking the active row here and
+   in the navigation tree, and nowhere else. */
+.note-row.is-active::before {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 2px;
+  background: var(--color-focus);
+  content: "";
+}
+
+.note-row__title {
+  display: block;
+  overflow: hidden;
+  color: var(--color-text);
+  font-size: 14px;
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.note-row__excerpt {
+  display: -webkit-box;
+  overflow: hidden;
+  margin-top: 3px;
+  color: var(--color-text-muted);
+  font-size: 12.5px;
+  line-height: 1.45;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.note-row[data-excerpt-lines="one"] .note-row__excerpt {
+  -webkit-line-clamp: 1;
+}
+
+.note-row__meta {
+  display: block;
+  margin-top: 6px;
+  overflow: hidden;
+  color: var(--color-text-subtle);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .file-rail__tools {
