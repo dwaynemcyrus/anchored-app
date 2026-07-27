@@ -20,7 +20,6 @@ use tauri_plugin_dialog::DialogExt;
 use crate::continuity::{
     current_time_millis, ensure_no_hidden_descendants, ensure_vault_identity,
     forget_vault as forget_registered_vault, is_internal_component, is_internal_relative_path,
-    is_trash_component, is_vault_trash_relative_path,
     list_remembered_vaults as load_remembered_vaults, list_trash_entries, move_folder_to_trash,
     move_note_to_trash, registry_path, remember_vault, remembered_vault_root,
     restore_folder_from_trash, restore_note_from_trash, RememberedVault, TrashEntry,
@@ -762,9 +761,6 @@ fn vault_tree_signature(root: &Path) -> Result<u64, VaultError> {
             if is_internal_component(&entry.file_name()) {
                 continue;
             }
-            if depth == 0 && is_trash_component(&entry.file_name()) {
-                continue;
-            }
             visited_entries += 1;
             if visited_entries > MAX_VAULT_ENTRIES {
                 return Err(VaultError::too_large());
@@ -1306,10 +1302,7 @@ enum VaultPathEntry {
 /// from "invalid" before touching the filesystem.
 fn candidate_vault_path(root: &Path, relative_path: &str) -> Result<PathBuf, VaultError> {
     let requested = Path::new(relative_path);
-    if relative_path.trim().is_empty()
-        || is_internal_relative_path(requested)
-        || is_vault_trash_relative_path(requested)
-    {
+    if relative_path.trim().is_empty() || is_internal_relative_path(requested) {
         return Err(VaultError::invalid_file(
             "Only relative vault paths can be rescanned.",
         ));
@@ -2272,9 +2265,9 @@ fn resolve_vault_directory(root: &Path, relative_path: &str) -> Result<PathBuf, 
     }
 
     let requested = Path::new(relative_path);
-    if is_internal_relative_path(requested) || is_vault_trash_relative_path(requested) {
+    if is_internal_relative_path(requested) {
         return Err(VaultError::invalid_file(
-            "The system Trash folder is reserved for Anchored data.",
+            "The hidden Anchored directory is reserved for Anchored data.",
         ));
     }
 
@@ -2628,9 +2621,6 @@ fn walk_vault_subtree(
 
         for entry in entries {
             if is_internal_component(&entry.file_name()) {
-                continue;
-            }
-            if depth == 0 && is_trash_component(&entry.file_name()) {
                 continue;
             }
             *visited_entries += 1;
@@ -3506,7 +3496,6 @@ fn reconcile_external_markdown_move(
         if path.as_os_str().is_empty()
             || !is_markdown(path)
             || is_internal_relative_path(path)
-            || is_vault_trash_relative_path(path)
             || path
                 .components()
                 .any(|component| !matches!(component, Component::Normal(_)))
@@ -4287,9 +4276,9 @@ fn resolve_new_vault_markdown_file(
     let relative = candidate.strip_prefix(&root).map_err(|_| {
         VaultError::invalid_file("New notes must be saved inside the selected vault.")
     })?;
-    if is_internal_relative_path(relative) || is_vault_trash_relative_path(relative) {
+    if is_internal_relative_path(relative) {
         return Err(VaultError::invalid_file(
-            "The system Trash folder is reserved for Anchored data.",
+            "The hidden Anchored directory is reserved for Anchored data.",
         ));
     }
 
@@ -4307,11 +4296,7 @@ pub(crate) fn resolve_vault_markdown_file(
     let root = canonical_vault_root(root)?;
     let requested = Path::new(relative_path);
 
-    if relative_path.is_empty()
-        || !is_markdown(requested)
-        || is_internal_relative_path(requested)
-        || is_vault_trash_relative_path(requested)
-    {
+    if relative_path.is_empty() || !is_markdown(requested) || is_internal_relative_path(requested) {
         return Err(VaultError::invalid_file(
             "Only relative Markdown file paths can be opened.",
         ));
@@ -4506,7 +4491,6 @@ mod tests {
     fn scans_nested_markdown_in_stable_order() {
         let vault = tempdir().expect("create fixture vault");
         fs::create_dir(vault.path().join("Notes")).expect("create Notes folder");
-        fs::create_dir(vault.path().join("trash")).expect("create system Trash folder");
         fs::write(vault.path().join("Zulu.md"), "# Zulu").expect("write root note");
         fs::write(
             vault.path().join("Notes/Alpha.MD"),
@@ -4514,7 +4498,6 @@ mod tests {
         )
         .expect("write nested note");
         fs::write(vault.path().join("Notes/ignore.txt"), "ignored").expect("write ignored file");
-        fs::write(vault.path().join("trash/opaque.md"), "ignored").expect("write Trash file");
 
         let mut snapshot = scan_vault(vault.path()).expect("scan fixture vault");
         enrich_vault_metadata(vault.path(), &mut snapshot.files).expect("index note metadata");

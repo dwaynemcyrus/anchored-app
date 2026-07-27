@@ -6,7 +6,7 @@ Git commit. The format follows [Keep a Changelog], and releases follow
 
 ## [Unreleased]
 
-## [0.1.7-alpha] - 2026-07-27
+## [0.1.8-alpha] - 2026-07-27
 
 ### Changed
 
@@ -42,6 +42,20 @@ Git commit. The format follows [Keep a Changelog], and releases follow
   work.
 - A reference list of interface capabilities Anchored lacks against the
   applications named in the overview, at `docs/design/ui-gaps.md`.
+
+## [0.1.7-alpha] - 2026-07-27
+
+### Fixed
+
+- Trash moves back under the hidden `.anchored/` directory, at
+  `.anchored/trash/` with `.anchored/trash/index.json` as its recovery
+  index, instead of the visible vault-root `trash/` folder used since
+  0.1.3-alpha. That vault-root folder left trashed notes sitting alongside
+  the user's own files rather than tucked away with Anchored's other
+  internal state, and reserved the name `trash` at the vault root so it
+  could no longer be used for an ordinary folder. An existing vault-root
+  `trash/` folder is migrated back to `.anchored/trash/` automatically the
+  next time Trash is opened or used.
 
 ## [0.1.6-alpha] - 2026-07-26
 

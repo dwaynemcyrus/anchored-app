@@ -5,7 +5,6 @@ use std::{
     time::{Duration, Instant},
 };
 
-use crate::continuity::is_vault_trash_relative_path;
 use notify::{
     event::{CreateKind, ModifyKind, RemoveKind, RenameMode},
     Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher,
@@ -197,9 +196,6 @@ fn relative_visible_path(root: &Path, path: &Path) -> Option<String> {
     {
         return None;
     }
-    if is_vault_trash_relative_path(relative) {
-        return None;
-    }
     relative.to_str().map(|value| value.replace('\\', "/"))
 }
 
@@ -224,7 +220,7 @@ mod tests {
             None
         );
         assert_eq!(
-            relative_visible_path(root, Path::new("/vault/trash/opaque.md")),
+            relative_visible_path(root, Path::new("/vault/.anchored/trash/opaque.md")),
             None
         );
     }
