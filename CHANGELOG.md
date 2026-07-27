@@ -6,6 +6,14 @@ Git commit. The format follows [Keep a Changelog], and releases follow
 
 ## [Unreleased]
 
+### Changed
+
+- Trash moves back under the hidden `.anchored/` directory
+  (`.anchored/trash/`, with `.anchored/trash/index.json` as its recovery
+  index), instead of the vault-root `trash/` folder used since 0.1.4-alpha.
+  An existing vault-root `trash/` folder is migrated automatically the next
+  time Trash is used.
+
 ## [0.1.6-alpha] - 2026-07-26
 
 ### Fixed
