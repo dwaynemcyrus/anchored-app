@@ -1,6 +1,5 @@
 import {
   CheckIcon,
-  MenuIcon,
   NewFileIcon,
   NotificationIcon,
   ScratchpadIcon,
@@ -8,12 +7,13 @@ import {
   SettingsIcon,
 } from "./Icons";
 import { IconButton } from "./IconButton";
+import type { LeftPaneStage } from "../paneLayout";
 
 type TitleBarProps = {
-  canCreateNote: boolean;
+  inspectorOpen: boolean;
+  leftStage: LeftPaneStage;
   saveState?: "saved" | "unsaved" | "saving" | "conflict" | "error";
   selectingVault: boolean;
-  sidebarOpen: boolean;
   notificationCount: number;
   vaultName: string;
   vaultSelected: boolean;
@@ -23,14 +23,40 @@ type TitleBarProps = {
   onOpenSearch: () => void;
   onOpenSettings: () => void;
   onSelectVault: () => void;
-  onToggleSidebar: () => void;
+  onCycleLeftPanes: () => void;
+  onToggleInspector: () => void;
+};
+
+function LeftPanesIcon() {
+  return (
+    <svg aria-hidden="true" viewBox="0 0 24 24">
+      <rect height="16" rx="2" width="18" x="3" y="4" />
+      <path d="M9 4v16" />
+    </svg>
+  );
+}
+
+function InspectorIcon() {
+  return (
+    <svg aria-hidden="true" viewBox="0 0 24 24">
+      <rect height="16" rx="2" width="18" x="3" y="4" />
+      <path d="M15 4v16" />
+    </svg>
+  );
+}
+
+// Named for the pane the next click moves, so the control says what it does.
+const leftStageLabels: Record<LeftPaneStage, string> = {
+  0: "Show note list",
+  1: "Show or hide the file navigator",
+  2: "Hide file navigator",
 };
 
 export function TitleBar({
-  canCreateNote,
+  inspectorOpen,
+  leftStage,
   saveState,
   selectingVault,
-  sidebarOpen,
   notificationCount,
   vaultName,
   vaultSelected,
@@ -40,100 +66,105 @@ export function TitleBar({
   onOpenSearch,
   onOpenSettings,
   onSelectVault,
-  onToggleSidebar,
+  onCycleLeftPanes,
+  onToggleInspector,
 }: TitleBarProps) {
   return (
     <header className="title-bar">
       <div className="title-bar__identity">
-        <IconButton
-          aria-pressed={sidebarOpen}
-          className="sidebar-toggle"
-          label={sidebarOpen ? "Close file explorer" : "Open file explorer"}
-          onClick={onToggleSidebar}
-        >
-          <MenuIcon />
-        </IconButton>
+        {/* With no vault there is nothing to navigate, so the pane controls and
+            the vault selector are absent rather than disabled. */}
+        {vaultSelected ? (
+          <IconButton
+            className="pane-toggle"
+            label={leftStageLabels[leftStage]}
+            onClick={onCycleLeftPanes}
+          >
+            <LeftPanesIcon />
+          </IconButton>
+        ) : null}
         <span className="wordmark">Anchored</span>
-        <span aria-hidden="true" className="title-bar__rule" />
-        <button
-          aria-label={
-            vaultSelected ? `Switch vault: ${vaultName}` : "Open vault"
-          }
-          className="vault-selector"
-          disabled={selectingVault}
-          type="button"
-          onClick={onSelectVault}
-        >
-          {selectingVault
-            ? "Opening…"
-            : vaultSelected
-              ? vaultName
-              : "Open vault"}
-          <span aria-hidden="true">⌄</span>
-        </button>
-      </div>
-      <div className="title-bar__actions">
-        {saveState ? (
+        {vaultSelected ? (
           <>
-            <span
-              className={`save-status save-status--${saveState}`}
-              role="status"
-            >
-              {saveState === "saved" ? <CheckIcon /> : null}
-              {saveState === "saved"
-                ? "Saved"
-                : saveState === "unsaved"
-                  ? "Unsaved"
-                  : saveState === "saving"
-                    ? "Saving…"
-                    : saveState === "conflict"
-                      ? "Conflict"
-                      : "Save failed"}
-            </span>
             <span aria-hidden="true" className="title-bar__rule" />
+            <button
+              aria-label={`Switch vault: ${vaultName}`}
+              className="vault-selector"
+              disabled={selectingVault}
+              type="button"
+              onClick={onSelectVault}
+            >
+              {selectingVault ? "Opening…" : vaultName}
+              <span aria-hidden="true">⌄</span>
+            </button>
           </>
         ) : null}
-        <span className="notification-history-button">
-          <IconButton
-            label={`Open notification history${
-              notificationCount > 0 ? ` (${notificationCount})` : ""
-            }`}
-            onClick={onOpenNotifications}
-          >
-            <NotificationIcon />
-          </IconButton>
-          {notificationCount > 0 ? (
-            <span aria-hidden="true" className="notification-history-count">
-              {notificationCount > 99 ? "99+" : notificationCount}
+      </div>
+
+      <div className="title-bar__actions">
+        {vaultSelected ? (
+          <>
+            {saveState ? (
+              <>
+                <span
+                  className={`save-status save-status--${saveState}`}
+                  role="status"
+                >
+                  {saveState === "saved" ? <CheckIcon /> : null}
+                  {saveState === "saved"
+                    ? "Saved"
+                    : saveState === "unsaved"
+                      ? "Unsaved"
+                      : saveState === "saving"
+                        ? "Saving…"
+                        : saveState === "conflict"
+                          ? "Conflict"
+                          : "Save failed"}
+                </span>
+                <span aria-hidden="true" className="title-bar__rule" />
+              </>
+            ) : null}
+            <span className="notification-history-button">
+              <IconButton
+                label={`Open notification history${
+                  notificationCount > 0 ? ` (${notificationCount})` : ""
+                }`}
+                onClick={onOpenNotifications}
+              >
+                <NotificationIcon />
+              </IconButton>
+              {notificationCount > 0 ? (
+                <span aria-hidden="true" className="notification-history-count">
+                  {notificationCount > 99 ? "99+" : notificationCount}
+                </span>
+              ) : null}
             </span>
-          ) : null}
-        </span>
-        <IconButton label="Search vault" onClick={onOpenSearch}>
-          <SearchIcon />
-        </IconButton>
-        <IconButton
-          disabled={!canCreateNote}
-          label={
-            canCreateNote
-              ? "Open Scratchpad"
-              : "Open a vault before using Scratchpad"
-          }
-          onClick={onOpenScratchpad}
-        >
-          <ScratchpadIcon />
-        </IconButton>
+            <IconButton label="Search vault" onClick={onOpenSearch}>
+              <SearchIcon />
+            </IconButton>
+            <IconButton label="Open Scratchpad" onClick={onOpenScratchpad}>
+              <ScratchpadIcon />
+            </IconButton>
+            <IconButton label="New note" onClick={onCreateNote}>
+              <NewFileIcon />
+            </IconButton>
+          </>
+        ) : null}
+
         <IconButton label="Open settings" onClick={onOpenSettings}>
           <SettingsIcon />
         </IconButton>
-        <IconButton
-          disabled={!canCreateNote}
-          label={
-            canCreateNote ? "New note" : "Open a vault before creating a note"
-          }
-          onClick={onCreateNote}
-        >
-          <NewFileIcon />
-        </IconButton>
+
+        {vaultSelected ? (
+          <IconButton
+            aria-pressed={inspectorOpen}
+            className="pane-toggle"
+            label={inspectorOpen ? "Hide inspector" : "Show inspector"}
+            onClick={onToggleInspector}
+          >
+            <InspectorIcon />
+          </IconButton>
+        ) : null}
       </div>
     </header>
   );

@@ -14,7 +14,6 @@ import { displayFileName } from "../fileTypes";
 import type { WikilinkCandidate } from "../linkCandidates";
 import { lintFrontmatter } from "../markdown/frontmatterLint";
 import type { MarkdownSettings } from "../markdown/types";
-import { Backlinks } from "./Backlinks";
 import type { EditorCursorPosition } from "./MarkdownEditor";
 
 const MarkdownEditor = lazy(() => import("./MarkdownEditor"));
@@ -23,7 +22,6 @@ const MarkdownPreview = lazy(() => import("./MarkdownPreview"));
 type EditorSurfaceProps = {
   document?: AnchoredDocument;
   findRequest: number;
-  backlinks: AnchoredDocument[];
   hasDocuments: boolean;
   loadState:
     | { status: "idle" }
@@ -58,7 +56,6 @@ type EditorSurfaceProps = {
 export function EditorSurface({
   document,
   findRequest,
-  backlinks,
   hasDocuments,
   loadState,
   vaultName,
@@ -534,11 +531,6 @@ export function EditorSurface({
             </div>
           </>
         )}
-        <Backlinks
-          documents={backlinks}
-          onOpen={onOpenLinkedDocument}
-          showFileExtensions={markdownSettings.showFileExtensions}
-        />
       </section>
     </main>
   );

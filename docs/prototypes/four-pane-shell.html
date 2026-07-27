@@ -1,0 +1,3589 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Anchored — four-pane shell prototype</title>
+    <style>
+      /* Tokens copied verbatim from src/styles/global.css so the prototype and
+         the app cannot drift apart. Do not introduce a colour that is not here. */
+      :root {
+        --color-canvas: #000;
+        --color-text: #f5f5f5;
+        --color-text-muted: #8a8a8a;
+        --color-text-subtle: #626262;
+        --color-rule: #242424;
+        --color-row-hover: #101010;
+        --color-row-active: #151515;
+        --color-focus: #fff;
+        --color-danger: #ffb4ab;
+        --color-success: #82c7a5;
+        --color-menu: #111;
+        --color-menu-border: #333;
+        --color-surface: #080808;
+        --color-surface-alt: #101010;
+        --syntax-meta: #8d8d8d;
+        --syntax-link: #8db7ff;
+        --syntax-property: #d7a85b;
+        --syntax-string: #b9d69c;
+
+        --font-ui: -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
+        --font-doc: ui-serif, "New York", Charter, Georgia, serif;
+        --font-mono: "SFMono-Regular", Consolas, monospace;
+
+        /* Pane widths. Dragging writes straight to these custom properties
+           rather than to component state — that is what keeps the drag at
+           60fps on the 2015 MacBook Pro baseline. */
+        --nav-w: 240px;
+        --list-w: 300px;
+        --inspector-w: 280px;
+      }
+
+      /* Registering the widths as real lengths is what lets them be
+         transitioned when a pane opens or closes. Unsupported engines (Safari
+         below 16.4, so macOS 12's WebKit) simply snap instead — no fallback
+         needed. */
+      @property --nav-w {
+        syntax: "<length>";
+        inherits: true;
+        initial-value: 240px;
+      }
+
+      @property --list-w {
+        syntax: "<length>";
+        inherits: true;
+        initial-value: 300px;
+      }
+
+      @property --inspector-w {
+        syntax: "<length>";
+        inherits: true;
+        initial-value: 280px;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html,
+      body {
+        height: 100%;
+        margin: 0;
+      }
+
+      body {
+        overflow: hidden;
+        background: var(--color-canvas);
+        color: var(--color-text);
+        font-family: var(--font-ui);
+        font-size: 13px;
+        font-synthesis: none;
+        text-rendering: optimizeLegibility;
+      }
+
+      button,
+      input {
+        color: inherit;
+        font: inherit;
+      }
+
+      button {
+        border: 0;
+        background: transparent;
+        cursor: pointer;
+      }
+
+      button:focus-visible,
+      input:focus-visible,
+      [tabindex]:focus-visible {
+        outline: 1px solid var(--color-focus);
+        outline-offset: -2px;
+      }
+
+      /* Panes and the welcome screen set their own `display`, which would
+         otherwise beat the user-agent rule for [hidden]. */
+      [hidden] {
+        display: none !important;
+      }
+
+      .visually-hidden {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        overflow: hidden;
+        clip: rect(0, 0, 0, 0);
+        white-space: nowrap;
+      }
+
+      /* ---------------------------------------------------------------- shell */
+
+      .app-shell {
+        display: grid;
+        width: 100%;
+        height: 100vh;
+        /* Without an explicit minmax(0, 1fr) column the shell is sized by the
+           workspace's fixed pane columns, so a narrow window silently reports
+           a wider shell than the viewport and the layout maths goes with it. */
+        grid-template-columns: minmax(0, 1fr);
+        grid-template-rows: 44px minmax(0, 1fr) 28px;
+      }
+
+      /* No vault open: no panes, no status bar. Just identity and a way in. */
+      .app-shell[data-vault="closed"] {
+        grid-template-rows: 44px minmax(0, 1fr);
+      }
+
+      .title-bar {
+        position: relative;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 0 12px 0 16px;
+        border-bottom: 1px solid var(--color-rule);
+        gap: 12px;
+      }
+
+      .title-bar__identity,
+      .title-bar__actions {
+        display: flex;
+        min-width: 0;
+        align-items: center;
+        gap: 8px;
+      }
+
+      .wordmark {
+        font-size: 14px;
+        font-weight: 600;
+        letter-spacing: 0.01em;
+      }
+
+      .title-bar__rule {
+        width: 1px;
+        height: 18px;
+        background: var(--color-rule);
+      }
+
+      .vault-selector {
+        display: flex;
+        min-height: 28px;
+        align-items: center;
+        padding: 0 8px;
+        border-radius: 6px;
+        color: var(--color-text);
+        gap: 6px;
+      }
+
+      .vault-selector:hover {
+        background: var(--color-row-hover);
+      }
+
+      .save-status {
+        display: flex;
+        align-items: center;
+        color: var(--color-text-muted);
+        font-size: 12px;
+        gap: 5px;
+      }
+
+      .save-status svg {
+        color: var(--color-success);
+      }
+
+      .icon-button {
+        display: grid;
+        width: 28px;
+        height: 28px;
+        border-radius: 6px;
+        color: var(--color-text-muted);
+        place-items: center;
+      }
+
+      .icon-button:hover {
+        background: var(--color-row-hover);
+        color: var(--color-text);
+      }
+
+      .icon-button[aria-pressed="true"] {
+        background: var(--color-row-active);
+        color: var(--color-text);
+      }
+
+      svg {
+        display: block;
+        width: 16px;
+        height: 16px;
+        fill: none;
+        stroke: currentColor;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+        stroke-width: 1.5;
+      }
+
+      /* ------------------------------------------------------------ workspace */
+
+      .workspace {
+        position: relative;
+        display: grid;
+        min-width: 0;
+        min-height: 0;
+        grid-template-columns:
+          var(--nav-w) var(--list-w) minmax(0, 1fr)
+          var(--inspector-w);
+      }
+
+      .pane {
+        position: relative;
+        display: flex;
+        min-width: 0;
+        min-height: 0;
+        flex-direction: column;
+        background: var(--color-canvas);
+      }
+
+      .pane--nav,
+      .pane--list,
+      .pane--main {
+        border-right: 1px solid var(--color-rule);
+      }
+
+      /* Applied only around an open/close, never during a drag — a transition
+         on the width custom properties would fight every pointermove. */
+      .workspace--animating {
+        transition:
+          --nav-w 140ms ease,
+          --list-w 140ms ease,
+          --inspector-w 140ms ease;
+      }
+
+      .pane[data-collapsed="true"] {
+        overflow: hidden;
+        border-right-width: 0;
+        visibility: hidden;
+      }
+
+      .pane__body {
+        min-height: 0;
+        flex: 1;
+        overflow-y: auto;
+        scrollbar-width: thin;
+      }
+
+      /* Drag handle: an invisible 9px target centred on the pane's one-pixel
+         rule. The rule itself stays one pixel — the target does not. */
+      .pane-handle {
+        position: absolute;
+        z-index: 5;
+        top: 0;
+        right: -5px;
+        bottom: 0;
+        width: 9px;
+        padding: 0;
+        cursor: col-resize;
+        touch-action: none;
+      }
+
+      .pane-handle::after {
+        position: absolute;
+        top: 0;
+        bottom: 0;
+        left: 4px;
+        width: 1px;
+        background: transparent;
+        content: "";
+        transition: background 140ms ease;
+      }
+
+      .pane-handle:hover::after,
+      .pane-handle:focus-visible::after,
+      .pane-handle[data-dragging="true"]::after {
+        background: var(--color-focus);
+      }
+
+      /* Focus and drag widen the rule to the anchor line's two pixels, which
+         editor-design.md already defines as the focused-item cue. */
+      .pane-handle:focus-visible::after,
+      .pane-handle[data-dragging="true"]::after {
+        width: 2px;
+      }
+
+      .pane-handle:focus-visible {
+        outline: none;
+      }
+
+      body[data-resizing="true"] {
+        cursor: col-resize;
+        user-select: none;
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        * {
+          transition: none !important;
+        }
+      }
+
+      /* ----------------------------------------------------------- nav pane */
+
+      .search-field {
+        position: relative;
+        display: flex;
+        height: 36px;
+        align-items: center;
+        margin: 12px;
+        color: var(--color-text-muted);
+      }
+
+      .search-field svg {
+        position: absolute;
+        left: 10px;
+        pointer-events: none;
+      }
+
+      .search-field input {
+        width: 100%;
+        height: 100%;
+        padding: 0 12px 0 32px;
+        border: 1px solid var(--color-rule);
+        border-radius: 6px;
+        background: var(--color-surface);
+        color: var(--color-text);
+        font-size: 13px;
+      }
+
+      .search-field input::placeholder {
+        color: var(--color-text-subtle);
+      }
+
+      .segmented {
+        display: inline-flex;
+        margin: 0 12px 8px;
+        padding: 2px;
+        border: 1px solid var(--color-rule);
+        border-radius: 6px;
+        background: var(--color-surface);
+      }
+
+      .segmented button {
+        min-height: 24px;
+        flex: 1;
+        border-radius: 4px;
+        color: var(--color-text-muted);
+        font-size: 11px;
+      }
+
+      .segmented button[aria-pressed="true"] {
+        background: var(--color-row-active);
+        color: var(--color-text);
+      }
+
+      .nav-row {
+        position: relative;
+        display: flex;
+        width: 100%;
+        min-height: 36px;
+        align-items: center;
+        padding: 0 12px 0 14px;
+        color: var(--color-text-muted);
+        gap: 8px;
+        text-align: left;
+      }
+
+      .nav-row:hover {
+        background: var(--color-row-hover);
+      }
+
+      .nav-row[aria-current="true"] {
+        background: var(--color-row-active);
+        color: var(--color-text);
+      }
+
+      /* The anchor line — the one signature motif. Marks the active row in the
+         nav pane and the list pane, and is used nowhere else. */
+      .nav-row[aria-current="true"]::before,
+      .list-row[aria-current="true"]::before {
+        position: absolute;
+        top: 0;
+        bottom: 0;
+        left: 0;
+        width: 2px;
+        background: var(--color-focus);
+        content: "";
+      }
+
+      .nav-row__label {
+        overflow: hidden;
+        flex: 1;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .nav-row__count {
+        color: var(--color-text-subtle);
+        font-size: 11px;
+        font-variant-numeric: tabular-nums;
+      }
+
+      .nav-row__twisty {
+        display: grid;
+        width: 14px;
+        color: var(--color-text-subtle);
+        place-items: center;
+      }
+
+      .nav-row--child {
+        padding-left: 42px;
+      }
+
+      .pane__footer {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 8px 12px 8px 14px;
+        border-top: 1px solid var(--color-rule);
+        color: var(--color-text-subtle);
+        font-size: 11px;
+        gap: 8px;
+      }
+
+      .pane__footer button {
+        display: flex;
+        align-items: center;
+        color: var(--color-text-subtle);
+        font-size: 11px;
+        gap: 5px;
+      }
+
+      .pane__footer button:hover {
+        color: var(--color-text);
+      }
+
+      /* ---------------------------------------------------------- list pane */
+
+      .pane__header {
+        display: flex;
+        min-height: 44px;
+        align-items: center;
+        justify-content: space-between;
+        padding: 0 8px 0 14px;
+        border-bottom: 1px solid var(--color-rule);
+        gap: 8px;
+      }
+
+      .pane__title {
+        overflow: hidden;
+        font-size: 13px;
+        font-weight: 600;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .pane__header-meta {
+        display: flex;
+        align-items: center;
+        color: var(--color-text-subtle);
+        font-size: 11px;
+        gap: 4px;
+      }
+
+      .sort-button {
+        display: flex;
+        min-height: 24px;
+        align-items: center;
+        padding: 0 6px;
+        border-radius: 4px;
+        color: var(--color-text-muted);
+        font-size: 11px;
+        gap: 4px;
+      }
+
+      .sort-button:hover {
+        background: var(--color-row-hover);
+        color: var(--color-text);
+      }
+
+      .list-row {
+        position: relative;
+        display: block;
+        width: 100%;
+        padding: 11px 14px 12px;
+        border-bottom: 1px solid var(--color-rule);
+        text-align: left;
+      }
+
+      .list-row:hover {
+        background: var(--color-row-hover);
+      }
+
+      .list-row[aria-current="true"] {
+        background: var(--color-row-active);
+      }
+
+      .list-row__title {
+        overflow: hidden;
+        color: var(--color-text);
+        font-size: 14px;
+        font-weight: 500;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      /* Two lines by default; Settings switches the whole list to one. */
+      .list-row__excerpt {
+        display: -webkit-box;
+        overflow: hidden;
+        margin-top: 3px;
+        color: var(--color-text-muted);
+        font-size: 12.5px;
+        line-height: 1.45;
+        -webkit-box-orient: vertical;
+        -webkit-line-clamp: var(--excerpt-lines, 2);
+      }
+
+      .list-row__meta {
+        margin-top: 6px;
+        color: var(--color-text-subtle);
+        font-size: 11px;
+      }
+
+      /* Quiet marker for a note already open in some tab — useful once splits
+         mean several notes are open at once. */
+      .list-row[data-open="true"]::after {
+        position: absolute;
+        top: 15px;
+        right: 12px;
+        width: 5px;
+        height: 5px;
+        border-radius: 50%;
+        background: var(--color-text-subtle);
+        content: "";
+      }
+
+      .pane__empty {
+        padding: 32px 16px;
+        color: var(--color-text-subtle);
+        font-size: 12px;
+        text-align: center;
+      }
+
+      /* ---------------------------------------------------------- main pane */
+
+      .title-bar__generated {
+        display: contents;
+      }
+
+      /* ------------------------------------------------- splits and tabs */
+
+      .split-root {
+        display: flex;
+        min-width: 0;
+        min-height: 0;
+        flex: 1;
+      }
+
+      .split {
+        display: flex;
+        min-width: 0;
+        min-height: 0;
+        flex: 1;
+      }
+
+      .split--row {
+        flex-direction: row;
+      }
+
+      .split--column {
+        flex-direction: column;
+      }
+
+      .split__child {
+        position: relative;
+        display: flex;
+        min-width: 0;
+        min-height: 0;
+      }
+
+      /* One-pixel rule between siblings, with the same nine-pixel grab target
+         the workspace splitters use. */
+      .split-handle {
+        position: relative;
+        z-index: 4;
+        flex: 0 0 1px;
+        padding: 0;
+        background: var(--color-rule);
+      }
+
+      .split-handle::after {
+        position: absolute;
+        background: transparent;
+        content: "";
+        transition: background 140ms ease;
+      }
+
+      .split--row > .split-handle {
+        cursor: col-resize;
+      }
+
+      .split--row > .split-handle::after {
+        top: 0;
+        bottom: 0;
+        left: -4px;
+        width: 9px;
+      }
+
+      .split--column > .split-handle {
+        cursor: row-resize;
+      }
+
+      .split--column > .split-handle::after {
+        top: -4px;
+        right: 0;
+        left: 0;
+        height: 9px;
+      }
+
+      .split-handle:hover,
+      .split-handle:focus-visible,
+      .split-handle[data-dragging="true"] {
+        background: var(--color-focus);
+        outline: none;
+      }
+
+      .tab-group {
+        display: flex;
+        min-width: 0;
+        min-height: 0;
+        flex: 1;
+        flex-direction: column;
+      }
+
+      .tab-strip {
+        display: flex;
+        min-height: 38px;
+        align-items: stretch;
+        border-bottom: 1px solid var(--color-rule);
+      }
+
+      .tab-strip__tabs {
+        display: flex;
+        min-width: 0;
+        flex: 1;
+        overflow-x: auto;
+        scrollbar-width: none;
+      }
+
+      .tab-strip__tabs::-webkit-scrollbar {
+        display: none;
+      }
+
+      /* Tabs keep a legible floor and the strip scrolls past it, rather than
+         every tab shrinking to an ellipsis as more are opened. */
+      .tab {
+        display: flex;
+        min-width: 108px;
+        max-width: 190px;
+        flex: 0 0 auto;
+        align-items: center;
+        padding: 0 6px 0 12px;
+        border-right: 1px solid var(--color-rule);
+        color: var(--color-text-subtle);
+        font-size: 12px;
+        gap: 6px;
+      }
+
+      .tab:hover {
+        background: var(--color-row-hover);
+      }
+
+      .tab[aria-selected="true"] {
+        background: var(--color-row-active);
+        color: var(--color-text-muted);
+      }
+
+      /* Only the focused group's active tab reads at full strength — that is
+         what marks which pane the list opens into. */
+      .tab-group[data-active="true"] .tab[aria-selected="true"] {
+        color: var(--color-text);
+      }
+
+      .tab__label {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .tab__pin {
+        flex: none;
+        color: var(--color-text-subtle);
+      }
+
+      .tab__close {
+        display: grid;
+        width: 18px;
+        height: 18px;
+        flex: none;
+        border-radius: 4px;
+        color: var(--color-text-subtle);
+        font-size: 14px;
+        line-height: 1;
+        opacity: 0;
+        place-items: center;
+      }
+
+      .tab:hover .tab__close,
+      .tab[aria-selected="true"] .tab__close,
+      .tab__close:focus-visible {
+        opacity: 1;
+      }
+
+      .tab__close:hover {
+        background: var(--color-menu-border);
+        color: var(--color-text);
+      }
+
+      .tab-strip__actions {
+        display: flex;
+        flex: none;
+        align-items: center;
+        padding: 0 6px;
+        gap: 2px;
+      }
+
+      .tab-strip__actions .icon-button {
+        width: 26px;
+        height: 26px;
+      }
+
+      /* Obsidian's division: the strip owns the tabs, this row owns the note. */
+      .doc-header {
+        display: flex;
+        min-height: 34px;
+        align-items: center;
+        padding: 0 6px 0 8px;
+        border-bottom: 1px solid var(--color-rule);
+        gap: 2px;
+      }
+
+      .doc-header .icon-button {
+        width: 24px;
+        height: 24px;
+        flex: none;
+      }
+
+      .doc-header .icon-button[disabled] {
+        color: var(--color-rule);
+        cursor: default;
+      }
+
+      .doc-header .icon-button[disabled]:hover {
+        background: transparent;
+        color: var(--color-rule);
+      }
+
+      .doc-header .breadcrumb {
+        flex: 1;
+        padding-left: 6px;
+      }
+
+      .doc-header__actions {
+        display: flex;
+        flex: none;
+        align-items: center;
+        gap: 2px;
+      }
+
+      /* Dragging a tab: the tab being moved fades, and a one-pixel white rule
+         marks where it would land. */
+      .tab[data-dragging="true"] {
+        opacity: 0.4;
+      }
+
+      .tab[data-drop="before"],
+      .tab[data-drop="after"] {
+        position: relative;
+      }
+
+      .tab[data-drop="before"]::before,
+      .tab[data-drop="after"]::before {
+        position: absolute;
+        z-index: 2;
+        top: 0;
+        bottom: 0;
+        width: 2px;
+        background: var(--color-focus);
+        content: "";
+      }
+
+      .tab[data-drop="before"]::before {
+        left: 0;
+      }
+
+      .tab[data-drop="after"]::before {
+        right: 0;
+      }
+
+      .tab-strip__tabs[data-drop="end"] {
+        box-shadow: inset -2px 0 0 var(--color-focus);
+      }
+
+      .tab-group[data-drop-target="true"] .tab-strip {
+        background: var(--color-row-hover);
+      }
+
+      .tab-group__empty {
+        display: grid;
+        flex: 1;
+        align-content: center;
+        justify-items: center;
+        padding: 24px;
+        color: var(--color-text-subtle);
+        font-size: 12px;
+        gap: 10px;
+      }
+
+      .editor-header {
+        display: flex;
+        min-height: 44px;
+        align-items: center;
+        justify-content: space-between;
+        padding: 0 10px 0 20px;
+        border-bottom: 1px solid var(--color-rule);
+        gap: 12px;
+      }
+
+      .breadcrumb {
+        display: flex;
+        overflow: hidden;
+        align-items: center;
+        color: var(--color-text-muted);
+        font-family: var(--font-mono);
+        font-size: 12px;
+        gap: 6px;
+      }
+
+      .breadcrumb strong {
+        overflow: hidden;
+        color: var(--color-text);
+        font-weight: 400;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .editor-actions {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+      }
+
+      .text-button {
+        min-height: 26px;
+        padding: 0 9px;
+        border-radius: 5px;
+        color: var(--color-text-muted);
+        font-size: 12px;
+      }
+
+      .text-button:hover,
+      .text-button[aria-pressed="true"] {
+        background: var(--color-row-active);
+        color: var(--color-text);
+      }
+
+      .overflow {
+        position: relative;
+      }
+
+      .menu {
+        position: absolute;
+        z-index: 20;
+        top: 32px;
+        right: 0;
+        display: grid;
+        min-width: 172px;
+        padding: 4px;
+        border: 1px solid var(--color-menu-border);
+        border-radius: 6px;
+        background: var(--color-menu);
+      }
+
+      .menu button {
+        display: flex;
+        min-height: 30px;
+        align-items: center;
+        padding: 0 10px;
+        border-radius: 4px;
+        color: var(--color-text-muted);
+        font-size: 12px;
+        gap: 8px;
+        text-align: left;
+      }
+
+      .menu button:hover {
+        background: var(--color-row-active);
+        color: var(--color-text);
+      }
+
+      .menu button[aria-checked="true"] {
+        color: var(--color-text);
+      }
+
+      /* Reserve the tick column so the labels do not shift when the choice
+         moves between rows. */
+      .menu button[role="menuitemradio"]::before {
+        width: 10px;
+        color: var(--color-text);
+        content: "";
+      }
+
+      .menu button[aria-checked="true"]::before {
+        content: "✓";
+      }
+
+      .menu__rule {
+        height: 0;
+        margin: 4px 6px;
+        border: 0;
+        border-top: 1px solid var(--color-menu-border);
+      }
+
+      .menu button[disabled] {
+        color: var(--color-text-subtle);
+        cursor: default;
+        opacity: 0.5;
+      }
+
+      .menu button[disabled]:hover {
+        background: transparent;
+        color: var(--color-text-subtle);
+      }
+
+      .menu__group {
+        padding: 7px 10px 4px;
+        margin: 0;
+        color: var(--color-text-subtle);
+        font-size: 10.5px;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+      }
+
+      .settings-menu {
+        top: 38px;
+        right: 12px;
+        min-width: 196px;
+      }
+
+      .document {
+        min-height: 0;
+        flex: 1;
+        overflow-y: auto;
+        /* The percentage resolves against the main pane, not the viewport, so
+           the margin tightens as the pane narrows without a media query. */
+        padding: 28px clamp(24px, 6%, 56px) 96px;
+      }
+
+      .document__inner {
+        max-width: 780px;
+      }
+
+      .front-matter {
+        margin: 0 0 28px;
+        color: var(--syntax-meta);
+        font-family: var(--font-mono);
+        font-size: 13px;
+        line-height: 1.55;
+        white-space: pre-wrap;
+      }
+
+      .document h1 {
+        margin: 0 0 20px;
+        font-family: var(--font-doc);
+        font-size: clamp(28px, 3.1vw, 40px);
+        font-weight: 500;
+        line-height: 1.1;
+      }
+
+      .document p {
+        margin: 0 0 18px;
+        font-family: var(--font-doc);
+        font-size: 18px;
+        line-height: 1.65;
+      }
+
+      .wikilink {
+        color: var(--syntax-link);
+        font: inherit;
+      }
+
+      .cursor-line {
+        height: 30px;
+        background: var(--color-row-active);
+      }
+
+      .caret {
+        display: inline-block;
+        width: 2px;
+        height: 24px;
+        margin-top: 3px;
+        background: var(--color-text);
+      }
+
+      /* ----------------------------------------------------- inspector pane */
+
+      .inspector-row {
+        display: block;
+        width: 100%;
+        padding: 10px 14px;
+        border-bottom: 1px solid var(--color-rule);
+        color: var(--color-text-muted);
+        font-size: 12.5px;
+        text-align: left;
+      }
+
+      .inspector-row:hover {
+        background: var(--color-row-hover);
+        color: var(--color-text);
+      }
+
+      .inspector-row small {
+        display: block;
+        margin-top: 2px;
+        color: var(--color-text-subtle);
+        font-size: 11px;
+      }
+
+      .inspector-note {
+        padding: 20px 14px;
+        color: var(--color-text-subtle);
+        font-size: 11.5px;
+        line-height: 1.5;
+      }
+
+      /* --------------------------------------------------------- status bar */
+
+      .status-bar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 0 14px;
+        border-top: 1px solid var(--color-rule);
+        color: var(--color-text-subtle);
+        font-size: 11px;
+        gap: 12px;
+      }
+
+      .status-bar span {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      /* -------------------------------------------------- no-vault (state A) */
+
+      .welcome {
+        display: grid;
+        min-height: 0;
+        align-content: center;
+        justify-items: center;
+        padding: 32px;
+        text-align: center;
+      }
+
+      .welcome h1 {
+        margin: 0 0 10px;
+        font-family: var(--font-doc);
+        font-size: 34px;
+        font-weight: 500;
+      }
+
+      .welcome p {
+        max-width: 42ch;
+        margin: 0 0 28px;
+        color: var(--color-text-muted);
+        font-size: 13.5px;
+        line-height: 1.5;
+      }
+
+      .welcome__actions {
+        display: flex;
+        gap: 10px;
+      }
+
+      .welcome__actions button {
+        min-height: 34px;
+        padding: 0 16px;
+        border: 1px solid var(--color-rule);
+        border-radius: 6px;
+        background: var(--color-surface-alt);
+        font-size: 13px;
+      }
+
+      .welcome__actions button:hover {
+        border-color: var(--color-menu-border);
+      }
+
+      /* ---------------------------------------------------- pinned reference */
+
+      .reference {
+        display: flex;
+        min-height: 0;
+        flex-direction: column;
+      }
+
+      .reference__meta {
+        padding: 10px 14px 0;
+        color: var(--color-text-subtle);
+        font-family: var(--font-mono);
+        font-size: 11px;
+      }
+
+      .reference__body {
+        padding: 4px 14px 20px;
+      }
+
+      .reference__body h1 {
+        margin: 10px 0 12px;
+        font-family: var(--font-doc);
+        font-size: 21px;
+        font-weight: 500;
+        line-height: 1.2;
+      }
+
+      .reference__body p {
+        margin: 0 0 12px;
+        color: var(--color-text-muted);
+        font-family: var(--font-doc);
+        font-size: 15px;
+        line-height: 1.55;
+      }
+
+      /* ------------------------------------------------------ floating window */
+
+      .floating {
+        position: fixed;
+        z-index: 60;
+        top: 120px;
+        left: 340px;
+        display: flex;
+        overflow: hidden;
+        width: 560px;
+        height: 460px;
+        flex-direction: column;
+        border: 1px solid var(--color-menu-border);
+        border-radius: 10px;
+        background: var(--color-canvas);
+        box-shadow: 0 18px 48px rgb(0 0 0 / 65%);
+      }
+
+      .floating__bar {
+        display: flex;
+        min-height: 38px;
+        align-items: center;
+        padding: 0 8px 0 12px;
+        border-bottom: 1px solid var(--color-rule);
+        cursor: grab;
+        gap: 10px;
+      }
+
+      .floating__bar[data-dragging="true"] {
+        cursor: grabbing;
+      }
+
+      .floating__lights {
+        display: flex;
+        flex: none;
+        gap: 6px;
+      }
+
+      .floating__lights i {
+        width: 9px;
+        height: 9px;
+        border: 1px solid var(--color-menu-border);
+        border-radius: 50%;
+      }
+
+      .floating__title {
+        overflow: hidden;
+        flex: 1;
+        color: var(--color-text-muted);
+        font-family: var(--font-mono);
+        font-size: 12px;
+        text-align: center;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .floating__body {
+        padding: 20px 24px 28px;
+      }
+
+      .floating__resize {
+        position: absolute;
+        right: 0;
+        bottom: 0;
+        width: 16px;
+        height: 16px;
+        cursor: nwse-resize;
+      }
+
+      /* ------------------------------------------------- prototype-only chip */
+
+      .proto-bar {
+        position: fixed;
+        z-index: 100;
+        right: 12px;
+        bottom: 40px;
+        display: flex;
+        align-items: center;
+        padding: 5px 6px 5px 10px;
+        border: 1px dashed var(--color-menu-border);
+        border-radius: 999px;
+        background: rgb(0 0 0 / 82%);
+        color: var(--color-text-subtle);
+        font-size: 10.5px;
+        gap: 6px;
+      }
+
+      .proto-bar button {
+        min-height: 22px;
+        padding: 0 8px;
+        border-radius: 999px;
+        background: var(--color-surface-alt);
+        color: var(--color-text-muted);
+        font-size: 10.5px;
+      }
+
+      .proto-bar button:hover,
+      .proto-bar button[aria-pressed="true"] {
+        background: var(--color-row-active);
+        color: var(--color-text);
+      }
+    </style>
+  </head>
+
+  <body>
+    <div class="app-shell" id="shell" data-vault="open">
+      <header class="title-bar">
+        <div class="title-bar__identity">
+          <span class="wordmark">Anchored</span>
+          <template id="tpl-vault-identity">
+            <span aria-hidden="true" class="title-bar__rule"></span>
+            <button class="vault-selector" type="button">
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path
+                  d="M4 5.5A1.5 1.5 0 0 1 5.5 4H18v16H5.5A1.5 1.5 0 0 1 4 18.5Z"
+                />
+                <path d="M8 4v16" />
+              </svg>
+              Personal
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="m6 9 6 6 6-6" />
+              </svg>
+            </button>
+          </template>
+          <span id="vault-identity"></span>
+        </div>
+
+        <div class="title-bar__actions">
+          <!-- `display: contents` lets the regenerated buttons sit directly in
+               this flex row, so the inspector toggle beside them survives a
+               re-render. -->
+          <span class="title-bar__generated" id="title-actions"></span>
+          <!-- The inspector toggle is a workspace control, not a note action,
+               so it lives beside the other window-level buttons. -->
+          <button
+            class="icon-button"
+            id="inspector-toggle"
+            aria-label="Hide inspector"
+            aria-pressed="true"
+            type="button"
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <rect x="3" y="4" width="18" height="16" rx="2" />
+              <path d="M15 4v16" />
+            </svg>
+          </button>
+        </div>
+
+        <!-- Stands in for the real Settings surface. Note-list density belongs
+             here rather than in the list header: it is a preference, not a
+             per-view control. -->
+        <div class="menu settings-menu" id="settings-menu" role="menu" hidden>
+          <p class="menu__group">Note list</p>
+          <button
+            aria-checked="true"
+            data-density="two"
+            role="menuitemradio"
+            type="button"
+          >
+            Two-line preview
+          </button>
+          <button
+            aria-checked="false"
+            data-density="one"
+            role="menuitemradio"
+            type="button"
+          >
+            One-line preview
+          </button>
+        </div>
+      </header>
+
+      <!-- State B: the four panes -->
+      <div class="workspace" id="workspace">
+        <section class="pane pane--nav" id="pane-nav" aria-label="Navigation">
+          <div class="search-field">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <circle cx="11" cy="11" r="6" />
+              <path d="m20 20-3.5-3.5" />
+            </svg>
+            <input
+              aria-label="Search notes"
+              placeholder="Search notes"
+              type="search"
+            />
+          </div>
+
+          <div class="segmented" role="group" aria-label="Navigation view">
+            <button
+              aria-pressed="true"
+              data-nav-mode="collections"
+              type="button"
+            >
+              Collections
+            </button>
+            <button aria-pressed="false" data-nav-mode="files" type="button">
+              Files
+            </button>
+          </div>
+
+          <nav
+            class="pane__body"
+            id="nav-body"
+            aria-label="Vault navigation"
+          ></nav>
+
+          <footer class="pane__footer">
+            <span>Personal</span>
+            <button type="button">
+              <svg
+                viewBox="0 0 24 24"
+                aria-hidden="true"
+                style="width: 13px; height: 13px"
+              >
+                <path d="M4 7h16M9 7V5h6v2M6 7l1 12h10l1-12" />
+              </svg>
+              Trash
+            </button>
+          </footer>
+
+          <button
+            class="pane-handle"
+            data-pane="nav"
+            role="separator"
+            aria-orientation="vertical"
+            aria-label="Resize navigation pane"
+            aria-valuemin="180"
+            aria-valuemax="320"
+            aria-valuenow="240"
+          ></button>
+        </section>
+
+        <section class="pane pane--list" id="pane-list" aria-label="Notes">
+          <header class="pane__header">
+            <span class="pane__title" id="list-title">Inbox</span>
+            <span class="pane__header-meta">
+              <span id="list-count">12</span>
+              <button class="sort-button" type="button">
+                Recent
+                <svg
+                  viewBox="0 0 24 24"
+                  aria-hidden="true"
+                  style="width: 12px; height: 12px"
+                >
+                  <path d="m6 9 6 6 6-6" />
+                </svg>
+              </button>
+            </span>
+          </header>
+
+          <div
+            class="pane__body"
+            id="list-body"
+            role="listbox"
+            aria-label="Notes in Inbox"
+          ></div>
+
+          <button
+            class="pane-handle"
+            data-pane="list"
+            role="separator"
+            aria-orientation="vertical"
+            aria-label="Resize note list pane"
+            aria-valuemin="220"
+            aria-valuemax="480"
+            aria-valuenow="300"
+          ></button>
+        </section>
+
+        <!-- The editor area is a tree of splits. Every leaf is a tab group
+             with its own strip; the tree is rebuilt from `editorTree`. -->
+        <main class="pane pane--main" id="pane-main" aria-label="Editor">
+          <div class="split-root" id="split-root"></div>
+
+          <!-- The note's own actions, opened from the document row. -->
+          <div class="menu" id="overflow-menu" role="menu" hidden>
+            <button role="menuitem" type="button">Rename…</button>
+            <button role="menuitem" type="button">Move…</button>
+            <button role="menuitem" type="button">Save as…</button>
+            <button role="menuitem" type="button">Move to Inbox</button>
+            <button role="menuitem" type="button">Archive</button>
+            <button role="menuitem" type="button">Trash</button>
+            <hr class="menu__rule" />
+            <button data-action="split-row" role="menuitem" type="button">
+              Split Right
+            </button>
+            <button data-action="split-column" role="menuitem" type="button">
+              Split Down
+            </button>
+            <hr class="menu__rule" />
+            <button data-action="close-group" role="menuitem" type="button">
+              Close this pane
+            </button>
+          </div>
+
+          <!-- The tab strip's chevron: commands for the group, then the list
+               of its open tabs, which is also how overflow is reached. -->
+          <div class="menu" id="group-menu" role="menu" hidden>
+            <button data-action="stack" role="menuitem" type="button">
+              Stack tabs
+            </button>
+            <button data-action="bookmark" role="menuitem" type="button">
+              Bookmark tabs…
+            </button>
+            <button data-action="close-all" role="menuitem" type="button">
+              Close all
+            </button>
+            <hr class="menu__rule" />
+            <div id="group-menu-tabs"></div>
+          </div>
+
+          <!-- Right-clicking a tab. Item set follows the reference
+               application's tab menu. -->
+          <div class="menu" id="tab-menu" role="menu" hidden>
+            <button data-action="close" role="menuitem" type="button">
+              Close
+            </button>
+            <button data-action="close-others" role="menuitem" type="button">
+              Close Others
+            </button>
+            <button data-action="close-right" role="menuitem" type="button">
+              Close Tabs to Right
+            </button>
+            <hr class="menu__rule" />
+            <button data-action="pin-tab" role="menuitem" type="button">
+              Pin Tab
+            </button>
+            <hr class="menu__rule" />
+            <button data-action="split-row" role="menuitem" type="button">
+              Split Right
+            </button>
+            <button data-action="split-column" role="menuitem" type="button">
+              Split Down
+            </button>
+            <hr class="menu__rule" />
+            <button data-action="pin-reference" role="menuitem" type="button">
+              Pin as Reference
+            </button>
+            <button data-action="float" role="menuitem" type="button">
+              Open in Floating Window
+            </button>
+          </div>
+
+          <button
+            class="pane-handle"
+            data-pane="inspector"
+            role="separator"
+            aria-orientation="vertical"
+            aria-label="Resize inspector pane"
+            aria-valuemin="200"
+            aria-valuemax="420"
+            aria-valuenow="280"
+          ></button>
+        </main>
+
+        <aside
+          class="pane pane--inspector"
+          id="pane-inspector"
+          aria-label="Inspector"
+        >
+          <header class="pane__header">
+            <span class="pane__title" id="inspector-title">Backlinks</span>
+            <span class="pane__header-meta">
+              <span id="backlink-count">3</span>
+              <button
+                class="icon-button"
+                id="unpin-reference"
+                aria-label="Unpin reference"
+                type="button"
+                hidden
+              >
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M18 6 6 18M6 6l12 12" />
+                </svg>
+              </button>
+            </span>
+          </header>
+          <div class="pane__body">
+            <div id="inspector-body"></div>
+            <p class="inspector-note" id="inspector-note">
+              Placeholder pane. Outline, frontmatter, and tags land here in a
+              later pass.
+            </p>
+          </div>
+        </aside>
+      </div>
+
+      <!-- A real second OS window in the Tauri build; here it is a draggable
+           panel so the interaction can be judged. -->
+      <div class="floating" id="floating" hidden>
+        <header class="floating__bar" id="floating-bar">
+          <span class="floating__lights" aria-hidden="true">
+            <i></i><i></i><i></i>
+          </span>
+          <span class="floating__title" id="floating-title"></span>
+          <button
+            class="icon-button"
+            id="floating-close"
+            aria-label="Close floating window"
+            type="button"
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M18 6 6 18M6 6l12 12" />
+            </svg>
+          </button>
+        </header>
+        <div class="document floating__body">
+          <div class="document__inner" id="floating-body"></div>
+        </div>
+        <span
+          class="floating__resize"
+          id="floating-resize"
+          aria-hidden="true"
+        ></span>
+      </div>
+
+      <!-- State A: no vault open -->
+      <div class="welcome" id="welcome" hidden>
+        <h1>No vault open</h1>
+        <p>
+          Choose a folder of Markdown files to begin. Nothing is copied or
+          moved.
+        </p>
+        <div class="welcome__actions">
+          <button type="button">Open vault</button>
+          <button type="button">Create vault</button>
+        </div>
+      </div>
+
+      <footer class="status-bar" id="status-bar">
+        <span id="status-path">Personal › inbox › Travel Ideas.md</span>
+        <span>Markdown · UTF-8 · Ln 12, Col 1</span>
+      </footer>
+    </div>
+
+    <div class="proto-bar">
+      <span>prototype</span>
+      <button data-proto="closed" type="button">No vault</button>
+      <button aria-pressed="true" data-proto="open" type="button">
+        Vault open
+      </button>
+      <button data-proto="reset" type="button">Reset widths</button>
+    </div>
+
+    <script>
+      "use strict";
+
+      /* ------------------------------------------------------------- fake data
+         Titles and folders come from fixtures/dev-vault so list-row density is
+         judged against realistic names rather than lorem ipsum. */
+
+      const NOTES = [
+        {
+          title: "Travel Ideas",
+          folder: "inbox",
+          collection: "inbox",
+          when: "2h ago",
+          frontmatter:
+            "---\nid: 01JZQ7K8P4A6F2M9V3C5T7X1BY\ntype: personal\naliases: [Places to visit]\ntags: [travel, ideas]\n---",
+          body: [
+            "A calm system should make connections visible without getting in the way.",
+            "Basel every season, Lisbon in spring, Kyoto in autumn. Each one is a note of its own once it stops being a maybe.",
+          ],
+          related: "Daily Reflection",
+          backlinks: ["Link Garden", "Reading Queue", "Asset Index"],
+        },
+        {
+          title: "Reading Queue",
+          folder: "inbox",
+          collection: "inbox",
+          when: "Yesterday",
+          frontmatter:
+            "---\nid: 01JZQ7K9M2B4H8N6P1D3F5R7SV\ntype: reading\ntags: [reading, queue]\npriority: high\n---",
+          body: [
+            "What is worth finishing, in the order it is worth finishing it.",
+            "Deep Work first, then the markdown article, then the course notes once the term settles down.",
+          ],
+          related: "Book - Deep Work",
+          backlinks: ["Reading Index", "Course Notes"],
+        },
+        {
+          title: "Link Garden",
+          folder: "inbox",
+          collection: "inbox",
+          when: "Jul 23",
+          frontmatter:
+            "---\nid: 01JZQ7KA83C5J9Q2R4T6V8X1ZB\ntype: note\naliases: [Link laboratory]\n---",
+          body: [
+            "This note exercises the awkward cases: labelled links, heading links, and an embed whose target does not exist yet.",
+            "If the four-pane shell survives this note, it survives the vault.",
+          ],
+          related: "Markdown Guide",
+          backlinks: ["Unresolved Links"],
+        },
+        {
+          title: "Meeting - Design Review",
+          folder: "inbox",
+          collection: "inbox",
+          when: "Jul 23",
+          frontmatter:
+            "---\nid: 01JZQ7KB94D6K1S3U5W7Y9A2CD\ntype: meeting\ndate: 2026-07-23\nattendees: [Dwayne, Sam, Priya]\n---",
+          body: [
+            "Fixture coverage, keyboard navigation, empty and error states.",
+            "Agreed the list pane earns its place only if it removes work from the navigator, not if it adds a third thing to read.",
+          ],
+          related: "Roadmap",
+          backlinks: ["Roadmap", "Decisions"],
+        },
+        {
+          title: "Habit Experiments",
+          folder: "inbox",
+          collection: "inbox",
+          when: "Jul 22",
+          frontmatter:
+            "---\nid: 01JZQ7KC05E7L2T4V6X8Z1B3DE\ntype: personal\ntags: [habits]\n---",
+          body: [
+            "Small, reversible, and measured for two weeks before it counts as a habit at all.",
+          ],
+          related: "Daily Reflection",
+          backlinks: [],
+        },
+        {
+          title: "Math Notes",
+          folder: "inbox",
+          collection: "inbox",
+          when: "Jul 21",
+          frontmatter:
+            "---\nid: 01JZQ7KD16F8M3U5W7Y9A2C4EF\ntype: note\ntags: [study]\n---",
+          body: [
+            "Notation is a user interface. Most of the difficulty is in the interface.",
+          ],
+          related: "Course Notes",
+          backlinks: ["Course Notes"],
+        },
+        {
+          title: "Project - Lighthouse",
+          folder: "workbench",
+          collection: "workbench",
+          when: "1h ago",
+          frontmatter:
+            "---\nid: 01JZQ7KE27G9N4V6X8Z1B3D5FG\ntype: project\nstatus: active\ntags: [project]\n---",
+          body: [
+            "The point of the lighthouse is not to be seen. It is to make the rocks visible.",
+            "Scope for this phase stays at navigation and writing. Everything else waits.",
+          ],
+          related: "Project Hub",
+          backlinks: ["Project Hub", "Project Tasks", "Roadmap"],
+        },
+        {
+          title: "Learning Rust",
+          folder: "workbench",
+          collection: "workbench",
+          when: "3h ago",
+          frontmatter:
+            "---\nid: 01JZQ7KF38H1P5W7Y9A2C4E6GH\ntype: learning\nstatus: active\n---",
+          body: [
+            "Ownership stopped being a rule to memorise the moment it became a question about who cleans up.",
+          ],
+          related: "Course Notes",
+          backlinks: ["Course Notes"],
+        },
+        {
+          title: "Decisions",
+          folder: "workbench",
+          collection: "workbench",
+          when: "Yesterday",
+          frontmatter:
+            "---\nid: 01JZQ7KG49J2Q6X8Z1B3D5F7HJ\ntype: note\nstatus: active\ntags: [decisions]\n---",
+          body: [
+            "A decision without its reason is a rule you will resent in six months.",
+            "Database-first, Markdown-always. Neither half is optional.",
+          ],
+          related: "Roadmap",
+          backlinks: ["Roadmap", "Project Hub"],
+        },
+        {
+          title: "Daily Reflection",
+          folder: "workbench",
+          collection: "workbench",
+          when: "Jul 24",
+          frontmatter:
+            "---\nid: 01JZQ7KH5AK3R7Y9A2C4E6G8JK\ntype: journal\nstatus: active\n---",
+          body: [
+            "What did I actually do today, and what did I only think about doing.",
+          ],
+          related: "Habit Experiments",
+          backlinks: ["Travel Ideas", "Habit Experiments"],
+        },
+        {
+          title: "Scratchpad 2026-07-23 110000",
+          folder: "inbox",
+          collection: "scratchpad",
+          when: "Jul 23",
+          frontmatter:
+            "---\nid: 01JZQ7KJ6BL4S8Z1B3D5F7H9KL\ntype: scratch\nstatus: inbox\n---",
+          body: [
+            "Captured without stopping to file it. That is the whole point.",
+          ],
+          related: "",
+          backlinks: [],
+        },
+        {
+          title: "Scratchpad 2026-07-23 100000",
+          folder: "inbox",
+          collection: "scratchpad",
+          when: "Jul 23",
+          frontmatter:
+            "---\nid: 01JZQ7KK7CM5T9A2C4E6G8J1LM\ntype: scratch\nstatus: inbox\n---",
+          body: ["Three lines and a wikilink is a complete thought."],
+          related: "Link Garden",
+          backlinks: [],
+        },
+        {
+          title: "Archived Meeting",
+          folder: "archive",
+          collection: "archive",
+          when: "Jun 12",
+          frontmatter:
+            "---\nid: 01JZQ7KM8DN6U1B3D5F7H9K2MN\ntype: meeting\nstatus: archived\n---",
+          body: [
+            "Kept because the reasoning still matters, not because the meeting did.",
+          ],
+          related: "Decisions",
+          backlinks: ["Decisions"],
+        },
+        {
+          title: "Project Archive",
+          folder: "projects",
+          collection: "archive",
+          when: "May 30",
+          frontmatter:
+            "---\nid: 01JZQ7KN9EP7V2C4E6G8J1L3NP\ntype: project\nstatus: archived\n---",
+          body: ["Finished, and worth being able to find again."],
+          related: "Project Hub",
+          backlinks: ["Project Hub"],
+        },
+        {
+          title: "diagram.svg",
+          folder: "assets",
+          collection: "assets",
+          when: "Jul 20",
+          frontmatter: "",
+          body: ["Not editable in Anchored. Listed so links to it resolve."],
+          related: "",
+          backlinks: ["Asset Index"],
+        },
+        {
+          title: "sample.csv",
+          folder: "assets",
+          collection: "assets",
+          when: "Jul 20",
+          frontmatter: "",
+          body: ["Not editable in Anchored. Listed so links to it resolve."],
+          related: "",
+          backlinks: ["Asset Index"],
+        },
+      ];
+
+      const COLLECTIONS = [
+        { id: "inbox", label: "Inbox" },
+        { id: "scratchpad", label: "Scratchpad" },
+        { id: "workbench", label: "Workbench" },
+        { id: "archive", label: "Archive" },
+        { id: "assets", label: "Assets" },
+      ];
+
+      const FOLDERS = [
+        { id: "inbox", label: "inbox" },
+        { id: "workbench", label: "workbench" },
+        { id: "projects", label: "projects" },
+        { id: "reading", label: "reading" },
+        { id: "guides", label: "guides" },
+        { id: "archive", label: "archive" },
+        { id: "assets", label: "assets" },
+      ];
+
+      /* --------------------------------------------------------- pane widths */
+
+      const PANES = {
+        nav: {
+          varName: "--nav-w",
+          element: "pane-nav",
+          min: 180,
+          max: 320,
+          initial: 240,
+        },
+        list: {
+          varName: "--list-w",
+          element: "pane-list",
+          min: 220,
+          max: 480,
+          initial: 300,
+        },
+        // The inspector's drag handle sits on the main pane's right border, so
+        // dragging left widens it — hence `inverted`.
+        inspector: {
+          varName: "--inspector-w",
+          element: "pane-inspector",
+          min: 200,
+          max: 420,
+          initial: 280,
+          inverted: true,
+        },
+      };
+
+      const PANE_KEYS = Object.keys(PANES);
+
+      // The editor never goes below this. When the window cannot honour it,
+      // side panes give way from the outside in: inspector, then nav, then list.
+      const MAIN_FLOOR = 400;
+      const SACRIFICE_ORDER = ["inspector", "nav", "list"];
+      const STORAGE_KEY = "anchored.panes.v1";
+
+      const shell = document.getElementById("shell");
+      const workspace = document.getElementById("workspace");
+      const state = {
+        // Preferred widths. Only a drag, a key press, or a reset changes these
+        // — a narrow window must never quietly overwrite what the user chose.
+        widths: { nav: 240, list: 300, inspector: 280 },
+        collapsed: { nav: false, list: false, inspector: false },
+        // "two" | "one" — how many excerpt lines each list row shows.
+        excerptLines: "two",
+        navMode: "collections",
+        selectedCollection: "inbox",
+        selectedNote: 0,
+      };
+
+      function applyExcerptLines() {
+        document.documentElement.style.setProperty(
+          "--excerpt-lines",
+          state.excerptLines === "one" ? "1" : "2",
+        );
+        for (const button of document.querySelectorAll("[data-density]")) {
+          button.setAttribute(
+            "aria-checked",
+            String(button.dataset.density === state.excerptLines),
+          );
+        }
+      }
+
+      function paneElement(key) {
+        return document.getElementById(PANES[key].element);
+      }
+
+      let animationTimer = 0;
+
+      /* Derives the widths actually painted from the preferred widths plus the
+         space available, then writes them to the CSS custom properties. */
+      function layout({ animate = false } = {}) {
+        if (animate) {
+          workspace.classList.add("workspace--animating");
+          window.clearTimeout(animationTimer);
+          animationTimer = window.setTimeout(
+            () => workspace.classList.remove("workspace--animating"),
+            180,
+          );
+        }
+
+        const available = workspace.clientWidth;
+        const effective = {};
+        for (const key of PANE_KEYS) {
+          effective[key] = state.collapsed[key] ? 0 : state.widths[key];
+        }
+
+        const overflow = () =>
+          PANE_KEYS.reduce((total, key) => total + effective[key], 0) +
+          MAIN_FLOOR -
+          available;
+
+        // 1. Shrink toward each pane's minimum.
+        for (const key of SACRIFICE_ORDER) {
+          const over = overflow();
+          if (over <= 0) break;
+          if (effective[key] === 0) continue;
+          effective[key] -= Math.min(over, effective[key] - PANES[key].min);
+        }
+
+        // 2. Still short: collapse outright. `data-collapsed` is derived, so
+        //    the pane reopens on its own once the window has room again.
+        for (const key of SACRIFICE_ORDER) {
+          if (overflow() <= 0) break;
+          effective[key] = 0;
+        }
+
+        for (const key of PANE_KEYS) {
+          workspace.style.setProperty(
+            PANES[key].varName,
+            effective[key] + "px",
+          );
+          paneElement(key).dataset.collapsed = String(effective[key] === 0);
+
+          const handle = document.querySelector(
+            '.pane-handle[data-pane="' + key + '"]',
+          );
+          if (handle) {
+            handle.setAttribute("aria-valuenow", String(state.widths[key]));
+            // The inspector's handle lives on the main pane, so hiding it has
+            // to key off the pane it resizes, not the pane it sits in. Left
+            // visible it would also overhang the window by its 5px overlap.
+            handle.hidden = effective[key] === 0;
+          }
+        }
+      }
+
+      function setWidth(key, next) {
+        const spec = PANES[key];
+        state.widths[key] = Math.round(
+          Math.min(spec.max, Math.max(spec.min, next)),
+        );
+        layout();
+      }
+
+      /* Persistence mirrors src/app/fileRailPreferences.ts: every failure is
+         swallowed, because a layout preference must never block navigation. */
+      function savePreferences() {
+        try {
+          localStorage.setItem(
+            STORAGE_KEY,
+            JSON.stringify({
+              version: 1,
+              widths: state.widths,
+              collapsed: state.collapsed,
+              excerptLines: state.excerptLines,
+            }),
+          );
+        } catch {
+          /* ignore */
+        }
+      }
+
+      function loadPreferences() {
+        try {
+          const raw = localStorage.getItem(STORAGE_KEY);
+          if (!raw) return;
+          const value = JSON.parse(raw);
+          if (!value || value.version !== 1) return;
+          for (const key of PANE_KEYS) {
+            const width = Number(value.widths?.[key]);
+            if (Number.isFinite(width)) {
+              state.widths[key] = Math.min(
+                PANES[key].max,
+                Math.max(PANES[key].min, width),
+              );
+            }
+            state.collapsed[key] = Boolean(value.collapsed?.[key]);
+          }
+          if (value.excerptLines === "one" || value.excerptLines === "two") {
+            state.excerptLines = value.excerptLines;
+          }
+        } catch {
+          /* ignore */
+        }
+      }
+
+      /* Room the dragged pane may take before the editor hits its floor. */
+      function maxAllowed(key) {
+        const others = PANE_KEYS.filter(
+          (other) => other !== key && !state.collapsed[other],
+        ).reduce((total, other) => total + state.widths[other], 0);
+        const room = workspace.clientWidth - others - MAIN_FLOOR;
+        return Math.max(PANES[key].min, Math.min(PANES[key].max, room));
+      }
+
+      /* --------------------------------------------------------- drag + keys */
+
+      function initHandles() {
+        for (const handle of document.querySelectorAll(".pane-handle")) {
+          const key = handle.dataset.pane;
+          const spec = PANES[key];
+          let startX = 0;
+          let startWidth = 0;
+
+          handle.addEventListener("pointerdown", (event) => {
+            if (event.button !== 0) return;
+            event.preventDefault();
+            handle.setPointerCapture(event.pointerId);
+            handle.dataset.dragging = "true";
+            document.body.dataset.resizing = "true";
+            startX = event.clientX;
+            startWidth = state.widths[key];
+          });
+
+          handle.addEventListener("pointermove", (event) => {
+            if (handle.dataset.dragging !== "true") return;
+            const delta = spec.inverted
+              ? startX - event.clientX
+              : event.clientX - startX;
+            setWidth(key, Math.min(maxAllowed(key), startWidth + delta));
+          });
+
+          const endDrag = (event) => {
+            if (handle.dataset.dragging !== "true") return;
+            delete handle.dataset.dragging;
+            delete document.body.dataset.resizing;
+            if (handle.hasPointerCapture(event.pointerId)) {
+              handle.releasePointerCapture(event.pointerId);
+            }
+            savePreferences();
+          };
+
+          handle.addEventListener("pointerup", endDrag);
+          handle.addEventListener("pointercancel", endDrag);
+
+          handle.addEventListener("dblclick", () => {
+            setWidth(key, spec.initial);
+            savePreferences();
+          });
+
+          handle.addEventListener("keydown", (event) => {
+            const step = event.shiftKey ? 64 : 16;
+            const direction = spec.inverted ? -1 : 1;
+            let handled = true;
+
+            switch (event.key) {
+              case "ArrowLeft":
+                setWidth(
+                  key,
+                  Math.min(
+                    maxAllowed(key),
+                    state.widths[key] - step * direction,
+                  ),
+                );
+                break;
+              case "ArrowRight":
+                setWidth(
+                  key,
+                  Math.min(
+                    maxAllowed(key),
+                    state.widths[key] + step * direction,
+                  ),
+                );
+                break;
+              case "Home":
+                setWidth(key, spec.min);
+                break;
+              case "End":
+                setWidth(key, Math.min(maxAllowed(key), spec.max));
+                break;
+              case "Enter":
+              case " ":
+                togglePane(key);
+                break;
+              default:
+                handled = false;
+            }
+
+            if (handled) {
+              event.preventDefault();
+              savePreferences();
+            }
+          });
+        }
+      }
+
+      function togglePane(key) {
+        state.collapsed[key] = !state.collapsed[key];
+        layout({ animate: true });
+        savePreferences();
+        syncInspectorToggle();
+      }
+
+      function syncInspectorToggle() {
+        const button = document.getElementById("inspector-toggle");
+        const open = !state.collapsed.inspector;
+        button.setAttribute("aria-pressed", String(open));
+        button.setAttribute(
+          "aria-label",
+          open ? "Hide inspector" : "Show inspector",
+        );
+      }
+
+      /* ------------------------------------------------- left pane ladder
+
+         The two left panes collapse and reopen as one three-step ladder:
+
+           2  nav + list        swipe left  ->  1
+           1  list only         swipe left  ->  0
+           0  neither           swipe right ->  1, then 2
+
+         Reading the stage back from the pane flags (rather than storing it)
+         keeps the gesture in step with the ⌘1 / ⌘2 shortcuts, which can leave
+         exactly one left pane open. Either single-pane arrangement counts as
+         stage 1, so a swipe from there always resolves onto the ladder. */
+
+      function leftStage() {
+        return (state.collapsed.nav ? 0 : 1) + (state.collapsed.list ? 0 : 1);
+      }
+
+      function setLeftStage(stage) {
+        const next = Math.max(0, Math.min(2, stage));
+        if (next === leftStage() && next !== 1) return;
+        state.collapsed.list = next < 1;
+        state.collapsed.nav = next < 2;
+        layout({ animate: true });
+        savePreferences();
+      }
+
+      /* ------------------------------------------------------------ rendering */
+
+      function notesFor(collection) {
+        return NOTES.filter((note) => note.collection === collection);
+      }
+
+      function renderTitleActions() {
+        const actions = document.getElementById("title-actions");
+        const identity = document.getElementById("vault-identity");
+        const open = shell.dataset.vault === "open";
+
+        identity.replaceChildren();
+        if (open) {
+          identity.append(
+            document
+              .getElementById("tpl-vault-identity")
+              .content.cloneNode(true),
+          );
+        }
+
+        // With no vault open, settings is the only action. Everything else is
+        // removed rather than disabled.
+        const SETTINGS_ICON =
+          '<path d="M4 7h9M17 7h3M4 17h3M11 17h9"/>' +
+          '<circle cx="15" cy="7" r="2"/><circle cx="9" cy="17" r="2"/>';
+        const icons = open
+          ? [
+              [
+                "Notifications",
+                '<path d="M12 4a5 5 0 0 0-5 5v3l-1.5 3h13L17 12V9a5 5 0 0 0-5-5ZM10 18a2 2 0 0 0 4 0"/>',
+              ],
+              [
+                "Search vault",
+                '<circle cx="11" cy="11" r="6"/><path d="m20 20-3.5-3.5"/>',
+              ],
+              [
+                "New note",
+                '<path d="M13 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-8M12 12h6M15 9v6"/>',
+              ],
+              ["Settings", SETTINGS_ICON],
+            ]
+          : [["Settings", SETTINGS_ICON]];
+
+        const nodes = [];
+        if (open) {
+          const status = document.createElement("span");
+          status.className = "save-status";
+          status.setAttribute("role", "status");
+          status.innerHTML =
+            '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8"/>' +
+            '<path d="m8.5 12 2.5 2.5 4.5-5"/></svg>Saved';
+          nodes.push(status);
+
+          const rule = document.createElement("span");
+          rule.className = "title-bar__rule";
+          rule.setAttribute("aria-hidden", "true");
+          nodes.push(rule);
+        }
+
+        for (const [label, markup] of icons) {
+          const button = document.createElement("button");
+          button.className = "icon-button";
+          button.type = "button";
+          button.setAttribute("aria-label", label);
+          if (label === "Settings") {
+            button.setAttribute("aria-haspopup", "menu");
+            button.setAttribute("aria-expanded", "false");
+          }
+          button.innerHTML =
+            '<svg viewBox="0 0 24 24" aria-hidden="true">' + markup + "</svg>";
+          nodes.push(button);
+        }
+
+        actions.replaceChildren(...nodes);
+      }
+
+      function renderNav() {
+        const body = document.getElementById("nav-body");
+        const rows = [];
+
+        if (state.navMode === "collections") {
+          for (const collection of COLLECTIONS) {
+            rows.push(
+              navRow(
+                collection.label,
+                notesFor(collection.id).length,
+                collection.id,
+                false,
+              ),
+            );
+          }
+        } else {
+          for (const folder of FOLDERS) {
+            const count = NOTES.filter(
+              (note) => note.folder === folder.id,
+            ).length;
+            rows.push(navRow(folder.label, count, folder.id, true));
+          }
+        }
+
+        body.replaceChildren(...rows);
+      }
+
+      function navRow(label, count, id, isFolder) {
+        const row = document.createElement("button");
+        row.className = "nav-row";
+        row.type = "button";
+        row.setAttribute(
+          "aria-current",
+          String(state.selectedCollection === id),
+        );
+
+        const twisty = document.createElement("span");
+        twisty.className = "nav-row__twisty";
+        twisty.setAttribute("aria-hidden", "true");
+        twisty.innerHTML = isFolder
+          ? '<svg viewBox="0 0 24 24" style="width:12px;height:12px"><path d="m9 6 6 6-6 6"/></svg>'
+          : "";
+
+        const text = document.createElement("span");
+        text.className = "nav-row__label";
+        text.textContent = label;
+
+        const badge = document.createElement("span");
+        badge.className = "nav-row__count";
+        badge.textContent = count > 0 ? String(count) : "";
+
+        row.append(twisty, text, badge);
+        row.addEventListener("click", () => {
+          state.selectedCollection = id;
+          state.selectedNote = 0;
+          render();
+        });
+        return row;
+      }
+
+      /* Indexes into NOTES rather than note objects: a tab stores an index, so
+         the same document can sit in any number of tabs without copying. */
+      function currentNoteIndexes() {
+        return NOTES.reduce((indexes, note, index) => {
+          const match =
+            state.navMode === "collections"
+              ? note.collection === state.selectedCollection
+              : note.folder === state.selectedCollection;
+          if (match) indexes.push(index);
+          return indexes;
+        }, []);
+      }
+
+      function renderList() {
+        const indexes = currentNoteIndexes();
+        const openIndexes = new Set();
+        walkLeaves(editorTree, (leaf) => {
+          for (const tab of leaf.tabs) openIndexes.add(tab.note);
+        });
+        const currentTab = activeLeaf()?.tabs[activeLeaf()?.active];
+        const label =
+          state.navMode === "collections"
+            ? (COLLECTIONS.find((item) => item.id === state.selectedCollection)
+                ?.label ?? "Notes")
+            : state.selectedCollection;
+
+        document.getElementById("list-title").textContent = label;
+        document.getElementById("list-count").textContent = String(
+          indexes.length,
+        );
+
+        const body = document.getElementById("list-body");
+        body.setAttribute("aria-label", "Notes in " + label);
+
+        if (indexes.length === 0) {
+          const empty = document.createElement("p");
+          empty.className = "pane__empty";
+          empty.textContent = "No notes in " + label;
+          body.replaceChildren(empty);
+          return;
+        }
+
+        const rows = indexes.map((noteIndex) => {
+          const note = NOTES[noteIndex];
+          const isCurrent = currentTab?.note === noteIndex;
+          const row = document.createElement("button");
+          row.className = "list-row";
+          row.type = "button";
+          row.setAttribute("role", "option");
+          row.setAttribute("aria-current", String(isCurrent));
+          row.setAttribute("aria-selected", String(isCurrent));
+          if (openIndexes.has(noteIndex)) row.dataset.open = "true";
+
+          const title = document.createElement("span");
+          title.className = "list-row__title";
+          title.textContent = note.title;
+
+          const excerpt = document.createElement("span");
+          excerpt.className = "list-row__excerpt";
+          excerpt.textContent = note.body.join(" ");
+
+          const meta = document.createElement("span");
+          meta.className = "list-row__meta";
+          meta.textContent = note.when + " · " + note.folder;
+
+          row.append(title, excerpt, meta);
+          // Modifier-click opens in a new tab, as every tabbed editor does.
+          row.addEventListener("click", (event) => {
+            openNote(noteIndex, {
+              newTab: event.metaKey || event.ctrlKey || event.shiftKey,
+            });
+          });
+          return row;
+        });
+
+        body.replaceChildren(...rows);
+      }
+
+      /* ------------------------------------------------ editor split tree
+
+         The editor area is a binary tree.
+
+           leaf   { type: "leaf", id, tabs: [{ id, note }], active }
+           split  { type: "split", direction: "row" | "column",
+                    children: [node, node], sizes: [fraction, fraction] }
+
+         A leaf is one tab group with its own strip. Splitting replaces a leaf
+         with a split holding the original leaf and a new one, so nesting comes
+         free and a document can appear in as many tabs as you like — each tab
+         only stores an index into NOTES, never a copy. */
+
+      let nodeSequence = 0;
+
+      function nextNodeId(prefix) {
+        nodeSequence += 1;
+        return prefix + nodeSequence;
+      }
+
+      /* Each tab carries its own history, which is what the document row's
+         back and forward arrows walk. */
+      function makeTab(noteIndex) {
+        return {
+          id: nextNodeId("tab-"),
+          note: noteIndex,
+          history: [noteIndex],
+          historyIndex: 0,
+        };
+      }
+
+      function navigateTab(tab, noteIndex) {
+        if (tab.note === noteIndex) return;
+        // Navigating after going back drops the forward entries, as a browser
+        // does.
+        tab.history = tab.history.slice(0, tab.historyIndex + 1);
+        tab.history.push(noteIndex);
+        tab.historyIndex = tab.history.length - 1;
+        tab.note = noteIndex;
+      }
+
+      function stepTab(tab, delta) {
+        const next = tab.historyIndex + delta;
+        if (next < 0 || next >= tab.history.length) return;
+        tab.historyIndex = next;
+        tab.note = tab.history[next];
+      }
+
+      function makeLeaf(noteIndexes) {
+        return {
+          type: "leaf",
+          id: nextNodeId("group-"),
+          tabs: noteIndexes.map(makeTab),
+          active: 0,
+        };
+      }
+
+      let editorTree = makeLeaf([0]);
+      let activeGroupId = editorTree.id;
+
+      function walkLeaves(node, visit) {
+        if (node.type === "leaf") {
+          visit(node);
+          return;
+        }
+        for (const child of node.children) walkLeaves(child, visit);
+      }
+
+      function findLeaf(id) {
+        let found;
+        walkLeaves(editorTree, (leaf) => {
+          if (leaf.id === id) found = leaf;
+        });
+        return found;
+      }
+
+      function firstLeaf() {
+        let found;
+        walkLeaves(editorTree, (leaf) => {
+          found = found ?? leaf;
+        });
+        return found;
+      }
+
+      function activeLeaf() {
+        return findLeaf(activeGroupId) ?? firstLeaf();
+      }
+
+      function activeNote() {
+        const leaf = activeLeaf();
+        const tab = leaf?.tabs[leaf.active];
+        return tab ? NOTES[tab.note] : undefined;
+      }
+
+      /* Swaps `id` for `replacement`, or removes it when `replacement` is
+         null by promoting its sibling into the parent's place. */
+      function replaceNode(id, replacement) {
+        if (editorTree.id === id) {
+          editorTree = replacement ?? makeLeaf([]);
+          return;
+        }
+
+        const visit = (node) => {
+          if (node.type !== "split") return false;
+          for (let index = 0; index < node.children.length; index += 1) {
+            const child = node.children[index];
+            if (child.id !== id) {
+              if (visit(child)) return true;
+              continue;
+            }
+            if (replacement) {
+              node.children[index] = replacement;
+            } else {
+              // A split always has two children, so removing one means the
+              // split itself has no reason to exist.
+              replaceNode(node.id, node.children[index === 0 ? 1 : 0]);
+            }
+            return true;
+          }
+          return false;
+        };
+
+        visit(editorTree);
+      }
+
+      function splitGroup(groupId, direction) {
+        const leaf = findLeaf(groupId);
+        if (!leaf) return;
+        const tab = leaf.tabs[leaf.active];
+        const companion = makeLeaf(tab ? [tab.note] : []);
+        const split = {
+          type: "split",
+          id: nextNodeId("split-"),
+          direction,
+          children: [leaf, companion],
+          sizes: [0.5, 0.5],
+        };
+        replaceNode(groupId, split);
+        activeGroupId = companion.id;
+        renderWorkspace();
+      }
+
+      function closeGroup(groupId) {
+        if (editorTree.type === "leaf") {
+          // The last group stays; it just empties.
+          editorTree.tabs = [];
+          editorTree.active = 0;
+        } else {
+          replaceNode(groupId, null);
+          activeGroupId = firstLeaf().id;
+        }
+        renderWorkspace();
+      }
+
+      function openNote(noteIndex, { newTab = false } = {}) {
+        const leaf = activeLeaf();
+        activeGroupId = leaf.id;
+        const current = leaf.tabs[leaf.active];
+        if (newTab || !current || current.pinned) {
+          leaf.tabs.splice(leaf.active + 1, 0, makeTab(noteIndex));
+          leaf.active = Math.min(leaf.active + 1, leaf.tabs.length - 1);
+        } else {
+          navigateTab(current, noteIndex);
+        }
+        renderWorkspace();
+      }
+
+      function closeTab(groupId, tabIndex) {
+        const leaf = findLeaf(groupId);
+        if (!leaf) return;
+        leaf.tabs.splice(tabIndex, 1);
+        leaf.active = Math.max(0, Math.min(leaf.active, leaf.tabs.length - 1));
+        if (leaf.tabs.length === 0 && editorTree.type === "split") {
+          closeGroup(groupId);
+          return;
+        }
+        renderWorkspace();
+      }
+
+      /* --------------------------------------------------- editor rendering */
+
+      function documentNodes(note) {
+        const nodes = [];
+        if (note.frontmatter) {
+          const pre = document.createElement("pre");
+          pre.className = "front-matter";
+          pre.textContent = note.frontmatter;
+          nodes.push(pre);
+        }
+
+        const heading = document.createElement("h1");
+        heading.textContent = note.title;
+        nodes.push(heading);
+
+        for (const paragraph of note.body) {
+          const p = document.createElement("p");
+          p.textContent = paragraph;
+          nodes.push(p);
+        }
+
+        if (note.related) {
+          const p = document.createElement("p");
+          p.append("Related: ");
+          const link = document.createElement("button");
+          link.className = "wikilink";
+          link.type = "button";
+          link.textContent = "[[" + note.related + "]]";
+          p.append(link);
+          nodes.push(p);
+        }
+
+        const cursor = document.createElement("div");
+        cursor.className = "cursor-line";
+        cursor.setAttribute("aria-hidden", "true");
+        cursor.innerHTML = '<span class="caret"></span>';
+        nodes.push(cursor);
+        return nodes;
+      }
+
+      function iconButton(label, markup, onClick) {
+        const button = document.createElement("button");
+        button.className = "icon-button";
+        button.type = "button";
+        button.setAttribute("aria-label", label);
+        button.title = label;
+        button.innerHTML =
+          '<svg viewBox="0 0 24 24" aria-hidden="true">' + markup + "</svg>";
+        button.addEventListener("click", (event) => {
+          event.stopPropagation();
+          onClick();
+        });
+        return button;
+      }
+
+      /* ------------------------------------------------------- tab dragging
+
+         HTML drag and drop rather than pointer events, because a tab can be
+         dropped into a different group and the native API already tracks which
+         element is under the cursor across the whole tree. `dragged` holds the
+         source because dataTransfer cannot be read during dragover. */
+
+      let dragged = null;
+
+      function clearDropMarks() {
+        for (const element of document.querySelectorAll("[data-drop]")) {
+          delete element.dataset.drop;
+        }
+        for (const element of document.querySelectorAll("[data-drop-target]")) {
+          delete element.dataset.dropTarget;
+        }
+      }
+
+      function moveTab(from, to) {
+        const source = findLeaf(from.groupId);
+        const target = findLeaf(to.groupId);
+        if (!source || !target) return;
+
+        const [tab] = source.tabs.splice(from.tabIndex, 1);
+        if (!tab) return;
+
+        let insertAt = to.tabIndex;
+        // Removing an earlier tab from the same strip shifts the target left.
+        if (source === target && from.tabIndex < insertAt) insertAt -= 1;
+        insertAt = Math.max(0, Math.min(insertAt, target.tabs.length));
+        target.tabs.splice(insertAt, 0, tab);
+
+        target.active = insertAt;
+        activeGroupId = target.id;
+
+        if (source !== target) {
+          source.active = Math.max(
+            0,
+            Math.min(source.active, source.tabs.length - 1),
+          );
+          if (source.tabs.length === 0 && editorTree.type === "split") {
+            replaceNode(source.id, null);
+          }
+        }
+
+        renderWorkspace();
+      }
+
+      function attachTabDrag(button, leaf, index) {
+        button.addEventListener("dragstart", (event) => {
+          dragged = { groupId: leaf.id, tabIndex: index };
+          button.dataset.dragging = "true";
+          event.dataTransfer.effectAllowed = "move";
+          // Firefox refuses to start a drag without payload.
+          event.dataTransfer.setData("text/plain", leaf.tabs[index].id);
+        });
+
+        button.addEventListener("dragend", () => {
+          delete button.dataset.dragging;
+          dragged = null;
+          clearDropMarks();
+        });
+
+        button.addEventListener("dragover", (event) => {
+          if (!dragged) return;
+          event.preventDefault();
+          event.stopPropagation();
+          event.dataTransfer.dropEffect = "move";
+          clearDropMarks();
+          const rect = button.getBoundingClientRect();
+          button.dataset.drop =
+            event.clientX < rect.left + rect.width / 2 ? "before" : "after";
+        });
+
+        button.addEventListener("drop", (event) => {
+          if (!dragged) return;
+          event.preventDefault();
+          event.stopPropagation();
+          const rect = button.getBoundingClientRect();
+          const after = event.clientX >= rect.left + rect.width / 2;
+          clearDropMarks();
+          moveTab(dragged, {
+            groupId: leaf.id,
+            tabIndex: index + (after ? 1 : 0),
+          });
+          dragged = null;
+        });
+      }
+
+      /* Dropping past the last tab, or anywhere in another group's strip,
+         appends to the end. */
+      function attachStripDrop(tabs, leaf) {
+        tabs.addEventListener("dragover", (event) => {
+          if (!dragged) return;
+          event.preventDefault();
+          event.dataTransfer.dropEffect = "move";
+          clearDropMarks();
+          tabs.dataset.drop = "end";
+          tabs.closest(".tab-group").dataset.dropTarget = "true";
+        });
+
+        tabs.addEventListener("dragleave", (event) => {
+          if (event.target === tabs) clearDropMarks();
+        });
+
+        tabs.addEventListener("drop", (event) => {
+          if (!dragged) return;
+          event.preventDefault();
+          clearDropMarks();
+          moveTab(dragged, {
+            groupId: leaf.id,
+            tabIndex: leaf.tabs.length,
+          });
+          dragged = null;
+        });
+      }
+
+      function renderTabStrip(leaf) {
+        const strip = document.createElement("div");
+        strip.className = "tab-strip";
+
+        const tabs = document.createElement("div");
+        tabs.className = "tab-strip__tabs";
+        tabs.setAttribute("role", "tablist");
+
+        leaf.tabs.forEach((tab, index) => {
+          const note = NOTES[tab.note];
+          const button = document.createElement("button");
+          button.className = "tab";
+          button.type = "button";
+          button.setAttribute("role", "tab");
+          button.setAttribute("aria-selected", String(index === leaf.active));
+          button.title = note.folder + "/" + note.title;
+
+          if (tab.pinned) {
+            const pin = document.createElement("span");
+            pin.className = "tab__pin";
+            pin.setAttribute("aria-hidden", "true");
+            pin.textContent = "◆";
+            button.append(pin);
+          }
+
+          const label = document.createElement("span");
+          label.className = "tab__label";
+          label.textContent = note.title;
+          button.append(label);
+
+          const close = document.createElement("span");
+          close.className = "tab__close";
+          close.setAttribute("role", "button");
+          close.setAttribute("aria-label", "Close " + note.title);
+          close.tabIndex = 0;
+          close.textContent = "×";
+          close.addEventListener("click", (event) => {
+            event.stopPropagation();
+            closeTab(leaf.id, index);
+          });
+          button.append(close);
+
+          button.addEventListener("click", () => {
+            leaf.active = index;
+            activeGroupId = leaf.id;
+            renderWorkspace();
+          });
+
+          button.addEventListener("contextmenu", (event) => {
+            event.preventDefault();
+            leaf.active = index;
+            activeGroupId = leaf.id;
+            renderWorkspace();
+            openTabMenu(leaf.id, index, event.clientX, event.clientY);
+          });
+
+          button.draggable = true;
+          button.dataset.groupId = leaf.id;
+          button.dataset.tabIndex = String(index);
+          attachTabDrag(button, leaf, index);
+
+          tabs.append(button);
+        });
+
+        attachStripDrop(tabs, leaf);
+
+        // The strip owns only the tabs: add one, or open the group menu.
+        // Everything about the note itself lives in the document row below.
+        const actions = document.createElement("div");
+        actions.className = "tab-strip__actions";
+        actions.append(
+          iconButton("New tab", '<path d="M12 6v12M6 12h12"/>', () => {
+            leaf.tabs.push(makeTab(leaf.tabs[leaf.active]?.note ?? 0));
+            leaf.active = leaf.tabs.length - 1;
+            activeGroupId = leaf.id;
+            renderWorkspace();
+          }),
+          iconButton("Tab options", '<path d="m6 9 6 6 6-6"/>', () => {
+            activeGroupId = leaf.id;
+            openGroupMenu(leaf.id);
+          }),
+        );
+
+        strip.append(tabs, actions);
+        return strip;
+      }
+
+      /* The per-document row: history, where the note lives, reading view, and
+         the note's own overflow menu. */
+      function renderDocumentHeader(leaf, tab) {
+        const note = NOTES[tab.note];
+        const header = document.createElement("div");
+        header.className = "doc-header";
+
+        const back = iconButton("Back", '<path d="m14 6-6 6 6 6"/>', () => {
+          stepTab(tab, -1);
+          activeGroupId = leaf.id;
+          renderWorkspace();
+        });
+        const forward = iconButton(
+          "Forward",
+          '<path d="m10 6 6 6-6 6"/>',
+          () => {
+            stepTab(tab, 1);
+            activeGroupId = leaf.id;
+            renderWorkspace();
+          },
+        );
+        back.disabled = tab.historyIndex === 0;
+        forward.disabled = tab.historyIndex >= tab.history.length - 1;
+
+        const crumb = document.createElement("span");
+        crumb.className = "breadcrumb";
+        const folder = document.createElement("span");
+        folder.textContent = note.folder;
+        const slash = document.createElement("span");
+        slash.setAttribute("aria-hidden", "true");
+        slash.textContent = "/";
+        const name = document.createElement("strong");
+        name.textContent = note.title + (note.frontmatter ? ".md" : "");
+        crumb.append(folder, slash, name);
+
+        const actions = document.createElement("div");
+        actions.className = "doc-header__actions";
+        actions.append(
+          iconButton(
+            "Reading view",
+            '<path d="M4 5.5A1.5 1.5 0 0 1 5.5 4H11v16H5.5A1.5 1.5 0 0 1 4 18.5Z"/>' +
+              '<path d="M20 5.5A1.5 1.5 0 0 0 18.5 4H13v16h5.5a1.5 1.5 0 0 0 1.5-1.5Z"/>',
+            () => {},
+          ),
+          iconButton(
+            "More note actions",
+            '<circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/>',
+            () => {
+              activeGroupId = leaf.id;
+              openOverflowFor(leaf.id);
+            },
+          ),
+        );
+
+        header.append(back, forward, crumb, actions);
+        return header;
+      }
+
+      function renderLeaf(leaf) {
+        const group = document.createElement("section");
+        group.className = "tab-group";
+        group.dataset.groupId = leaf.id;
+        group.dataset.active = String(leaf.id === activeGroupId);
+        group.setAttribute("aria-label", "Editor group");
+        group.append(renderTabStrip(leaf));
+
+        const tab = leaf.tabs[leaf.active];
+        if (!tab) {
+          const empty = document.createElement("div");
+          empty.className = "tab-group__empty";
+          empty.append("No note open");
+          group.append(empty);
+        } else {
+          group.append(renderDocumentHeader(leaf, tab));
+          const surface = document.createElement("div");
+          surface.className = "document";
+          const inner = document.createElement("div");
+          inner.className = "document__inner";
+          inner.append(...documentNodes(NOTES[tab.note]));
+          surface.append(inner);
+          group.append(surface);
+        }
+
+        // Clicking anywhere in a group focuses it, so the list pane knows
+        // which pane to open into.
+        group.addEventListener("pointerdown", () => {
+          if (activeGroupId === leaf.id) return;
+          activeGroupId = leaf.id;
+          renderWorkspace();
+        });
+
+        return group;
+      }
+
+      function renderSplit(node) {
+        const element = document.createElement("div");
+        element.className = "split split--" + node.direction;
+
+        node.children.forEach((child, index) => {
+          const wrapper = document.createElement("div");
+          wrapper.className = "split__child";
+          wrapper.style.flex = "0 0 " + node.sizes[index] * 100 + "%";
+          wrapper.append(renderNode(child));
+          element.append(wrapper);
+
+          if (index === 0) {
+            element.append(makeSplitHandle(node, element));
+          }
+        });
+
+        return element;
+      }
+
+      function renderNode(node) {
+        return node.type === "leaf" ? renderLeaf(node) : renderSplit(node);
+      }
+
+      const SPLIT_MIN_FRACTION = 0.15;
+
+      function makeSplitHandle(node, container) {
+        const handle = document.createElement("button");
+        handle.className = "split-handle";
+        handle.type = "button";
+        handle.setAttribute("role", "separator");
+        const row = node.direction === "row";
+        handle.setAttribute(
+          "aria-orientation",
+          row ? "vertical" : "horizontal",
+        );
+        handle.setAttribute(
+          "aria-label",
+          row ? "Resize panes horizontally" : "Resize panes vertically",
+        );
+        handle.setAttribute("aria-valuemin", "15");
+        handle.setAttribute("aria-valuemax", "85");
+        handle.setAttribute(
+          "aria-valuenow",
+          String(Math.round(node.sizes[0] * 100)),
+        );
+
+        function applyFraction(fraction) {
+          const first = Math.max(
+            SPLIT_MIN_FRACTION,
+            Math.min(1 - SPLIT_MIN_FRACTION, fraction),
+          );
+          node.sizes = [first, 1 - first];
+          const children = container.querySelectorAll(":scope > .split__child");
+          children[0].style.flex = "0 0 " + first * 100 + "%";
+          children[1].style.flex = "0 0 " + (1 - first) * 100 + "%";
+          handle.setAttribute("aria-valuenow", String(Math.round(first * 100)));
+        }
+
+        handle.addEventListener("pointerdown", (event) => {
+          if (event.button !== 0) return;
+          event.preventDefault();
+          event.stopPropagation();
+          handle.setPointerCapture(event.pointerId);
+          handle.dataset.dragging = "true";
+          document.body.dataset.resizing = "true";
+        });
+
+        handle.addEventListener("pointermove", (event) => {
+          if (handle.dataset.dragging !== "true") return;
+          const rect = container.getBoundingClientRect();
+          applyFraction(
+            row
+              ? (event.clientX - rect.left) / rect.width
+              : (event.clientY - rect.top) / rect.height,
+          );
+        });
+
+        const endDrag = (event) => {
+          if (handle.dataset.dragging !== "true") return;
+          delete handle.dataset.dragging;
+          delete document.body.dataset.resizing;
+          if (handle.hasPointerCapture(event.pointerId)) {
+            handle.releasePointerCapture(event.pointerId);
+          }
+        };
+
+        handle.addEventListener("pointerup", endDrag);
+        handle.addEventListener("pointercancel", endDrag);
+        handle.addEventListener("dblclick", () => applyFraction(0.5));
+
+        handle.addEventListener("keydown", (event) => {
+          const step = event.shiftKey ? 0.1 : 0.02;
+          const back = row ? "ArrowLeft" : "ArrowUp";
+          const forward = row ? "ArrowRight" : "ArrowDown";
+          if (event.key === back) applyFraction(node.sizes[0] - step);
+          else if (event.key === forward) applyFraction(node.sizes[0] + step);
+          else if (event.key === "Home") applyFraction(SPLIT_MIN_FRACTION);
+          else if (event.key === "End") applyFraction(1 - SPLIT_MIN_FRACTION);
+          else return;
+          event.preventDefault();
+        });
+
+        return handle;
+      }
+
+      function renderEditor() {
+        document
+          .getElementById("split-root")
+          .replaceChildren(renderNode(editorTree));
+        renderInspector();
+        renderStatusPath();
+      }
+
+      function renderStatusPath() {
+        const note = activeNote();
+        document.getElementById("status-path").textContent = note
+          ? "Personal › " +
+            note.folder +
+            " › " +
+            note.title +
+            (note.frontmatter ? ".md" : "")
+          : "Personal";
+      }
+
+      /* A pinned reference outranks backlinks in the inspector: it is a
+         document you have deliberately parked there, so it survives every
+         navigation until you unpin it. */
+      let pinnedReference = null;
+
+      function renderReference(noteIndex) {
+        const note = NOTES[noteIndex];
+        const wrapper = document.createElement("div");
+        wrapper.className = "reference";
+
+        const meta = document.createElement("p");
+        meta.className = "reference__meta";
+        meta.textContent = note.folder + "/" + note.title + ".md";
+
+        const body = document.createElement("div");
+        body.className = "reference__body";
+        const heading = document.createElement("h1");
+        heading.textContent = note.title;
+        body.append(heading);
+        for (const paragraph of note.body) {
+          const p = document.createElement("p");
+          p.textContent = paragraph;
+          body.append(p);
+        }
+
+        wrapper.append(meta, body);
+        return wrapper;
+      }
+
+      function renderInspector() {
+        const note = activeNote();
+        const inspector = document.getElementById("inspector-body");
+        const count = document.getElementById("backlink-count");
+        const title = document.getElementById("inspector-title");
+        const unpin = document.getElementById("unpin-reference");
+        const placeholder = document.getElementById("inspector-note");
+
+        if (pinnedReference !== null) {
+          title.textContent = "Reference";
+          count.hidden = true;
+          unpin.hidden = false;
+          placeholder.hidden = true;
+          inspector.replaceChildren(renderReference(pinnedReference));
+          return;
+        }
+
+        title.textContent = "Backlinks";
+        count.hidden = false;
+        unpin.hidden = true;
+        placeholder.hidden = false;
+
+        if (!note) {
+          count.textContent = "0";
+          inspector.replaceChildren();
+          return;
+        }
+
+        count.textContent = String(note.backlinks.length);
+        if (note.backlinks.length === 0) {
+          const empty = document.createElement("p");
+          empty.className = "pane__empty";
+          empty.textContent = "Nothing links here yet";
+          inspector.replaceChildren(empty);
+          return;
+        }
+
+        inspector.replaceChildren(
+          ...note.backlinks.map((title) => {
+            const row = document.createElement("button");
+            row.className = "inspector-row";
+            row.type = "button";
+            row.textContent = title;
+            const small = document.createElement("small");
+            small.textContent = "[[" + note.title + "]]";
+            row.append(small);
+            return row;
+          }),
+        );
+      }
+
+      /* Tab and split changes move the current note, which changes which list
+         row reads as current — so the two always redraw together. */
+      function renderWorkspace() {
+        renderEditor();
+        renderList();
+      }
+
+      function render() {
+        renderTitleActions();
+        renderNav();
+        renderWorkspace();
+      }
+
+      /* ---------------------------------------------------------------- wiring */
+
+      function setVaultState(open) {
+        shell.dataset.vault = open ? "open" : "closed";
+        workspace.hidden = !open;
+        document.getElementById("status-bar").hidden = !open;
+        document.getElementById("welcome").hidden = open;
+        // With no vault there are no panes to inspect, so the toggle goes too.
+        document.getElementById("inspector-toggle").hidden = !open;
+        // A floating window belongs to a document, so closing the vault
+        // closes it.
+        if (!open) document.getElementById("floating").hidden = true;
+        for (const button of document.querySelectorAll("[data-proto]")) {
+          if (
+            button.dataset.proto === "open" ||
+            button.dataset.proto === "closed"
+          ) {
+            button.setAttribute(
+              "aria-pressed",
+              String((button.dataset.proto === "open") === open),
+            );
+          }
+        }
+        render();
+      }
+
+      for (const button of document.querySelectorAll("[data-nav-mode]")) {
+        button.addEventListener("click", () => {
+          state.navMode = button.dataset.navMode;
+          state.selectedCollection =
+            state.navMode === "collections" ? "inbox" : "inbox";
+          state.selectedNote = 0;
+          for (const sibling of document.querySelectorAll("[data-nav-mode]")) {
+            sibling.setAttribute("aria-pressed", String(sibling === button));
+          }
+          render();
+        });
+      }
+
+      for (const button of document.querySelectorAll("[data-proto]")) {
+        button.addEventListener("click", () => {
+          const action = button.dataset.proto;
+          if (action === "reset") {
+            for (const key of PANE_KEYS) {
+              state.collapsed[key] = false;
+              setWidth(key, PANES[key].initial);
+            }
+            savePreferences();
+            syncInspectorToggle();
+            return;
+          }
+          setVaultState(action === "open");
+        });
+      }
+
+      const overflowMenu = document.getElementById("overflow-menu");
+      const settingsMenu = document.getElementById("settings-menu");
+      const tabMenu = document.getElementById("tab-menu");
+
+      function closeMenus() {
+        overflowMenu.hidden = true;
+        settingsMenu.hidden = true;
+        tabMenu.hidden = true;
+        document.getElementById("group-menu").hidden = true;
+        document
+          .querySelector('#title-actions [aria-label="Settings"]')
+          ?.setAttribute("aria-expanded", "false");
+      }
+
+      /* ------------------------------------------------------ tab context menu */
+
+      function openTabMenu(groupId, tabIndex, x, y) {
+        const leaf = findLeaf(groupId);
+        if (!leaf) return;
+        closeMenus();
+
+        tabMenu.dataset.groupId = groupId;
+        tabMenu.dataset.tabIndex = String(tabIndex);
+
+        const only = leaf.tabs.length < 2;
+        const last = tabIndex === leaf.tabs.length - 1;
+        tabMenu.querySelector('[data-action="close-others"]').disabled = only;
+        tabMenu.querySelector('[data-action="close-right"]').disabled = last;
+        tabMenu.querySelector('[data-action="pin-tab"]').textContent = leaf
+          .tabs[tabIndex].pinned
+          ? "Unpin Tab"
+          : "Pin Tab";
+
+        // Fixed positioning so the menu is placed against the viewport rather
+        // than whichever pane the tab happens to live in.
+        tabMenu.style.position = "fixed";
+        tabMenu.style.right = "auto";
+        tabMenu.hidden = false;
+
+        const rect = tabMenu.getBoundingClientRect();
+        tabMenu.style.left =
+          Math.min(x, window.innerWidth - rect.width - 8) + "px";
+        tabMenu.style.top =
+          Math.min(y, window.innerHeight - rect.height - 8) + "px";
+      }
+
+      tabMenu.addEventListener("click", (event) => {
+        const item = event.target.closest("[data-action]");
+        if (!item || item.disabled) return;
+        event.stopPropagation();
+
+        const groupId = tabMenu.dataset.groupId;
+        const tabIndex = Number(tabMenu.dataset.tabIndex);
+        const leaf = findLeaf(groupId);
+        closeMenus();
+        if (!leaf) return;
+        const tab = leaf.tabs[tabIndex];
+
+        switch (item.dataset.action) {
+          case "close":
+            closeTab(groupId, tabIndex);
+            break;
+          case "close-others":
+            leaf.tabs = [tab];
+            leaf.active = 0;
+            renderWorkspace();
+            break;
+          case "close-right":
+            leaf.tabs = leaf.tabs.slice(0, tabIndex + 1);
+            leaf.active = Math.min(leaf.active, leaf.tabs.length - 1);
+            renderWorkspace();
+            break;
+          case "pin-tab":
+            tab.pinned = !tab.pinned;
+            renderWorkspace();
+            break;
+          case "split-row":
+            splitGroup(groupId, "row");
+            break;
+          case "split-column":
+            splitGroup(groupId, "column");
+            break;
+          case "pin-reference":
+            pinnedReference = tab.note;
+            state.collapsed.inspector = false;
+            layout({ animate: true });
+            syncInspectorToggle();
+            savePreferences();
+            renderWorkspace();
+            break;
+          case "float":
+            openFloating(tab.note);
+            break;
+          default:
+            break;
+        }
+      });
+
+      document
+        .getElementById("unpin-reference")
+        .addEventListener("click", () => {
+          pinnedReference = null;
+          renderInspector();
+        });
+
+      /* ------------------------------------------------------ floating window
+
+         Tauri would open a genuine second window here; the prototype fakes one
+         so the interaction can be judged without the native plumbing. */
+
+      const floating = document.getElementById("floating");
+      const floatingBar = document.getElementById("floating-bar");
+
+      function openFloating(noteIndex) {
+        const note = NOTES[noteIndex];
+        document.getElementById("floating-title").textContent = note.title;
+        document
+          .getElementById("floating-body")
+          .replaceChildren(...documentNodes(note));
+        floating.hidden = false;
+      }
+
+      document
+        .getElementById("floating-close")
+        .addEventListener("click", () => {
+          floating.hidden = true;
+        });
+
+      function dragSurface(handle, onMove) {
+        handle.addEventListener("pointerdown", (event) => {
+          if (event.button !== 0 || event.target.closest("button")) return;
+          event.preventDefault();
+          handle.setPointerCapture(event.pointerId);
+          handle.dataset.dragging = "true";
+          const rect = floating.getBoundingClientRect();
+          const origin = { x: event.clientX, y: event.clientY, rect };
+
+          const move = (moveEvent) => {
+            if (handle.dataset.dragging !== "true") return;
+            onMove(moveEvent, origin);
+          };
+          const end = (endEvent) => {
+            delete handle.dataset.dragging;
+            if (handle.hasPointerCapture(endEvent.pointerId)) {
+              handle.releasePointerCapture(endEvent.pointerId);
+            }
+            handle.removeEventListener("pointermove", move);
+            handle.removeEventListener("pointerup", end);
+            handle.removeEventListener("pointercancel", end);
+          };
+
+          handle.addEventListener("pointermove", move);
+          handle.addEventListener("pointerup", end);
+          handle.addEventListener("pointercancel", end);
+        });
+      }
+
+      dragSurface(floatingBar, (event, origin) => {
+        const left = origin.rect.left + (event.clientX - origin.x);
+        const top = origin.rect.top + (event.clientY - origin.y);
+        floating.style.left =
+          Math.max(0, Math.min(left, window.innerWidth - 120)) + "px";
+        floating.style.top =
+          Math.max(0, Math.min(top, window.innerHeight - 60)) + "px";
+      });
+
+      dragSurface(
+        document.getElementById("floating-resize"),
+        (event, origin) => {
+          floating.style.width =
+            Math.max(320, origin.rect.width + (event.clientX - origin.x)) +
+            "px";
+          floating.style.height =
+            Math.max(200, origin.rect.height + (event.clientY - origin.y)) +
+            "px";
+        },
+      );
+
+      /* One overflow menu is shared by every tab group and moved to whichever
+         group asked for it — the alternative is a menu per group, all but one
+         of them dead markup. */
+      function openOverflowFor(groupId) {
+        const group = document.querySelector(
+          '[data-group-id="' + groupId + '"]',
+        );
+        const trigger = group?.querySelector(
+          '[aria-label="More note actions"]',
+        );
+        if (!trigger) return;
+
+        const wasOpen =
+          !overflowMenu.hidden && overflowMenu.dataset.groupId === groupId;
+        closeMenus();
+        if (wasOpen) return;
+
+        const pane = document.getElementById("pane-main");
+        const paneRect = pane.getBoundingClientRect();
+        const rect = trigger.getBoundingClientRect();
+        overflowMenu.dataset.groupId = groupId;
+        overflowMenu.hidden = false;
+        overflowMenu.style.top = rect.bottom - paneRect.top + 4 + "px";
+        overflowMenu.style.right =
+          Math.max(4, paneRect.right - rect.right) + "px";
+      }
+
+      overflowMenu.addEventListener("click", (event) => {
+        const item = event.target.closest("[data-action]");
+        if (!item) return;
+        event.stopPropagation();
+        const groupId = overflowMenu.dataset.groupId;
+        closeMenus();
+        if (item.dataset.action === "close-group") closeGroup(groupId);
+        else if (item.dataset.action === "split-row")
+          splitGroup(groupId, "row");
+        else if (item.dataset.action === "split-column") {
+          splitGroup(groupId, "column");
+        }
+      });
+
+      /* --------------------------------------------------------- group menu */
+
+      const groupMenu = document.getElementById("group-menu");
+
+      function openGroupMenu(groupId) {
+        const leaf = findLeaf(groupId);
+        const group = document.querySelector(
+          '[data-group-id="' + groupId + '"]',
+        );
+        const trigger = group?.querySelector('[aria-label="Tab options"]');
+        if (!leaf || !trigger) return;
+
+        const wasOpen =
+          !groupMenu.hidden && groupMenu.dataset.groupId === groupId;
+        closeMenus();
+        if (wasOpen) return;
+
+        groupMenu.dataset.groupId = groupId;
+        groupMenu.querySelector('[data-action="bookmark"]').textContent =
+          "Bookmark " +
+          leaf.tabs.length +
+          (leaf.tabs.length === 1 ? " tab…" : " tabs…");
+
+        // The tab list doubles as the overflow list once the strip scrolls.
+        const list = document.getElementById("group-menu-tabs");
+        list.replaceChildren(
+          ...leaf.tabs.map((tab, index) => {
+            const item = document.createElement("button");
+            item.type = "button";
+            item.setAttribute("role", "menuitemradio");
+            item.setAttribute("aria-checked", String(index === leaf.active));
+            item.textContent = NOTES[tab.note].title;
+            item.addEventListener("click", (event) => {
+              event.stopPropagation();
+              leaf.active = index;
+              activeGroupId = leaf.id;
+              closeMenus();
+              renderWorkspace();
+            });
+            return item;
+          }),
+        );
+
+        groupMenu.hidden = false;
+        const paneRect = document
+          .getElementById("pane-main")
+          .getBoundingClientRect();
+        const rect = trigger.getBoundingClientRect();
+        groupMenu.style.top = rect.bottom - paneRect.top + 4 + "px";
+        groupMenu.style.right = Math.max(4, paneRect.right - rect.right) + "px";
+      }
+
+      groupMenu.addEventListener("click", (event) => {
+        const item = event.target.closest("[data-action]");
+        if (!item) return;
+        event.stopPropagation();
+        const leaf = findLeaf(groupMenu.dataset.groupId);
+        closeMenus();
+        if (!leaf) return;
+        if (item.dataset.action === "close-all") {
+          leaf.tabs = [];
+          leaf.active = 0;
+          if (editorTree.type === "split") {
+            replaceNode(leaf.id, null);
+            activeGroupId = firstLeaf().id;
+          }
+          renderWorkspace();
+        }
+      });
+
+      // The title-bar actions are re-rendered whenever the vault state flips,
+      // so the gear is reached by delegation rather than a direct listener.
+      document
+        .getElementById("title-actions")
+        .addEventListener("click", (event) => {
+          const gear = event.target.closest?.('[aria-label="Settings"]');
+          if (!gear) return;
+          event.stopPropagation();
+          const open = settingsMenu.hidden;
+          closeMenus();
+          settingsMenu.hidden = !open;
+          gear.setAttribute("aria-expanded", String(open));
+        });
+
+      for (const button of settingsMenu.querySelectorAll("[data-density]")) {
+        button.addEventListener("click", (event) => {
+          event.stopPropagation();
+          state.excerptLines = button.dataset.density;
+          applyExcerptLines();
+          savePreferences();
+          closeMenus();
+        });
+      }
+
+      document.addEventListener("click", closeMenus);
+      document.addEventListener("keydown", (event) => {
+        if (event.key === "Escape") closeMenus();
+      });
+
+      const inspectorToggle = document.getElementById("inspector-toggle");
+      inspectorToggle.addEventListener("click", () => togglePane("inspector"));
+
+      /* ------------------------------------------------------ swipe gesture
+
+         A two-finger horizontal swipe over the editor walks the left ladder.
+         macOS reports it as `wheel` events with a dominant deltaX, followed by
+         a long momentum tail — hence the arm/settle latch, so one physical
+         swipe moves exactly one step however long the tail runs.
+
+         Sign convention: swiping the fingers left scrolls content right, which
+         is a positive deltaX, and closes a pane. If it reads backwards on a
+         real trackpad, flip SWIPE_DIRECTION. */
+      const SWIPE_TRIGGER = 60;
+      const SWIPE_SETTLE_MS = 350;
+      const SWIPE_DIRECTION = -1;
+
+      let swipeTotal = 0;
+      let swipeArmed = true;
+      let swipeSettleTimer = 0;
+
+      document.getElementById("pane-main").addEventListener(
+        "wheel",
+        (event) => {
+          // Vertical intent belongs to the editor; leave it completely alone.
+          if (Math.abs(event.deltaX) <= Math.abs(event.deltaY)) return;
+          if (Math.abs(event.deltaX) < 1) return;
+          event.preventDefault();
+
+          window.clearTimeout(swipeSettleTimer);
+          swipeSettleTimer = window.setTimeout(() => {
+            swipeTotal = 0;
+            swipeArmed = true;
+          }, SWIPE_SETTLE_MS);
+
+          if (!swipeArmed) return;
+
+          swipeTotal += event.deltaX;
+          if (Math.abs(swipeTotal) < SWIPE_TRIGGER) return;
+
+          setLeftStage(
+            leftStage() + (swipeTotal > 0 ? SWIPE_DIRECTION : -SWIPE_DIRECTION),
+          );
+          swipeTotal = 0;
+          swipeArmed = false;
+        },
+        { passive: false },
+      );
+
+      window.addEventListener("keydown", (event) => {
+        if (!(event.metaKey || event.ctrlKey)) return;
+
+        // ⌥⌘→ / ⌥⌘← cycle tabs, matching Safari and Obsidian.
+        if (event.altKey) {
+          if (event.key !== "ArrowRight" && event.key !== "ArrowLeft") return;
+          const leaf = activeLeaf();
+          if (!leaf || leaf.tabs.length < 2) return;
+          event.preventDefault();
+          const step = event.key === "ArrowRight" ? 1 : -1;
+          leaf.active =
+            (leaf.active + step + leaf.tabs.length) % leaf.tabs.length;
+          renderWorkspace();
+          return;
+        }
+
+        const paneKey = { 1: "nav", 2: "list", 3: "inspector" }[event.key];
+        if (paneKey) {
+          event.preventDefault();
+          togglePane(paneKey);
+          return;
+        }
+
+        const key = event.key.toLowerCase();
+        if (key === "t") {
+          event.preventDefault();
+          const leaf = activeLeaf();
+          leaf.tabs.push(makeTab(leaf.tabs[leaf.active]?.note ?? 0));
+          leaf.active = leaf.tabs.length - 1;
+          renderWorkspace();
+        } else if (key === "w") {
+          event.preventDefault();
+          const leaf = activeLeaf();
+          if (leaf?.tabs.length) closeTab(leaf.id, leaf.active);
+        } else if (key === "\\") {
+          event.preventDefault();
+          splitGroup(activeLeaf().id, event.shiftKey ? "column" : "row");
+        }
+      });
+
+      window.addEventListener("resize", layout);
+
+      loadPreferences();
+      applyExcerptLines();
+      initHandles();
+      setVaultState(true);
+      syncInspectorToggle();
+      layout();
+    </script>
+  </body>
+</html>

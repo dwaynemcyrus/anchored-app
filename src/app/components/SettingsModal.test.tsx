@@ -14,6 +14,8 @@ describe("SettingsModal Markdown options", () => {
 
     render(
       <SettingsModal
+        excerptLines="two"
+        onExcerptLinesChange={vi.fn()}
         markdownSettings={DEFAULT_MARKDOWN_SETTINGS}
         reloading={false}
         timestampMigrationBlocked={false}
@@ -139,6 +141,8 @@ describe("SettingsModal Markdown options", () => {
 
     render(
       <SettingsModal
+        excerptLines="two"
+        onExcerptLinesChange={vi.fn()}
         markdownSettings={DEFAULT_MARKDOWN_SETTINGS}
         reloading={false}
         timestampMigrationBlocked

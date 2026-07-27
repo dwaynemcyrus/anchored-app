@@ -225,6 +225,62 @@ describe("App", () => {
     mockedListVaultTrash.mockResolvedValue([]);
   });
 
+  it("toggles each pane with its Command shortcut", async () => {
+    const user = userEvent.setup();
+    mockedSelectVault.mockResolvedValue({
+      files: [{ name: "One.md", parent: "", relativePath: "One.md" }],
+      name: "My Vault",
+      warnings: noWarnings,
+    });
+    render(<App />);
+    await user.click(screen.getByRole("button", { name: "Open a vault" }));
+
+    // The rendered widths depend on the workspace's measured width, which
+    // jsdom always reports as zero, so the assertions read the controls that
+    // reflect the pane state rather than the derived layout.
+    const ladder = () =>
+      screen
+        .getByRole("button", { name: /file navigator|note list/i })
+        .getAttribute("aria-label");
+
+    expect(ladder()).toBe("Hide file navigator");
+    await user.keyboard("{Meta>}1{/Meta}");
+    expect(ladder()).toBe("Show or hide the file navigator");
+    await user.keyboard("{Meta>}1{/Meta}");
+    expect(ladder()).toBe("Hide file navigator");
+
+    await user.keyboard("{Meta>}2{/Meta}");
+    expect(ladder()).toBe("Show or hide the file navigator");
+
+    expect(
+      screen.getByRole("button", { name: "Hide inspector" }),
+    ).toBeInTheDocument();
+    await user.keyboard("{Meta>}3{/Meta}");
+    expect(
+      screen.getByRole("button", { name: "Show inspector" }),
+    ).toBeInTheDocument();
+  });
+
+  it("changes the note list preview density from settings", async () => {
+    const user = userEvent.setup();
+    mockedSelectVault.mockResolvedValue({
+      files: [{ name: "One.md", parent: "", relativePath: "One.md" }],
+      name: "My Vault",
+      warnings: noWarnings,
+    });
+    render(<App />);
+    await user.click(screen.getByRole("button", { name: "Open a vault" }));
+
+    const row = () => screen.getByRole("button", { name: "One.md" });
+    expect(row()).toHaveAttribute("data-excerpt-lines", "two");
+
+    await user.click(screen.getByRole("button", { name: "Open settings" }));
+    await user.click(screen.getByRole("radio", { name: "One-line preview" }));
+    await user.click(screen.getByRole("button", { name: "Close settings" }));
+
+    expect(row()).toHaveAttribute("data-excerpt-lines", "one");
+  });
+
   it("starts with an explicit no-vault state", () => {
     render(<App />);
 
@@ -233,25 +289,30 @@ describe("App", () => {
       screen.getByRole("heading", { level: 1, name: "No vault open" }),
     ).toBeInTheDocument();
     expect(
-      screen.getByRole("button", { name: "Open vault" }),
-    ).toBeInTheDocument();
-    expect(
       screen.getByRole("button", { name: "Open a vault" }),
     ).toBeInTheDocument();
     expect(
       screen.getByRole("button", { name: "Create a vault" }),
     ).toBeInTheDocument();
-    expect(
-      screen.getAllByRole("button", {
-        name: "Open a vault before creating a note",
-      }),
-    ).toHaveLength(2);
-    expect(
-      screen.getAllByRole("button", {
-        name: "Open a vault before creating a note",
-      })[0],
-    ).toBeDisabled();
+
+    // Vault- and note-specific chrome is absent rather than disabled: with no
+    // vault there is nothing for it to act on.
+    for (const name of [
+      "New note",
+      "Search vault",
+      "Open Scratchpad",
+      "Hide inspector",
+      "Show note list",
+    ]) {
+      expect(screen.queryByRole("button", { name })).not.toBeInTheDocument();
+    }
+    expect(screen.queryByRole("navigation")).not.toBeInTheDocument();
     expect(screen.queryByText("Saved")).not.toBeInTheDocument();
+
+    // Settings stays: it is about the application, not the vault.
+    expect(
+      screen.getByRole("button", { name: "Open settings" }),
+    ).toBeInTheDocument();
   });
 
   it("keeps Scratchpad unavailable until a vault is open", () => {
@@ -336,7 +397,7 @@ describe("App", () => {
     });
     render(<App />);
 
-    await user.click(screen.getByRole("button", { name: "Open vault" }));
+    await user.click(screen.getByRole("button", { name: "Open a vault" }));
     expect(screen.getByText("0 Markdown files")).toBeVisible();
     await user.click(
       screen.getByRole("button", { name: "Open notification history" }),
@@ -356,7 +417,7 @@ describe("App", () => {
       warnings: noWarnings,
     });
     render(<App />);
-    await user.click(screen.getByRole("button", { name: "Open vault" }));
+    await user.click(screen.getByRole("button", { name: "Open a vault" }));
     await screen.findByRole("button", { name: "Switch vault: My Vault" });
 
     fireEvent.keyDown(window, { altKey: true, ctrlKey: true, key: "n" });
@@ -381,36 +442,16 @@ describe("App", () => {
     }));
     mockedSelectVault.mockResolvedValue({
       assets: [
-        {
-          name: "Cover.jpg",
-          parent: "Media",
-          relativePath: "Media/Cover.jpg",
-        },
-        {
-          name: "Guide.pdf",
-          parent: "Media",
-          relativePath: "Media/Guide.pdf",
-        },
+        { name: "Cover.jpg", parent: "Media", relativePath: "Media/Cover.jpg" },
+        { name: "Guide.pdf", parent: "Media", relativePath: "Media/Guide.pdf" },
       ],
       files: [
-        {
-          name: "Inbox.md",
-          parent: "Notes",
-          relativePath: "Notes/Inbox.md",
-        },
+        { name: "Inbox.md", parent: "Notes", relativePath: "Notes/Inbox.md" },
         {
           modifiedMillis: 100,
           name: "Untyped.md",
           parent: "Notes",
           relativePath: "Notes/Untyped.md",
-          status: "active",
-        },
-        {
-          modifiedMillis: 300,
-          name: "Project.md",
-          noteType: "Project",
-          parent: "Notes",
-          relativePath: "Notes/Project.md",
           status: "active",
         },
         {
@@ -434,64 +475,52 @@ describe("App", () => {
     });
     render(<App />);
 
-    await user.click(screen.getByRole("button", { name: "Open vault" }));
-    const collections = screen.getByRole("navigation", {
-      name: "Vault collections",
+    await user.click(screen.getByRole("button", { name: "Open a vault" }));
+
+    // The navigation pane holds containers only: five collections, each with
+    // a count. The notes themselves belong to the list pane.
+    const navigation = screen.getByRole("navigation", {
+      name: "Vault navigation",
     });
     expect(
       Array.from(
-        collections.querySelectorAll(
-          ".tree-row--collection > span:not(.tree-row__count):not(.tree-row__disclosure)",
-        ),
+        navigation.querySelectorAll(".tree-row--collection > span:first-child"),
         (element) => element.textContent,
       ),
-    ).toEqual([
-      "Inbox",
-      "Scratchpad",
-      "Workbench",
-      "Archive",
-      "Assets",
-      "Image",
-      "Pdf",
-    ]);
+    ).toEqual(["Inbox", "Scratchpad", "Workbench", "Archive", "Assets"]);
     expect(
-      within(collections).getByRole("button", { name: "Workbench" }),
-    ).toHaveTextContent("3");
-    expect(
-      within(collections).getByRole("button", { name: "Assets" }),
+      within(navigation).getByRole("button", { name: /Workbench/ }),
     ).toHaveTextContent("2");
     expect(
-      within(collections)
-        .getAllByRole("button")
-        .filter((button) =>
-          /^(Project|Article|Untyped)\.md$/.test(
-            button.getAttribute("aria-label") ?? "",
-          ),
-        )
-        .map((button) => button.getAttribute("aria-label")),
-    ).toEqual(["Project.md", "Article.md", "Untyped.md"]);
-
-    await user.click(
-      within(collections).getByRole("button", { name: "Article.md" }),
-    );
-    expect(mockedReadVaultFile).toHaveBeenCalledWith("Notes/Article.md");
-
-    await user.click(
-      screen.getByRole("button", { name: "Sort assets alphabetically" }),
-    );
+      within(navigation).getByRole("button", { name: /Assets/ }),
+    ).toHaveTextContent("2");
     expect(
-      within(collections).queryByRole("button", { name: "Image" }),
+      within(navigation).queryByRole("button", { name: "Article.md" }),
     ).not.toBeInTheDocument();
 
+    // Selecting a collection lists it, and a note opens from that list.
+    await user.click(
+      within(navigation).getByRole("button", { name: /Workbench/ }),
+    );
+    const notes = screen.getByRole("region", { name: "Notes" });
+    await user.click(within(notes).getByRole("button", { name: "Article.md" }));
+    expect(mockedReadVaultFile).toHaveBeenCalledWith("Notes/Article.md");
+
+    // The Files view swaps the same pane over to the physical tree, and the
+    // open note stays open across the switch.
     await user.click(screen.getByRole("button", { name: "Files" }));
     expect(
-      screen.getByRole("navigation", { name: "Vault files" }),
+      within(navigation).getByRole("button", { name: "Notes" }),
     ).toBeVisible();
-    expect(screen.getByRole("button", { name: "Notes" })).toBeVisible();
-    expect(screen.getByRole("button", { name: "Article.md" })).toHaveAttribute(
-      "aria-current",
-      "page",
-    );
+    expect(
+      within(navigation).queryByRole("button", { name: /^Inbox/ }),
+    ).not.toBeInTheDocument();
+    // The note stays open across the view switch. That is asserted on the
+    // editor rather than the list, because loading it revealed content with no
+    // frontmatter status, which reclassifies it out of Workbench.
+    expect(
+      screen.getByRole("button", { name: "Edit filename: Article.md" }),
+    ).toBeVisible();
   });
 
   it("shows paths only where collection filenames collide", async () => {
@@ -519,12 +548,14 @@ describe("App", () => {
     });
     render(<App />);
 
-    await user.click(screen.getByRole("button", { name: "Open vault" }));
+    await user.click(screen.getByRole("button", { name: "Open a vault" }));
+    // Every list row carries its folder, so notes sharing a name are always
+    // told apart rather than only once a collision is detected.
     const duplicateRows = screen.getAllByRole("button", { name: "Same.md" });
-    expect(duplicateRows[0]).toHaveTextContent("Alpha/Same.md");
-    expect(duplicateRows[1]).toHaveTextContent("Beta/Same.md");
+    expect(duplicateRows[0]).toHaveTextContent("Alpha");
+    expect(duplicateRows[1]).toHaveTextContent("Beta");
     expect(screen.getByRole("button", { name: "Unique.md" })).toHaveTextContent(
-      "Markdown",
+      "Beta",
     );
   });
 
@@ -569,7 +600,10 @@ describe("App", () => {
     });
     render(<App />);
 
-    await user.click(screen.getByRole("button", { name: "Open vault" }));
+    await user.click(screen.getByRole("button", { name: "Open a vault" }));
+    // The note is active, so it lists under Workbench rather than the default
+    // Inbox scope.
+    await user.click(screen.getByRole("button", { name: /^Workbench/ }));
     await user.click(screen.getByRole("button", { name: "Working.md" }));
     expect(
       await screen.findByRole("textbox", {
@@ -634,7 +668,7 @@ describe("App", () => {
     render(<App />);
 
     await act(async () => {
-      fireEvent.click(screen.getByRole("button", { name: "Open vault" }));
+      fireEvent.click(screen.getByRole("button", { name: "Open a vault" }));
       await Promise.resolve();
     });
     expect(
@@ -669,7 +703,7 @@ describe("App", () => {
     render(<App />);
 
     await waitFor(() => expect(mockedListRememberedVaults).toHaveBeenCalled());
-    await user.click(screen.getByRole("button", { name: "Open vault" }));
+    await user.click(screen.getByRole("button", { name: "Open a vault" }));
     const switcher = screen.getByRole("dialog", { name: "Switch vault" });
     expect(within(switcher).getByText("Second Vault")).toBeVisible();
     await user.click(within(switcher).getByRole("button", { name: "Open" }));
@@ -739,7 +773,7 @@ describe("App", () => {
     });
     render(<App />);
 
-    await user.click(screen.getByRole("button", { name: "Open vault" }));
+    await user.click(screen.getByRole("button", { name: "Open a vault" }));
     await user.click(screen.getByRole("button", { name: "Files" }));
     await user.click(
       screen.getByRole("button", { name: "Create folder at vault root" }),
@@ -780,11 +814,11 @@ describe("App", () => {
     });
     render(<App />);
 
-    await user.click(screen.getByRole("button", { name: "Open vault" }));
+    await user.click(screen.getByRole("button", { name: "Open a vault" }));
     await user.click(screen.getByRole("button", { name: "Files" }));
     fireEvent.contextMenu(screen.getByRole("button", { name: "Projects" }));
     await user.click(
-      within(screen.getByRole("menu", { name: "File tree actions" })).getByRole(
+      within(screen.getByRole("menu", { name: "Folder actions" })).getByRole(
         "menuitem",
         { name: "New subfolder" },
       ),
@@ -823,11 +857,11 @@ describe("App", () => {
     });
     render(<App />);
 
-    await user.click(screen.getByRole("button", { name: "Open vault" }));
+    await user.click(screen.getByRole("button", { name: "Open a vault" }));
     await user.click(screen.getByRole("button", { name: "Files" }));
     fireEvent.contextMenu(screen.getByRole("button", { name: "Projects" }));
     await user.click(
-      within(screen.getByRole("menu", { name: "File tree actions" })).getByRole(
+      within(screen.getByRole("menu", { name: "Folder actions" })).getByRole(
         "menuitem",
         { name: "Rename" },
       ),
@@ -869,11 +903,11 @@ describe("App", () => {
     });
     render(<App />);
 
-    await user.click(screen.getByRole("button", { name: "Open vault" }));
+    await user.click(screen.getByRole("button", { name: "Open a vault" }));
     await user.click(screen.getByRole("button", { name: "Files" }));
     fireEvent.contextMenu(screen.getByRole("button", { name: "Archive" }));
     await user.click(
-      within(screen.getByRole("menu", { name: "File tree actions" })).getByRole(
+      within(screen.getByRole("menu", { name: "Folder actions" })).getByRole(
         "menuitem",
         { name: "Delete folder" },
       ),
@@ -917,7 +951,7 @@ describe("App", () => {
     }));
     render(<App />);
 
-    await user.click(screen.getByRole("button", { name: "Open vault" }));
+    await user.click(screen.getByRole("button", { name: "Open a vault" }));
     await user.click(screen.getByRole("button", { name: "Leadership.md" }));
     const editor = await screen.findByRole("textbox", {
       name: "Leadership.md Markdown editor",
@@ -980,7 +1014,7 @@ describe("App", () => {
     }));
     render(<App />);
 
-    await user.click(screen.getByRole("button", { name: "Open vault" }));
+    await user.click(screen.getByRole("button", { name: "Open a vault" }));
     await user.click(screen.getByRole("button", { name: leadership.name }));
     await screen.findByRole("textbox", {
       name: "Leadership.md Markdown editor",
@@ -1033,7 +1067,7 @@ describe("App", () => {
     );
     render(<App />);
 
-    await user.click(screen.getByRole("button", { name: "Open vault" }));
+    await user.click(screen.getByRole("button", { name: "Open a vault" }));
     await user.click(screen.getByRole("button", { name: "Leadership.md" }));
     const editor = await screen.findByRole("textbox", {
       name: "Leadership.md Markdown editor",
@@ -1094,7 +1128,7 @@ describe("App", () => {
     });
     render(<App />);
 
-    await user.click(screen.getByRole("button", { name: "Open vault" }));
+    await user.click(screen.getByRole("button", { name: "Open a vault" }));
     await user.click(screen.getByRole("button", { name: file.name }));
     await user.click(
       await screen.findByRole("button", {
@@ -1156,7 +1190,7 @@ describe("App", () => {
     });
     render(<App />);
 
-    await userEvent.click(screen.getByRole("button", { name: "Open vault" }));
+    await userEvent.click(screen.getByRole("button", { name: "Open a vault" }));
     await userEvent.click(screen.getByRole("button", { name: "Files" }));
     const note = await screen.findByRole("button", { name: "Leadership.md" });
     const archiveFolder = screen.getByRole("button", { name: "Archive" });
@@ -1231,7 +1265,7 @@ describe("App", () => {
     });
     render(<App />);
 
-    await user.click(screen.getByRole("button", { name: "Open vault" }));
+    await user.click(screen.getByRole("button", { name: "Open a vault" }));
     await user.click(
       await screen.findByRole("button", { name: "Leadership.md" }),
     );
@@ -1286,7 +1320,7 @@ describe("App", () => {
     });
     render(<App />);
 
-    await user.click(screen.getByRole("button", { name: "Open vault" }));
+    await user.click(screen.getByRole("button", { name: "Open a vault" }));
     await user.click(await screen.findByRole("button", { name: "Trash (1)" }));
     const trash = screen.getByRole("dialog", { name: "Trash" });
     await user.click(within(trash).getByRole("button", { name: "Restore" }));
@@ -1323,7 +1357,7 @@ describe("App", () => {
     });
     render(<App />);
 
-    await user.click(screen.getByRole("button", { name: "Open vault" }));
+    await user.click(screen.getByRole("button", { name: "Open a vault" }));
 
     await user.type(
       screen.getByRole("searchbox", { name: "Filter notes" }),
@@ -1370,7 +1404,7 @@ describe("App", () => {
     });
     render(<App />);
 
-    await user.click(screen.getByRole("button", { name: "Open vault" }));
+    await user.click(screen.getByRole("button", { name: "Open a vault" }));
     await user.keyboard("{Meta>}{Shift>}f{/Shift}{/Meta}");
     const dialog = screen.getByRole("dialog", { name: "Search vault" });
     await user.type(
@@ -1393,15 +1427,14 @@ describe("App", () => {
     expect(mockedReadVaultFile).toHaveBeenCalledWith("Notes/Leadership.md");
   });
 
-  it("explains when content search needs an open vault", async () => {
-    const user = userEvent.setup();
+  it("offers no content search until a vault is open", async () => {
     render(<App />);
 
-    await user.click(screen.getByRole("button", { name: "Search vault" }));
-
+    // Search acts on a vault, so with none open the control is absent rather
+    // than present-and-explaining itself.
     expect(
-      screen.getByText("Open a vault to search its Markdown notes."),
-    ).toBeInTheDocument();
+      screen.queryByRole("button", { name: "Search vault" }),
+    ).not.toBeInTheDocument();
     expect(mockedSearchVault).not.toHaveBeenCalled();
   });
 
@@ -1417,7 +1450,7 @@ describe("App", () => {
     });
     render(<App />);
 
-    await user.click(screen.getByRole("button", { name: "Open vault" }));
+    await user.click(screen.getByRole("button", { name: "Open a vault" }));
     await user.click(screen.getByRole("button", { name: "Search vault" }));
     await user.type(
       screen.getByRole("combobox", { name: "Search Markdown content" }),
@@ -1459,7 +1492,7 @@ describe("App", () => {
     });
     render(<App />);
 
-    await user.click(screen.getByRole("button", { name: "Open vault" }));
+    await user.click(screen.getByRole("button", { name: "Open a vault" }));
     await user.keyboard("{Meta>}p{/Meta}");
 
     const dialog = screen.getByRole("dialog", { name: "Quick Open" });
@@ -1514,10 +1547,10 @@ describe("App", () => {
     }));
     render(<App />);
 
-    await user.click(screen.getByRole("button", { name: "Open vault" }));
+    await user.click(screen.getByRole("button", { name: "Open a vault" }));
     await user.click(screen.getByRole("button", { name: "Reading Notes.md" }));
     const backlinks = screen.getByRole("complementary", {
-      name: "Backlinks (1)",
+      name: "Inspector",
     });
     const backlink = within(backlinks).getByRole("button", {
       name: "Notes/Leadership.md",
@@ -1541,7 +1574,7 @@ describe("App", () => {
     });
     render(<App />);
 
-    await user.click(screen.getByRole("button", { name: "Open vault" }));
+    await user.click(screen.getByRole("button", { name: "Open a vault" }));
     await user.click(screen.getAllByRole("button", { name: "New note" })[0]);
 
     const editor = await screen.findByRole("textbox", {
@@ -1592,7 +1625,7 @@ describe("App", () => {
     );
     render(<App />);
 
-    fireEvent.click(screen.getByRole("button", { name: "Open vault" }));
+    fireEvent.click(screen.getByRole("button", { name: "Open a vault" }));
     await act(async () => {
       await Promise.resolve();
     });
@@ -1647,7 +1680,7 @@ describe("App", () => {
     });
     render(<App />);
 
-    await user.click(screen.getByRole("button", { name: "Open vault" }));
+    await user.click(screen.getByRole("button", { name: "Open a vault" }));
     await user.click(screen.getAllByRole("button", { name: "New note" })[0]);
 
     const editor = await screen.findByRole("textbox", {
@@ -1707,7 +1740,7 @@ describe("App", () => {
     }));
     render(<App />);
 
-    await user.click(screen.getByRole("button", { name: "Open vault" }));
+    await user.click(screen.getByRole("button", { name: "Open a vault" }));
     await user.click(screen.getAllByRole("button", { name: "New note" })[0]);
     const editor = await screen.findByRole("textbox", {
       name: /^\d{17}\.md Markdown editor$/,
@@ -1767,7 +1800,7 @@ describe("App", () => {
     });
     render(<App />);
 
-    await user.click(screen.getByRole("button", { name: "Open vault" }));
+    await user.click(screen.getByRole("button", { name: "Open a vault" }));
     await user.click(screen.getAllByRole("button", { name: "New note" })[0]);
     const editor = await screen.findByRole("textbox", {
       name: "Untitled.md Markdown editor",
@@ -1807,7 +1840,7 @@ describe("App", () => {
     });
     render(<App />);
 
-    await user.click(screen.getByRole("button", { name: "Open vault" }));
+    await user.click(screen.getByRole("button", { name: "Open a vault" }));
     await user.click(screen.getAllByRole("button", { name: "New note" })[0]);
     const editor = await screen.findByRole("textbox", {
       name: /^\d{17}\.md Markdown editor$/,
@@ -1859,7 +1892,7 @@ describe("App", () => {
     }));
     render(<App />);
 
-    await user.click(screen.getByRole("button", { name: "Open vault" }));
+    await user.click(screen.getByRole("button", { name: "Open a vault" }));
     await user.click(screen.getByRole("button", { name: "Source.md" }));
     const editor = await screen.findByRole("textbox", {
       name: "Source.md Markdown editor",
@@ -1936,7 +1969,7 @@ describe("App", () => {
     });
     render(<App />);
 
-    await user.click(screen.getByRole("button", { name: "Open vault" }));
+    await user.click(screen.getByRole("button", { name: "Open a vault" }));
     await user.click(screen.getByRole("button", { name: "Source.md" }));
     const editor = await screen.findByRole("textbox", {
       name: "Source.md Markdown editor",
@@ -2003,7 +2036,7 @@ describe("App", () => {
     });
 
     render(<App />);
-    await user.click(screen.getByRole("button", { name: "Open vault" }));
+    await user.click(screen.getByRole("button", { name: "Open a vault" }));
     await user.click(screen.getByRole("button", { name: "Source.md" }));
     const editor = await screen.findByRole("textbox", {
       name: "Source.md Markdown editor",
@@ -2052,7 +2085,7 @@ describe("App", () => {
     });
     render(<App />);
 
-    await user.click(screen.getByRole("button", { name: "Open vault" }));
+    await user.click(screen.getByRole("button", { name: "Open a vault" }));
     await user.click(screen.getAllByRole("button", { name: "New note" })[0]);
     const editor = await screen.findByRole("textbox", {
       name: /^\d{17}\.md Markdown editor$/,
@@ -2101,7 +2134,7 @@ describe("App", () => {
     });
     render(<App />);
 
-    await user.click(screen.getByRole("button", { name: "Open vault" }));
+    await user.click(screen.getByRole("button", { name: "Open a vault" }));
 
     expect(
       screen.getByRole("heading", { level: 1, name: "No note open" }),
@@ -2152,7 +2185,7 @@ describe("App", () => {
     });
     render(<App />);
 
-    await user.click(screen.getByRole("button", { name: "Open vault" }));
+    await user.click(screen.getByRole("button", { name: "Open a vault" }));
     window.dispatchEvent(new Event("focus"));
 
     expect(
@@ -2180,10 +2213,7 @@ describe("App", () => {
     });
     render(<App />);
 
-    await user.click(screen.getByRole("button", { name: "Open vault" }));
-    await user.click(
-      screen.getByRole("button", { name: "Open file explorer" }),
-    );
+    await user.click(screen.getByRole("button", { name: "Open a vault" }));
     await user.click(screen.getByRole("button", { name: "Files" }));
     await waitFor(() => expect(eventHandlers.has("vault-changed")).toBe(true));
     await act(async () => {
@@ -2221,10 +2251,7 @@ describe("App", () => {
     });
     render(<App />);
 
-    await user.click(screen.getByRole("button", { name: "Open vault" }));
-    await user.click(
-      screen.getByRole("button", { name: "Open file explorer" }),
-    );
+    await user.click(screen.getByRole("button", { name: "Open a vault" }));
     await user.click(screen.getByRole("button", { name: "Files" }));
     await waitFor(() => expect(eventHandlers.has("vault-changed")).toBe(true));
     await act(async () => {
@@ -2268,10 +2295,7 @@ describe("App", () => {
     });
     render(<App />);
 
-    await user.click(screen.getByRole("button", { name: "Open vault" }));
-    await user.click(
-      screen.getByRole("button", { name: "Open file explorer" }),
-    );
+    await user.click(screen.getByRole("button", { name: "Open a vault" }));
     await user.click(screen.getByRole("button", { name: "Files" }));
     await waitFor(() => expect(eventHandlers.has("vault-changed")).toBe(true));
     await act(async () => {
@@ -2287,8 +2311,9 @@ describe("App", () => {
       expect(mockedRescanVaultPaths).toHaveBeenCalledWith(["Nested"]),
     );
     expect(await screen.findByRole("button", { name: "Nested" })).toBeVisible();
-    // Newly-discovered folders start collapsed, same as any other folder.
-    await user.click(screen.getByRole("button", { name: "Expand Nested" }));
+    // The tree holds containers only now, so a folder's notes are reached by
+    // selecting it and reading the list pane rather than by expanding it.
+    await user.click(screen.getByRole("button", { name: "Nested" }));
     expect(
       await screen.findByRole("button", { name: "Child.md" }),
     ).toBeVisible();
@@ -2321,10 +2346,7 @@ describe("App", () => {
     });
     render(<App />);
 
-    await user.click(screen.getByRole("button", { name: "Open vault" }));
-    await user.click(
-      screen.getByRole("button", { name: "Open file explorer" }),
-    );
+    await user.click(screen.getByRole("button", { name: "Open a vault" }));
     await user.click(screen.getByRole("button", { name: "Files" }));
     await waitFor(() => expect(eventHandlers.has("vault-changed")).toBe(true));
     await act(async () => {
@@ -2376,7 +2398,7 @@ describe("App", () => {
     });
     render(<App />);
 
-    await user.click(screen.getByRole("button", { name: "Open vault" }));
+    await user.click(screen.getByRole("button", { name: "Open a vault" }));
     await user.click(
       await screen.findByRole("button", { name: "Leadership.md" }),
     );
@@ -2445,7 +2467,7 @@ describe("App", () => {
       });
     render(<App />);
 
-    await user.click(screen.getByRole("button", { name: "Open vault" }));
+    await user.click(screen.getByRole("button", { name: "Open a vault" }));
     await user.click(screen.getByRole("button", { name: "Broken.md" }));
 
     expect(await screen.findByRole("alert")).toHaveTextContent(
@@ -2482,7 +2504,7 @@ describe("App", () => {
     });
     render(<App />);
 
-    await user.click(screen.getByRole("button", { name: "Open vault" }));
+    await user.click(screen.getByRole("button", { name: "Open a vault" }));
     await user.click(screen.getByRole("button", { name: "Empty.md" }));
 
     expect(mockedReadVaultFile).toHaveBeenCalledWith("Empty.md");
@@ -2507,7 +2529,7 @@ describe("App", () => {
     mockedReadVaultFile.mockReturnValue(new Promise(() => undefined));
     render(<App />);
 
-    await user.click(screen.getByRole("button", { name: "Open vault" }));
+    await user.click(screen.getByRole("button", { name: "Open a vault" }));
     await user.click(screen.getByRole("button", { name: "Opening.md" }));
 
     expect(
@@ -2558,7 +2580,7 @@ describe("App", () => {
     });
     render(<App />);
 
-    await user.click(screen.getByRole("button", { name: "Open vault" }));
+    await user.click(screen.getByRole("button", { name: "Open a vault" }));
     await user.click(screen.getByRole("button", { name: "Old Name.md" }));
     await screen.findByRole("textbox", {
       name: "Old Name.md Markdown editor",
@@ -2639,7 +2661,7 @@ describe("App", () => {
     });
     render(<App />);
 
-    await user.click(screen.getByRole("button", { name: "Open vault" }));
+    await user.click(screen.getByRole("button", { name: "Open a vault" }));
     await user.click(screen.getByRole("button", { name: /^Old$/ }));
     await screen.findByRole("textbox", { name: "Old Markdown editor" });
     await user.click(
@@ -2679,7 +2701,7 @@ describe("App", () => {
     });
     render(<App />);
 
-    await user.click(screen.getByRole("button", { name: "Open vault" }));
+    await user.click(screen.getByRole("button", { name: "Open a vault" }));
     await user.click(screen.getByRole("button", { name: "Keep.md" }));
     await screen.findByRole("textbox", { name: "Keep.md Markdown editor" });
     await user.click(
@@ -2723,7 +2745,7 @@ describe("App", () => {
     });
     render(<App />);
 
-    await user.click(screen.getByRole("button", { name: "Open vault" }));
+    await user.click(screen.getByRole("button", { name: "Open a vault" }));
     await user.click(screen.getByRole("button", { name: "Keep.md" }));
     await screen.findByRole("textbox", { name: "Keep.md Markdown editor" });
     await user.click(
@@ -2785,7 +2807,7 @@ describe("App", () => {
     });
     render(<App />);
 
-    await user.click(screen.getByRole("button", { name: "Open vault" }));
+    await user.click(screen.getByRole("button", { name: "Open a vault" }));
     await user.click(screen.getAllByRole("button", { name: "New note" })[0]);
     const editor = await screen.findByRole("textbox", {
       name: "Untitled.md Markdown editor",
@@ -2841,7 +2863,7 @@ describe("App", () => {
     });
     render(<App />);
 
-    await user.click(screen.getByRole("button", { name: "Open vault" }));
+    await user.click(screen.getByRole("button", { name: "Open a vault" }));
     await user.click(screen.getByRole("button", { name: "Editable.md" }));
     const editor = await screen.findByRole("textbox", {
       name: "Editable.md Markdown editor",
@@ -2885,7 +2907,7 @@ describe("App", () => {
     });
     render(<App />);
 
-    await user.click(screen.getByRole("button", { name: "Open vault" }));
+    await user.click(screen.getByRole("button", { name: "Open a vault" }));
     await user.click(screen.getByRole("button", { name: "Line Endings.md" }));
     const editor = await screen.findByRole("textbox", {
       name: "Line Endings.md Markdown editor",
@@ -2933,7 +2955,7 @@ describe("App", () => {
     });
     render(<App />);
 
-    await user.click(screen.getByRole("button", { name: "Open vault" }));
+    await user.click(screen.getByRole("button", { name: "Open a vault" }));
     await user.click(screen.getByRole("button", { name: "Conflict.md" }));
     const editor = await screen.findByRole("textbox", {
       name: "Conflict.md Markdown editor",

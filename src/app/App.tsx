@@ -13,7 +13,22 @@ import { ConflictResolutionDialog } from "./components/ConflictResolutionDialog"
 import { CreateVaultDialog } from "./components/CreateVaultDialog";
 import { CreateMissingWikilinkDialog } from "./components/CreateMissingWikilinkDialog";
 import { DeleteFolderDialog } from "./components/DeleteFolderDialog";
-import { FileRail } from "./components/FileRail";
+import { NavigationPane } from "./components/NavigationPane";
+import { NoteListPane } from "./components/NoteListPane";
+import { InspectorPane } from "./components/InspectorPane";
+import { WelcomeScreen } from "./components/WelcomeScreen";
+import { PaneSplitter } from "./components/PaneSplitter";
+import type { FileRailMode, WorkbenchSort } from "./fileRailPreferences";
+import {
+  defaultNoteListScope,
+  documentsForScope,
+  scopeLabel,
+  type NoteListScope,
+} from "./noteListScope";
+import type { PaneKey } from "./paneLayout";
+import { usePaneLayout, usePaneWidthVariables } from "./usePaneLayout";
+import { usePaneSwipe } from "./usePaneSwipe";
+import { useNotePreviews } from "./useNotePreviews";
 import { FolderDialog } from "./components/FolderDialog";
 import { LifecycleTypeDialog } from "./components/LifecycleTypeDialog";
 import { MoveNoteDialog } from "./components/MoveNoteDialog";
@@ -174,6 +189,13 @@ function persistMarkdownSettings(settings: MarkdownSettings): void {
 
 export function App() {
   const [documents, setDocuments] = useState<AnchoredDocument[]>([]);
+  const [listScope, setListScope] =
+    useState<NoteListScope>(defaultNoteListScope);
+  const [listSort, setListSort] = useState<WorkbenchSort>("modified-desc");
+  const [navigationMode, setNavigationMode] =
+    useState<FileRailMode>("collections");
+  const [draggingDocumentId, setDraggingDocumentId] = useState<string>();
+  const paneLayout = usePaneLayout();
   const [activeDocumentId, setActiveDocumentId] = useState("");
   const [focusDocumentId, setFocusDocumentId] = useState<string>();
   const [cursorPosition, setCursorPosition] = useState<EditorCursorPosition>({
@@ -220,6 +242,13 @@ export function App() {
       return new Map<string, DocumentActivity>();
     }
   });
+  const notePreviews = useNotePreviews(readVaultFile, vaultSelected);
+  usePaneWidthVariables(paneLayout);
+  usePaneSwipe(
+    paneLayout.workspaceRef,
+    paneLayout.stepLeftStage,
+    vaultSelected,
+  );
   const searchInputRef = useRef<HTMLInputElement>(null);
   const loadRequestRef = useRef(0);
   const rescanInFlightRef = useRef(false);
@@ -287,6 +316,22 @@ export function App() {
         ? backlinksForDocument(deferredDocuments, activeDocumentId, linkIndex)
         : [],
     [activeDocumentId, deferredDocuments, linkIndex],
+  );
+  // A search narrows the list pane rather than restructuring the tree, so the
+  // scope still says where you are while the query says what you are after.
+  const listedDocuments = useMemo(() => {
+    const scoped = documentsForScope(documents, listScope);
+    const needle = query.trim().toLocaleLowerCase();
+    if (!needle) return scoped;
+    return scoped.filter((document) =>
+      [document.name, document.relativePath ?? "", ...document.aliases].some(
+        (value) => value.toLocaleLowerCase().includes(needle),
+      ),
+    );
+  }, [documents, listScope, query]);
+  const listScopeLabel = useMemo(
+    () => scopeLabel(listScope, vaultName),
+    [listScope, vaultName],
   );
   const wikilinkCandidates = useMemo(
     () =>
@@ -455,7 +500,7 @@ export function App() {
     },
     // sidebar.setExpandedFolders is a raw useState setter (always stable);
     // depending on the whole `sidebar` object would recreate this callback
-    // whenever expandedFolders/sidebarOpen change, including as a result of
+    // whenever expandedFolders changes, including as a result of
     // this callback's own calls to sidebar.setExpandedFolders.
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [
@@ -496,14 +541,13 @@ export function App() {
     );
     setQuery("");
     setDocumentLoad({ status: "idle" });
-    sidebar.setSidebarOpen(false);
     setDocumentActivity((current) =>
       markDocumentActive(current, nextDocument.id, Date.now()),
     );
     void saveUntitledDocument(nextDocument.id);
-    // sidebar.setExpandedFolders/setSidebarOpen are raw useState setters
+    // sidebar.setExpandedFolders is a raw useState setter (always stable),
     // (always stable); depending on the whole `sidebar` object would
-    // recreate this callback whenever expandedFolders/sidebarOpen change,
+    // so listing it does not recreate this callback whenever the set changes,
     // including as a result of this callback's own calls below.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
@@ -512,7 +556,6 @@ export function App() {
     setActiveDocument,
     setFocusDocument,
     sidebar.setExpandedFolders,
-    sidebar.setSidebarOpen,
     vaultSelected,
   ]);
 
@@ -1606,7 +1649,6 @@ export function App() {
       );
       setActiveDocument(documentId);
       setCursorPosition({ line: 1, column: 1 });
-      sidebar.setSidebarOpen(false);
 
       if (document.isMarkdown === false) {
         loadRequestRef.current += 1;
@@ -1662,10 +1704,7 @@ export function App() {
         });
       }
     },
-    // sidebar.setSidebarOpen is a raw useState setter (always stable); see
-    // the comment on saveUntitledDocument's dependency array above.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [setActiveDocument, setFocusDocument, sidebar.setSidebarOpen],
+    [setActiveDocument, setFocusDocument],
   );
 
   const missingWikilink = useMissingWikilinkDialog({
@@ -1689,6 +1728,20 @@ export function App() {
   useEffect(() => {
     function handleKeyboardShortcut(event: KeyboardEvent) {
       const commandKey = event.metaKey || event.ctrlKey;
+
+      // Command-1/2/3 reach the panes directly, which is what a keyboard user
+      // has instead of the swipe. Unlike the title-bar button, each of these
+      // toggles one named pane rather than walking the ladder.
+      if (commandKey && !event.altKey && !event.shiftKey) {
+        const pane = { "1": "navigation", "2": "list", "3": "inspector" }[
+          event.key
+        ] as PaneKey | undefined;
+        if (pane) {
+          event.preventDefault();
+          paneLayout.togglePane(pane);
+          return;
+        }
+      }
 
       if (event.ctrlKey && event.altKey && event.key.toLowerCase() === "n") {
         event.preventDefault();
@@ -2543,11 +2596,11 @@ export function App() {
   return (
     <div className="app-shell">
       <TitleBar
-        canCreateNote={vaultSelected}
+        inspectorOpen={!paneLayout.collapsed.inspector}
+        leftStage={paneLayout.leftStage}
         notificationCount={visibleNotificationHistory.length}
         saveState={activeDocument ? saveState : undefined}
         selectingVault={vaultSwitcher.selectingVault}
-        sidebarOpen={sidebar.sidebarOpen}
         vaultSelected={vaultSelected}
         vaultName={vaultName}
         onCreateNote={createNote}
@@ -2558,159 +2611,218 @@ export function App() {
         onOpenSearch={retrieval.openVaultSearch}
         onOpenSettings={() => setSettingsVisible(true)}
         onSelectVault={vaultSwitcher.openSwitcher}
-        onToggleSidebar={() => sidebar.setSidebarOpen((isOpen) => !isOpen)}
+        onCycleLeftPanes={paneLayout.cycleLeftPanes}
+        onToggleInspector={() => paneLayout.togglePane("inspector")}
       />
-      <div className={`workspace${sidebar.sidebarOpen ? " sidebar-open" : ""}`}>
-        <FileRail
-          activeDocumentId={activeDocument?.id ?? ""}
-          documents={documents}
-          expandedFolders={sidebar.expandedFolders}
-          folders={folderPaths}
-          query={query}
-          searchInputRef={searchInputRef}
-          trashCount={trash.trashEntries.length}
-          vaultName={vaultName}
-          vaultSelected={vaultSelected}
-          showFileExtensions={markdownSettings.showFileExtensions}
-          onArchiveDocument={requestArchiveDocument}
-          onCreateNote={createNote}
-          onCreateNoteInFolder={(folderPath) =>
-            void createNoteInFolder(folderPath)
-          }
-          onCreateFolder={(parentPath) => {
-            folderDialogs.setCreateFolderParentPath(parentPath);
-            folderDialogs.setCreateFolderError(undefined);
-            folderDialogs.setCreateFolderVisible(true);
-          }}
-          onDeleteFolder={(folderPath) => {
-            folderDialogs.setDeletingFolderPath(folderPath);
-            folderDialogs.setDeleteFolderError(undefined);
-            folderDialogs.setDeleteFolderVisible(true);
-          }}
-          onMoveDocument={(documentId, destinationFolderPath) =>
-            void moveDocumentToFolder(documentId, destinationFolderPath)
-          }
-          onMoveDocumentToWorkbench={(documentId) =>
-            setLifecycleTypeRequest({ action: "workbench", documentId })
-          }
-          onMoveDocumentRequest={(documentId) => {
-            setMoveDocumentId(documentId);
-            setMoveDocumentVisible(true);
-          }}
-          onMoveFolderRequest={setMoveFolderPath}
-          onOpenTrash={trash.openTrashPanel}
-          onOpenRecovery={() =>
-            recovery.openRecoveryPanel(activeDocument?.relativePath)
-          }
-          onOpenScratchpad={() => openScratchpadWindow("list")}
-          onQueryChange={setQuery}
-          onPreviewDocument={(documentId) => {
-            void selectDocument(documentId).then(() => {
-              window.dispatchEvent(new Event("anchored:show-preview"));
-            });
-          }}
-          onRenameDocument={(documentId) => {
-            void selectDocument(documentId).then(() => {
-              window.dispatchEvent(new Event("anchored:begin-rename"));
-            });
-          }}
-          onRenameFolder={(folderPath) => {
-            folderDialogs.setRenamingFolderPath(folderPath);
-            folderDialogs.setRenameFolderError(undefined);
-            folderDialogs.setRenameFolderVisible(true);
-          }}
-          onRestoreDocument={(documentId, destinationStatus) =>
-            requestRestoreArchivedDocument(documentId, destinationStatus)
-          }
-          onSelectDocument={selectDocument}
-          onSearchDocument={(documentId) => {
-            void selectDocument(documentId).then(() => retrieval.triggerFind());
-          }}
-          onSearchInFolder={(folderPath) => {
-            setQuery(`${folderPath}/`);
-            window.setTimeout(() => searchInputRef.current?.focus(), 0);
-          }}
-          onToggleFolder={toggleFolder}
-          onSetAllFoldersExpanded={(expanded) =>
-            sidebar.setExpandedFolders(
-              expanded ? new Set(folderPaths) : new Set(),
-            )
-          }
-          onTrashDocument={(documentId) => {
-            void selectDocument(documentId).then(() =>
-              trash.trashDocument(documentId),
-            );
-          }}
-        />
-        <EditorSurface
-          backlinks={backlinks}
-          document={activeDocument}
-          focusDocumentId={focusDocumentId}
-          hasDocuments={documents.some(
-            (document) => document.isMarkdown !== false,
-          )}
-          findRequest={retrieval.findRequest}
-          loadState={
-            documentLoad.status !== "idle" &&
-            documentLoad.documentId === activeDocument?.id
-              ? documentLoad
-              : { status: "idle" }
-          }
-          vaultName={vaultName}
-          vaultSelected={vaultSelected}
-          wikilinkCandidates={wikilinkCandidates}
-          lifecycleChanging={transitioningDocumentId === activeDocument?.id}
-          onArchiveDocument={() => {
-            if (activeDocument) requestArchiveDocument(activeDocument.id);
-          }}
-          onCloseDocument={closeDocument}
+      {!vaultSelected ? (
+        <WelcomeScreen
           onCreateVault={() => {
             vaultSwitcher.setCreateVaultError(undefined);
             vaultSwitcher.setCreateVaultVisible(true);
           }}
-          onDocumentChange={updateDocumentContent}
-          onCursorPosition={setCursorPosition}
-          onOpenLinkedDocument={(documentId) => void selectDocument(documentId)}
-          onOpenMoveDocument={() => {
-            if (
-              activeDocument?.relativePath &&
-              activeDocument.isMarkdown !== false
-            ) {
-              setMoveDocumentId(activeDocument.id);
-              setMoveDocumentVisible(true);
-            }
-          }}
-          onOpenVault={() => void vaultSwitcher.openVault()}
-          onOpenWikilink={openWikilink}
-          onRetryDocument={() => {
-            if (activeDocument) void selectDocument(activeDocument.id);
-          }}
-          onRenameDocument={(name) => {
-            if (activeDocument) void renameDocument(activeDocument.id, name);
-          }}
-          onRestoreDocument={(destinationStatus) => {
-            if (activeDocument) {
-              requestRestoreArchivedDocument(
-                activeDocument.id,
-                destinationStatus,
-              );
-            }
-          }}
-          onSaveDocument={() => {
-            if (activeDocument) void saveDocument(activeDocument.id);
-          }}
-          onSaveDocumentAs={() => {
-            if (activeDocument) void saveDocumentAs(activeDocument.id);
-          }}
-          onTrashDocument={() => {
-            if (activeDocument) void trash.trashDocument(activeDocument.id);
-          }}
-          moving={movingDocumentId === activeDocument?.id}
-          markdownSettings={markdownSettings}
-          renaming={renamingDocumentId === activeDocument?.id}
-          trashing={trash.trashingDocumentId === activeDocument?.id}
+          // Goes through the switcher, not straight to the native picker, so
+          // remembered vaults stay reachable with none open.
+          onOpenVault={vaultSwitcher.openSwitcher}
         />
-      </div>
+      ) : (
+        <div className="workspace" ref={paneLayout.workspaceRef}>
+          <NavigationPane
+            documents={documents}
+            draggingDocumentId={draggingDocumentId}
+            expandedFolders={sidebar.expandedFolders}
+            folders={folderPaths}
+            mode={navigationMode}
+            query={query}
+            scope={listScope}
+            searchInputRef={searchInputRef}
+            trashCount={trash.trashEntries.length}
+            vaultName={vaultName}
+            onCreateFolder={(parentPath) => {
+              folderDialogs.setCreateFolderParentPath(parentPath);
+              folderDialogs.setCreateFolderError(undefined);
+              folderDialogs.setCreateFolderVisible(true);
+            }}
+            onCreateNote={createNote}
+            onCreateNoteInFolder={(folderPath) =>
+              void createNoteInFolder(folderPath)
+            }
+            onDropDocument={(documentId, folderPath) => {
+              setDraggingDocumentId(undefined);
+              void moveDocumentToFolder(documentId, folderPath);
+            }}
+            onDeleteFolder={(folderPath) => {
+              folderDialogs.setDeletingFolderPath(folderPath);
+              folderDialogs.setDeleteFolderError(undefined);
+              folderDialogs.setDeleteFolderVisible(true);
+            }}
+            onModeChange={setNavigationMode}
+            onMoveFolderRequest={setMoveFolderPath}
+            onOpenTrash={trash.openTrashPanel}
+            onQueryChange={setQuery}
+            onRenameFolder={(folderPath) => {
+              folderDialogs.setRenamingFolderPath(folderPath);
+              folderDialogs.setRenameFolderError(undefined);
+              folderDialogs.setRenameFolderVisible(true);
+            }}
+            onScopeChange={setListScope}
+            onSearchInFolder={(folderPath) => {
+              setQuery(`${folderPath}/`);
+              window.setTimeout(() => searchInputRef.current?.focus(), 0);
+            }}
+            onToggleFolder={toggleFolder}
+          />
+          <PaneSplitter
+            label="Resize navigation pane"
+            pane="navigation"
+            width={paneLayout.widths.navigation}
+            onCollapse={() => paneLayout.togglePane("navigation")}
+            onReset={() => paneLayout.resetPane("navigation")}
+            onResize={(width) => paneLayout.resizePane("navigation", width)}
+          />
+
+          <NoteListPane
+            activeDocumentId={activeDocument?.id ?? ""}
+            documents={listedDocuments}
+            excerptLines={paneLayout.excerptLines}
+            previews={notePreviews}
+            scopeLabel={listScopeLabel}
+            showFileExtensions={markdownSettings.showFileExtensions}
+            sort={listSort}
+            onArchiveDocument={requestArchiveDocument}
+            onDragDocument={setDraggingDocumentId}
+            onDragEnd={() => setDraggingDocumentId(undefined)}
+            onMoveDocumentRequest={(documentId) => {
+              setMoveDocumentId(documentId);
+              setMoveDocumentVisible(true);
+            }}
+            onMoveDocumentToWorkbench={(documentId) =>
+              setLifecycleTypeRequest({ action: "workbench", documentId })
+            }
+            onOpen={selectDocument}
+            onPreviewDocument={(documentId) => {
+              void selectDocument(documentId).then(() => {
+                window.dispatchEvent(new Event("anchored:show-preview"));
+              });
+            }}
+            onRenameDocument={(documentId) => {
+              void selectDocument(documentId).then(() => {
+                window.dispatchEvent(new Event("anchored:begin-rename"));
+              });
+            }}
+            onRestoreDocument={(documentId, destinationStatus) =>
+              requestRestoreArchivedDocument(documentId, destinationStatus)
+            }
+            onSearchDocument={(documentId) => {
+              void selectDocument(documentId).then(() =>
+                retrieval.triggerFind(),
+              );
+            }}
+            onSelectDocument={selectDocument}
+            onSortChange={setListSort}
+            onTrashDocument={(documentId) => {
+              void selectDocument(documentId).then(() =>
+                trash.trashDocument(documentId),
+              );
+            }}
+          />
+          <PaneSplitter
+            label="Resize note list pane"
+            pane="list"
+            width={paneLayout.widths.list}
+            onCollapse={() => paneLayout.togglePane("list")}
+            onReset={() => paneLayout.resetPane("list")}
+            onResize={(width) => paneLayout.resizePane("list", width)}
+          />
+
+          <EditorSurface
+            document={activeDocument}
+            focusDocumentId={focusDocumentId}
+            hasDocuments={documents.some(
+              (document) => document.isMarkdown !== false,
+            )}
+            findRequest={retrieval.findRequest}
+            loadState={
+              documentLoad.status !== "idle" &&
+              documentLoad.documentId === activeDocument?.id
+                ? documentLoad
+                : { status: "idle" }
+            }
+            vaultName={vaultName}
+            vaultSelected={vaultSelected}
+            wikilinkCandidates={wikilinkCandidates}
+            lifecycleChanging={transitioningDocumentId === activeDocument?.id}
+            onArchiveDocument={() => {
+              if (activeDocument) requestArchiveDocument(activeDocument.id);
+            }}
+            onCloseDocument={closeDocument}
+            onCreateVault={() => {
+              vaultSwitcher.setCreateVaultError(undefined);
+              vaultSwitcher.setCreateVaultVisible(true);
+            }}
+            onDocumentChange={updateDocumentContent}
+            onCursorPosition={setCursorPosition}
+            onOpenLinkedDocument={(documentId) =>
+              void selectDocument(documentId)
+            }
+            onOpenMoveDocument={() => {
+              if (
+                activeDocument?.relativePath &&
+                activeDocument.isMarkdown !== false
+              ) {
+                setMoveDocumentId(activeDocument.id);
+                setMoveDocumentVisible(true);
+              }
+            }}
+            onOpenVault={() => void vaultSwitcher.openVault()}
+            onOpenWikilink={openWikilink}
+            onRetryDocument={() => {
+              if (activeDocument) void selectDocument(activeDocument.id);
+            }}
+            onRenameDocument={(name) => {
+              if (activeDocument) void renameDocument(activeDocument.id, name);
+            }}
+            onRestoreDocument={(destinationStatus) => {
+              if (activeDocument) {
+                requestRestoreArchivedDocument(
+                  activeDocument.id,
+                  destinationStatus,
+                );
+              }
+            }}
+            onSaveDocument={() => {
+              if (activeDocument) void saveDocument(activeDocument.id);
+            }}
+            onSaveDocumentAs={() => {
+              if (activeDocument) void saveDocumentAs(activeDocument.id);
+            }}
+            onTrashDocument={() => {
+              if (activeDocument) void trash.trashDocument(activeDocument.id);
+            }}
+            moving={movingDocumentId === activeDocument?.id}
+            markdownSettings={markdownSettings}
+            renaming={renamingDocumentId === activeDocument?.id}
+            trashing={trash.trashingDocumentId === activeDocument?.id}
+          />
+          {/* The inspector's handle sits on the editor's right edge, so dragging
+            it left widens the inspector — hence `inverted`. */}
+          <PaneSplitter
+            inverted
+            label="Resize inspector pane"
+            pane="inspector"
+            width={paneLayout.widths.inspector}
+            onCollapse={() => paneLayout.togglePane("inspector")}
+            onReset={() => paneLayout.resetPane("inspector")}
+            onResize={(width) => paneLayout.resizePane("inspector", width)}
+          />
+
+          <InspectorPane
+            backlinks={backlinks}
+            hasDocument={Boolean(activeDocument)}
+            showFileExtensions={markdownSettings.showFileExtensions}
+            onOpen={(documentId) => void selectDocument(documentId)}
+          />
+        </div>
+      )}
       {notifications.vaultNotices.length > 0 || activeDocument?.saveMessage ? (
         <div aria-label="Notifications" className="vault-notifications">
           {notifications.vaultNotices.map((notice) => (
@@ -2831,6 +2943,7 @@ export function App() {
       ) : null}
       {settingsVisible ? (
         <SettingsModal
+          excerptLines={paneLayout.excerptLines}
           markdownSettings={markdownSettings}
           reloading={reloadingApp}
           timestampMigrationBlocked={documents.some(
@@ -2858,6 +2971,7 @@ export function App() {
           }}
           onCheckForUpdates={() => void handleCheckForUpdates()}
           onInstallUpdate={() => void handleInstallUpdate()}
+          onExcerptLinesChange={paneLayout.setExcerptLines}
           onMarkdownSettingsChange={setMarkdownSettings}
           onApplyTimestampMigration={() =>
             void timestampMigration.applyTimestampMigration()
@@ -3087,20 +3201,20 @@ export function App() {
           onQueryChange={retrieval.setVaultSearchQuery}
         />
       ) : null}
-      <StatusBar
-        cursorPosition={cursorPosition}
-        document={activeDocument}
-        showFileExtensions={markdownSettings.showFileExtensions}
-        vaultFileCount={
-          vaultSelected
-            ? documents.filter(
-                (document) =>
-                  document.relativePath && document.isMarkdown !== false,
-              ).length
-            : undefined
-        }
-        vaultName={vaultName}
-      />
+      {vaultSelected ? (
+        <StatusBar
+          cursorPosition={cursorPosition}
+          document={activeDocument}
+          showFileExtensions={markdownSettings.showFileExtensions}
+          vaultFileCount={
+            documents.filter(
+              (document) =>
+                document.relativePath && document.isMarkdown !== false,
+            ).length
+          }
+          vaultName={vaultName}
+        />
+      ) : null}
     </div>
   );
 }

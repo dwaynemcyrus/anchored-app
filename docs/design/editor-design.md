@@ -67,6 +67,14 @@ System traffic-light colors belong to native macOS chrome and are not reused.
 
 ## Container model
 
+> **Partly superseded.** The two-plane model below describes the first app
+> shell. The interface is moving to four panes — navigation, list, editor, and
+> inspector — with drag-resizable widths, prototyped in
+> `docs/prototypes/four-pane-shell.html`. The token system, icon inventory,
+> interaction rules, and self-critique in this document still hold; only the
+> container model and the "no right inspector" line are replaced. Delete this
+> note once the four-pane shell lands in `src/`.
+
 ```text
 ┌──────────────────────────────────────────────────────────┐
 │ native title/chrome · vault · save state · search · new │
@@ -83,9 +91,10 @@ System traffic-light colors belong to native macOS chrome and are not reused.
 └──────────────────────────────────────────────────────────┘
 ```
 
-The file rail and editor are open planes separated by a rule. Do not wrap
-either in a card or floating panel. There is no right inspector in the first
-shell.
+Every pane is an open plane separated by a one-pixel rule. Do not wrap any of
+them in a card or floating panel. The inspector on the right is a real pane in
+the four-pane shell; it starts as a backlinks placeholder rather than shipping
+empty.
 
 ## Visible copy inventory
 
