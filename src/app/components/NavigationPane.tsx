@@ -45,7 +45,9 @@ type NavigationPaneProps = {
   searchInputRef: RefObject<HTMLInputElement | null>;
   trashCount: number;
   vaultName: string;
+  draggingDocumentId?: string;
   onCreateFolder: (parentPath?: string) => void;
+  onDropDocument: (documentId: string, folderPath: string) => void;
   onCreateNote: () => void;
   onCreateNoteInFolder: (folderPath: string) => void;
   onDeleteFolder: (folderPath: string) => void;
@@ -83,7 +85,9 @@ export function NavigationPane({
   searchInputRef,
   trashCount,
   vaultName,
+  draggingDocumentId,
   onCreateFolder,
+  onDropDocument,
   onCreateNote,
   onCreateNoteInFolder,
   onDeleteFolder,
@@ -97,6 +101,7 @@ export function NavigationPane({
   onToggleFolder,
 }: NavigationPaneProps) {
   const [menu, setMenu] = useState<FolderMenuState | undefined>(undefined);
+  const [dropTarget, setDropTarget] = useState<string | undefined>(undefined);
 
   const counts = useMemo(() => {
     const collections = buildVaultCollections(documents);
@@ -182,7 +187,10 @@ export function NavigationPane({
         </div>
         {mode === "files" ? (
           <div className="file-rail__view-actions">
-            <IconButton label="New folder" onClick={() => onCreateFolder()}>
+            <IconButton
+              label="Create folder at vault root"
+              onClick={() => onCreateFolder()}
+            >
               <NewFolderIcon />
             </IconButton>
           </div>
@@ -213,36 +221,59 @@ export function NavigationPane({
               const expanded = expandedFolders.has(path);
               const depth = path.split("/").length - 1;
               return (
-                <div className="tree-row-shell" key={path}>
+                // The disclosure and the folder are siblings rather than
+                // nested buttons: expanding a folder to look inside and
+                // selecting it to list its notes are separate intentions, and
+                // each needs its own focusable, labelled control.
+                <div
+                  className="tree-row-shell"
+                  key={path}
+                  style={{ paddingLeft: `${depth * 18}px` }}
+                >
+                  {hasChildren(path) ? (
+                    <button
+                      aria-expanded={expanded}
+                      aria-label={`${expanded ? "Collapse" : "Expand"} ${folderName(path)}`}
+                      className="tree-row__disclosure"
+                      type="button"
+                      onClick={() => onToggleFolder(path)}
+                    >
+                      <ChevronIcon
+                        className={expanded ? "is-expanded" : undefined}
+                      />
+                    </button>
+                  ) : (
+                    <span aria-hidden="true" className="tree-row__disclosure" />
+                  )}
                   <button
                     aria-current={selected ? "true" : undefined}
+                    aria-label={folderName(path)}
                     className={`tree-row tree-row--folder${
                       selected ? " is-active" : ""
-                    }`}
-                    style={{ paddingLeft: `${8 + depth * 18}px` }}
+                    }${dropTarget === path ? " is-drop-target" : ""}`}
                     type="button"
                     onClick={() => onScopeChange({ kind: "folder", path })}
                     onContextMenu={(event) =>
                       handleFolderContextMenu(event, path)
                     }
+                    onDragLeave={() =>
+                      setDropTarget((current) =>
+                        current === path ? undefined : current,
+                      )
+                    }
+                    onDragOver={(event) => {
+                      if (!draggingDocumentId) return;
+                      event.preventDefault();
+                      event.dataTransfer.dropEffect = "move";
+                      setDropTarget(path);
+                    }}
+                    onDrop={(event) => {
+                      if (!draggingDocumentId) return;
+                      event.preventDefault();
+                      setDropTarget(undefined);
+                      onDropDocument(draggingDocumentId, path);
+                    }}
                   >
-                    <span
-                      aria-hidden="true"
-                      className="tree-row__disclosure"
-                      onClick={(event) => {
-                        // Disclosure toggles without changing the selection,
-                        // so opening a folder to look inside does not switch
-                        // what the list pane is showing.
-                        event.stopPropagation();
-                        onToggleFolder(path);
-                      }}
-                    >
-                      {hasChildren(path) ? (
-                        <ChevronIcon
-                          className={expanded ? "is-expanded" : undefined}
-                        />
-                      ) : null}
-                    </span>
                     <FolderIcon />
                     <span>{folderName(path)}</span>
                   </button>

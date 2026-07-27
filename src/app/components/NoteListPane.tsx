@@ -33,6 +33,8 @@ const sortOrder: WorkbenchSort[] = [
 
 type NoteListPaneProps = NoteContextMenuActions & {
   activeDocumentId: string;
+  onDragDocument: (documentId: string) => void;
+  onDragEnd: () => void;
   documents: AnchoredDocument[];
   excerptLines: ExcerptLines;
   previews: NotePreviewsApi;
@@ -76,6 +78,8 @@ function relativeDate(document: AnchoredDocument): string {
 export function NoteListPane({
   activeDocumentId,
   documents,
+  onDragDocument,
+  onDragEnd,
   excerptLines,
   previews,
   scopeLabel,
@@ -171,6 +175,11 @@ export function NoteListPane({
               return (
                 <li key={document.id}>
                   <button
+                    // The row's identity is the note's name. Without this the
+                    // accessible name becomes the whole row, excerpt and date
+                    // included, which reads poorly and is unstable as the
+                    // relative date ticks over.
+                    aria-label={displayName}
                     aria-current={
                       document.id === activeDocumentId ? "page" : undefined
                     }
@@ -178,9 +187,16 @@ export function NoteListPane({
                       document.id === activeDocumentId ? " is-active" : ""
                     }`}
                     data-excerpt-lines={excerptLines}
+                    draggable={Boolean(document.relativePath)}
                     ref={previews.observeRow(source)}
                     type="button"
                     onClick={() => onSelectDocument(document.id)}
+                    onDragEnd={onDragEnd}
+                    onDragStart={(event) => {
+                      event.dataTransfer.effectAllowed = "move";
+                      event.dataTransfer.setData("text/plain", document.id);
+                      onDragDocument(document.id);
+                    }}
                     onContextMenu={(event) =>
                       handleContextMenu(event, document)
                     }

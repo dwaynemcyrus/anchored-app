@@ -53,6 +53,8 @@ function setup(overrides: Partial<Parameters<typeof NoteListPane>[0]> = {}) {
       showFileExtensions={false}
       sort="modified-desc"
       onArchiveDocument={onArchiveDocument}
+      onDragDocument={vi.fn()}
+      onDragEnd={vi.fn()}
       onMoveDocumentRequest={vi.fn()}
       onMoveDocumentToWorkbench={vi.fn()}
       onOpen={vi.fn()}
@@ -84,6 +86,8 @@ function renderWithSort(sort: Parameters<typeof NoteListPane>[0]["sort"]) {
       showFileExtensions={false}
       sort={sort}
       onArchiveDocument={vi.fn()}
+      onDragDocument={vi.fn()}
+      onDragEnd={vi.fn()}
       onMoveDocumentRequest={vi.fn()}
       onMoveDocumentToWorkbench={vi.fn()}
       onOpen={vi.fn()}

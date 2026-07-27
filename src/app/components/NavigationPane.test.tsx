@@ -43,6 +43,7 @@ function setup(overrides: Partial<Parameters<typeof NavigationPane>[0]> = {}) {
       trashCount={0}
       vaultName="Personal"
       onCreateFolder={vi.fn()}
+      onDropDocument={vi.fn()}
       onCreateNote={vi.fn()}
       onCreateNoteInFolder={vi.fn()}
       onDeleteFolder={onDeleteFolder}
@@ -126,24 +127,24 @@ describe("NavigationPane", () => {
     setup({ mode: "files" });
 
     expect(
-      screen.getByRole("button", { name: /workbench/ }),
+      screen.getByRole("button", { name: "workbench" }),
     ).toBeInTheDocument();
     expect(
-      screen.queryByRole("button", { name: /deep/ }),
+      screen.queryByRole("button", { name: "deep" }),
     ).not.toBeInTheDocument();
   });
 
   it("reveals a nested folder once its parent is expanded", () => {
     setup({ mode: "files", expandedFolders: new Set(["workbench"]) });
 
-    expect(screen.getByRole("button", { name: /deep/ })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "deep" })).toBeInTheDocument();
   });
 
   it("selects a folder scope when a folder is clicked", async () => {
     const user = userEvent.setup();
     const { onScopeChange } = setup({ mode: "files" });
 
-    await user.click(screen.getByRole("button", { name: /workbench/ }));
+    await user.click(screen.getByRole("button", { name: "workbench" }));
 
     expect(onScopeChange).toHaveBeenCalledWith({
       kind: "folder",
@@ -155,12 +156,26 @@ describe("NavigationPane", () => {
     const user = userEvent.setup();
     const { onScopeChange, onToggleFolder } = setup({ mode: "files" });
 
-    const folder = screen.getByRole("button", { name: /workbench/ });
-    const disclosure = folder.querySelector(".tree-row__disclosure");
-    await user.click(disclosure as Element);
+    await user.click(screen.getByRole("button", { name: "Expand workbench" }));
 
     expect(onToggleFolder).toHaveBeenCalledWith("workbench");
     expect(onScopeChange).not.toHaveBeenCalled();
+  });
+
+  it("labels the disclosure by what it will do", () => {
+    setup({ mode: "files", expandedFolders: new Set(["workbench"]) });
+
+    expect(
+      screen.getByRole("button", { name: "Collapse workbench" }),
+    ).toHaveAttribute("aria-expanded", "true");
+  });
+
+  it("gives a childless folder no disclosure control", () => {
+    setup({ mode: "files" });
+
+    expect(
+      screen.queryByRole("button", { name: /Expand inbox/ }),
+    ).not.toBeInTheDocument();
   });
 
   it("offers folder actions on right click", async () => {
@@ -169,7 +184,7 @@ describe("NavigationPane", () => {
 
     await user.pointer({
       keys: "[MouseRight]",
-      target: screen.getByRole("button", { name: /workbench/ }),
+      target: screen.getByRole("button", { name: "workbench" }),
     });
 
     const menu = screen.getByRole("menu", { name: "Folder actions" });

@@ -95,6 +95,7 @@ export function PaneSplitter({
       aria-valuemin={paneConstraints[pane].min}
       aria-valuenow={width}
       className="pane-splitter"
+      data-splitter={pane}
       role="separator"
       type="button"
       onDoubleClick={onReset}

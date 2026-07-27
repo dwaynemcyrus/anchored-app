@@ -6,6 +6,25 @@ Git commit. The format follows [Keep a Changelog], and releases follow
 
 ## [Unreleased]
 
+### Changed
+
+- The workspace is now four panes: navigation, note list, editor, and
+  inspector. The navigation pane holds containers only — the five collections
+  or the folder tree — and selecting one lists its notes in the new middle
+  pane, which shows each note's name, an excerpt, and when it changed. Backlinks
+  moved out of the bottom of the document into the inspector on the right.
+- Panes resize by dragging the rule between them, with double-click to reset
+  and full keyboard control; widths are remembered. A two-finger swipe over the
+  editor, or the pane button in the title bar, closes and reopens the two left
+  panes one at a time — navigation first, then the list, reopening in reverse.
+  The inspector has its own button. The editor keeps a minimum width, and when
+  the window cannot honour it the side panes give way from the outside in.
+- With no vault open the window shows only the Anchored wordmark, settings, and
+  a prompt to open or create a vault. Vault- and note-specific controls are
+  absent rather than shown disabled.
+- Note excerpts in the list are read as rows scroll into view, so a folder of
+  thousands of notes costs only the reads on screen.
+
 ### Added
 
 - An interactive design prototype for a minimal four-pane shell — navigation,

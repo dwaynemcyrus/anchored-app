@@ -190,10 +190,24 @@ export function usePaneWidthVariables(layout: PaneLayoutApi): void {
         workspace
           .querySelector(`[data-pane="${pane}"]`)
           ?.setAttribute("data-collapsed", String(width === 0));
+        // Mirrored onto the workspace so a splitter can hide itself from CSS
+        // without needing to live inside the pane it resizes.
+        workspace.dataset[
+          `collapsed${pane.charAt(0).toUpperCase()}${pane.slice(1)}`
+        ] = String(width === 0);
       }
     };
 
     apply();
+
+    // ResizeObserver catches the workspace changing width for reasons the
+    // window does not, such as a pane opening. Where it is missing — jsdom,
+    // and any engine older than the Tauri target — the window resize event
+    // still keeps the common case correct.
+    if (typeof ResizeObserver === "undefined") {
+      window.addEventListener("resize", apply);
+      return () => window.removeEventListener("resize", apply);
+    }
 
     const observer = new ResizeObserver(apply);
     observer.observe(workspace);
