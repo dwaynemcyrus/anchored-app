@@ -6,6 +6,8 @@ Git commit. The format follows [Keep a Changelog], and releases follow
 
 ## [Unreleased]
 
+## [0.1.7-alpha] - 2026-07-27
+
 ### Changed
 
 - The workspace is now four panes: navigation, note list, editor, and
@@ -34,17 +36,10 @@ Git commit. The format follows [Keep a Changelog], and releases follow
   note list, editor, and inspector — with drag-resizable panes and a no-vault
   state that shows a wordmark, settings, and a call to action rather than
   disabled controls. It lives at `docs/prototypes/four-pane-shell.html` and is
-  a design artifact only: the application interface is unchanged. Note-list
-  rows show a two-line excerpt by default, with a one-line option in Settings.
-  A two-finger swipe over the editor closes and reopens the two left panes one
-  at a time — navigation first, then the list, reopening in reverse — and the
-  position is remembered. The inspector is toggled by a button instead. The
-  editor area holds tabs and nested, resizable splits, with the same document
-  free to appear in any number of them; a tab's context menu can pin the tab,
-  pin the note as a reference in the inspector, or open it in a floating
-  window. Tabs drag to reorder within a pane and to move between panes. Each
-  group carries a tab strip and, below it, a document row with working back and
-  forward history, the breadcrumb, and the note's own menu.
+  a design artifact. Its layout, pane behaviour, and no-vault state now ship in
+  the application; the tabs, nested splits, pinned reference, and floating
+  window it also demonstrates do not, and remain a design reference for later
+  work.
 - A reference list of interface capabilities Anchored lacks against the
   applications named in the overview, at `docs/design/ui-gaps.md`.
 
