@@ -544,6 +544,19 @@
         font-size: 11px;
       }
 
+      /* Quiet marker for a note already open in some tab — useful once splits
+         mean several notes are open at once. */
+      .list-row[data-open="true"]::after {
+        position: absolute;
+        top: 15px;
+        right: 12px;
+        width: 5px;
+        height: 5px;
+        border-radius: 50%;
+        background: var(--color-text-subtle);
+        content: "";
+      }
+
       .pane__empty {
         padding: 32px 16px;
         color: var(--color-text-subtle);
@@ -552,6 +565,203 @@
       }
 
       /* ---------------------------------------------------------- main pane */
+
+      .title-bar__generated {
+        display: contents;
+      }
+
+      /* ------------------------------------------------- splits and tabs */
+
+      .split-root {
+        display: flex;
+        min-width: 0;
+        min-height: 0;
+        flex: 1;
+      }
+
+      .split {
+        display: flex;
+        min-width: 0;
+        min-height: 0;
+        flex: 1;
+      }
+
+      .split--row {
+        flex-direction: row;
+      }
+
+      .split--column {
+        flex-direction: column;
+      }
+
+      .split__child {
+        position: relative;
+        display: flex;
+        min-width: 0;
+        min-height: 0;
+      }
+
+      /* One-pixel rule between siblings, with the same nine-pixel grab target
+         the workspace splitters use. */
+      .split-handle {
+        position: relative;
+        z-index: 4;
+        flex: 0 0 1px;
+        padding: 0;
+        background: var(--color-rule);
+      }
+
+      .split-handle::after {
+        position: absolute;
+        background: transparent;
+        content: "";
+        transition: background 140ms ease;
+      }
+
+      .split--row > .split-handle {
+        cursor: col-resize;
+      }
+
+      .split--row > .split-handle::after {
+        top: 0;
+        bottom: 0;
+        left: -4px;
+        width: 9px;
+      }
+
+      .split--column > .split-handle {
+        cursor: row-resize;
+      }
+
+      .split--column > .split-handle::after {
+        top: -4px;
+        right: 0;
+        left: 0;
+        height: 9px;
+      }
+
+      .split-handle:hover,
+      .split-handle:focus-visible,
+      .split-handle[data-dragging="true"] {
+        background: var(--color-focus);
+        outline: none;
+      }
+
+      .tab-group {
+        display: flex;
+        min-width: 0;
+        min-height: 0;
+        flex: 1;
+        flex-direction: column;
+      }
+
+      .tab-strip {
+        display: flex;
+        min-height: 38px;
+        align-items: stretch;
+        border-bottom: 1px solid var(--color-rule);
+      }
+
+      .tab-strip__tabs {
+        display: flex;
+        min-width: 0;
+        flex: 1;
+        overflow-x: auto;
+        scrollbar-width: none;
+      }
+
+      .tab-strip__tabs::-webkit-scrollbar {
+        display: none;
+      }
+
+      /* Tabs keep a legible floor and the strip scrolls past it, rather than
+         every tab shrinking to an ellipsis as more are opened. */
+      .tab {
+        display: flex;
+        min-width: 108px;
+        max-width: 190px;
+        flex: 0 0 auto;
+        align-items: center;
+        padding: 0 6px 0 12px;
+        border-right: 1px solid var(--color-rule);
+        color: var(--color-text-subtle);
+        font-size: 12px;
+        gap: 6px;
+      }
+
+      .tab:hover {
+        background: var(--color-row-hover);
+      }
+
+      .tab[aria-selected="true"] {
+        background: var(--color-row-active);
+        color: var(--color-text-muted);
+      }
+
+      /* Only the focused group's active tab reads at full strength — that is
+         what marks which pane the list opens into. */
+      .tab-group[data-active="true"] .tab[aria-selected="true"] {
+        color: var(--color-text);
+      }
+
+      .tab__label {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .tab__pin {
+        flex: none;
+        color: var(--color-text-subtle);
+      }
+
+      .tab__close {
+        display: grid;
+        width: 18px;
+        height: 18px;
+        flex: none;
+        border-radius: 4px;
+        color: var(--color-text-subtle);
+        font-size: 14px;
+        line-height: 1;
+        opacity: 0;
+        place-items: center;
+      }
+
+      .tab:hover .tab__close,
+      .tab[aria-selected="true"] .tab__close,
+      .tab__close:focus-visible {
+        opacity: 1;
+      }
+
+      .tab__close:hover {
+        background: var(--color-menu-border);
+        color: var(--color-text);
+      }
+
+      .tab-strip__actions {
+        display: flex;
+        flex: none;
+        align-items: center;
+        padding: 0 6px;
+        gap: 2px;
+      }
+
+      .tab-strip__actions .icon-button {
+        width: 26px;
+        height: 26px;
+      }
+
+      .tab-group__empty {
+        display: grid;
+        flex: 1;
+        align-content: center;
+        justify-items: center;
+        padding: 24px;
+        color: var(--color-text-subtle);
+        font-size: 12px;
+        gap: 10px;
+      }
 
       .editor-header {
         display: flex;
@@ -873,7 +1083,26 @@
           <span id="vault-identity"></span>
         </div>
 
-        <div class="title-bar__actions" id="title-actions"></div>
+        <div class="title-bar__actions">
+          <!-- `display: contents` lets the regenerated buttons sit directly in
+               this flex row, so the inspector toggle beside them survives a
+               re-render. -->
+          <span class="title-bar__generated" id="title-actions"></span>
+          <!-- The inspector toggle is a workspace control, not a note action,
+               so it lives beside the other window-level buttons. -->
+          <button
+            class="icon-button"
+            id="inspector-toggle"
+            aria-label="Hide inspector"
+            aria-pressed="true"
+            type="button"
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <rect x="3" y="4" width="18" height="16" rx="2" />
+              <path d="M15 4v16" />
+            </svg>
+          </button>
+        </div>
 
         <!-- Stands in for the real Settings surface. Note-list density belongs
              here rather than in the list header: it is a preference, not a
@@ -996,67 +1225,24 @@
           ></button>
         </section>
 
+        <!-- The editor area is a tree of splits. Every leaf is a tab group
+             with its own strip; the tree is rebuilt from `editorTree`. -->
         <main class="pane pane--main" id="pane-main" aria-label="Editor">
-          <header class="editor-header">
-            <span class="breadcrumb">
-              <span id="crumb-folder">inbox</span>
-              <span aria-hidden="true">/</span>
-              <strong id="crumb-name">Travel Ideas.md</strong>
-            </span>
+          <div class="split-root" id="split-root"></div>
 
-            <div class="editor-actions">
-              <button
-                class="text-button"
-                id="preview-toggle"
-                aria-pressed="false"
-                type="button"
-              >
-                Preview
-              </button>
-              <span class="overflow">
-                <button
-                  class="icon-button"
-                  id="overflow-toggle"
-                  aria-expanded="false"
-                  aria-haspopup="menu"
-                  aria-label="More note actions"
-                  type="button"
-                >
-                  <svg viewBox="0 0 24 24" aria-hidden="true">
-                    <circle cx="5" cy="12" r="1" />
-                    <circle cx="12" cy="12" r="1" />
-                    <circle cx="19" cy="12" r="1" />
-                  </svg>
-                </button>
-                <div class="menu" id="overflow-menu" role="menu" hidden>
-                  <button role="menuitem" type="button">Rename…</button>
-                  <button role="menuitem" type="button">Move…</button>
-                  <button role="menuitem" type="button">Save as…</button>
-                  <button role="menuitem" type="button">Move to Inbox</button>
-                  <button role="menuitem" type="button">Archive</button>
-                  <button role="menuitem" type="button">Trash</button>
-                  <button role="menuitem" type="button">Close</button>
-                </div>
-              </span>
-              <!-- The inspector is a button rather than a gesture: it sits at
-                   the edge it controls, so it reads as a panel switch. -->
-              <button
-                class="icon-button"
-                id="inspector-toggle"
-                aria-label="Hide inspector"
-                aria-pressed="true"
-                type="button"
-              >
-                <svg viewBox="0 0 24 24" aria-hidden="true">
-                  <rect x="3" y="4" width="18" height="16" rx="2" />
-                  <path d="M15 4v16" />
-                </svg>
-              </button>
-            </div>
-          </header>
-
-          <div class="document">
-            <div class="document__inner" id="document-inner"></div>
+          <div class="menu" id="overflow-menu" role="menu" hidden>
+            <button data-action="preview" role="menuitem" type="button">
+              Preview
+            </button>
+            <button role="menuitem" type="button">Rename…</button>
+            <button role="menuitem" type="button">Move…</button>
+            <button role="menuitem" type="button">Save as…</button>
+            <button role="menuitem" type="button">Move to Inbox</button>
+            <button role="menuitem" type="button">Archive</button>
+            <button role="menuitem" type="button">Trash</button>
+            <button data-action="close-group" role="menuitem" type="button">
+              Close this pane
+            </button>
           </div>
 
           <button
@@ -1807,14 +1993,26 @@
         return row;
       }
 
-      function currentNotes() {
-        return state.navMode === "collections"
-          ? notesFor(state.selectedCollection)
-          : NOTES.filter((note) => note.folder === state.selectedCollection);
+      /* Indexes into NOTES rather than note objects: a tab stores an index, so
+         the same document can sit in any number of tabs without copying. */
+      function currentNoteIndexes() {
+        return NOTES.reduce((indexes, note, index) => {
+          const match =
+            state.navMode === "collections"
+              ? note.collection === state.selectedCollection
+              : note.folder === state.selectedCollection;
+          if (match) indexes.push(index);
+          return indexes;
+        }, []);
       }
 
       function renderList() {
-        const notes = currentNotes();
+        const indexes = currentNoteIndexes();
+        const openIndexes = new Set();
+        walkLeaves(editorTree, (leaf) => {
+          for (const tab of leaf.tabs) openIndexes.add(tab.note);
+        });
+        const currentTab = activeLeaf()?.tabs[activeLeaf()?.active];
         const label =
           state.navMode === "collections"
             ? (COLLECTIONS.find((item) => item.id === state.selectedCollection)
@@ -1823,13 +2021,13 @@
 
         document.getElementById("list-title").textContent = label;
         document.getElementById("list-count").textContent = String(
-          notes.length,
+          indexes.length,
         );
 
         const body = document.getElementById("list-body");
         body.setAttribute("aria-label", "Notes in " + label);
 
-        if (notes.length === 0) {
+        if (indexes.length === 0) {
           const empty = document.createElement("p");
           empty.className = "pane__empty";
           empty.textContent = "No notes in " + label;
@@ -1837,19 +2035,16 @@
           return;
         }
 
-        const rows = notes.map((note, index) => {
+        const rows = indexes.map((noteIndex) => {
+          const note = NOTES[noteIndex];
+          const isCurrent = currentTab?.note === noteIndex;
           const row = document.createElement("button");
           row.className = "list-row";
           row.type = "button";
           row.setAttribute("role", "option");
-          row.setAttribute(
-            "aria-current",
-            String(index === state.selectedNote),
-          );
-          row.setAttribute(
-            "aria-selected",
-            String(index === state.selectedNote),
-          );
+          row.setAttribute("aria-current", String(isCurrent));
+          row.setAttribute("aria-selected", String(isCurrent));
+          if (openIndexes.has(noteIndex)) row.dataset.open = "true";
 
           const title = document.createElement("span");
           title.className = "list-row__title";
@@ -1864,9 +2059,11 @@
           meta.textContent = note.when + " · " + note.folder;
 
           row.append(title, excerpt, meta);
-          row.addEventListener("click", () => {
-            state.selectedNote = index;
-            render();
+          // Modifier-click opens in a new tab, as every tabbed editor does.
+          row.addEventListener("click", (event) => {
+            openNote(noteIndex, {
+              newTab: event.metaKey || event.ctrlKey || event.shiftKey,
+            });
           });
           return row;
         });
@@ -1874,27 +2071,163 @@
         body.replaceChildren(...rows);
       }
 
-      function renderEditor() {
-        const notes = currentNotes();
-        const note = notes[state.selectedNote] ?? notes[0];
-        const inner = document.getElementById("document-inner");
-        const inspector = document.getElementById("inspector-body");
+      /* ------------------------------------------------ editor split tree
 
-        if (!note) {
-          document.getElementById("crumb-folder").textContent = "—";
-          document.getElementById("crumb-name").textContent = "No note open";
-          inner.replaceChildren();
-          inspector.replaceChildren();
-          document.getElementById("backlink-count").textContent = "0";
+         The editor area is a binary tree.
+
+           leaf   { type: "leaf", id, tabs: [{ id, note }], active }
+           split  { type: "split", direction: "row" | "column",
+                    children: [node, node], sizes: [fraction, fraction] }
+
+         A leaf is one tab group with its own strip. Splitting replaces a leaf
+         with a split holding the original leaf and a new one, so nesting comes
+         free and a document can appear in as many tabs as you like — each tab
+         only stores an index into NOTES, never a copy. */
+
+      let nodeSequence = 0;
+
+      function nextNodeId(prefix) {
+        nodeSequence += 1;
+        return prefix + nodeSequence;
+      }
+
+      function makeLeaf(noteIndexes) {
+        return {
+          type: "leaf",
+          id: nextNodeId("group-"),
+          tabs: noteIndexes.map((note) => ({ id: nextNodeId("tab-"), note })),
+          active: 0,
+        };
+      }
+
+      let editorTree = makeLeaf([0]);
+      let activeGroupId = editorTree.id;
+
+      function walkLeaves(node, visit) {
+        if (node.type === "leaf") {
+          visit(node);
+          return;
+        }
+        for (const child of node.children) walkLeaves(child, visit);
+      }
+
+      function findLeaf(id) {
+        let found;
+        walkLeaves(editorTree, (leaf) => {
+          if (leaf.id === id) found = leaf;
+        });
+        return found;
+      }
+
+      function firstLeaf() {
+        let found;
+        walkLeaves(editorTree, (leaf) => {
+          found = found ?? leaf;
+        });
+        return found;
+      }
+
+      function activeLeaf() {
+        return findLeaf(activeGroupId) ?? firstLeaf();
+      }
+
+      function activeNote() {
+        const leaf = activeLeaf();
+        const tab = leaf?.tabs[leaf.active];
+        return tab ? NOTES[tab.note] : undefined;
+      }
+
+      /* Swaps `id` for `replacement`, or removes it when `replacement` is
+         null by promoting its sibling into the parent's place. */
+      function replaceNode(id, replacement) {
+        if (editorTree.id === id) {
+          editorTree = replacement ?? makeLeaf([]);
           return;
         }
 
-        const filename = note.title + (note.frontmatter ? ".md" : "");
-        document.getElementById("crumb-folder").textContent = note.folder;
-        document.getElementById("crumb-name").textContent = filename;
-        document.getElementById("status-path").textContent =
-          "Personal › " + note.folder + " › " + filename;
+        const visit = (node) => {
+          if (node.type !== "split") return false;
+          for (let index = 0; index < node.children.length; index += 1) {
+            const child = node.children[index];
+            if (child.id !== id) {
+              if (visit(child)) return true;
+              continue;
+            }
+            if (replacement) {
+              node.children[index] = replacement;
+            } else {
+              // A split always has two children, so removing one means the
+              // split itself has no reason to exist.
+              replaceNode(node.id, node.children[index === 0 ? 1 : 0]);
+            }
+            return true;
+          }
+          return false;
+        };
 
+        visit(editorTree);
+      }
+
+      function splitGroup(groupId, direction) {
+        const leaf = findLeaf(groupId);
+        if (!leaf) return;
+        const tab = leaf.tabs[leaf.active];
+        const companion = makeLeaf(tab ? [tab.note] : []);
+        const split = {
+          type: "split",
+          id: nextNodeId("split-"),
+          direction,
+          children: [leaf, companion],
+          sizes: [0.5, 0.5],
+        };
+        replaceNode(groupId, split);
+        activeGroupId = companion.id;
+        renderWorkspace();
+      }
+
+      function closeGroup(groupId) {
+        if (editorTree.type === "leaf") {
+          // The last group stays; it just empties.
+          editorTree.tabs = [];
+          editorTree.active = 0;
+        } else {
+          replaceNode(groupId, null);
+          activeGroupId = firstLeaf().id;
+        }
+        renderWorkspace();
+      }
+
+      function openNote(noteIndex, { newTab = false } = {}) {
+        const leaf = activeLeaf();
+        activeGroupId = leaf.id;
+        const current = leaf.tabs[leaf.active];
+        if (newTab || !current || current.pinned) {
+          leaf.tabs.splice(leaf.active + 1, 0, {
+            id: nextNodeId("tab-"),
+            note: noteIndex,
+          });
+          leaf.active = Math.min(leaf.active + 1, leaf.tabs.length - 1);
+        } else {
+          current.note = noteIndex;
+        }
+        renderWorkspace();
+      }
+
+      function closeTab(groupId, tabIndex) {
+        const leaf = findLeaf(groupId);
+        if (!leaf) return;
+        leaf.tabs.splice(tabIndex, 1);
+        leaf.active = Math.max(0, Math.min(leaf.active, leaf.tabs.length - 1));
+        if (leaf.tabs.length === 0 && editorTree.type === "split") {
+          closeGroup(groupId);
+          return;
+        }
+        renderWorkspace();
+      }
+
+      /* --------------------------------------------------- editor rendering */
+
+      function documentNodes(note) {
         const nodes = [];
         if (note.frontmatter) {
           const pre = document.createElement("pre");
@@ -1929,12 +2262,280 @@
         cursor.setAttribute("aria-hidden", "true");
         cursor.innerHTML = '<span class="caret"></span>';
         nodes.push(cursor);
+        return nodes;
+      }
 
-        inner.replaceChildren(...nodes);
+      function iconButton(label, markup, onClick) {
+        const button = document.createElement("button");
+        button.className = "icon-button";
+        button.type = "button";
+        button.setAttribute("aria-label", label);
+        button.title = label;
+        button.innerHTML =
+          '<svg viewBox="0 0 24 24" aria-hidden="true">' + markup + "</svg>";
+        button.addEventListener("click", (event) => {
+          event.stopPropagation();
+          onClick();
+        });
+        return button;
+      }
 
-        document.getElementById("backlink-count").textContent = String(
-          note.backlinks.length,
+      function renderTabStrip(leaf) {
+        const strip = document.createElement("div");
+        strip.className = "tab-strip";
+
+        const tabs = document.createElement("div");
+        tabs.className = "tab-strip__tabs";
+        tabs.setAttribute("role", "tablist");
+
+        leaf.tabs.forEach((tab, index) => {
+          const note = NOTES[tab.note];
+          const button = document.createElement("button");
+          button.className = "tab";
+          button.type = "button";
+          button.setAttribute("role", "tab");
+          button.setAttribute("aria-selected", String(index === leaf.active));
+          button.title = note.folder + "/" + note.title;
+
+          if (tab.pinned) {
+            const pin = document.createElement("span");
+            pin.className = "tab__pin";
+            pin.setAttribute("aria-hidden", "true");
+            pin.textContent = "◆";
+            button.append(pin);
+          }
+
+          const label = document.createElement("span");
+          label.className = "tab__label";
+          label.textContent = note.title;
+          button.append(label);
+
+          const close = document.createElement("span");
+          close.className = "tab__close";
+          close.setAttribute("role", "button");
+          close.setAttribute("aria-label", "Close " + note.title);
+          close.tabIndex = 0;
+          close.textContent = "×";
+          close.addEventListener("click", (event) => {
+            event.stopPropagation();
+            closeTab(leaf.id, index);
+          });
+          button.append(close);
+
+          button.addEventListener("click", () => {
+            leaf.active = index;
+            activeGroupId = leaf.id;
+            renderWorkspace();
+          });
+
+          tabs.append(button);
+        });
+
+        const actions = document.createElement("div");
+        actions.className = "tab-strip__actions";
+        actions.append(
+          iconButton("New tab", '<path d="M12 6v12M6 12h12"/>', () => {
+            const note = leaf.tabs[leaf.active]?.note ?? 0;
+            leaf.tabs.push({ id: nextNodeId("tab-"), note });
+            leaf.active = leaf.tabs.length - 1;
+            activeGroupId = leaf.id;
+            renderWorkspace();
+          }),
+          iconButton(
+            "Split right",
+            '<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M12 4v16"/>',
+            () => splitGroup(leaf.id, "row"),
+          ),
+          iconButton(
+            "Split down",
+            '<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 12h18"/>',
+            () => splitGroup(leaf.id, "column"),
+          ),
+          iconButton(
+            "More note actions",
+            '<circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/>',
+            () => {
+              activeGroupId = leaf.id;
+              openOverflowFor(leaf.id);
+            },
+          ),
         );
+
+        strip.append(tabs, actions);
+        return strip;
+      }
+
+      function renderLeaf(leaf) {
+        const group = document.createElement("section");
+        group.className = "tab-group";
+        group.dataset.groupId = leaf.id;
+        group.dataset.active = String(leaf.id === activeGroupId);
+        group.setAttribute("aria-label", "Editor group");
+        group.append(renderTabStrip(leaf));
+
+        const tab = leaf.tabs[leaf.active];
+        if (!tab) {
+          const empty = document.createElement("div");
+          empty.className = "tab-group__empty";
+          empty.append("No note open");
+          group.append(empty);
+        } else {
+          const surface = document.createElement("div");
+          surface.className = "document";
+          const inner = document.createElement("div");
+          inner.className = "document__inner";
+          inner.append(...documentNodes(NOTES[tab.note]));
+          surface.append(inner);
+          group.append(surface);
+        }
+
+        // Clicking anywhere in a group focuses it, so the list pane knows
+        // which pane to open into.
+        group.addEventListener("pointerdown", () => {
+          if (activeGroupId === leaf.id) return;
+          activeGroupId = leaf.id;
+          renderWorkspace();
+        });
+
+        return group;
+      }
+
+      function renderSplit(node) {
+        const element = document.createElement("div");
+        element.className = "split split--" + node.direction;
+
+        node.children.forEach((child, index) => {
+          const wrapper = document.createElement("div");
+          wrapper.className = "split__child";
+          wrapper.style.flex = "0 0 " + node.sizes[index] * 100 + "%";
+          wrapper.append(renderNode(child));
+          element.append(wrapper);
+
+          if (index === 0) {
+            element.append(makeSplitHandle(node, element));
+          }
+        });
+
+        return element;
+      }
+
+      function renderNode(node) {
+        return node.type === "leaf" ? renderLeaf(node) : renderSplit(node);
+      }
+
+      const SPLIT_MIN_FRACTION = 0.15;
+
+      function makeSplitHandle(node, container) {
+        const handle = document.createElement("button");
+        handle.className = "split-handle";
+        handle.type = "button";
+        handle.setAttribute("role", "separator");
+        const row = node.direction === "row";
+        handle.setAttribute(
+          "aria-orientation",
+          row ? "vertical" : "horizontal",
+        );
+        handle.setAttribute(
+          "aria-label",
+          row ? "Resize panes horizontally" : "Resize panes vertically",
+        );
+        handle.setAttribute("aria-valuemin", "15");
+        handle.setAttribute("aria-valuemax", "85");
+        handle.setAttribute(
+          "aria-valuenow",
+          String(Math.round(node.sizes[0] * 100)),
+        );
+
+        function applyFraction(fraction) {
+          const first = Math.max(
+            SPLIT_MIN_FRACTION,
+            Math.min(1 - SPLIT_MIN_FRACTION, fraction),
+          );
+          node.sizes = [first, 1 - first];
+          const children = container.querySelectorAll(":scope > .split__child");
+          children[0].style.flex = "0 0 " + first * 100 + "%";
+          children[1].style.flex = "0 0 " + (1 - first) * 100 + "%";
+          handle.setAttribute("aria-valuenow", String(Math.round(first * 100)));
+        }
+
+        handle.addEventListener("pointerdown", (event) => {
+          if (event.button !== 0) return;
+          event.preventDefault();
+          event.stopPropagation();
+          handle.setPointerCapture(event.pointerId);
+          handle.dataset.dragging = "true";
+          document.body.dataset.resizing = "true";
+        });
+
+        handle.addEventListener("pointermove", (event) => {
+          if (handle.dataset.dragging !== "true") return;
+          const rect = container.getBoundingClientRect();
+          applyFraction(
+            row
+              ? (event.clientX - rect.left) / rect.width
+              : (event.clientY - rect.top) / rect.height,
+          );
+        });
+
+        const endDrag = (event) => {
+          if (handle.dataset.dragging !== "true") return;
+          delete handle.dataset.dragging;
+          delete document.body.dataset.resizing;
+          if (handle.hasPointerCapture(event.pointerId)) {
+            handle.releasePointerCapture(event.pointerId);
+          }
+        };
+
+        handle.addEventListener("pointerup", endDrag);
+        handle.addEventListener("pointercancel", endDrag);
+        handle.addEventListener("dblclick", () => applyFraction(0.5));
+
+        handle.addEventListener("keydown", (event) => {
+          const step = event.shiftKey ? 0.1 : 0.02;
+          const back = row ? "ArrowLeft" : "ArrowUp";
+          const forward = row ? "ArrowRight" : "ArrowDown";
+          if (event.key === back) applyFraction(node.sizes[0] - step);
+          else if (event.key === forward) applyFraction(node.sizes[0] + step);
+          else if (event.key === "Home") applyFraction(SPLIT_MIN_FRACTION);
+          else if (event.key === "End") applyFraction(1 - SPLIT_MIN_FRACTION);
+          else return;
+          event.preventDefault();
+        });
+
+        return handle;
+      }
+
+      function renderEditor() {
+        document
+          .getElementById("split-root")
+          .replaceChildren(renderNode(editorTree));
+        renderInspector();
+        renderStatusPath();
+      }
+
+      function renderStatusPath() {
+        const note = activeNote();
+        document.getElementById("status-path").textContent = note
+          ? "Personal › " +
+            note.folder +
+            " › " +
+            note.title +
+            (note.frontmatter ? ".md" : "")
+          : "Personal";
+      }
+
+      function renderInspector() {
+        const note = activeNote();
+        const inspector = document.getElementById("inspector-body");
+        const count = document.getElementById("backlink-count");
+
+        if (!note) {
+          count.textContent = "0";
+          inspector.replaceChildren();
+          return;
+        }
+
+        count.textContent = String(note.backlinks.length);
         if (note.backlinks.length === 0) {
           const empty = document.createElement("p");
           empty.className = "pane__empty";
@@ -1957,11 +2558,17 @@
         );
       }
 
+      /* Tab and split changes move the current note, which changes which list
+         row reads as current — so the two always redraw together. */
+      function renderWorkspace() {
+        renderEditor();
+        renderList();
+      }
+
       function render() {
         renderTitleActions();
         renderNav();
-        renderList();
-        renderEditor();
+        renderWorkspace();
       }
 
       /* ---------------------------------------------------------------- wiring */
@@ -1971,6 +2578,8 @@
         workspace.hidden = !open;
         document.getElementById("status-bar").hidden = !open;
         document.getElementById("welcome").hidden = open;
+        // With no vault there are no panes to inspect, so the toggle goes too.
+        document.getElementById("inspector-toggle").hidden = !open;
         for (const button of document.querySelectorAll("[data-proto]")) {
           if (
             button.dataset.proto === "open" ||
@@ -2014,25 +2623,52 @@
         });
       }
 
-      const overflowToggle = document.getElementById("overflow-toggle");
       const overflowMenu = document.getElementById("overflow-menu");
       const settingsMenu = document.getElementById("settings-menu");
 
       function closeMenus() {
         overflowMenu.hidden = true;
         settingsMenu.hidden = true;
-        overflowToggle.setAttribute("aria-expanded", "false");
         document
           .querySelector('#title-actions [aria-label="Settings"]')
           ?.setAttribute("aria-expanded", "false");
       }
 
-      overflowToggle.addEventListener("click", (event) => {
-        event.stopPropagation();
-        const open = overflowMenu.hidden;
+      /* One overflow menu is shared by every tab group and moved to whichever
+         group asked for it — the alternative is a menu per group, all but one
+         of them dead markup. */
+      function openOverflowFor(groupId) {
+        const group = document.querySelector(
+          '[data-group-id="' + groupId + '"]',
+        );
+        const trigger = group?.querySelector(
+          '[aria-label="More note actions"]',
+        );
+        if (!trigger) return;
+
+        const wasOpen =
+          !overflowMenu.hidden && overflowMenu.dataset.groupId === groupId;
         closeMenus();
-        overflowMenu.hidden = !open;
-        overflowToggle.setAttribute("aria-expanded", String(open));
+        if (wasOpen) return;
+
+        const pane = document.getElementById("pane-main");
+        const paneRect = pane.getBoundingClientRect();
+        const rect = trigger.getBoundingClientRect();
+        overflowMenu.dataset.groupId = groupId;
+        overflowMenu.hidden = false;
+        overflowMenu.style.top = rect.bottom - paneRect.top + 4 + "px";
+        overflowMenu.style.right =
+          Math.max(4, paneRect.right - rect.right) + "px";
+      }
+
+      overflowMenu.addEventListener("click", (event) => {
+        const item = event.target.closest("[data-action]");
+        if (!item) return;
+        event.stopPropagation();
+        if (item.dataset.action === "close-group") {
+          closeGroup(overflowMenu.dataset.groupId);
+        }
+        closeMenus();
       });
 
       // The title-bar actions are re-rendered whenever the vault state flips,
@@ -2113,19 +2749,47 @@
         { passive: false },
       );
 
-      const previewToggle = document.getElementById("preview-toggle");
-      previewToggle.addEventListener("click", () => {
-        const pressed = previewToggle.getAttribute("aria-pressed") === "true";
-        previewToggle.setAttribute("aria-pressed", String(!pressed));
-        previewToggle.textContent = pressed ? "Preview" : "Edit source";
-      });
-
       window.addEventListener("keydown", (event) => {
-        if (!(event.metaKey || event.ctrlKey) || event.altKey) return;
-        const key = { 1: "nav", 2: "list", 3: "inspector" }[event.key];
-        if (!key) return;
-        event.preventDefault();
-        togglePane(key);
+        if (!(event.metaKey || event.ctrlKey)) return;
+
+        // ⌥⌘→ / ⌥⌘← cycle tabs, matching Safari and Obsidian.
+        if (event.altKey) {
+          if (event.key !== "ArrowRight" && event.key !== "ArrowLeft") return;
+          const leaf = activeLeaf();
+          if (!leaf || leaf.tabs.length < 2) return;
+          event.preventDefault();
+          const step = event.key === "ArrowRight" ? 1 : -1;
+          leaf.active =
+            (leaf.active + step + leaf.tabs.length) % leaf.tabs.length;
+          renderWorkspace();
+          return;
+        }
+
+        const paneKey = { 1: "nav", 2: "list", 3: "inspector" }[event.key];
+        if (paneKey) {
+          event.preventDefault();
+          togglePane(paneKey);
+          return;
+        }
+
+        const key = event.key.toLowerCase();
+        if (key === "t") {
+          event.preventDefault();
+          const leaf = activeLeaf();
+          leaf.tabs.push({
+            id: nextNodeId("tab-"),
+            note: leaf.tabs[leaf.active]?.note ?? 0,
+          });
+          leaf.active = leaf.tabs.length - 1;
+          renderWorkspace();
+        } else if (key === "w") {
+          event.preventDefault();
+          const leaf = activeLeaf();
+          if (leaf?.tabs.length) closeTab(leaf.id, leaf.active);
+        } else if (key === "\\") {
+          event.preventDefault();
+          splitGroup(activeLeaf().id, event.shiftKey ? "column" : "row");
+        }
       });
 
       window.addEventListener("resize", layout);
