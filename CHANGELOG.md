@@ -14,6 +14,9 @@ Git commit. The format follows [Keep a Changelog], and releases follow
   disabled controls. It lives at `docs/prototypes/four-pane-shell.html` and is
   a design artifact only: the application interface is unchanged. Note-list
   rows show a two-line excerpt by default, with a one-line option in Settings.
+  A two-finger swipe over the editor closes and reopens the two left panes one
+  at a time — navigation first, then the list, reopening in reverse — and the
+  position is remembered. The inspector is toggled by a button instead.
 
 ## [0.1.6-alpha] - 2026-07-26
 

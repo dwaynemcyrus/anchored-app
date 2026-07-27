@@ -30,8 +30,30 @@ are copied verbatim from `src/styles/global.css` so the two cannot drift.
 - **Keyboard.** Tab reaches every handle. `←`/`→` resize by 16px, `Shift` with
   them by 64px, `Home`/`End` jump to the limits, `Enter` collapses and restores.
   Focus widens the rule to the anchor line's two pixels.
+- **Two-finger swipe** over the editor walks the two left panes down and up a
+  three-step ladder:
+
+  | Stage | Panes | Swipe left | Swipe right |
+  | ----- | ----- | ---------- | ----------- |
+  | 2 | nav + list | → 1 | — |
+  | 1 | list only | → 0 | → 2 |
+  | 0 | neither | — | → 1 |
+
+  So closing goes nav-then-list, and opening goes list-then-nav. The stage is
+  read back from the panes rather than stored, so it stays in step with the
+  keyboard shortcuts, and it persists with the widths.
+
+  macOS reports the swipe as `wheel` events with a dominant `deltaX` followed
+  by a long momentum tail, so the handler latches: one physical swipe moves
+  exactly one step no matter how long the tail runs. Vertical scrolling is
+  never intercepted.
+- **The inspector is a button**, not a gesture — the panel icon at the right of
+  the editor header. It sits at the edge it controls and is independent of the
+  ladder.
 - **`⌘1` / `⌘2` / `⌘3`** (or `Ctrl`) collapse and restore nav, list, and
-  inspector. The editor never collapses.
+  inspector individually. The editor never collapses.
+- **Motion.** Opening and closing a pane animates over 140ms; dragging never
+  does. Under `prefers-reduced-motion` both are instant.
 - **Widths persist** across reloads under `anchored.panes.v1`, mirroring the
   storage shape of `src/app/fileRailPreferences.ts`.
 - **Navigation.** The Collections / Files toggle switches the nav pane between
@@ -75,3 +97,12 @@ The questions this prototype existed to answer, and the answers:
 
 - What the inspector holds beyond backlinks. Outline, frontmatter, and tags are
   the candidates; the pane, splitter, and toggle are already real.
+- **Whether the swipe needs a pointer alternative.** WCAG 2.2 SC 2.5.1 asks
+  that anything driven by a multipoint gesture also work from a single pointer.
+  `⌘1` / `⌘2` cover keyboard, but a pointer-only user currently has no way to
+  reach the left panes. Anchored targets WCAG 2.2 AA, so this needs either a
+  small toggle in the title bar or an explicit decision to accept the gap.
+- **The swipe direction has not been tried on real hardware.** The handler
+  assumes a leftward two-finger swipe reports a positive `deltaX`, which is the
+  macOS natural-scrolling convention. `SWIPE_DIRECTION` in the source flips it
+  if that reads backwards.

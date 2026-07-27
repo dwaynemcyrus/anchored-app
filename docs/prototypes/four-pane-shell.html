@@ -39,6 +39,28 @@
         --inspector-w: 280px;
       }
 
+      /* Registering the widths as real lengths is what lets them be
+         transitioned when a pane opens or closes. Unsupported engines (Safari
+         below 16.4, so macOS 12's WebKit) simply snap instead — no fallback
+         needed. */
+      @property --nav-w {
+        syntax: "<length>";
+        inherits: true;
+        initial-value: 240px;
+      }
+
+      @property --list-w {
+        syntax: "<length>";
+        inherits: true;
+        initial-value: 300px;
+      }
+
+      @property --inspector-w {
+        syntax: "<length>";
+        inherits: true;
+        initial-value: 280px;
+      }
+
       * {
         box-sizing: border-box;
       }
@@ -222,6 +244,15 @@
       .pane--list,
       .pane--main {
         border-right: 1px solid var(--color-rule);
+      }
+
+      /* Applied only around an open/close, never during a drag — a transition
+         on the width custom properties would fight every pointermove. */
+      .workspace--animating {
+        transition:
+          --nav-w 140ms ease,
+          --list-w 140ms ease,
+          --inspector-w 140ms ease;
       }
 
       .pane[data-collapsed="true"] {
@@ -1007,6 +1038,20 @@
                   <button role="menuitem" type="button">Close</button>
                 </div>
               </span>
+              <!-- The inspector is a button rather than a gesture: it sits at
+                   the edge it controls, so it reads as a panel switch. -->
+              <button
+                class="icon-button"
+                id="inspector-toggle"
+                aria-label="Hide inspector"
+                aria-pressed="true"
+                type="button"
+              >
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <rect x="3" y="4" width="18" height="16" rx="2" />
+                  <path d="M15 4v16" />
+                </svg>
+              </button>
             </div>
           </header>
 
@@ -1373,9 +1418,20 @@
         return document.getElementById(PANES[key].element);
       }
 
+      let animationTimer = 0;
+
       /* Derives the widths actually painted from the preferred widths plus the
          space available, then writes them to the CSS custom properties. */
-      function layout() {
+      function layout({ animate = false } = {}) {
+        if (animate) {
+          workspace.classList.add("workspace--animating");
+          window.clearTimeout(animationTimer);
+          animationTimer = window.setTimeout(
+            () => workspace.classList.remove("workspace--animating"),
+            180,
+          );
+        }
+
         const available = workspace.clientWidth;
         const effective = {};
         for (const key of PANE_KEYS) {
@@ -1574,7 +1630,44 @@
 
       function togglePane(key) {
         state.collapsed[key] = !state.collapsed[key];
-        layout();
+        layout({ animate: true });
+        savePreferences();
+        syncInspectorToggle();
+      }
+
+      function syncInspectorToggle() {
+        const button = document.getElementById("inspector-toggle");
+        const open = !state.collapsed.inspector;
+        button.setAttribute("aria-pressed", String(open));
+        button.setAttribute(
+          "aria-label",
+          open ? "Hide inspector" : "Show inspector",
+        );
+      }
+
+      /* ------------------------------------------------- left pane ladder
+
+         The two left panes collapse and reopen as one three-step ladder:
+
+           2  nav + list        swipe left  ->  1
+           1  list only         swipe left  ->  0
+           0  neither           swipe right ->  1, then 2
+
+         Reading the stage back from the pane flags (rather than storing it)
+         keeps the gesture in step with the ⌘1 / ⌘2 shortcuts, which can leave
+         exactly one left pane open. Either single-pane arrangement counts as
+         stage 1, so a swipe from there always resolves onto the ladder. */
+
+      function leftStage() {
+        return (state.collapsed.nav ? 0 : 1) + (state.collapsed.list ? 0 : 1);
+      }
+
+      function setLeftStage(stage) {
+        const next = Math.max(0, Math.min(2, stage));
+        if (next === leftStage() && next !== 1) return;
+        state.collapsed.list = next < 1;
+        state.collapsed.nav = next < 2;
+        layout({ animate: true });
         savePreferences();
       }
 
@@ -1914,6 +2007,7 @@
               setWidth(key, PANES[key].initial);
             }
             savePreferences();
+            syncInspectorToggle();
             return;
           }
           setVaultState(action === "open");
@@ -1970,6 +2064,55 @@
         if (event.key === "Escape") closeMenus();
       });
 
+      const inspectorToggle = document.getElementById("inspector-toggle");
+      inspectorToggle.addEventListener("click", () => togglePane("inspector"));
+
+      /* ------------------------------------------------------ swipe gesture
+
+         A two-finger horizontal swipe over the editor walks the left ladder.
+         macOS reports it as `wheel` events with a dominant deltaX, followed by
+         a long momentum tail — hence the arm/settle latch, so one physical
+         swipe moves exactly one step however long the tail runs.
+
+         Sign convention: swiping the fingers left scrolls content right, which
+         is a positive deltaX, and closes a pane. If it reads backwards on a
+         real trackpad, flip SWIPE_DIRECTION. */
+      const SWIPE_TRIGGER = 60;
+      const SWIPE_SETTLE_MS = 350;
+      const SWIPE_DIRECTION = -1;
+
+      let swipeTotal = 0;
+      let swipeArmed = true;
+      let swipeSettleTimer = 0;
+
+      document.getElementById("pane-main").addEventListener(
+        "wheel",
+        (event) => {
+          // Vertical intent belongs to the editor; leave it completely alone.
+          if (Math.abs(event.deltaX) <= Math.abs(event.deltaY)) return;
+          if (Math.abs(event.deltaX) < 1) return;
+          event.preventDefault();
+
+          window.clearTimeout(swipeSettleTimer);
+          swipeSettleTimer = window.setTimeout(() => {
+            swipeTotal = 0;
+            swipeArmed = true;
+          }, SWIPE_SETTLE_MS);
+
+          if (!swipeArmed) return;
+
+          swipeTotal += event.deltaX;
+          if (Math.abs(swipeTotal) < SWIPE_TRIGGER) return;
+
+          setLeftStage(
+            leftStage() + (swipeTotal > 0 ? SWIPE_DIRECTION : -SWIPE_DIRECTION),
+          );
+          swipeTotal = 0;
+          swipeArmed = false;
+        },
+        { passive: false },
+      );
+
       const previewToggle = document.getElementById("preview-toggle");
       previewToggle.addEventListener("click", () => {
         const pressed = previewToggle.getAttribute("aria-pressed") === "true";
@@ -1991,6 +2134,7 @@
       applyExcerptLines();
       initHandles();
       setVaultState(true);
+      syncInspectorToggle();
       layout();
     </script>
   </body>
