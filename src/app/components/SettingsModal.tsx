@@ -7,12 +7,14 @@ import {
   type EditorLineLength,
   type MarkdownSettings,
 } from "../markdown/types";
+import type { ExcerptLines } from "../paneLayout";
 import { THEME_OPTIONS } from "../theme/palettes";
 import type { ThemeId } from "../theme/types";
 import type { TimestampMigrationPreview } from "../../lib/tauri/vault";
 import { useModalDialog } from "./useModalDialog";
 
 type SettingsModalProps = {
+  excerptLines: ExcerptLines;
   markdownSettings: MarkdownSettings;
   reloading: boolean;
   timestampMigrationBlocked: boolean;
@@ -30,12 +32,14 @@ type SettingsModalProps = {
   onApplyTimestampMigration: () => void;
   onCheckForUpdates: () => void;
   onInstallUpdate: () => void;
+  onExcerptLinesChange: (lines: ExcerptLines) => void;
   onMarkdownSettingsChange: (settings: MarkdownSettings) => void;
   onPreviewTimestampMigration: () => void;
   onReload: () => void;
 };
 
 export function SettingsModal({
+  excerptLines,
   markdownSettings,
   reloading,
   timestampMigrationBlocked,
@@ -52,6 +56,7 @@ export function SettingsModal({
   onApplyTimestampMigration,
   onCheckForUpdates,
   onInstallUpdate,
+  onExcerptLinesChange,
   onMarkdownSettingsChange,
   onPreviewTimestampMigration,
   onReload,
@@ -197,6 +202,37 @@ export function SettingsModal({
             />
             <span>Show file extensions</span>
           </label>
+        </section>
+        <section className="settings-section">
+          <h3>Note list</h3>
+          <p>
+            How much of each note the list pane previews. Fewer lines fit more
+            notes on screen; more lines make a note easier to recognise.
+          </p>
+          <div
+            className="settings-choice"
+            role="radiogroup"
+            aria-label="Note list preview"
+          >
+            <label className="settings-toggle">
+              <input
+                checked={excerptLines === "two"}
+                name="excerpt-lines"
+                type="radio"
+                onChange={() => onExcerptLinesChange("two")}
+              />
+              <span>Two-line preview</span>
+            </label>
+            <label className="settings-toggle">
+              <input
+                checked={excerptLines === "one"}
+                name="excerpt-lines"
+                type="radio"
+                onChange={() => onExcerptLinesChange("one")}
+              />
+              <span>One-line preview</span>
+            </label>
+          </div>
         </section>
         <section className="settings-section">
           <h3>Markdown</h3>

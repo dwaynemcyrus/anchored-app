@@ -515,6 +515,11 @@ body[data-resizing-pane="true"] {
   padding-left: 0;
 }
 
+.settings-choice {
+  display: grid;
+  gap: 6px;
+}
+
 .note-list {
   position: relative;
   display: flex;

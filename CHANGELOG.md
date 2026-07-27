@@ -23,7 +23,10 @@ Git commit. The format follows [Keep a Changelog], and releases follow
   a prompt to open or create a vault. Vault- and note-specific controls are
   absent rather than shown disabled.
 - Note excerpts in the list are read as rows scroll into view, so a folder of
-  thousands of notes costs only the reads on screen.
+  thousands of notes costs only the reads on screen. Settings chooses between a
+  two-line preview and a one-line one.
+- Command-1, Command-2, and Command-3 show and hide the navigation, note list,
+  and inspector panes.
 
 ### Added
 

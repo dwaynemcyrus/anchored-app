@@ -225,6 +225,62 @@ describe("App", () => {
     mockedListVaultTrash.mockResolvedValue([]);
   });
 
+  it("toggles each pane with its Command shortcut", async () => {
+    const user = userEvent.setup();
+    mockedSelectVault.mockResolvedValue({
+      files: [{ name: "One.md", parent: "", relativePath: "One.md" }],
+      name: "My Vault",
+      warnings: noWarnings,
+    });
+    render(<App />);
+    await user.click(screen.getByRole("button", { name: "Open a vault" }));
+
+    // The rendered widths depend on the workspace's measured width, which
+    // jsdom always reports as zero, so the assertions read the controls that
+    // reflect the pane state rather than the derived layout.
+    const ladder = () =>
+      screen
+        .getByRole("button", { name: /file navigator|note list/i })
+        .getAttribute("aria-label");
+
+    expect(ladder()).toBe("Hide file navigator");
+    await user.keyboard("{Meta>}1{/Meta}");
+    expect(ladder()).toBe("Show or hide the file navigator");
+    await user.keyboard("{Meta>}1{/Meta}");
+    expect(ladder()).toBe("Hide file navigator");
+
+    await user.keyboard("{Meta>}2{/Meta}");
+    expect(ladder()).toBe("Show or hide the file navigator");
+
+    expect(
+      screen.getByRole("button", { name: "Hide inspector" }),
+    ).toBeInTheDocument();
+    await user.keyboard("{Meta>}3{/Meta}");
+    expect(
+      screen.getByRole("button", { name: "Show inspector" }),
+    ).toBeInTheDocument();
+  });
+
+  it("changes the note list preview density from settings", async () => {
+    const user = userEvent.setup();
+    mockedSelectVault.mockResolvedValue({
+      files: [{ name: "One.md", parent: "", relativePath: "One.md" }],
+      name: "My Vault",
+      warnings: noWarnings,
+    });
+    render(<App />);
+    await user.click(screen.getByRole("button", { name: "Open a vault" }));
+
+    const row = () => screen.getByRole("button", { name: "One.md" });
+    expect(row()).toHaveAttribute("data-excerpt-lines", "two");
+
+    await user.click(screen.getByRole("button", { name: "Open settings" }));
+    await user.click(screen.getByRole("radio", { name: "One-line preview" }));
+    await user.click(screen.getByRole("button", { name: "Close settings" }));
+
+    expect(row()).toHaveAttribute("data-excerpt-lines", "one");
+  });
+
   it("starts with an explicit no-vault state", () => {
     render(<App />);
 

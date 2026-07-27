@@ -25,6 +25,7 @@ import {
   scopeLabel,
   type NoteListScope,
 } from "./noteListScope";
+import type { PaneKey } from "./paneLayout";
 import { usePaneLayout, usePaneWidthVariables } from "./usePaneLayout";
 import { usePaneSwipe } from "./usePaneSwipe";
 import { useNotePreviews } from "./useNotePreviews";
@@ -1728,6 +1729,20 @@ export function App() {
     function handleKeyboardShortcut(event: KeyboardEvent) {
       const commandKey = event.metaKey || event.ctrlKey;
 
+      // Command-1/2/3 reach the panes directly, which is what a keyboard user
+      // has instead of the swipe. Unlike the title-bar button, each of these
+      // toggles one named pane rather than walking the ladder.
+      if (commandKey && !event.altKey && !event.shiftKey) {
+        const pane = { "1": "navigation", "2": "list", "3": "inspector" }[
+          event.key
+        ] as PaneKey | undefined;
+        if (pane) {
+          event.preventDefault();
+          paneLayout.togglePane(pane);
+          return;
+        }
+      }
+
       if (event.ctrlKey && event.altKey && event.key.toLowerCase() === "n") {
         event.preventDefault();
         openScratchpadWindow("new");
@@ -2928,6 +2943,7 @@ export function App() {
       ) : null}
       {settingsVisible ? (
         <SettingsModal
+          excerptLines={paneLayout.excerptLines}
           markdownSettings={markdownSettings}
           reloading={reloadingApp}
           timestampMigrationBlocked={documents.some(
@@ -2955,6 +2971,7 @@ export function App() {
           }}
           onCheckForUpdates={() => void handleCheckForUpdates()}
           onInstallUpdate={() => void handleInstallUpdate()}
+          onExcerptLinesChange={paneLayout.setExcerptLines}
           onMarkdownSettingsChange={setMarkdownSettings}
           onApplyTimestampMigration={() =>
             void timestampMigration.applyTimestampMigration()
