@@ -264,7 +264,12 @@ export function NavigationPane({
                     onDragOver={(event) => {
                       if (!draggingDocumentId) return;
                       event.preventDefault();
-                      event.dataTransfer.dropEffect = "move";
+                      // dataTransfer is absent on a synthesised dragover, and
+                      // the cursor hint is not worth throwing over: the drop
+                      // itself reads `draggingDocumentId`, not the transfer.
+                      if (event.dataTransfer) {
+                        event.dataTransfer.dropEffect = "move";
+                      }
                       setDropTarget(path);
                     }}
                     onDrop={(event) => {

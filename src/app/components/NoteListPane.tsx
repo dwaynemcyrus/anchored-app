@@ -193,8 +193,10 @@ export function NoteListPane({
                     onClick={() => onSelectDocument(document.id)}
                     onDragEnd={onDragEnd}
                     onDragStart={(event) => {
-                      event.dataTransfer.effectAllowed = "move";
-                      event.dataTransfer.setData("text/plain", document.id);
+                      if (event.dataTransfer) {
+                        event.dataTransfer.effectAllowed = "move";
+                        event.dataTransfer.setData("text/plain", document.id);
+                      }
                       onDragDocument(document.id);
                     }}
                     onContextMenu={(event) =>
