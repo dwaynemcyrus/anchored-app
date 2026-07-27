@@ -752,6 +752,82 @@
         height: 26px;
       }
 
+      /* Obsidian's division: the strip owns the tabs, this row owns the note. */
+      .doc-header {
+        display: flex;
+        min-height: 34px;
+        align-items: center;
+        padding: 0 6px 0 8px;
+        border-bottom: 1px solid var(--color-rule);
+        gap: 2px;
+      }
+
+      .doc-header .icon-button {
+        width: 24px;
+        height: 24px;
+        flex: none;
+      }
+
+      .doc-header .icon-button[disabled] {
+        color: var(--color-rule);
+        cursor: default;
+      }
+
+      .doc-header .icon-button[disabled]:hover {
+        background: transparent;
+        color: var(--color-rule);
+      }
+
+      .doc-header .breadcrumb {
+        flex: 1;
+        padding-left: 6px;
+      }
+
+      .doc-header__actions {
+        display: flex;
+        flex: none;
+        align-items: center;
+        gap: 2px;
+      }
+
+      /* Dragging a tab: the tab being moved fades, and a one-pixel white rule
+         marks where it would land. */
+      .tab[data-dragging="true"] {
+        opacity: 0.4;
+      }
+
+      .tab[data-drop="before"],
+      .tab[data-drop="after"] {
+        position: relative;
+      }
+
+      .tab[data-drop="before"]::before,
+      .tab[data-drop="after"]::before {
+        position: absolute;
+        z-index: 2;
+        top: 0;
+        bottom: 0;
+        width: 2px;
+        background: var(--color-focus);
+        content: "";
+      }
+
+      .tab[data-drop="before"]::before {
+        left: 0;
+      }
+
+      .tab[data-drop="after"]::before {
+        right: 0;
+      }
+
+      .tab-strip__tabs[data-drop="end"] {
+        box-shadow: inset -2px 0 0 var(--color-focus);
+      }
+
+      .tab-group[data-drop-target="true"] .tab-strip {
+        background: var(--color-row-hover);
+      }
+
       .tab-group__empty {
         display: grid;
         flex: 1;
@@ -1352,17 +1428,41 @@
         <main class="pane pane--main" id="pane-main" aria-label="Editor">
           <div class="split-root" id="split-root"></div>
 
+          <!-- The note's own actions, opened from the document row. -->
           <div class="menu" id="overflow-menu" role="menu" hidden>
-            <button role="menuitem" type="button">Preview</button>
             <button role="menuitem" type="button">Rename…</button>
             <button role="menuitem" type="button">Move…</button>
             <button role="menuitem" type="button">Save as…</button>
             <button role="menuitem" type="button">Move to Inbox</button>
             <button role="menuitem" type="button">Archive</button>
             <button role="menuitem" type="button">Trash</button>
+            <hr class="menu__rule" />
+            <button data-action="split-row" role="menuitem" type="button">
+              Split Right
+            </button>
+            <button data-action="split-column" role="menuitem" type="button">
+              Split Down
+            </button>
+            <hr class="menu__rule" />
             <button data-action="close-group" role="menuitem" type="button">
               Close this pane
             </button>
+          </div>
+
+          <!-- The tab strip's chevron: commands for the group, then the list
+               of its open tabs, which is also how overflow is reached. -->
+          <div class="menu" id="group-menu" role="menu" hidden>
+            <button data-action="stack" role="menuitem" type="button">
+              Stack tabs
+            </button>
+            <button data-action="bookmark" role="menuitem" type="button">
+              Bookmark tabs…
+            </button>
+            <button data-action="close-all" role="menuitem" type="button">
+              Close all
+            </button>
+            <hr class="menu__rule" />
+            <div id="group-menu-tabs"></div>
           </div>
 
           <!-- Right-clicking a tab. Item set follows the reference
@@ -2285,11 +2385,39 @@
         return prefix + nodeSequence;
       }
 
+      /* Each tab carries its own history, which is what the document row's
+         back and forward arrows walk. */
+      function makeTab(noteIndex) {
+        return {
+          id: nextNodeId("tab-"),
+          note: noteIndex,
+          history: [noteIndex],
+          historyIndex: 0,
+        };
+      }
+
+      function navigateTab(tab, noteIndex) {
+        if (tab.note === noteIndex) return;
+        // Navigating after going back drops the forward entries, as a browser
+        // does.
+        tab.history = tab.history.slice(0, tab.historyIndex + 1);
+        tab.history.push(noteIndex);
+        tab.historyIndex = tab.history.length - 1;
+        tab.note = noteIndex;
+      }
+
+      function stepTab(tab, delta) {
+        const next = tab.historyIndex + delta;
+        if (next < 0 || next >= tab.history.length) return;
+        tab.historyIndex = next;
+        tab.note = tab.history[next];
+      }
+
       function makeLeaf(noteIndexes) {
         return {
           type: "leaf",
           id: nextNodeId("group-"),
-          tabs: noteIndexes.map((note) => ({ id: nextNodeId("tab-"), note })),
+          tabs: noteIndexes.map(makeTab),
           active: 0,
         };
       }
@@ -2396,13 +2524,10 @@
         activeGroupId = leaf.id;
         const current = leaf.tabs[leaf.active];
         if (newTab || !current || current.pinned) {
-          leaf.tabs.splice(leaf.active + 1, 0, {
-            id: nextNodeId("tab-"),
-            note: noteIndex,
-          });
+          leaf.tabs.splice(leaf.active + 1, 0, makeTab(noteIndex));
           leaf.active = Math.min(leaf.active + 1, leaf.tabs.length - 1);
         } else {
-          current.note = noteIndex;
+          navigateTab(current, noteIndex);
         }
         renderWorkspace();
       }
@@ -2474,6 +2599,123 @@
         return button;
       }
 
+      /* ------------------------------------------------------- tab dragging
+
+         HTML drag and drop rather than pointer events, because a tab can be
+         dropped into a different group and the native API already tracks which
+         element is under the cursor across the whole tree. `dragged` holds the
+         source because dataTransfer cannot be read during dragover. */
+
+      let dragged = null;
+
+      function clearDropMarks() {
+        for (const element of document.querySelectorAll("[data-drop]")) {
+          delete element.dataset.drop;
+        }
+        for (const element of document.querySelectorAll("[data-drop-target]")) {
+          delete element.dataset.dropTarget;
+        }
+      }
+
+      function moveTab(from, to) {
+        const source = findLeaf(from.groupId);
+        const target = findLeaf(to.groupId);
+        if (!source || !target) return;
+
+        const [tab] = source.tabs.splice(from.tabIndex, 1);
+        if (!tab) return;
+
+        let insertAt = to.tabIndex;
+        // Removing an earlier tab from the same strip shifts the target left.
+        if (source === target && from.tabIndex < insertAt) insertAt -= 1;
+        insertAt = Math.max(0, Math.min(insertAt, target.tabs.length));
+        target.tabs.splice(insertAt, 0, tab);
+
+        target.active = insertAt;
+        activeGroupId = target.id;
+
+        if (source !== target) {
+          source.active = Math.max(
+            0,
+            Math.min(source.active, source.tabs.length - 1),
+          );
+          if (source.tabs.length === 0 && editorTree.type === "split") {
+            replaceNode(source.id, null);
+          }
+        }
+
+        renderWorkspace();
+      }
+
+      function attachTabDrag(button, leaf, index) {
+        button.addEventListener("dragstart", (event) => {
+          dragged = { groupId: leaf.id, tabIndex: index };
+          button.dataset.dragging = "true";
+          event.dataTransfer.effectAllowed = "move";
+          // Firefox refuses to start a drag without payload.
+          event.dataTransfer.setData("text/plain", leaf.tabs[index].id);
+        });
+
+        button.addEventListener("dragend", () => {
+          delete button.dataset.dragging;
+          dragged = null;
+          clearDropMarks();
+        });
+
+        button.addEventListener("dragover", (event) => {
+          if (!dragged) return;
+          event.preventDefault();
+          event.stopPropagation();
+          event.dataTransfer.dropEffect = "move";
+          clearDropMarks();
+          const rect = button.getBoundingClientRect();
+          button.dataset.drop =
+            event.clientX < rect.left + rect.width / 2 ? "before" : "after";
+        });
+
+        button.addEventListener("drop", (event) => {
+          if (!dragged) return;
+          event.preventDefault();
+          event.stopPropagation();
+          const rect = button.getBoundingClientRect();
+          const after = event.clientX >= rect.left + rect.width / 2;
+          clearDropMarks();
+          moveTab(dragged, {
+            groupId: leaf.id,
+            tabIndex: index + (after ? 1 : 0),
+          });
+          dragged = null;
+        });
+      }
+
+      /* Dropping past the last tab, or anywhere in another group's strip,
+         appends to the end. */
+      function attachStripDrop(tabs, leaf) {
+        tabs.addEventListener("dragover", (event) => {
+          if (!dragged) return;
+          event.preventDefault();
+          event.dataTransfer.dropEffect = "move";
+          clearDropMarks();
+          tabs.dataset.drop = "end";
+          tabs.closest(".tab-group").dataset.dropTarget = "true";
+        });
+
+        tabs.addEventListener("dragleave", (event) => {
+          if (event.target === tabs) clearDropMarks();
+        });
+
+        tabs.addEventListener("drop", (event) => {
+          if (!dragged) return;
+          event.preventDefault();
+          clearDropMarks();
+          moveTab(dragged, {
+            groupId: leaf.id,
+            tabIndex: leaf.tabs.length,
+          });
+          dragged = null;
+        });
+      }
+
       function renderTabStrip(leaf) {
         const strip = document.createElement("div");
         strip.className = "tab-strip";
@@ -2530,28 +2772,80 @@
             openTabMenu(leaf.id, index, event.clientX, event.clientY);
           });
 
+          button.draggable = true;
+          button.dataset.groupId = leaf.id;
+          button.dataset.tabIndex = String(index);
+          attachTabDrag(button, leaf, index);
+
           tabs.append(button);
         });
 
+        attachStripDrop(tabs, leaf);
+
+        // The strip owns only the tabs: add one, or open the group menu.
+        // Everything about the note itself lives in the document row below.
         const actions = document.createElement("div");
         actions.className = "tab-strip__actions";
         actions.append(
           iconButton("New tab", '<path d="M12 6v12M6 12h12"/>', () => {
-            const note = leaf.tabs[leaf.active]?.note ?? 0;
-            leaf.tabs.push({ id: nextNodeId("tab-"), note });
+            leaf.tabs.push(makeTab(leaf.tabs[leaf.active]?.note ?? 0));
             leaf.active = leaf.tabs.length - 1;
             activeGroupId = leaf.id;
             renderWorkspace();
           }),
+          iconButton("Tab options", '<path d="m6 9 6 6 6-6"/>', () => {
+            activeGroupId = leaf.id;
+            openGroupMenu(leaf.id);
+          }),
+        );
+
+        strip.append(tabs, actions);
+        return strip;
+      }
+
+      /* The per-document row: history, where the note lives, reading view, and
+         the note's own overflow menu. */
+      function renderDocumentHeader(leaf, tab) {
+        const note = NOTES[tab.note];
+        const header = document.createElement("div");
+        header.className = "doc-header";
+
+        const back = iconButton("Back", '<path d="m14 6-6 6 6 6"/>', () => {
+          stepTab(tab, -1);
+          activeGroupId = leaf.id;
+          renderWorkspace();
+        });
+        const forward = iconButton(
+          "Forward",
+          '<path d="m10 6 6 6-6 6"/>',
+          () => {
+            stepTab(tab, 1);
+            activeGroupId = leaf.id;
+            renderWorkspace();
+          },
+        );
+        back.disabled = tab.historyIndex === 0;
+        forward.disabled = tab.historyIndex >= tab.history.length - 1;
+
+        const crumb = document.createElement("span");
+        crumb.className = "breadcrumb";
+        const folder = document.createElement("span");
+        folder.textContent = note.folder;
+        const slash = document.createElement("span");
+        slash.setAttribute("aria-hidden", "true");
+        slash.textContent = "/";
+        const name = document.createElement("strong");
+        name.textContent = note.title + (note.frontmatter ? ".md" : "");
+        crumb.append(folder, slash, name);
+
+        const actions = document.createElement("div");
+        actions.className = "doc-header__actions";
+        actions.append(
           iconButton(
-            "Split right",
-            '<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M12 4v16"/>',
-            () => splitGroup(leaf.id, "row"),
-          ),
-          iconButton(
-            "Split down",
-            '<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 12h18"/>',
-            () => splitGroup(leaf.id, "column"),
+            "Reading view",
+            '<path d="M4 5.5A1.5 1.5 0 0 1 5.5 4H11v16H5.5A1.5 1.5 0 0 1 4 18.5Z"/>' +
+              '<path d="M20 5.5A1.5 1.5 0 0 0 18.5 4H13v16h5.5a1.5 1.5 0 0 0 1.5-1.5Z"/>',
+            () => {},
           ),
           iconButton(
             "More note actions",
@@ -2563,8 +2857,8 @@
           ),
         );
 
-        strip.append(tabs, actions);
-        return strip;
+        header.append(back, forward, crumb, actions);
+        return header;
       }
 
       function renderLeaf(leaf) {
@@ -2582,6 +2876,7 @@
           empty.append("No note open");
           group.append(empty);
         } else {
+          group.append(renderDocumentHeader(leaf, tab));
           const surface = document.createElement("div");
           surface.className = "document";
           const inner = document.createElement("div");
@@ -2882,6 +3177,7 @@
         overflowMenu.hidden = true;
         settingsMenu.hidden = true;
         tabMenu.hidden = true;
+        document.getElementById("group-menu").hidden = true;
         document
           .querySelector('#title-actions [aria-label="Settings"]')
           ?.setAttribute("aria-expanded", "false");
@@ -3082,10 +3378,84 @@
         const item = event.target.closest("[data-action]");
         if (!item) return;
         event.stopPropagation();
-        if (item.dataset.action === "close-group") {
-          closeGroup(overflowMenu.dataset.groupId);
-        }
+        const groupId = overflowMenu.dataset.groupId;
         closeMenus();
+        if (item.dataset.action === "close-group") closeGroup(groupId);
+        else if (item.dataset.action === "split-row")
+          splitGroup(groupId, "row");
+        else if (item.dataset.action === "split-column") {
+          splitGroup(groupId, "column");
+        }
+      });
+
+      /* --------------------------------------------------------- group menu */
+
+      const groupMenu = document.getElementById("group-menu");
+
+      function openGroupMenu(groupId) {
+        const leaf = findLeaf(groupId);
+        const group = document.querySelector(
+          '[data-group-id="' + groupId + '"]',
+        );
+        const trigger = group?.querySelector('[aria-label="Tab options"]');
+        if (!leaf || !trigger) return;
+
+        const wasOpen =
+          !groupMenu.hidden && groupMenu.dataset.groupId === groupId;
+        closeMenus();
+        if (wasOpen) return;
+
+        groupMenu.dataset.groupId = groupId;
+        groupMenu.querySelector('[data-action="bookmark"]').textContent =
+          "Bookmark " +
+          leaf.tabs.length +
+          (leaf.tabs.length === 1 ? " tab…" : " tabs…");
+
+        // The tab list doubles as the overflow list once the strip scrolls.
+        const list = document.getElementById("group-menu-tabs");
+        list.replaceChildren(
+          ...leaf.tabs.map((tab, index) => {
+            const item = document.createElement("button");
+            item.type = "button";
+            item.setAttribute("role", "menuitemradio");
+            item.setAttribute("aria-checked", String(index === leaf.active));
+            item.textContent = NOTES[tab.note].title;
+            item.addEventListener("click", (event) => {
+              event.stopPropagation();
+              leaf.active = index;
+              activeGroupId = leaf.id;
+              closeMenus();
+              renderWorkspace();
+            });
+            return item;
+          }),
+        );
+
+        groupMenu.hidden = false;
+        const paneRect = document
+          .getElementById("pane-main")
+          .getBoundingClientRect();
+        const rect = trigger.getBoundingClientRect();
+        groupMenu.style.top = rect.bottom - paneRect.top + 4 + "px";
+        groupMenu.style.right = Math.max(4, paneRect.right - rect.right) + "px";
+      }
+
+      groupMenu.addEventListener("click", (event) => {
+        const item = event.target.closest("[data-action]");
+        if (!item) return;
+        event.stopPropagation();
+        const leaf = findLeaf(groupMenu.dataset.groupId);
+        closeMenus();
+        if (!leaf) return;
+        if (item.dataset.action === "close-all") {
+          leaf.tabs = [];
+          leaf.active = 0;
+          if (editorTree.type === "split") {
+            replaceNode(leaf.id, null);
+            activeGroupId = firstLeaf().id;
+          }
+          renderWorkspace();
+        }
       });
 
       // The title-bar actions are re-rendered whenever the vault state flips,
@@ -3193,10 +3563,7 @@
         if (key === "t") {
           event.preventDefault();
           const leaf = activeLeaf();
-          leaf.tabs.push({
-            id: nextNodeId("tab-"),
-            note: leaf.tabs[leaf.active]?.note ?? 0,
-          });
+          leaf.tabs.push(makeTab(leaf.tabs[leaf.active]?.note ?? 0));
           leaf.active = leaf.tabs.length - 1;
           renderWorkspace();
         } else if (key === "w") {

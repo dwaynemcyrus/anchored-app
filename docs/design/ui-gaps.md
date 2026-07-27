@@ -33,15 +33,15 @@ than one document at a time.
 
 | # | Capability | From | Why it matters | Scope |
 | --- | --- | --- | --- | --- |
-| A1 | **[prototyped] Tabs** — several documents open in one pane, reorderable, with a new-tab affordance | Obsidian | Following a wikilink currently costs you the note you were reading. Tabs are what make link-following non-destructive. | **MVP** |
+| A1 | **[prototyped] Tabs** — several documents open in one pane, drag-reorderable within and between panes, with a new-tab affordance | Obsidian | Following a wikilink currently costs you the note you were reading. Tabs are what make link-following non-destructive. | **MVP** |
 | A2 | **[prototyped] Splits** — divide the editor into panes, horizontally or vertically, each with its own tab strip, each resizable | Obsidian | Writing while reading a source is the core two-document task. Today it is impossible. | **MVP** |
 | A3 | **[prototyped] The same document in more than one tab or split**, with no imposed limit | Obsidian | Comparing two parts of one long note; editing the top while reading the bottom. Both views must stay in sync on every keystroke. | **Near** |
-| A4 | **Tab overflow list** — a chevron listing open tabs when the strip runs out of width | Obsidian | Without it, a wide session hides its own tabs. | **Near** |
+| A4 | **[prototyped] Tab-group menu** — the chevron at the right of each strip: Stack tabs, Bookmark _n_ tabs, Close all, then the open tabs with a tick on the active one. Not purely an overflow list; it is always present and carries commands, with the tab list solving overflow as a side effect. | Obsidian | Without it, a wide session hides its own tabs, and the group-level commands have nowhere to live. | **Near** |
 | A5 | **[prototyped] Pop-out window** — drag a tab out into its own OS window | Obsidian | Multi-monitor work, and keeping one reference visible over other applications. Tauri multi-window plumbing already exists: `openScratchpadWindow` in `src/app/App.tsx` opens a second window today. | **Near** |
 | A6 | **[prototyped] Pinned tab** — resists being replaced by a navigation and survives close-others | Obsidian | The cheap version of "keep this open". | **Near** |
-| A7 | **Per-pane back / forward history** | Obsidian, Bear | After following three wikilinks there is no way back. `recentDocuments.ts` records recency but nothing exposes a history stack. | **MVP** |
+| A7 | **[prototyped] Back / forward history** — per tab, not per pane, so a tab keeps its own trail | Obsidian, Bear | After following three wikilinks there is no way back. `recentDocuments.ts` records recency but nothing exposes a history stack. | **MVP** |
 | A8 | **Linked panes** — one pane follows the other's scroll or selection | Obsidian | Source-and-translation, outline-and-body. Narrow but powerful. | **Near** |
-| A9 | **Stacked tabs** — the card-deck tab mode | Obsidian | Handsome, rarely load-bearing. Recommend skipping. | **Near** |
+| A9 | **Stacked tabs** — the card-deck tab mode | Obsidian | Handsome, rarely load-bearing. Present as an inert item in the prototype's group menu so the menu matches the reference; recommend skipping the behaviour. | **Near** |
 
 ## B. Keeping a document at hand
 

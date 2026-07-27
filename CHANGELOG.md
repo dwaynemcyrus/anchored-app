@@ -20,7 +20,9 @@ Git commit. The format follows [Keep a Changelog], and releases follow
   editor area holds tabs and nested, resizable splits, with the same document
   free to appear in any number of them; a tab's context menu can pin the tab,
   pin the note as a reference in the inspector, or open it in a floating
-  window.
+  window. Tabs drag to reorder within a pane and to move between panes. Each
+  group carries a tab strip and, below it, a document row with working back and
+  forward history, the breadcrumb, and the note's own menu.
 - A reference list of interface capabilities Anchored lacks against the
   applications named in the overview, at `docs/design/ui-gaps.md`.
 

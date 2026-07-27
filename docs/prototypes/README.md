@@ -49,12 +49,23 @@ are copied verbatim from `src/styles/global.css` so the two cannot drift.
   never intercepted.
 - **The inspector is a button**, not a gesture — the panel icon in the title
   bar. It is independent of the ladder.
-- **Tabs and splits.** The editor area is a tree: every leaf is a tab group
-  with its own strip, and each strip carries new-tab, split-right, split-down,
-  and overflow actions. Splits nest, resize in both directions by dragging the
-  rule between them, reset on double-click, and take arrow keys when focused.
-  A tab holds an index rather than a copy, so one document can sit in as many
-  tabs and panes as you like.
+- **Tabs and splits.** The editor area is a tree: every leaf is a tab group.
+  Splits nest, resize in both directions by dragging the rule between them,
+  reset on double-click, and take arrow keys when focused. A tab holds an index
+  rather than a copy, so one document can sit in as many tabs and panes as you
+  like.
+- **Two rows per group**, following Obsidian's division of labour:
+  - the **tab strip** owns the tabs — the tabs themselves, `+`, and a chevron;
+  - the **document row** below owns the note — back, forward, the breadcrumb,
+    reading view, and the `⋯` menu.
+- **The chevron** opens the group menu: Stack tabs, Bookmark _n_ tabs…, Close
+  all, then the group's open tabs with a tick on the active one. That tab list
+  is also how you reach tabs once the strip has scrolled past them.
+- **Back and forward** are real. Each tab keeps its own history, and navigating
+  after going back drops the forward entries the way a browser does.
+- **Drag a tab** to reorder it within its strip, or drop it on another group's
+  strip to move it between panes. A white rule marks where it will land, and a
+  group emptied by the move collapses.
 - **Right-click a tab** for Close, Close Others, Close Tabs to Right, Pin Tab,
   Split Right, Split Down, Pin as Reference, and Open in Floating Window.
 - **Pin as Reference** parks a document in the inspector, where it stays
