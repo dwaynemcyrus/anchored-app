@@ -861,6 +861,24 @@
         content: "✓";
       }
 
+      .menu__rule {
+        height: 0;
+        margin: 4px 6px;
+        border: 0;
+        border-top: 1px solid var(--color-menu-border);
+      }
+
+      .menu button[disabled] {
+        color: var(--color-text-subtle);
+        cursor: default;
+        opacity: 0.5;
+      }
+
+      .menu button[disabled]:hover {
+        background: transparent;
+        color: var(--color-text-subtle);
+      }
+
       .menu__group {
         padding: 7px 10px 4px;
         margin: 0;
@@ -1023,6 +1041,110 @@
 
       .welcome__actions button:hover {
         border-color: var(--color-menu-border);
+      }
+
+      /* ---------------------------------------------------- pinned reference */
+
+      .reference {
+        display: flex;
+        min-height: 0;
+        flex-direction: column;
+      }
+
+      .reference__meta {
+        padding: 10px 14px 0;
+        color: var(--color-text-subtle);
+        font-family: var(--font-mono);
+        font-size: 11px;
+      }
+
+      .reference__body {
+        padding: 4px 14px 20px;
+      }
+
+      .reference__body h1 {
+        margin: 10px 0 12px;
+        font-family: var(--font-doc);
+        font-size: 21px;
+        font-weight: 500;
+        line-height: 1.2;
+      }
+
+      .reference__body p {
+        margin: 0 0 12px;
+        color: var(--color-text-muted);
+        font-family: var(--font-doc);
+        font-size: 15px;
+        line-height: 1.55;
+      }
+
+      /* ------------------------------------------------------ floating window */
+
+      .floating {
+        position: fixed;
+        z-index: 60;
+        top: 120px;
+        left: 340px;
+        display: flex;
+        overflow: hidden;
+        width: 560px;
+        height: 460px;
+        flex-direction: column;
+        border: 1px solid var(--color-menu-border);
+        border-radius: 10px;
+        background: var(--color-canvas);
+        box-shadow: 0 18px 48px rgb(0 0 0 / 65%);
+      }
+
+      .floating__bar {
+        display: flex;
+        min-height: 38px;
+        align-items: center;
+        padding: 0 8px 0 12px;
+        border-bottom: 1px solid var(--color-rule);
+        cursor: grab;
+        gap: 10px;
+      }
+
+      .floating__bar[data-dragging="true"] {
+        cursor: grabbing;
+      }
+
+      .floating__lights {
+        display: flex;
+        flex: none;
+        gap: 6px;
+      }
+
+      .floating__lights i {
+        width: 9px;
+        height: 9px;
+        border: 1px solid var(--color-menu-border);
+        border-radius: 50%;
+      }
+
+      .floating__title {
+        overflow: hidden;
+        flex: 1;
+        color: var(--color-text-muted);
+        font-family: var(--font-mono);
+        font-size: 12px;
+        text-align: center;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .floating__body {
+        padding: 20px 24px 28px;
+      }
+
+      .floating__resize {
+        position: absolute;
+        right: 0;
+        bottom: 0;
+        width: 16px;
+        height: 16px;
+        cursor: nwse-resize;
       }
 
       /* ------------------------------------------------- prototype-only chip */
@@ -1231,9 +1353,7 @@
           <div class="split-root" id="split-root"></div>
 
           <div class="menu" id="overflow-menu" role="menu" hidden>
-            <button data-action="preview" role="menuitem" type="button">
-              Preview
-            </button>
+            <button role="menuitem" type="button">Preview</button>
             <button role="menuitem" type="button">Rename…</button>
             <button role="menuitem" type="button">Move…</button>
             <button role="menuitem" type="button">Save as…</button>
@@ -1242,6 +1362,38 @@
             <button role="menuitem" type="button">Trash</button>
             <button data-action="close-group" role="menuitem" type="button">
               Close this pane
+            </button>
+          </div>
+
+          <!-- Right-clicking a tab. Item set follows the reference
+               application's tab menu. -->
+          <div class="menu" id="tab-menu" role="menu" hidden>
+            <button data-action="close" role="menuitem" type="button">
+              Close
+            </button>
+            <button data-action="close-others" role="menuitem" type="button">
+              Close Others
+            </button>
+            <button data-action="close-right" role="menuitem" type="button">
+              Close Tabs to Right
+            </button>
+            <hr class="menu__rule" />
+            <button data-action="pin-tab" role="menuitem" type="button">
+              Pin Tab
+            </button>
+            <hr class="menu__rule" />
+            <button data-action="split-row" role="menuitem" type="button">
+              Split Right
+            </button>
+            <button data-action="split-column" role="menuitem" type="button">
+              Split Down
+            </button>
+            <hr class="menu__rule" />
+            <button data-action="pin-reference" role="menuitem" type="button">
+              Pin as Reference
+            </button>
+            <button data-action="float" role="menuitem" type="button">
+              Open in Floating Window
             </button>
           </div>
 
@@ -1263,17 +1415,59 @@
           aria-label="Inspector"
         >
           <header class="pane__header">
-            <span class="pane__title">Backlinks</span>
-            <span class="pane__header-meta" id="backlink-count">3</span>
+            <span class="pane__title" id="inspector-title">Backlinks</span>
+            <span class="pane__header-meta">
+              <span id="backlink-count">3</span>
+              <button
+                class="icon-button"
+                id="unpin-reference"
+                aria-label="Unpin reference"
+                type="button"
+                hidden
+              >
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M18 6 6 18M6 6l12 12" />
+                </svg>
+              </button>
+            </span>
           </header>
           <div class="pane__body">
             <div id="inspector-body"></div>
-            <p class="inspector-note">
+            <p class="inspector-note" id="inspector-note">
               Placeholder pane. Outline, frontmatter, and tags land here in a
               later pass.
             </p>
           </div>
         </aside>
+      </div>
+
+      <!-- A real second OS window in the Tauri build; here it is a draggable
+           panel so the interaction can be judged. -->
+      <div class="floating" id="floating" hidden>
+        <header class="floating__bar" id="floating-bar">
+          <span class="floating__lights" aria-hidden="true">
+            <i></i><i></i><i></i>
+          </span>
+          <span class="floating__title" id="floating-title"></span>
+          <button
+            class="icon-button"
+            id="floating-close"
+            aria-label="Close floating window"
+            type="button"
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M18 6 6 18M6 6l12 12" />
+            </svg>
+          </button>
+        </header>
+        <div class="document floating__body">
+          <div class="document__inner" id="floating-body"></div>
+        </div>
+        <span
+          class="floating__resize"
+          id="floating-resize"
+          aria-hidden="true"
+        ></span>
       </div>
 
       <!-- State A: no vault open -->
@@ -2328,6 +2522,14 @@
             renderWorkspace();
           });
 
+          button.addEventListener("contextmenu", (event) => {
+            event.preventDefault();
+            leaf.active = index;
+            activeGroupId = leaf.id;
+            renderWorkspace();
+            openTabMenu(leaf.id, index, event.clientX, event.clientY);
+          });
+
           tabs.append(button);
         });
 
@@ -2524,10 +2726,56 @@
           : "Personal";
       }
 
+      /* A pinned reference outranks backlinks in the inspector: it is a
+         document you have deliberately parked there, so it survives every
+         navigation until you unpin it. */
+      let pinnedReference = null;
+
+      function renderReference(noteIndex) {
+        const note = NOTES[noteIndex];
+        const wrapper = document.createElement("div");
+        wrapper.className = "reference";
+
+        const meta = document.createElement("p");
+        meta.className = "reference__meta";
+        meta.textContent = note.folder + "/" + note.title + ".md";
+
+        const body = document.createElement("div");
+        body.className = "reference__body";
+        const heading = document.createElement("h1");
+        heading.textContent = note.title;
+        body.append(heading);
+        for (const paragraph of note.body) {
+          const p = document.createElement("p");
+          p.textContent = paragraph;
+          body.append(p);
+        }
+
+        wrapper.append(meta, body);
+        return wrapper;
+      }
+
       function renderInspector() {
         const note = activeNote();
         const inspector = document.getElementById("inspector-body");
         const count = document.getElementById("backlink-count");
+        const title = document.getElementById("inspector-title");
+        const unpin = document.getElementById("unpin-reference");
+        const placeholder = document.getElementById("inspector-note");
+
+        if (pinnedReference !== null) {
+          title.textContent = "Reference";
+          count.hidden = true;
+          unpin.hidden = false;
+          placeholder.hidden = true;
+          inspector.replaceChildren(renderReference(pinnedReference));
+          return;
+        }
+
+        title.textContent = "Backlinks";
+        count.hidden = false;
+        unpin.hidden = true;
+        placeholder.hidden = false;
 
         if (!note) {
           count.textContent = "0";
@@ -2580,6 +2828,9 @@
         document.getElementById("welcome").hidden = open;
         // With no vault there are no panes to inspect, so the toggle goes too.
         document.getElementById("inspector-toggle").hidden = !open;
+        // A floating window belongs to a document, so closing the vault
+        // closes it.
+        if (!open) document.getElementById("floating").hidden = true;
         for (const button of document.querySelectorAll("[data-proto]")) {
           if (
             button.dataset.proto === "open" ||
@@ -2625,14 +2876,180 @@
 
       const overflowMenu = document.getElementById("overflow-menu");
       const settingsMenu = document.getElementById("settings-menu");
+      const tabMenu = document.getElementById("tab-menu");
 
       function closeMenus() {
         overflowMenu.hidden = true;
         settingsMenu.hidden = true;
+        tabMenu.hidden = true;
         document
           .querySelector('#title-actions [aria-label="Settings"]')
           ?.setAttribute("aria-expanded", "false");
       }
+
+      /* ------------------------------------------------------ tab context menu */
+
+      function openTabMenu(groupId, tabIndex, x, y) {
+        const leaf = findLeaf(groupId);
+        if (!leaf) return;
+        closeMenus();
+
+        tabMenu.dataset.groupId = groupId;
+        tabMenu.dataset.tabIndex = String(tabIndex);
+
+        const only = leaf.tabs.length < 2;
+        const last = tabIndex === leaf.tabs.length - 1;
+        tabMenu.querySelector('[data-action="close-others"]').disabled = only;
+        tabMenu.querySelector('[data-action="close-right"]').disabled = last;
+        tabMenu.querySelector('[data-action="pin-tab"]').textContent = leaf
+          .tabs[tabIndex].pinned
+          ? "Unpin Tab"
+          : "Pin Tab";
+
+        // Fixed positioning so the menu is placed against the viewport rather
+        // than whichever pane the tab happens to live in.
+        tabMenu.style.position = "fixed";
+        tabMenu.style.right = "auto";
+        tabMenu.hidden = false;
+
+        const rect = tabMenu.getBoundingClientRect();
+        tabMenu.style.left =
+          Math.min(x, window.innerWidth - rect.width - 8) + "px";
+        tabMenu.style.top =
+          Math.min(y, window.innerHeight - rect.height - 8) + "px";
+      }
+
+      tabMenu.addEventListener("click", (event) => {
+        const item = event.target.closest("[data-action]");
+        if (!item || item.disabled) return;
+        event.stopPropagation();
+
+        const groupId = tabMenu.dataset.groupId;
+        const tabIndex = Number(tabMenu.dataset.tabIndex);
+        const leaf = findLeaf(groupId);
+        closeMenus();
+        if (!leaf) return;
+        const tab = leaf.tabs[tabIndex];
+
+        switch (item.dataset.action) {
+          case "close":
+            closeTab(groupId, tabIndex);
+            break;
+          case "close-others":
+            leaf.tabs = [tab];
+            leaf.active = 0;
+            renderWorkspace();
+            break;
+          case "close-right":
+            leaf.tabs = leaf.tabs.slice(0, tabIndex + 1);
+            leaf.active = Math.min(leaf.active, leaf.tabs.length - 1);
+            renderWorkspace();
+            break;
+          case "pin-tab":
+            tab.pinned = !tab.pinned;
+            renderWorkspace();
+            break;
+          case "split-row":
+            splitGroup(groupId, "row");
+            break;
+          case "split-column":
+            splitGroup(groupId, "column");
+            break;
+          case "pin-reference":
+            pinnedReference = tab.note;
+            state.collapsed.inspector = false;
+            layout({ animate: true });
+            syncInspectorToggle();
+            savePreferences();
+            renderWorkspace();
+            break;
+          case "float":
+            openFloating(tab.note);
+            break;
+          default:
+            break;
+        }
+      });
+
+      document
+        .getElementById("unpin-reference")
+        .addEventListener("click", () => {
+          pinnedReference = null;
+          renderInspector();
+        });
+
+      /* ------------------------------------------------------ floating window
+
+         Tauri would open a genuine second window here; the prototype fakes one
+         so the interaction can be judged without the native plumbing. */
+
+      const floating = document.getElementById("floating");
+      const floatingBar = document.getElementById("floating-bar");
+
+      function openFloating(noteIndex) {
+        const note = NOTES[noteIndex];
+        document.getElementById("floating-title").textContent = note.title;
+        document
+          .getElementById("floating-body")
+          .replaceChildren(...documentNodes(note));
+        floating.hidden = false;
+      }
+
+      document
+        .getElementById("floating-close")
+        .addEventListener("click", () => {
+          floating.hidden = true;
+        });
+
+      function dragSurface(handle, onMove) {
+        handle.addEventListener("pointerdown", (event) => {
+          if (event.button !== 0 || event.target.closest("button")) return;
+          event.preventDefault();
+          handle.setPointerCapture(event.pointerId);
+          handle.dataset.dragging = "true";
+          const rect = floating.getBoundingClientRect();
+          const origin = { x: event.clientX, y: event.clientY, rect };
+
+          const move = (moveEvent) => {
+            if (handle.dataset.dragging !== "true") return;
+            onMove(moveEvent, origin);
+          };
+          const end = (endEvent) => {
+            delete handle.dataset.dragging;
+            if (handle.hasPointerCapture(endEvent.pointerId)) {
+              handle.releasePointerCapture(endEvent.pointerId);
+            }
+            handle.removeEventListener("pointermove", move);
+            handle.removeEventListener("pointerup", end);
+            handle.removeEventListener("pointercancel", end);
+          };
+
+          handle.addEventListener("pointermove", move);
+          handle.addEventListener("pointerup", end);
+          handle.addEventListener("pointercancel", end);
+        });
+      }
+
+      dragSurface(floatingBar, (event, origin) => {
+        const left = origin.rect.left + (event.clientX - origin.x);
+        const top = origin.rect.top + (event.clientY - origin.y);
+        floating.style.left =
+          Math.max(0, Math.min(left, window.innerWidth - 120)) + "px";
+        floating.style.top =
+          Math.max(0, Math.min(top, window.innerHeight - 60)) + "px";
+      });
+
+      dragSurface(
+        document.getElementById("floating-resize"),
+        (event, origin) => {
+          floating.style.width =
+            Math.max(320, origin.rect.width + (event.clientX - origin.x)) +
+            "px";
+          floating.style.height =
+            Math.max(200, origin.rect.height + (event.clientY - origin.y)) +
+            "px";
+        },
+      );
 
       /* One overflow menu is shared by every tab group and moved to whichever
          group asked for it — the alternative is a menu per group, all but one

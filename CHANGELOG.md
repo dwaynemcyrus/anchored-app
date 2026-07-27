@@ -16,7 +16,13 @@ Git commit. The format follows [Keep a Changelog], and releases follow
   rows show a two-line excerpt by default, with a one-line option in Settings.
   A two-finger swipe over the editor closes and reopens the two left panes one
   at a time — navigation first, then the list, reopening in reverse — and the
-  position is remembered. The inspector is toggled by a button instead.
+  position is remembered. The inspector is toggled by a button instead. The
+  editor area holds tabs and nested, resizable splits, with the same document
+  free to appear in any number of them; a tab's context menu can pin the tab,
+  pin the note as a reference in the inspector, or open it in a floating
+  window.
+- A reference list of interface capabilities Anchored lacks against the
+  applications named in the overview, at `docs/design/ui-gaps.md`.
 
 ## [0.1.6-alpha] - 2026-07-26
 

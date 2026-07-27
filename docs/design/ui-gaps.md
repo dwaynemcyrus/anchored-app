@@ -13,6 +13,9 @@ already places it inside or outside the first release.
 - **Last reviewed:** 2026-07-27
 - **Measured against:** `docs/prototypes/four-pane-shell.html`, `src/app/App.tsx`
 
+Rows marked **[prototyped]** now exist in
+`docs/prototypes/four-pane-shell.html`. Nothing on this list exists in `src/`.
+
 ## How to read the scope column
 
 | Mark | Meaning |
@@ -30,12 +33,12 @@ than one document at a time.
 
 | # | Capability | From | Why it matters | Scope |
 | --- | --- | --- | --- | --- |
-| A1 | **Tabs** — several documents open in one pane, reorderable, with a new-tab affordance | Obsidian | Following a wikilink currently costs you the note you were reading. Tabs are what make link-following non-destructive. | **MVP** |
-| A2 | **Splits** — divide the editor into panes, horizontally or vertically, each with its own tab strip, each resizable | Obsidian | Writing while reading a source is the core two-document task. Today it is impossible. | **MVP** |
-| A3 | **The same document in more than one tab or split**, with no imposed limit | Obsidian | Comparing two parts of one long note; editing the top while reading the bottom. Both views must stay in sync on every keystroke. | **Near** |
+| A1 | **[prototyped] Tabs** — several documents open in one pane, reorderable, with a new-tab affordance | Obsidian | Following a wikilink currently costs you the note you were reading. Tabs are what make link-following non-destructive. | **MVP** |
+| A2 | **[prototyped] Splits** — divide the editor into panes, horizontally or vertically, each with its own tab strip, each resizable | Obsidian | Writing while reading a source is the core two-document task. Today it is impossible. | **MVP** |
+| A3 | **[prototyped] The same document in more than one tab or split**, with no imposed limit | Obsidian | Comparing two parts of one long note; editing the top while reading the bottom. Both views must stay in sync on every keystroke. | **Near** |
 | A4 | **Tab overflow list** — a chevron listing open tabs when the strip runs out of width | Obsidian | Without it, a wide session hides its own tabs. | **Near** |
-| A5 | **Pop-out window** — drag a tab out into its own OS window | Obsidian | Multi-monitor work, and keeping one reference visible over other applications. Tauri multi-window plumbing already exists: `openScratchpadWindow` in `src/app/App.tsx` opens a second window today. | **Near** |
-| A6 | **Pinned tab** — resists being replaced by a navigation and survives close-others | Obsidian | The cheap version of "keep this open". | **Near** |
+| A5 | **[prototyped] Pop-out window** — drag a tab out into its own OS window | Obsidian | Multi-monitor work, and keeping one reference visible over other applications. Tauri multi-window plumbing already exists: `openScratchpadWindow` in `src/app/App.tsx` opens a second window today. | **Near** |
+| A6 | **[prototyped] Pinned tab** — resists being replaced by a navigation and survives close-others | Obsidian | The cheap version of "keep this open". | **Near** |
 | A7 | **Per-pane back / forward history** | Obsidian, Bear | After following three wikilinks there is no way back. `recentDocuments.ts` records recency but nothing exposes a history stack. | **MVP** |
 | A8 | **Linked panes** — one pane follows the other's scroll or selection | Obsidian | Source-and-translation, outline-and-body. Narrow but powerful. | **Near** |
 | A9 | **Stacked tabs** — the card-deck tab mode | Obsidian | Handsome, rarely load-bearing. Recommend skipping. | **Near** |
@@ -44,7 +47,7 @@ than one document at a time.
 
 | # | Capability | From | Why it matters | Scope |
 | --- | --- | --- | --- | --- |
-| B1 | **Pin as reference** — a document you are consulting stays reachable no matter where you navigate | ZenNotes | Distinct from a pinned tab (A6). A pinned tab is a tab that will not close; a pinned *reference* is a document promoted above the workspace entirely, so it survives closing every tab and switching collections. The natural home is the inspector or a dedicated strip. | **Near** |
+| B1 | **[prototyped] Pin as reference** — a document you are consulting stays reachable no matter where you navigate | ZenNotes | Distinct from a pinned tab (A6). A pinned tab is a tab that will not close; a pinned *reference* is a document promoted above the workspace entirely, so it survives closing every tab and switching collections. The natural home is the inspector or a dedicated strip. | **Near** |
 | B2 | **Pinned notes section at the top of the list pane** | Bear | Bear's sidebar carries a first-class `Pinned` item. Cheap, and it makes the list pane feel owned rather than generated. | **Near** |
 
 ## C. List pane

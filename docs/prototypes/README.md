@@ -47,9 +47,26 @@ are copied verbatim from `src/styles/global.css` so the two cannot drift.
   by a long momentum tail, so the handler latches: one physical swipe moves
   exactly one step no matter how long the tail runs. Vertical scrolling is
   never intercepted.
-- **The inspector is a button**, not a gesture — the panel icon at the right of
-  the editor header. It sits at the edge it controls and is independent of the
-  ladder.
+- **The inspector is a button**, not a gesture — the panel icon in the title
+  bar. It is independent of the ladder.
+- **Tabs and splits.** The editor area is a tree: every leaf is a tab group
+  with its own strip, and each strip carries new-tab, split-right, split-down,
+  and overflow actions. Splits nest, resize in both directions by dragging the
+  rule between them, reset on double-click, and take arrow keys when focused.
+  A tab holds an index rather than a copy, so one document can sit in as many
+  tabs and panes as you like.
+- **Right-click a tab** for Close, Close Others, Close Tabs to Right, Pin Tab,
+  Split Right, Split Down, Pin as Reference, and Open in Floating Window.
+- **Pin as Reference** parks a document in the inspector, where it stays
+  through every navigation until unpinned — unlike a pinned tab, which only
+  resists being replaced within its own group.
+- **Open in Floating Window** is a draggable, resizable panel here. In the
+  Tauri build it would be a real second window; `openScratchpadWindow` in
+  `src/app/App.tsx` already opens one today.
+- **Clicking a note** replaces the active tab; `⌘`- or `⇧`-click opens it in a
+  new tab. A dot on a list row means that note is already open somewhere.
+- **`⌘T`** new tab, **`⌘W`** close tab, **`⌘\`** split right, **`⇧⌘\`** split
+  down, **`⌥⌘→`** / **`⌥⌘←`** cycle tabs.
 - **`⌘1` / `⌘2` / `⌘3`** (or `Ctrl`) collapse and restore nav, list, and
   inspector individually. The editor never collapses.
 - **Motion.** Opening and closing a pane animates over 140ms; dragging never
