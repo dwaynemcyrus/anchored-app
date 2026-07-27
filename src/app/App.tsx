@@ -2596,7 +2596,7 @@ export function App() {
         onOpenSearch={retrieval.openVaultSearch}
         onOpenSettings={() => setSettingsVisible(true)}
         onSelectVault={vaultSwitcher.openSwitcher}
-        onStepLeftPanes={paneLayout.stepLeftStage}
+        onCycleLeftPanes={paneLayout.cycleLeftPanes}
         onToggleInspector={() => paneLayout.togglePane("inspector")}
       />
       {!vaultSelected ? (
@@ -2720,7 +2720,6 @@ export function App() {
           />
 
           <EditorSurface
-            backlinks={backlinks}
             document={activeDocument}
             focusDocumentId={focusDocumentId}
             hasDocuments={documents.some(

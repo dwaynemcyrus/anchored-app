@@ -19,6 +19,7 @@ import {
 
 export type PaneLayoutApi = {
   collapsed: PaneLayoutPreferences["collapsed"];
+  cycleLeftPanes: () => void;
   excerptLines: ExcerptLines;
   leftStage: LeftPaneStage;
   resizePane: (pane: PaneKey, width: number) => void;
@@ -59,6 +60,11 @@ export function usePaneLayout(): PaneLayoutApi {
   const [preferences, setPreferences] =
     useState<PaneLayoutPreferences>(initialPreferences);
   const workspaceRef = useRef<HTMLDivElement | null>(null);
+  const leftDirection = useRef(-1);
+  // Mirrors the current pane flags so the cycle can read them without the
+  // callback changing identity on every layout change.
+  const collapsedRef = useRef(preferences.collapsed);
+  collapsedRef.current = preferences.collapsed;
 
   const update = useCallback(
     (
@@ -136,6 +142,23 @@ export function usePaneLayout(): PaneLayoutApi {
     [update],
   );
 
+  /// One button walking a three-step ladder has to remember which way it was
+  /// going, or it sticks at an end: reaching stage 0 and clicking again has to
+  /// mean "come back up", not "go down again". The direction flips whenever a
+  /// step lands on either end, so repeated clicks run 2-1-0-1-2 and each one
+  /// moves exactly one pane, matching the swipe.
+  ///
+  /// The bookkeeping happens here rather than inside the state updater, which
+  /// has to stay pure: React invokes updaters twice in development, which
+  /// would flip the direction twice and send every second click the wrong way.
+  const cycleLeftPanes = useCallback(() => {
+    const stage = leftPaneStage(collapsedRef.current);
+    const delta = stage === 2 ? -1 : stage === 0 ? 1 : leftDirection.current;
+    const next = Math.max(0, Math.min(2, stage + delta));
+    leftDirection.current = next === 0 ? 1 : next === 2 ? -1 : delta;
+    stepLeftStage(next - stage);
+  }, [stepLeftStage]);
+
   const setExcerptLines = useCallback(
     (excerptLines: ExcerptLines) => {
       update((current) =>
@@ -150,6 +173,7 @@ export function usePaneLayout(): PaneLayoutApi {
   return useMemo(
     () => ({
       collapsed: preferences.collapsed,
+      cycleLeftPanes,
       excerptLines: preferences.excerptLines,
       leftStage: leftPaneStage(preferences.collapsed),
       resizePane,
@@ -161,6 +185,7 @@ export function usePaneLayout(): PaneLayoutApi {
       workspaceRef,
     }),
     [
+      cycleLeftPanes,
       preferences,
       resetPane,
       resizePane,

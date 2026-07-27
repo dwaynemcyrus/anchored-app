@@ -1494,7 +1494,7 @@ describe("App", () => {
     await user.click(screen.getByRole("button", { name: "Open a vault" }));
     await user.click(screen.getByRole("button", { name: "Reading Notes.md" }));
     const backlinks = screen.getByRole("complementary", {
-      name: "Backlinks (1)",
+      name: "Inspector",
     });
     const backlink = within(backlinks).getByRole("button", {
       name: "Notes/Leadership.md",

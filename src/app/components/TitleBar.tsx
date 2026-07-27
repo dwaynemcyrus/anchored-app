@@ -23,7 +23,7 @@ type TitleBarProps = {
   onOpenSearch: () => void;
   onOpenSettings: () => void;
   onSelectVault: () => void;
-  onStepLeftPanes: (delta: number) => void;
+  onCycleLeftPanes: () => void;
   onToggleInspector: () => void;
 };
 
@@ -45,10 +45,11 @@ function InspectorIcon() {
   );
 }
 
+// Named for the pane the next click moves, so the control says what it does.
 const leftStageLabels: Record<LeftPaneStage, string> = {
   0: "Show note list",
-  1: "Show file navigator",
-  2: "Hide side panes",
+  1: "Show or hide the file navigator",
+  2: "Hide file navigator",
 };
 
 export function TitleBar({
@@ -65,7 +66,7 @@ export function TitleBar({
   onOpenSearch,
   onOpenSettings,
   onSelectVault,
-  onStepLeftPanes,
+  onCycleLeftPanes,
   onToggleInspector,
 }: TitleBarProps) {
   return (
@@ -77,7 +78,7 @@ export function TitleBar({
           <IconButton
             className="pane-toggle"
             label={leftStageLabels[leftStage]}
-            onClick={() => onStepLeftPanes(leftStage === 2 ? -2 : 1)}
+            onClick={onCycleLeftPanes}
           >
             <LeftPanesIcon />
           </IconButton>
