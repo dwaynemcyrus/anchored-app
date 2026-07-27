@@ -12,7 +12,8 @@ Git commit. The format follows [Keep a Changelog], and releases follow
   note list, editor, and inspector — with drag-resizable panes and a no-vault
   state that shows a wordmark, settings, and a call to action rather than
   disabled controls. It lives at `docs/prototypes/four-pane-shell.html` and is
-  a design artifact only: the application interface is unchanged.
+  a design artifact only: the application interface is unchanged. Note-list
+  rows show a two-line excerpt by default, with a one-line option in Settings.
 
 ## [0.1.6-alpha] - 2026-07-26
 

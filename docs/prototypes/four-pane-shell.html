@@ -112,6 +112,7 @@
       }
 
       .title-bar {
+        position: relative;
         display: flex;
         align-items: center;
         justify-content: space-between;
@@ -494,6 +495,7 @@
         white-space: nowrap;
       }
 
+      /* Two lines by default; Settings switches the whole list to one. */
       .list-row__excerpt {
         display: -webkit-box;
         overflow: hidden;
@@ -502,7 +504,7 @@
         font-size: 12.5px;
         line-height: 1.45;
         -webkit-box-orient: vertical;
-        -webkit-line-clamp: 2;
+        -webkit-line-clamp: var(--excerpt-lines, 2);
       }
 
       .list-row__meta {
@@ -572,7 +574,7 @@
         position: relative;
       }
 
-      .overflow__menu {
+      .menu {
         position: absolute;
         z-index: 20;
         top: 32px;
@@ -585,22 +587,52 @@
         background: var(--color-menu);
       }
 
-      .overflow__menu[hidden] {
-        display: none;
-      }
-
-      .overflow__menu button {
+      .menu button {
+        display: flex;
         min-height: 30px;
+        align-items: center;
         padding: 0 10px;
         border-radius: 4px;
         color: var(--color-text-muted);
         font-size: 12px;
+        gap: 8px;
         text-align: left;
       }
 
-      .overflow__menu button:hover {
+      .menu button:hover {
         background: var(--color-row-active);
         color: var(--color-text);
+      }
+
+      .menu button[aria-checked="true"] {
+        color: var(--color-text);
+      }
+
+      /* Reserve the tick column so the labels do not shift when the choice
+         moves between rows. */
+      .menu button[role="menuitemradio"]::before {
+        width: 10px;
+        color: var(--color-text);
+        content: "";
+      }
+
+      .menu button[aria-checked="true"]::before {
+        content: "✓";
+      }
+
+      .menu__group {
+        padding: 7px 10px 4px;
+        margin: 0;
+        color: var(--color-text-subtle);
+        font-size: 10.5px;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+      }
+
+      .settings-menu {
+        top: 38px;
+        right: 12px;
+        min-width: 196px;
       }
 
       .document {
@@ -811,6 +843,29 @@
         </div>
 
         <div class="title-bar__actions" id="title-actions"></div>
+
+        <!-- Stands in for the real Settings surface. Note-list density belongs
+             here rather than in the list header: it is a preference, not a
+             per-view control. -->
+        <div class="menu settings-menu" id="settings-menu" role="menu" hidden>
+          <p class="menu__group">Note list</p>
+          <button
+            aria-checked="true"
+            data-density="two"
+            role="menuitemradio"
+            type="button"
+          >
+            Two-line preview
+          </button>
+          <button
+            aria-checked="false"
+            data-density="one"
+            role="menuitemradio"
+            type="button"
+          >
+            One-line preview
+          </button>
+        </div>
       </header>
 
       <!-- State B: the four panes -->
@@ -942,12 +997,7 @@
                     <circle cx="19" cy="12" r="1" />
                   </svg>
                 </button>
-                <div
-                  class="overflow__menu"
-                  id="overflow-menu"
-                  role="menu"
-                  hidden
-                >
+                <div class="menu" id="overflow-menu" role="menu" hidden>
                   <button role="menuitem" type="button">Rename…</button>
                   <button role="menuitem" type="button">Move…</button>
                   <button role="menuitem" type="button">Save as…</button>
@@ -1299,10 +1349,25 @@
         // — a narrow window must never quietly overwrite what the user chose.
         widths: { nav: 240, list: 300, inspector: 280 },
         collapsed: { nav: false, list: false, inspector: false },
+        // "two" | "one" — how many excerpt lines each list row shows.
+        excerptLines: "two",
         navMode: "collections",
         selectedCollection: "inbox",
         selectedNote: 0,
       };
+
+      function applyExcerptLines() {
+        document.documentElement.style.setProperty(
+          "--excerpt-lines",
+          state.excerptLines === "one" ? "1" : "2",
+        );
+        for (const button of document.querySelectorAll("[data-density]")) {
+          button.setAttribute(
+            "aria-checked",
+            String(button.dataset.density === state.excerptLines),
+          );
+        }
+      }
 
       function paneElement(key) {
         return document.getElementById(PANES[key].element);
@@ -1375,6 +1440,7 @@
               version: 1,
               widths: state.widths,
               collapsed: state.collapsed,
+              excerptLines: state.excerptLines,
             }),
           );
         } catch {
@@ -1397,6 +1463,9 @@
               );
             }
             state.collapsed[key] = Boolean(value.collapsed?.[key]);
+          }
+          if (value.excerptLines === "one" || value.excerptLines === "two") {
+            state.excerptLines = value.excerptLines;
           }
         } catch {
           /* ignore */
@@ -1573,6 +1642,10 @@
           button.className = "icon-button";
           button.type = "button";
           button.setAttribute("aria-label", label);
+          if (label === "Settings") {
+            button.setAttribute("aria-haspopup", "menu");
+            button.setAttribute("aria-expanded", "false");
+          }
           button.innerHTML =
             '<svg viewBox="0 0 24 24" aria-hidden="true">' + markup + "</svg>";
           nodes.push(button);
@@ -1849,17 +1922,52 @@
 
       const overflowToggle = document.getElementById("overflow-toggle");
       const overflowMenu = document.getElementById("overflow-menu");
+      const settingsMenu = document.getElementById("settings-menu");
+
+      function closeMenus() {
+        overflowMenu.hidden = true;
+        settingsMenu.hidden = true;
+        overflowToggle.setAttribute("aria-expanded", "false");
+        document
+          .querySelector('#title-actions [aria-label="Settings"]')
+          ?.setAttribute("aria-expanded", "false");
+      }
 
       overflowToggle.addEventListener("click", (event) => {
         event.stopPropagation();
         const open = overflowMenu.hidden;
+        closeMenus();
         overflowMenu.hidden = !open;
         overflowToggle.setAttribute("aria-expanded", String(open));
       });
 
-      document.addEventListener("click", () => {
-        overflowMenu.hidden = true;
-        overflowToggle.setAttribute("aria-expanded", "false");
+      // The title-bar actions are re-rendered whenever the vault state flips,
+      // so the gear is reached by delegation rather than a direct listener.
+      document
+        .getElementById("title-actions")
+        .addEventListener("click", (event) => {
+          const gear = event.target.closest?.('[aria-label="Settings"]');
+          if (!gear) return;
+          event.stopPropagation();
+          const open = settingsMenu.hidden;
+          closeMenus();
+          settingsMenu.hidden = !open;
+          gear.setAttribute("aria-expanded", String(open));
+        });
+
+      for (const button of settingsMenu.querySelectorAll("[data-density]")) {
+        button.addEventListener("click", (event) => {
+          event.stopPropagation();
+          state.excerptLines = button.dataset.density;
+          applyExcerptLines();
+          savePreferences();
+          closeMenus();
+        });
+      }
+
+      document.addEventListener("click", closeMenus);
+      document.addEventListener("keydown", (event) => {
+        if (event.key === "Escape") closeMenus();
       });
 
       const previewToggle = document.getElementById("preview-toggle");
@@ -1880,6 +1988,7 @@
       window.addEventListener("resize", layout);
 
       loadPreferences();
+      applyExcerptLines();
       initHandles();
       setVaultState(true);
       layout();

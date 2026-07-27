@@ -38,7 +38,12 @@ are copied verbatim from `src/styles/global.css` so the two cannot drift.
   the five collections and the folder tree. Selecting either repopulates the
   list pane; selecting a row in the list pane repopulates the editor and the
   inspector.
-- **The `⋯` menu** and the Preview toggle open and close.
+- **List density.** The settings gear opens a menu with a two-line (default) or
+  one-line excerpt choice. It is a preference, not a per-view control, so it
+  lives in Settings rather than the list header, and it persists with the pane
+  widths.
+- **The `⋯` menu** and the Preview toggle open and close. `Escape` or a click
+  outside closes either menu, and opening one closes the other.
 - **State switch.** The dashed `prototype` chip in the bottom-right corner is
   not part of the design. It toggles between the vault-open and no-vault states
   and resets pane widths.
@@ -55,11 +60,18 @@ are copied verbatim from `src/styles/global.css` so the two cannot drift.
   Outline, frontmatter, and tags are a later decision, but the pane, its
   splitter, and its toggle are real so the layout can be judged now.
 
-### Open questions this prototype exists to settle
+### Settled
 
-1. List-row density — title, two-line excerpt, and a `date · folder` line. Is
-   that the right amount, or should it be tighter (Things) or looser (Bear)?
-2. Whether the nav pane keeps the Collections / Files segmented toggle or the
-   two merge into one scroll.
-3. Whether collapsing the editor's eight header actions into `⋯` loses anything
-   worth keeping visible. Preview is the only one still surfaced.
+The questions this prototype existed to answer, and the answers:
+
+1. **List-row density** — title, excerpt, and a `date · folder` line. Two
+   excerpt lines by default, with a one-line option in Settings.
+2. **Nav pane** — keeps the Collections / Files segmented toggle. The two do
+   not merge into a single scroll.
+3. **Editor header** — nothing in the `⋯` menu needs promoting. Preview stays
+   as the only visible action beside it.
+
+### Still open
+
+- What the inspector holds beyond backlinks. Outline, frontmatter, and tags are
+  the candidates; the pane, splitter, and toggle are already real.
