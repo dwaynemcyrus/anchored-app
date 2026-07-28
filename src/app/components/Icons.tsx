@@ -16,9 +16,13 @@ import {
   Menu,
   NotebookPen,
   Pencil,
+  Plus,
   Search,
   Settings,
+  SquareSplitHorizontal,
+  SquareSplitVertical,
   Trash2,
+  X,
   type LucideProps,
 } from "lucide-react";
 
@@ -46,8 +50,24 @@ export function ChevronIcon({ className = "", ...props }: IconProps) {
   );
 }
 
+export function CloseIcon(props: IconProps) {
+  return <X {...iconProps} {...props} />;
+}
+
 export function FileIcon(props: IconProps) {
   return <FileText {...iconProps} {...props} />;
+}
+
+export function PlusIcon(props: IconProps) {
+  return <Plus {...iconProps} {...props} />;
+}
+
+export function SplitDownIcon(props: IconProps) {
+  return <SquareSplitVertical {...iconProps} {...props} />;
+}
+
+export function SplitRightIcon(props: IconProps) {
+  return <SquareSplitHorizontal {...iconProps} {...props} />;
 }
 
 export function FolderIcon(props: IconProps) {
