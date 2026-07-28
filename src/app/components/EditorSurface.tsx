@@ -32,7 +32,6 @@ type EditorSurfaceProps = {
   wikilinkCandidates: WikilinkCandidate[];
   lifecycleChanging: boolean;
   onArchiveDocument: () => void;
-  onCloseDocument: () => void;
   onCreateVault: () => void;
   onDocumentChange: (content: string) => void;
   onCursorPosition: (position: EditorCursorPosition) => void;
@@ -63,7 +62,6 @@ export function EditorSurface({
   wikilinkCandidates,
   lifecycleChanging,
   onArchiveDocument,
-  onCloseDocument,
   onCreateVault,
   onDocumentChange,
   onCursorPosition,
@@ -426,15 +424,10 @@ export function EditorSurface({
               {trashing ? "Moving…" : "Trash"}
             </button>
           ) : null}
-          <button
-            aria-label={`Close ${displayName}`}
-            className="editor-surface__action"
-            disabled={moving || lifecycleChanging || renaming || trashing}
-            type="button"
-            onClick={onCloseDocument}
-          >
-            Close
-          </button>
+          {/* Closing lives on the tab now, where the note being closed is
+              named. A second Close here would be the same command twice, and
+              the two read as different things once a pane holds several
+              tabs. */}
         </div>
       </header>
       <section className="document">

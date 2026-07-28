@@ -2806,3 +2806,23 @@ body[data-resizing-pane="true"] {
   max-height: 320px;
   overflow-y: auto;
 }
+
+/* Takes the editor's cell in the workspace grid, so the tree of tab groups
+   sits exactly where the single editor used to. */
+.workspace-editor {
+  position: relative;
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  flex-direction: column;
+  background: var(--color-canvas);
+}
+
+.workspace-editor > * {
+  min-height: 0;
+  flex: 1;
+}
+
+.tab-group > .editor-surface {
+  flex: 1;
+}

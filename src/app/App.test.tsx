@@ -2165,6 +2165,107 @@ describe("App", () => {
     ).not.toHaveAttribute("aria-current");
   });
 
+  /// The workspace tests below all open a two-note vault, because what they
+  /// are checking is that a second document can be held at all — which is the
+  /// thing the editor could not do before tabs.
+  async function openTwoNoteVault() {
+    const user = userEvent.setup();
+    mockedSelectVault.mockResolvedValue({
+      files: [
+        {
+          name: "Harbor.md",
+          parent: "Knowledge",
+          relativePath: "Knowledge/Harbor.md",
+        },
+        {
+          name: "Field Notes.md",
+          parent: "Knowledge",
+          relativePath: "Knowledge/Field Notes.md",
+        },
+      ],
+      name: "My Vault",
+      warnings: noWarnings,
+    });
+    mockedReadVaultFile.mockImplementation(async (relativePath: string) => ({
+      content: `# ${relativePath}\n`,
+      relativePath,
+      sizeBytes: 24,
+    }));
+    render(<App />);
+    await user.click(screen.getByRole("button", { name: "Open a vault" }));
+    return user;
+  }
+
+  it("shows the open note in a tab", async () => {
+    const user = await openTwoNoteVault();
+
+    await user.click(screen.getByRole("button", { name: "Harbor.md" }));
+
+    expect(
+      await screen.findByRole("tab", { name: "Harbor.md" }),
+    ).toHaveAttribute("aria-selected", "true");
+  });
+
+  it("replaces the tab when another note is chosen", async () => {
+    const user = await openTwoNoteVault();
+
+    await user.click(screen.getByRole("button", { name: "Harbor.md" }));
+    await screen.findByRole("tab", { name: "Harbor.md" });
+    await user.click(screen.getByRole("button", { name: "Field Notes.md" }));
+
+    // One tab, not two: clicking a row navigates rather than accumulating.
+    expect(
+      await screen.findByRole("tab", { name: "Field Notes.md" }),
+    ).toBeInTheDocument();
+    expect(screen.getAllByRole("tab")).toHaveLength(1);
+  });
+
+  it("walks back and forward through a tab's own history", async () => {
+    const user = await openTwoNoteVault();
+
+    await user.click(screen.getByRole("button", { name: "Harbor.md" }));
+    await screen.findByRole("tab", { name: "Harbor.md" });
+    await user.click(screen.getByRole("button", { name: "Field Notes.md" }));
+    await screen.findByRole("tab", { name: "Field Notes.md" });
+
+    await user.keyboard("{Meta>}{Alt>}{ArrowLeft}{/Alt}{/Meta}");
+    expect(
+      await screen.findByRole("tab", { name: "Harbor.md" }),
+    ).toBeInTheDocument();
+
+    await user.keyboard("{Meta>}{Alt>}{ArrowRight}{/Alt}{/Meta}");
+    expect(
+      await screen.findByRole("tab", { name: "Field Notes.md" }),
+    ).toBeInTheDocument();
+  });
+
+  it("splits the editor with Command-backslash", async () => {
+    const user = await openTwoNoteVault();
+    await user.click(screen.getByRole("button", { name: "Harbor.md" }));
+    await screen.findByRole("tab", { name: "Harbor.md" });
+
+    await user.keyboard("{Meta>}\\{/Meta}");
+
+    // The same note, now in two panes, each with its own strip.
+    expect(screen.getAllByRole("tab", { name: "Harbor.md" })).toHaveLength(2);
+    expect(
+      screen.getByRole("separator", { name: /Resize panes/ }),
+    ).toBeInTheDocument();
+  });
+
+  it("closes the active tab with Command-W", async () => {
+    const user = await openTwoNoteVault();
+    await user.click(screen.getByRole("button", { name: "Harbor.md" }));
+    await screen.findByRole("tab", { name: "Harbor.md" });
+
+    await user.keyboard("{Meta>}w{/Meta}");
+
+    expect(screen.queryByRole("tab")).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { level: 1, name: "No note open" }),
+    ).toBeInTheDocument();
+  });
+
   it("rescans for Finder-added notes when the app regains focus", async () => {
     const user = userEvent.setup();
     mockedSelectVault.mockResolvedValue({

@@ -14,6 +14,18 @@ import { CreateVaultDialog } from "./components/CreateVaultDialog";
 import { CreateMissingWikilinkDialog } from "./components/CreateMissingWikilinkDialog";
 import { DeleteFolderDialog } from "./components/DeleteFolderDialog";
 import { NavigationPane } from "./components/NavigationPane";
+import { WorkspaceEditor } from "./components/WorkspaceEditor";
+import {
+  activateGroup,
+  activeDocumentId as workspaceActiveDocumentId,
+  activeLeaf,
+  closeTab,
+  createWorkspace,
+  openDocument,
+  splitGroup,
+  stepHistory,
+  type Workspace,
+} from "./workspaceTree";
 import { NoteListPane } from "./components/NoteListPane";
 import { InspectorPane } from "./components/InspectorPane";
 import { WelcomeScreen } from "./components/WelcomeScreen";
@@ -75,7 +87,7 @@ import {
   buildWikilinkCandidates,
   type DocumentActivity,
 } from "./linkCandidates";
-import { fileExtension } from "./fileTypes";
+import { displayFileName, fileExtension } from "./fileTypes";
 import {
   loadDocumentActivity,
   markDocumentActive,
@@ -196,7 +208,7 @@ export function App() {
     useState<FileRailMode>("collections");
   const [draggingDocumentId, setDraggingDocumentId] = useState<string>();
   const paneLayout = usePaneLayout();
-  const [activeDocumentId, setActiveDocumentId] = useState("");
+  const [workspace, setWorkspace] = useState<Workspace>(createWorkspace);
   const [focusDocumentId, setFocusDocumentId] = useState<string>();
   const [cursorPosition, setCursorPosition] = useState<EditorCursorPosition>({
     line: 1,
@@ -271,14 +283,35 @@ export function App() {
   const conflictResolution = useConflictResolution();
   const notifications = useNotifications({ vaultIdRef });
 
+  /// What the active tab of the active group is showing. Derived rather than
+  /// stored: the workspace is the one place a document is open, so there is no
+  /// second copy of that fact to fall out of step with it.
+  const activeDocumentId = workspaceActiveDocumentId(workspace);
+
   documentsRef.current = documents;
   activeDocumentIdRef.current = activeDocumentId;
   focusDocumentIdRef.current = focusDocumentId;
 
-  const setActiveDocument = useCallback((documentId: string) => {
-    activeDocumentIdRef.current = documentId;
-    setActiveDocumentId(documentId);
-  }, []);
+  /// Opens a document, or closes the active tab when given nothing.
+  ///
+  /// The callers that clear this were written when the editor held a single
+  /// document and clearing was the only way to empty it. Closing the tab is
+  /// what that means now.
+  const setActiveDocument = useCallback(
+    (documentId: string, options: { newTab?: boolean } = {}) => {
+      activeDocumentIdRef.current = documentId;
+      setWorkspace((current) =>
+        documentId
+          ? openDocument(current, documentId, options)
+          : closeTab(
+              current,
+              activeLeaf(current).id,
+              activeLeaf(current).active,
+            ),
+      );
+    },
+    [],
+  );
 
   const setFocusDocument = useCallback((documentId?: string) => {
     focusDocumentIdRef.current = documentId;
@@ -1169,7 +1202,11 @@ export function App() {
       );
       setFolderPaths(nextFolders);
       sidebar.setExpandedFolders(new Set(nextFolders));
-      setActiveDocument("");
+      // A different vault means different documents, so the whole workspace
+      // goes rather than the active tab: every open tab named a note that is
+      // no longer there, and any split was arranged around them.
+      activeDocumentIdRef.current = "";
+      setWorkspace(createWorkspace());
       setFocusDocument(undefined);
       setQuery("");
       setDocumentLoad({ status: "idle" });
@@ -1739,6 +1776,44 @@ export function App() {
         if (pane) {
           event.preventDefault();
           paneLayout.togglePane(pane);
+          return;
+        }
+      }
+
+      // The workspace shortcuts, following Obsidian so the muscle memory
+      // carries over. All of them act on the group that is currently active.
+      if (commandKey && !event.altKey) {
+        if (event.key.toLowerCase() === "t" && !event.shiftKey) {
+          event.preventDefault();
+          createNote();
+          return;
+        }
+        if (event.key.toLowerCase() === "w" && !event.shiftKey) {
+          event.preventDefault();
+          closeDocument();
+          return;
+        }
+        if (event.key === "\\") {
+          event.preventDefault();
+          setWorkspace((current) =>
+            splitGroup(
+              current,
+              current.activeGroupId,
+              event.shiftKey ? "column" : "row",
+            ),
+          );
+          return;
+        }
+      }
+
+      // Back and forward walk the active tab's own history.
+      if (commandKey && event.altKey) {
+        const step = { ArrowLeft: -1, ArrowRight: 1 }[event.key];
+        if (step) {
+          event.preventDefault();
+          setWorkspace((current) =>
+            stepHistory(current, current.activeGroupId, step),
+          );
           return;
         }
       }
@@ -2734,74 +2809,98 @@ export function App() {
             onResize={(width) => paneLayout.resizePane("list", width)}
           />
 
-          <EditorSurface
-            document={activeDocument}
-            focusDocumentId={focusDocumentId}
-            hasDocuments={documents.some(
-              (document) => document.isMarkdown !== false,
-            )}
-            findRequest={retrieval.findRequest}
-            loadState={
-              documentLoad.status !== "idle" &&
-              documentLoad.documentId === activeDocument?.id
-                ? documentLoad
-                : { status: "idle" }
+          <WorkspaceEditor
+            titleFor={(documentId) =>
+              displayFileName(
+                documents.find((document) => document.id === documentId)
+                  ?.name ?? "Untitled",
+                markdownSettings.showFileExtensions,
+              )
             }
-            vaultName={vaultName}
-            vaultSelected={vaultSelected}
-            wikilinkCandidates={wikilinkCandidates}
-            lifecycleChanging={transitioningDocumentId === activeDocument?.id}
-            onArchiveDocument={() => {
-              if (activeDocument) requestArchiveDocument(activeDocument.id);
+            workspace={workspace}
+            onNewTab={(groupId) => {
+              setWorkspace((current) => activateGroup(current, groupId));
+              createNote();
             }}
-            onCloseDocument={closeDocument}
-            onCreateVault={() => {
-              vaultSwitcher.setCreateVaultError(undefined);
-              vaultSwitcher.setCreateVaultVisible(true);
+            onWorkspaceChange={setWorkspace}
+            renderEditor={({ documentId }) => {
+              const slotDocument = documents.find(
+                (document) => document.id === documentId,
+              );
+              return (
+                <EditorSurface
+                  document={slotDocument}
+                  focusDocumentId={focusDocumentId}
+                  hasDocuments={documents.some(
+                    (document) => document.isMarkdown !== false,
+                  )}
+                  findRequest={retrieval.findRequest}
+                  loadState={
+                    documentLoad.status !== "idle" &&
+                    documentLoad.documentId === slotDocument?.id
+                      ? documentLoad
+                      : { status: "idle" }
+                  }
+                  vaultName={vaultName}
+                  vaultSelected={vaultSelected}
+                  wikilinkCandidates={wikilinkCandidates}
+                  lifecycleChanging={
+                    transitioningDocumentId === slotDocument?.id
+                  }
+                  onArchiveDocument={() => {
+                    if (slotDocument) requestArchiveDocument(slotDocument.id);
+                  }}
+                  onCreateVault={() => {
+                    vaultSwitcher.setCreateVaultError(undefined);
+                    vaultSwitcher.setCreateVaultVisible(true);
+                  }}
+                  onDocumentChange={updateDocumentContent}
+                  onCursorPosition={setCursorPosition}
+                  onOpenLinkedDocument={(documentId) =>
+                    void selectDocument(documentId)
+                  }
+                  onOpenMoveDocument={() => {
+                    if (
+                      slotDocument?.relativePath &&
+                      slotDocument.isMarkdown !== false
+                    ) {
+                      setMoveDocumentId(slotDocument.id);
+                      setMoveDocumentVisible(true);
+                    }
+                  }}
+                  onOpenVault={() => void vaultSwitcher.openVault()}
+                  onOpenWikilink={openWikilink}
+                  onRetryDocument={() => {
+                    if (slotDocument) void selectDocument(slotDocument.id);
+                  }}
+                  onRenameDocument={(name) => {
+                    if (slotDocument)
+                      void renameDocument(slotDocument.id, name);
+                  }}
+                  onRestoreDocument={(destinationStatus) => {
+                    if (slotDocument) {
+                      requestRestoreArchivedDocument(
+                        slotDocument.id,
+                        destinationStatus,
+                      );
+                    }
+                  }}
+                  onSaveDocument={() => {
+                    if (slotDocument) void saveDocument(slotDocument.id);
+                  }}
+                  onSaveDocumentAs={() => {
+                    if (slotDocument) void saveDocumentAs(slotDocument.id);
+                  }}
+                  onTrashDocument={() => {
+                    if (slotDocument) void trash.trashDocument(slotDocument.id);
+                  }}
+                  moving={movingDocumentId === slotDocument?.id}
+                  markdownSettings={markdownSettings}
+                  renaming={renamingDocumentId === slotDocument?.id}
+                  trashing={trash.trashingDocumentId === slotDocument?.id}
+                />
+              );
             }}
-            onDocumentChange={updateDocumentContent}
-            onCursorPosition={setCursorPosition}
-            onOpenLinkedDocument={(documentId) =>
-              void selectDocument(documentId)
-            }
-            onOpenMoveDocument={() => {
-              if (
-                activeDocument?.relativePath &&
-                activeDocument.isMarkdown !== false
-              ) {
-                setMoveDocumentId(activeDocument.id);
-                setMoveDocumentVisible(true);
-              }
-            }}
-            onOpenVault={() => void vaultSwitcher.openVault()}
-            onOpenWikilink={openWikilink}
-            onRetryDocument={() => {
-              if (activeDocument) void selectDocument(activeDocument.id);
-            }}
-            onRenameDocument={(name) => {
-              if (activeDocument) void renameDocument(activeDocument.id, name);
-            }}
-            onRestoreDocument={(destinationStatus) => {
-              if (activeDocument) {
-                requestRestoreArchivedDocument(
-                  activeDocument.id,
-                  destinationStatus,
-                );
-              }
-            }}
-            onSaveDocument={() => {
-              if (activeDocument) void saveDocument(activeDocument.id);
-            }}
-            onSaveDocumentAs={() => {
-              if (activeDocument) void saveDocumentAs(activeDocument.id);
-            }}
-            onTrashDocument={() => {
-              if (activeDocument) void trash.trashDocument(activeDocument.id);
-            }}
-            moving={movingDocumentId === activeDocument?.id}
-            markdownSettings={markdownSettings}
-            renaming={renamingDocumentId === activeDocument?.id}
-            trashing={trash.trashingDocumentId === activeDocument?.id}
           />
           {/* The inspector's handle sits on the editor's right edge, so dragging
             it left widens the inspector — hence `inverted`. */}
