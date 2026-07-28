@@ -196,28 +196,54 @@ describe("wikilink candidates", () => {
     expect(rankWikilinkCandidates(candidates, "Unsafe|link")).toEqual([]);
   });
 
-  it("builds 700-note link topology without quadratic scans", () => {
-    const documents = Array.from({ length: 700 }, (_, index) =>
-      note(
-        `note-${index}`,
-        `Folder ${String(index % 56).padStart(2, "0")}/Note ${String(index).padStart(4, "0")}.md`,
-        index % 20 === 0 ? [`Alias ${index}`] : [],
-        Array.from(
-          { length: 5 },
-          (_, offset) =>
-            `Note ${String((index + offset + 1) % 700).padStart(4, "0")}`,
+  /// Builds the topology at one size and again at four times that size, and
+  /// asserts the cost grew with the vault rather than with its square.
+  ///
+  /// This deliberately asserts no number of milliseconds. It used to, and a
+  /// loaded macOS runner failed it at 106ms against a 100ms budget while the
+  /// same code takes about 4ms warm — a single cold call is mostly JIT and
+  /// scheduling, so the figure described the machine rather than the
+  /// algorithm. A ratio between two sizes on one machine cancels that out.
+  it("builds link topology without quadratic scans", () => {
+    const build = (count: number) => {
+      const documents = Array.from({ length: count }, (_, index) =>
+        note(
+          `note-${index}`,
+          `Folder ${String(index % 56).padStart(2, "0")}/Note ${String(index).padStart(4, "0")}.md`,
+          index % 20 === 0 ? [`Alias ${index}`] : [],
+          Array.from(
+            { length: 5 },
+            (_, offset) =>
+              `Note ${String((index + offset + 1) % count).padStart(4, "0")}`,
+          ),
         ),
-      ),
-    );
+      );
 
-    const started = performance.now();
-    const index = buildDocumentLinkIndex(documents);
-    const candidates = buildWikilinkCandidates(documents, new Map(), index);
-    const duration = performance.now() - started;
+      const started = performance.now();
+      const index = buildDocumentLinkIndex(documents);
+      const candidates = buildWikilinkCandidates(documents, new Map(), index);
+      const duration = performance.now() - started;
 
-    expect(
-      candidates.filter((candidate) => candidate.kind === "note"),
-    ).toHaveLength(700);
-    expect(duration).toBeLessThan(100);
+      expect(
+        candidates.filter((candidate) => candidate.kind === "note"),
+      ).toHaveLength(count);
+      return duration;
+    };
+
+    // The fastest of several runs. A busy machine can make any single run
+    // slow, but nothing can make one faster than the work genuinely takes, so
+    // the minimum is the measurement least able to lie.
+    const fastest = (count: number) =>
+      Math.min(...Array.from({ length: 5 }, () => build(count)));
+
+    const small = fastest(1000);
+    const large = fastest(4000);
+
+    // Four times the notes. Measured on this code the ratio is about 5, and
+    // with a deliberate quadratic scan added it is about 11, so the bound sits
+    // between the two with room either side. Smaller vaults were tried first
+    // and rejected: at 700 against 2800 a real quadratic scan only reached
+    // 7.2, too close to the honest 2.8 for any bound to separate them.
+    expect(large).toBeLessThan(small * 8);
   });
 });
