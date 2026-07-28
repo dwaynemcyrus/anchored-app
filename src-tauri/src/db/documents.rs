@@ -4,7 +4,7 @@
 //! boundary. A whole-vault import is one transaction; a single changed file is
 //! its own.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use rusqlite::{params, Connection, OptionalExtension};
 
@@ -265,28 +265,59 @@ fn replace_links(
 ///
 /// A NULL parameter resolves every link; a document id resolves only the links
 /// leaving that document.
+// Every lookup here carries `deleted_at IS NULL`, and must.
+//
+// The indexes on `documents` are all partial — `... WHERE deleted_at IS NULL` —
+// and SQLite may only use a partial index where the query provably implies its
+// predicate. Without that clause not one of these subqueries could use an
+// index, so each became a full scan of every document, ten of them per link.
+// On a vault of a few thousand notes that was the whole cost of opening it.
+//
+// It is also what the resolution should say: a note in the trash is not a link
+// target, and matching one was wrong before it was slow.
+//
+// `path_key = X OR path_key = X || '.md'` is split into two lookups for the
+// same reason — one column asked for two values cannot be an index probe. The
+// order is now explicit too, an exact path winning over one needing the
+// extension, where the `OR` left it to whichever SQLite met first.
 const RESOLVE_LINKS_SQL: &str = "
 UPDATE links SET
     target_document_id = COALESCE(
         (SELECT id FROM documents
-         WHERE path_key = links.target_key
-            OR path_key = links.target_key || '.md'
-         LIMIT 1),
-        CASE WHEN (SELECT count(*) FROM documents WHERE name_key = links.target_key) = 1
-             THEN (SELECT id FROM documents WHERE name_key = links.target_key) END,
-        CASE WHEN (SELECT count(*) FROM documents WHERE name_key = links.target_key) = 0
-              AND (SELECT count(*) FROM aliases WHERE alias_key = links.target_key) = 1
-             THEN (SELECT document_id FROM aliases WHERE alias_key = links.target_key) END
+         WHERE path_key = links.target_key AND deleted_at IS NULL),
+        (SELECT id FROM documents
+         WHERE path_key = links.target_key || '.md' AND deleted_at IS NULL),
+        CASE WHEN (SELECT count(*) FROM documents
+                   WHERE name_key = links.target_key AND deleted_at IS NULL) = 1
+             THEN (SELECT id FROM documents
+                   WHERE name_key = links.target_key AND deleted_at IS NULL) END,
+        CASE WHEN (SELECT count(*) FROM documents
+                   WHERE name_key = links.target_key AND deleted_at IS NULL) = 0
+              AND (SELECT count(*) FROM aliases
+                   JOIN documents ON documents.id = aliases.document_id
+                   WHERE aliases.alias_key = links.target_key
+                     AND documents.deleted_at IS NULL) = 1
+             THEN (SELECT aliases.document_id FROM aliases
+                   JOIN documents ON documents.id = aliases.document_id
+                   WHERE aliases.alias_key = links.target_key
+                     AND documents.deleted_at IS NULL) END
     ),
     resolution = CASE
         WHEN EXISTS (SELECT 1 FROM documents
-                     WHERE path_key = links.target_key
-                        OR path_key = links.target_key || '.md') THEN 'path'
-        WHEN (SELECT count(*) FROM documents WHERE name_key = links.target_key) = 1
+                     WHERE path_key = links.target_key AND deleted_at IS NULL)
+          OR EXISTS (SELECT 1 FROM documents
+                     WHERE path_key = links.target_key || '.md'
+                       AND deleted_at IS NULL) THEN 'path'
+        WHEN (SELECT count(*) FROM documents
+              WHERE name_key = links.target_key AND deleted_at IS NULL) = 1
             THEN 'filename'
-        WHEN (SELECT count(*) FROM documents WHERE name_key = links.target_key) > 1
+        WHEN (SELECT count(*) FROM documents
+              WHERE name_key = links.target_key AND deleted_at IS NULL) > 1
             THEN 'ambiguous'
-        WHEN (SELECT count(*) FROM aliases WHERE alias_key = links.target_key) = 1
+        WHEN (SELECT count(*) FROM aliases
+              JOIN documents ON documents.id = aliases.document_id
+              WHERE aliases.alias_key = links.target_key
+                AND documents.deleted_at IS NULL) = 1
             THEN 'alias'
         ELSE 'unresolved'
     END
@@ -662,9 +693,14 @@ pub(crate) fn delete_missing(
         .map_err(map_error("Documents could not be listed"))?;
     drop(statement);
 
+    // A set, not a scan of the slice per row: a vault of several thousand notes
+    // made that tens of millions of string comparisons to usually delete
+    // nothing.
+    let present: HashSet<&str> = present_path_keys.iter().map(String::as_str).collect();
+
     let mut removed = 0;
     for (id, path_key) in rows {
-        if !present_path_keys.iter().any(|present| present == &path_key) {
+        if !present.contains(path_key.as_str()) {
             connection
                 .execute("DELETE FROM documents WHERE id = ?1", params![id])
                 .map_err(map_error("A document could not be removed"))?;
@@ -679,10 +715,67 @@ mod tests {
     use rusqlite::Connection;
     use tempfile::tempdir;
 
-    use super::{delete_missing, resolve_links, upsert};
+    use super::{delete_missing, resolve_links, upsert, RESOLVE_LINKS_SQL};
     use crate::db::import::import_note;
 
     const ID: &str = "019f989c-2dc0-7a01-8b2c-4d5e6f708192";
+
+    /// Link resolution runs a handful of subqueries against `documents` for
+    /// every link in the vault, so each one has to be an index probe. When they
+    /// were not, opening a vault of a few thousand notes took minutes.
+    ///
+    /// The trap is quiet: every index on `documents` is partial — `WHERE
+    /// deleted_at IS NULL` — and SQLite silently falls back to a full scan for
+    /// any query that does not carry the same predicate. Nothing fails, it just
+    /// becomes slow in proportion to the vault. This asserts the plan itself so
+    /// dropping that clause is caught here rather than on someone's vault.
+    #[test]
+    fn resolves_links_without_scanning_every_document() {
+        let (_directory, connection) = database();
+
+        let mut statement = connection
+            .prepare(&format!("EXPLAIN QUERY PLAN {RESOLVE_LINKS_SQL}"))
+            .expect("prepare the query plan");
+        let steps: Vec<String> = statement
+            .query_map([rusqlite::types::Null], |row| row.get::<_, String>(3))
+            .expect("run the query plan")
+            .collect::<Result<_, _>>()
+            .expect("read the query plan");
+
+        let scans: Vec<&String> = steps
+            .iter()
+            .filter(|step| step.contains("SCAN documents") || step.contains("SCAN aliases"))
+            .collect();
+        assert!(
+            scans.is_empty(),
+            "every lookup must use an index, but found: {scans:?}\nfull plan: {steps:#?}"
+        );
+        // The links table itself is scanned once, which is the point: this
+        // resolves all of them.
+        assert!(steps.iter().any(|step| step.contains("SCAN links")));
+    }
+
+    #[test]
+    fn does_not_resolve_a_link_to_a_note_in_the_trash() {
+        let (_directory, connection) = database();
+        upsert(&connection, &import_note("Harbor.md", b"# Harbor\n")).expect("index the target");
+        upsert(&connection, &import_note("Field Notes.md", b"[[Harbor]]\n"))
+            .expect("index the source");
+        resolve_links(&connection).expect("resolve");
+
+        super::soft_delete(&connection, "Harbor.md", "trash-1").expect("trash the target");
+        resolve_links(&connection).expect("resolve again");
+
+        let (target, resolution): (Option<i64>, String) = connection
+            .query_row(
+                "SELECT target_document_id, resolution FROM links",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .expect("read the link");
+        assert_eq!(target, None, "a trashed note is not a link target");
+        assert_eq!(resolution, "unresolved");
+    }
 
     fn database() -> (tempfile::TempDir, Connection) {
         let directory = tempdir().expect("create fixture directory");
