@@ -18,6 +18,7 @@ import { WorkspaceEditor } from "./components/WorkspaceEditor";
 import {
   activateGroup,
   activeDocumentId as workspaceActiveDocumentId,
+  openDocumentIds,
   activeLeaf,
   closeTab,
   createWorkspace,
@@ -287,6 +288,10 @@ export function App() {
   /// stored: the workspace is the one place a document is open, so there is no
   /// second copy of that fact to fall out of step with it.
   const activeDocumentId = workspaceActiveDocumentId(workspace);
+  const openTabDocumentIds = useMemo(
+    () => openDocumentIds(workspace),
+    [workspace],
+  );
 
   documentsRef.current = documents;
   activeDocumentIdRef.current = activeDocumentId;
@@ -1669,7 +1674,7 @@ export function App() {
     vaultId,
   ]);
   const selectDocument = useCallback(
-    async (documentId: string) => {
+    async (documentId: string, options: { newTab?: boolean } = {}) => {
       const document = documentsRef.current.find(
         (candidate) => candidate.id === documentId,
       );
@@ -1684,7 +1689,7 @@ export function App() {
       setDocumentActivity((current) =>
         markDocumentActive(current, documentId, Date.now()),
       );
-      setActiveDocument(documentId);
+      setActiveDocument(documentId, options);
       setCursorPosition({ line: 1, column: 1 });
 
       if (document.isMarkdown === false) {
@@ -2759,6 +2764,7 @@ export function App() {
             activeDocumentId={activeDocument?.id ?? ""}
             documents={listedDocuments}
             excerptLines={paneLayout.excerptLines}
+            openDocumentIds={openTabDocumentIds}
             previews={notePreviews}
             scopeLabel={listScopeLabel}
             showFileExtensions={markdownSettings.showFileExtensions}
@@ -2792,7 +2798,9 @@ export function App() {
                 retrieval.triggerFind(),
               );
             }}
-            onSelectDocument={selectDocument}
+            onSelectDocument={(documentId, options) =>
+              void selectDocument(documentId, options)
+            }
             onSortChange={setListSort}
             onTrashDocument={(documentId) => {
               void selectDocument(documentId).then(() =>

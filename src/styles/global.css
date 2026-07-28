@@ -2826,3 +2826,19 @@ body[data-resizing-pane="true"] {
 .tab-group > .editor-surface {
   flex: 1;
 }
+
+/* A note already held in a tab somewhere. Small enough to read as a mark on
+   the title rather than a second piece of chrome. */
+.note-row__open {
+  display: inline-block;
+  width: 5px;
+  height: 5px;
+  margin-right: 6px;
+  border-radius: 50%;
+  background: var(--color-text-subtle);
+  vertical-align: middle;
+}
+
+.note-row.is-active .note-row__open {
+  background: var(--color-text);
+}
