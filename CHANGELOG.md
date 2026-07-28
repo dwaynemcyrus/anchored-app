@@ -6,6 +6,21 @@ Git commit. The format follows [Keep a Changelog], and releases follow
 
 ## [Unreleased]
 
+## [0.1.10-alpha] - 2026-07-28
+
+### Fixed
+
+- Opening a vault of several thousand notes took minutes inside the index
+  import. Link resolution ran a handful of lookups per link, and none of them
+  could use an index: every index on the documents table is partial, and the
+  lookups did not carry the clause that makes a partial index usable, so each
+  became a full scan of every note. They are index probes now, and the cost of
+  opening a vault grows with the vault rather than with its square.
+- Link resolution also re-resolved the whole vault on every open, even when
+  nothing had changed. It now re-resolves everything only when a note was added
+  or removed, and an edit in place re-resolves only that note's own links.
+- A wikilink no longer resolves to a note that is in the trash.
+
 ## [0.1.9-alpha] - 2026-07-28
 
 ### Fixed
