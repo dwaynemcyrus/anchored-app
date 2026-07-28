@@ -6,6 +6,8 @@ Git commit. The format follows [Keep a Changelog], and releases follow
 
 ## [Unreleased]
 
+## [0.1.9-alpha] - 2026-07-28
+
 ### Fixed
 
 - Opening a vault no longer reads and hashes every note to conclude that
