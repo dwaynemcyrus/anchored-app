@@ -6,6 +6,37 @@ Git commit. The format follows [Keep a Changelog], and releases follow
 
 ## [Unreleased]
 
+## [0.1.11-alpha] - 2026-07-28
+
+### Added
+
+- The editor holds more than one document at a time. Following a wikilink no
+  longer costs you the note you were reading: each pane carries a strip of
+  tabs, and a tab remembers where it has been, so back and forward walk that
+  tab's own trail rather than one shared history.
+- Panes split beside or below, nest, and resize by dragging the rule between
+  them — double-click to return to even halves, or use the arrow keys. The same
+  note can sit in as many tabs and panes as you like.
+- Command-T opens a note in a new tab, Command-W closes the active tab,
+  Command-backslash splits beside and Shift-Command-backslash below, and
+  Option-Command-left and right walk the active tab's history.
+- Right-click a tab for close, close others, close tabs to the right, pin, and
+  the two splits. A pinned tab is not replaced by a navigation and survives
+  closing the others.
+- Drag a tab to reorder it, or onto another pane's strip to move it there; the
+  tab takes its history with it, and a pane emptied by the move collapses.
+- Command- or Shift-click a note in the list to open it beside what is already
+  there rather than replacing it. A dot on a row means that note is open
+  somewhere in the workspace.
+
+### Changed
+
+- Close has gone from the editor header. With tabs it was the same command
+  twice, and the two read as different things once a pane holds several — the
+  tab names the note it closes, which the header's Close did not.
+- Switching vault now empties the workspace rather than closing one note, since
+  every open tab named a note the new vault does not have.
+
 ## [0.1.10-alpha] - 2026-07-28
 
 ### Fixed

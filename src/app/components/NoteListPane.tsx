@@ -49,9 +49,13 @@ type NoteListPaneProps = NoteContextMenuActions & {
   excerptLines: ExcerptLines;
   previews: NotePreviewsApi;
   scopeLabel: string;
+  openDocumentIds: Set<string>;
   showFileExtensions: boolean;
   sort: WorkbenchSort;
-  onSelectDocument: (documentId: string) => void;
+  onSelectDocument: (
+    documentId: string,
+    options?: { newTab?: boolean },
+  ) => void;
   onSortChange: (sort: WorkbenchSort) => void;
 };
 
@@ -87,12 +91,16 @@ type NoteRowProps = {
   excerptLines: ExcerptLines;
   index: number;
   isActive: boolean;
+  isOpen: boolean;
   previews: NotePreviewsApi;
   setSize: number;
   showFileExtensions: boolean;
   onDragDocument: (documentId: string) => void;
   onDragEnd: () => void;
-  onSelectDocument: (documentId: string) => void;
+  onSelectDocument: (
+    documentId: string,
+    options?: { newTab?: boolean },
+  ) => void;
   onContextMenu: (event: MouseEvent, document: AnchoredDocument) => void;
 };
 
@@ -101,6 +109,7 @@ function NoteRow({
   excerptLines,
   index,
   isActive,
+  isOpen,
   previews,
   setSize,
   showFileExtensions,
@@ -138,7 +147,13 @@ function NoteRow({
         data-index={index}
         draggable={Boolean(document.relativePath)}
         type="button"
-        onClick={() => onSelectDocument(document.id)}
+        onClick={(event) =>
+          // Command or Shift opens beside what is there rather than replacing
+          // it, which is the browser convention for the same gesture.
+          onSelectDocument(document.id, {
+            newTab: event.metaKey || event.ctrlKey || event.shiftKey,
+          })
+        }
         onDragEnd={onDragEnd}
         onDragStart={(event) => {
           if (event.dataTransfer) {
@@ -149,7 +164,16 @@ function NoteRow({
         }}
         onContextMenu={(event) => onContextMenu(event, document)}
       >
-        <span className="note-row__title">{displayName}</span>
+        <span className="note-row__title">
+          {isOpen ? (
+            <span
+              aria-hidden="true"
+              className="note-row__open"
+              title="Open in the editor"
+            />
+          ) : null}
+          {displayName}
+        </span>
         {/* Always present, even while unread: a row that grows once its
             excerpt arrives would shift every row below it mid-scroll. */}
         <span className="note-row__excerpt">{preview ?? ""}</span>
@@ -174,6 +198,7 @@ export function NoteListPane({
   onDragDocument,
   onDragEnd,
   excerptLines,
+  openDocumentIds,
   previews,
   scopeLabel,
   showFileExtensions,
@@ -323,6 +348,7 @@ export function NoteListPane({
                 excerptLines={excerptLines}
                 index={startIndex + offset}
                 isActive={document.id === activeDocumentId}
+                isOpen={openDocumentIds.has(document.id)}
                 key={document.id}
                 previews={previews}
                 setSize={sorted.length}

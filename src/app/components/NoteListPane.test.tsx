@@ -48,6 +48,7 @@ function setup(overrides: Partial<Parameters<typeof NoteListPane>[0]> = {}) {
         note({ name: "Beta.md", modifiedMillis: Date.now() - 5 * day }),
       ]}
       excerptLines="two"
+      openDocumentIds={new Set()}
       previews={previewsApi()}
       scopeLabel="Inbox"
       showFileExtensions={false}
@@ -81,6 +82,7 @@ function renderWithSort(sort: Parameters<typeof NoteListPane>[0]["sort"]) {
         note({ name: "Beta.md", modifiedMillis: Date.now() - 5 * day }),
       ]}
       excerptLines="two"
+      openDocumentIds={new Set()}
       previews={previewsApi()}
       scopeLabel="Inbox"
       showFileExtensions={false}
@@ -140,7 +142,39 @@ describe("NoteListPane", () => {
 
     await user.click(screen.getByRole("button", { name: /Alpha/ }));
 
-    expect(onSelectDocument).toHaveBeenCalledWith("Alpha.md");
+    expect(onSelectDocument).toHaveBeenCalledWith("Alpha.md", {
+      newTab: false,
+    });
+  });
+
+  it("opens beside the current note when the row is Command-clicked", async () => {
+    const user = userEvent.setup();
+    const { onSelectDocument } = setup();
+
+    await user.keyboard("{Meta>}");
+    await user.click(screen.getByRole("button", { name: /Alpha/ }));
+    await user.keyboard("{/Meta}");
+
+    expect(onSelectDocument).toHaveBeenCalledWith("Alpha.md", { newTab: true });
+  });
+
+  it("replaces the current note on a plain click", async () => {
+    const user = userEvent.setup();
+    const { onSelectDocument } = setup();
+
+    await user.click(screen.getByRole("button", { name: /Alpha/ }));
+
+    expect(onSelectDocument).toHaveBeenCalledWith("Alpha.md", {
+      newTab: false,
+    });
+  });
+
+  it("marks a note that is already open somewhere", () => {
+    setup({ openDocumentIds: new Set(["Beta.md"]) });
+
+    const rows = screen.getAllByRole("button", { name: /Alpha|Beta/ });
+    expect(rows[1].querySelector(".note-row__open")).toBeInTheDocument();
+    expect(rows[0].querySelector(".note-row__open")).not.toBeInTheDocument();
   });
 
   it("marks the active note", () => {

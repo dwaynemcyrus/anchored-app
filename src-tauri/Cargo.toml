@@ -1,6 +1,6 @@
 [package]
 name = "anchored"
-version = "0.1.10-alpha"
+version = "0.1.11-alpha"
 description = "A local-first Markdown editor"
 authors = ["Dwayne Cyrus"]
 license = "MIT"

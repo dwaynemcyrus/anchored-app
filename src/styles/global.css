@@ -2607,3 +2607,238 @@ body[data-resizing-pane="true"] {
     transition-duration: 0.01ms !important;
   }
 }
+
+/* ---------------------------------------------------- workspace tab groups */
+
+/* A split is a two-track grid whose first track is the stored fraction. The
+   fraction is a custom property rather than a React style so a drag can write
+   it once per frame without re-rendering either half. */
+.workspace-split {
+  display: grid;
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+}
+
+.workspace-split[data-direction="row"] {
+  grid-template-columns: calc(var(--split-fraction) * 100%) 1px minmax(0, 1fr);
+}
+
+.workspace-split[data-direction="column"] {
+  grid-template-rows: calc(var(--split-fraction) * 100%) 1px minmax(0, 1fr);
+}
+
+.workspace-split__half {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* The visible rule stays one pixel; the grab area is nine, centred on it —
+   the same bargain the outer pane splitters strike. */
+.workspace-split__handle {
+  position: relative;
+  border: 0;
+  background: var(--color-rule);
+  padding: 0;
+}
+
+.workspace-split__handle::after {
+  position: absolute;
+  content: "";
+}
+
+.workspace-split[data-direction="row"] > .workspace-split__handle {
+  cursor: col-resize;
+}
+
+.workspace-split[data-direction="row"] > .workspace-split__handle::after {
+  inset-block: 0;
+  left: -4px;
+  width: 9px;
+}
+
+.workspace-split[data-direction="column"] > .workspace-split__handle {
+  cursor: row-resize;
+}
+
+.workspace-split[data-direction="column"] > .workspace-split__handle::after {
+  inset-inline: 0;
+  top: -4px;
+  height: 9px;
+}
+
+.workspace-split__handle:hover,
+.workspace-split__handle:focus-visible {
+  outline: none;
+  background: var(--color-focus);
+}
+
+.tab-group {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+
+.tab-strip {
+  display: flex;
+  align-items: stretch;
+  min-height: 32px;
+  border-bottom: 1px solid var(--color-rule);
+  background: var(--color-surface);
+}
+
+.tab-strip__tabs {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.tab-strip__tabs::-webkit-scrollbar {
+  display: none;
+}
+
+/* Claims the empty part of the strip so a tab dropped past the last one
+   appends rather than falling through to nothing. */
+.tab-strip__rest {
+  flex: 1;
+  min-width: 24px;
+}
+
+.tab {
+  position: relative;
+  display: flex;
+  align-items: center;
+  max-width: 200px;
+  border-right: 1px solid var(--color-rule);
+}
+
+.tab.is-active {
+  background: var(--color-row-active);
+}
+
+/* The anchor line, marking the active tab as it marks the active row. Only in
+   the group the workspace commands act on, so two strips never both look live. */
+.tab-strip.is-active-group .tab.is-active::before {
+  position: absolute;
+  top: 0;
+  right: 0;
+  left: 0;
+  height: 2px;
+  background: var(--color-focus);
+  content: "";
+}
+
+.tab.is-drop-target::after {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -1px;
+  width: 2px;
+  background: var(--color-focus);
+  content: "";
+}
+
+.tab-strip__rest.is-drop-target {
+  box-shadow: inset 2px 0 0 var(--color-focus);
+}
+
+.tab__label {
+  overflow: hidden;
+  min-width: 0;
+  padding: 0 4px 0 12px;
+  border: 0;
+  background: transparent;
+  color: var(--color-text-muted);
+  cursor: pointer;
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tab.is-active .tab__label {
+  color: var(--color-text);
+}
+
+.tab__pin {
+  margin-right: 4px;
+  color: var(--color-text-subtle);
+  font-size: 9px;
+}
+
+.tab__close,
+.tab-strip__action {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 8px;
+  border: 0;
+  background: transparent;
+  color: var(--color-text-subtle);
+  cursor: pointer;
+}
+
+.tab__close:hover,
+.tab-strip__action:hover {
+  color: var(--color-text);
+}
+
+.tab__close svg {
+  width: 12px;
+  height: 12px;
+}
+
+.tab-strip__menu {
+  position: relative;
+  display: flex;
+}
+
+.tab-strip__menu-list {
+  top: 100%;
+  right: 0;
+  left: auto;
+  max-height: 320px;
+  overflow-y: auto;
+}
+
+/* Takes the editor's cell in the workspace grid, so the tree of tab groups
+   sits exactly where the single editor used to. */
+.workspace-editor {
+  position: relative;
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  flex-direction: column;
+  background: var(--color-canvas);
+}
+
+.workspace-editor > * {
+  min-height: 0;
+  flex: 1;
+}
+
+.tab-group > .editor-surface {
+  flex: 1;
+}
+
+/* A note already held in a tab somewhere. Small enough to read as a mark on
+   the title rather than a second piece of chrome. */
+.note-row__open {
+  display: inline-block;
+  width: 5px;
+  height: 5px;
+  margin-right: 6px;
+  border-radius: 50%;
+  background: var(--color-text-subtle);
+  vertical-align: middle;
+}
+
+.note-row.is-active .note-row__open {
+  background: var(--color-text);
+}
