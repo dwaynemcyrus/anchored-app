@@ -56,6 +56,8 @@ pub(crate) fn import_vault(
 
     let indexed = documents::indexed_signatures(&transaction)?;
     let mut present = Vec::with_capacity(markdown_paths.len() + asset_paths.len());
+    let mut touched = Vec::new();
+    let mut document_set_changed = false;
     for (paths, is_markdown) in [(markdown_paths, true), (asset_paths, false)] {
         for relative_path in paths {
             let path = root.join(relative_path);
@@ -83,13 +85,31 @@ pub(crate) fn import_vault(
                 import::import_asset(relative_path, &bytes)
             };
             document.mtime_millis = signature.1;
-            documents::upsert(&transaction, &document)?;
+            let upserted = documents::upsert(&transaction, &document)?;
+            document_set_changed |= upserted.created;
+            touched.push(upserted.id);
             present.push(document.path_key);
         }
     }
 
-    documents::resolve_links(&transaction)?;
-    documents::delete_missing(&transaction, &present)?;
+    // Removing a row changes what other notes' links point at, so it has to
+    // happen before anything is resolved rather than after.
+    document_set_changed |= documents::delete_missing(&transaction, &present)? > 0;
+
+    // The rule `import_paths` already follows, and for the same reason: adding
+    // or removing a document changes what *every* note's links resolve to, but
+    // an edit in place can only change the links leaving that one note.
+    // Resolving the whole table regardless made opening a vault scale with its
+    // size rather than with what had changed — on a vault where nothing had
+    // changed at all, it was the entire cost of opening.
+    if document_set_changed {
+        documents::resolve_links(&transaction)?;
+    } else {
+        for id in touched {
+            documents::resolve_links_from(&transaction, id)?;
+        }
+    }
+
     transaction
         .commit()
         .map_err(map_error("The vault import could not be committed"))?;
