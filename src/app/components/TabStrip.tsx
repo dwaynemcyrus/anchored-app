@@ -122,6 +122,11 @@ export function TabStrip({
             onDrop={(event) => handleDrop(event, index)}
           >
             <button
+              // Pinning must not rewrite what the tab is called. The marker is
+              // decoration, and the state is said once, after the name.
+              aria-label={
+                tab.pinned ? `${titleFor(tab.documentId)}, pinned` : undefined
+              }
               aria-selected={index === group.active}
               className="tab__label"
               role="tab"
@@ -131,7 +136,7 @@ export function TabStrip({
               onContextMenu={(event) => onTabContextMenu(index, event)}
             >
               {tab.pinned ? (
-                <span aria-label="Pinned" className="tab__pin">
+                <span aria-hidden="true" className="tab__pin">
                   ▪
                 </span>
               ) : null}

@@ -92,11 +92,13 @@ describe("TabStrip", () => {
     expect(onNewTab).toHaveBeenCalled();
   });
 
-  it("marks a pinned tab", () => {
+  /// Pinning says so after the name rather than in front of it, so the tab is
+  /// still findable by what it is called.
+  it("says a tab is pinned without renaming it", () => {
     const leaf = group(["harbor"]);
     setup({ ...leaf, tabs: [{ ...leaf.tabs[0], pinned: true }] });
 
-    expect(screen.getByLabelText("Pinned")).toBeInTheDocument();
+    expect(screen.getByRole("tab")).toHaveAccessibleName("harbor, pinned");
   });
 
   it("reaches every tab through the group menu", async () => {
