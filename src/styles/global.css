@@ -615,11 +615,18 @@ body[data-resizing-pane="true"] {
   text-align: center;
 }
 
+/* The list is virtualized, so a row's height is not free to vary: it is the
+   number the window maths counts with. It comes from `noteListLayout.ts` as
+   --note-row-height, and every line inside is pinned so the sum cannot drift.
+   12 + 18 + 3 + 36 + 6 + 14 + 12, plus the one-pixel rule. */
 .note-row {
   position: relative;
   display: block;
+  box-sizing: border-box;
   width: 100%;
-  padding: 11px 14px 12px;
+  height: var(--note-row-height);
+  padding: 12px 14px;
+  overflow: hidden;
   border: 0;
   border-bottom: 1px solid var(--color-rule);
   background: transparent;
@@ -650,9 +657,11 @@ body[data-resizing-pane="true"] {
 .note-row__title {
   display: block;
   overflow: hidden;
+  height: 18px;
   color: var(--color-text);
   font-size: 14px;
   font-weight: 500;
+  line-height: 18px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -660,24 +669,28 @@ body[data-resizing-pane="true"] {
 .note-row__excerpt {
   display: -webkit-box;
   overflow: hidden;
+  height: 36px;
   margin-top: 3px;
   color: var(--color-text-muted);
   font-size: 12.5px;
-  line-height: 1.45;
+  line-height: 18px;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
 }
 
 .note-row[data-excerpt-lines="one"] .note-row__excerpt {
+  height: 18px;
   -webkit-line-clamp: 1;
 }
 
 .note-row__meta {
   display: block;
-  margin-top: 6px;
   overflow: hidden;
+  height: 14px;
+  margin-top: 6px;
   color: var(--color-text-subtle);
   font-size: 11px;
+  line-height: 14px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }

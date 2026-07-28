@@ -3,6 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 
 import type { AnchoredDocument } from "../documents";
+import { noteRowHeights } from "../noteListLayout";
 import type { NotePreviewsApi } from "../useNotePreviews";
 import { NoteListPane } from "./NoteListPane";
 
@@ -28,9 +29,8 @@ function note(overrides: Partial<AnchoredDocument>): AnchoredDocument {
 
 function previewsApi(previews: Record<string, string> = {}): NotePreviewsApi {
   return {
-    observeRow: () => () => {},
-    previewFor: (source) =>
-      source ? previews[source.relativePath] : undefined,
+    read: (source) => previews[source.relativePath],
+    subscribe: () => () => {},
   };
 }
 
@@ -232,6 +232,47 @@ describe("NoteListPane", () => {
     expect(
       within(menu).queryByRole("menuitem", { name: "Archive" }),
     ).not.toBeInTheDocument();
+  });
+
+  it("renders a window onto a long list rather than all of it", () => {
+    const many = Array.from({ length: 4000 }, (_, index) =>
+      note({ name: `Note ${index}.md` }),
+    );
+    setup({ documents: many, sort: "name-asc" });
+
+    expect(screen.getByLabelText("4000 notes")).toBeInTheDocument();
+    const rows = screen.getAllByRole("listitem");
+    expect(rows.length).toBeLessThan(40);
+    // The rows that are not rendered are still described, so the scrollbar and
+    // assistive technology both see the whole list.
+    expect(rows[0]).toHaveAttribute("aria-setsize", "4000");
+    expect(rows[0]).toHaveAttribute("aria-posinset", "1");
+    expect(screen.getByRole("list")).toHaveStyle({
+      paddingBottom: `${(4000 - rows.length) * noteRowHeights.two}px`,
+    });
+  });
+
+  it("moves between rows with the arrow keys", async () => {
+    const user = userEvent.setup();
+    setup();
+
+    await user.click(screen.getByRole("button", { name: /Alpha/ }));
+    await user.keyboard("{ArrowDown}");
+
+    expect(screen.getByRole("button", { name: /Beta/ })).toHaveFocus();
+
+    await user.keyboard("{ArrowUp}");
+    expect(screen.getByRole("button", { name: /Alpha/ })).toHaveFocus();
+  });
+
+  it("stops at each end of the list", async () => {
+    const user = userEvent.setup();
+    setup();
+
+    await user.click(screen.getByRole("button", { name: /Alpha/ }));
+    await user.keyboard("{ArrowUp}");
+
+    expect(screen.getByRole("button", { name: /Alpha/ })).toHaveFocus();
   });
 
   it("disables editing actions for a non-Markdown asset", async () => {

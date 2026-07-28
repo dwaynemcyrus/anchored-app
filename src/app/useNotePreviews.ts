@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useMemo, useRef, useSyncExternalStore } from "react";
 
 import { notePreview, notePreviewKey } from "./notePreview";
 
@@ -7,105 +7,149 @@ export type NotePreviewSource = {
   relativePath: string;
 };
 
+/// How many notes are read at once. A fling past a hundred rows should not put
+/// a hundred reads in flight: the rows that are still on screen when their turn
+/// comes are the ones worth reading, and the rest cancel themselves as they
+/// unmount.
+const MAX_CONCURRENT_READS = 6;
+
 export type NotePreviewsApi = {
-  /// Ref callback for a list row. Rows register themselves; only the ones that
-  /// actually reach the viewport are ever read.
-  observeRow: (
-    source: NotePreviewSource | undefined,
-  ) => (element: HTMLElement | null) => void;
-  previewFor: (source: NotePreviewSource | undefined) => string | undefined;
+  /// Registers interest in a row's excerpt and returns the unsubscribe. Reading
+  /// starts here; letting go cancels it if it has not begun.
+  subscribe: (source: NotePreviewSource, listener: () => void) => () => void;
+  /// The excerpt as it stands, without subscribing. Stable between changes, so
+  /// it can back `useSyncExternalStore`.
+  read: (source: NotePreviewSource) => string | undefined;
 };
 
 /// Supplies the excerpt each note-list row shows.
 ///
 /// The vault scan returns metadata only — no note content — so a preview costs
-/// a file read. Reading the whole vault to fill a list is not an option: a real
-/// vault holds thousands of notes, and the 2015 MacBook Pro is the performance
-/// baseline. Rows are therefore read as they scroll into view and cached by
-/// path and modified time, so a folder of five thousand notes costs only the
-/// twenty reads you can actually see.
+/// a file read. The list is virtualized, so a row that exists is a row that is
+/// very nearly on screen, and mounting is the signal to read it.
+///
+/// The excerpts deliberately do not live in React state. A vault of thousands
+/// of notes resolves thousands of reads, and putting each one through a state
+/// update re-rendered every row in the list to change the text of one. Each row
+/// subscribes to its own key instead, so a resolved read re-renders exactly the
+/// row it belongs to.
 export function useNotePreviews(
   readFile: (relativePath: string) => Promise<{ content: string }>,
   enabled: boolean,
 ): NotePreviewsApi {
-  const [previews, setPreviews] = useState<Map<string, string>>(
-    () => new Map(),
-  );
-  const pending = useRef(new Set<string>());
-  const observer = useRef<IntersectionObserver | undefined>(undefined);
-  const sources = useRef(new Map<Element, NotePreviewSource>());
   const readFileRef = useRef(readFile);
   readFileRef.current = readFile;
+  const enabledRef = useRef(enabled);
+  enabledRef.current = enabled;
 
-  const load = useCallback(async (source: NotePreviewSource) => {
-    const key = notePreviewKey(source.relativePath, source.modifiedMillis);
-    if (pending.current.has(key)) return;
-    pending.current.add(key);
+  const store = useRef<{
+    previews: Map<string, string>;
+    listeners: Map<string, Set<() => void>>;
+    queue: string[];
+    sources: Map<string, NotePreviewSource>;
+    reading: number;
+  }>({
+    previews: new Map(),
+    listeners: new Map(),
+    queue: [],
+    sources: new Map(),
+    reading: 0,
+  });
 
-    try {
-      const { content } = await readFileRef.current(source.relativePath);
-      const preview = notePreview(content);
-      setPreviews((current) => {
-        if (current.get(key) === preview) return current;
-        const next = new Map(current);
-        next.set(key, preview);
-        return next;
-      });
-    } catch {
-      // A note that cannot be read still lists by name; an empty preview is
-      // the right outcome and never worth interrupting the user for.
-      setPreviews((current) => {
-        if (current.has(key)) return current;
-        const next = new Map(current);
-        next.set(key, "");
-        return next;
-      });
-    }
+  const publish = useCallback((key: string, preview: string) => {
+    const state = store.current;
+    state.previews.set(key, preview);
+    state.sources.delete(key);
+    for (const listener of state.listeners.get(key) ?? []) listener();
   }, []);
 
-  useEffect(() => {
-    if (!enabled || typeof IntersectionObserver === "undefined") return;
+  const pump = useCallback(() => {
+    const state = store.current;
+    while (state.reading < MAX_CONCURRENT_READS && state.queue.length > 0) {
+      const key = state.queue.shift();
+      if (key === undefined) return;
+      const source = state.sources.get(key);
+      // Queued, then scrolled away before its turn. Nothing to read.
+      if (!source || !state.listeners.get(key)?.size) {
+        state.sources.delete(key);
+        continue;
+      }
 
-    const instance = new IntersectionObserver(
-      (entries) => {
-        for (const entry of entries) {
-          if (!entry.isIntersecting) continue;
-          const source = sources.current.get(entry.target);
-          if (source) void load(source);
+      state.reading += 1;
+      void (async () => {
+        try {
+          const { content } = await readFileRef.current(source.relativePath);
+          publish(key, notePreview(content));
+        } catch {
+          // A note that cannot be read still lists by name; an empty excerpt is
+          // the right outcome and never worth interrupting the user for.
+          publish(key, "");
+        } finally {
+          state.reading -= 1;
+          pump();
         }
-      },
-      // A little margin so a row is read just before it is scrolled into view.
-      { rootMargin: "200px" },
-    );
+      })();
+    }
+  }, [publish]);
 
-    observer.current = instance;
-    for (const element of sources.current.keys()) instance.observe(element);
+  const subscribe = useCallback(
+    (source: NotePreviewSource, listener: () => void) => {
+      const state = store.current;
+      const key = notePreviewKey(source.relativePath, source.modifiedMillis);
+      const listeners = state.listeners.get(key) ?? new Set<() => void>();
+      listeners.add(listener);
+      state.listeners.set(key, listeners);
 
-    return () => {
-      instance.disconnect();
-      observer.current = undefined;
-    };
-  }, [enabled, load]);
+      if (
+        enabledRef.current &&
+        !state.previews.has(key) &&
+        !state.sources.has(key)
+      ) {
+        state.sources.set(key, source);
+        state.queue.push(key);
+        pump();
+      }
 
-  const observeRow = useCallback(
-    (source: NotePreviewSource | undefined) =>
-      (element: HTMLElement | null) => {
-        if (!element || !source) return;
-        sources.current.set(element, source);
-        observer.current?.observe(element);
-      },
+      return () => {
+        const remaining = state.listeners.get(key);
+        remaining?.delete(listener);
+        if (remaining && remaining.size === 0) state.listeners.delete(key);
+      };
+    },
+    [pump],
+  );
+
+  const read = useCallback(
+    (source: NotePreviewSource) =>
+      store.current.previews.get(
+        notePreviewKey(source.relativePath, source.modifiedMillis),
+      ),
     [],
   );
 
-  const previewFor = useCallback(
-    (source: NotePreviewSource | undefined) =>
-      source
-        ? previews.get(
-            notePreviewKey(source.relativePath, source.modifiedMillis),
-          )
-        : undefined,
-    [previews],
+  return useMemo(() => ({ read, subscribe }), [read, subscribe]);
+}
+
+/// One row's excerpt. Re-renders that row, and nothing else, when it arrives.
+///
+/// `source` should be memoized by the caller — a new object every render
+/// re-subscribes every render. Nothing is re-read when that happens, because
+/// the excerpt is cached by path and modified time, but it is wasted work.
+export function useNotePreview(
+  previews: NotePreviewsApi,
+  source: NotePreviewSource | undefined,
+): string | undefined {
+  const { read, subscribe } = previews;
+
+  const subscribeToRow = useCallback(
+    (listener: () => void) => (source ? subscribe(source, listener) : () => {}),
+    [source, subscribe],
   );
 
-  return { observeRow, previewFor };
+  const snapshot = useCallback(
+    () => (source ? read(source) : undefined),
+    [read, source],
+  );
+
+  return useSyncExternalStore(subscribeToRow, snapshot, snapshot);
 }
