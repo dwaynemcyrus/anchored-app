@@ -274,8 +274,8 @@ pub(crate) fn list_conflicts(root: &Path) -> Result<Vec<conflicts::VaultConflict
 /// Classifies how every note's row and file stand, without changing either.
 /// Runs when a vault opens, after the import has caught the index up.
 pub(crate) fn reconcile_vault(root: &Path) -> Result<projection::Reconciliation, VaultError> {
-    let connection = open(&database_path(root))?;
-    projection::reconcile(root, &connection)
+    let mut connection = open(&database_path(root))?;
+    projection::reconcile(root, &mut connection)
 }
 
 pub(crate) const PROJECTION_SETTING: &str = "writes.projection";

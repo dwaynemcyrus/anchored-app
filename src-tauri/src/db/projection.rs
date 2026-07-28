@@ -10,6 +10,7 @@
 //! so the importer recognises Anchored's own writes by content hash rather than
 //! treating them as external edits and looping.
 
+use std::collections::HashSet;
 use std::path::Path;
 
 use rusqlite::{params, Connection};
@@ -27,17 +28,36 @@ use crate::vault::VaultError;
 /// answer is recorded, never acted on automatically — a note changed in two
 /// places is a decision for the user, not something to resolve by picking a
 /// winner.
+///
+/// A note whose size and modification time still match what the row recorded is
+/// classified from that alone, without opening it. Every path that writes a
+/// note — `save`, `write_projection`, and the importer — moves the row's
+/// signature with the file, so a matching signature already means a matching
+/// hash everywhere else in this module; reading all of them again to prove it
+/// was what made opening a large vault take minutes.
+///
+/// The whole pass runs in one transaction, and a note whose classification has
+/// not changed is not written at all. On a vault nothing has touched, this
+/// therefore costs one `stat` per note and no writes.
 pub(crate) fn reconcile(
     root: &Path,
-    connection: &Connection,
+    connection: &mut Connection,
 ) -> Result<Reconciliation, VaultError> {
     let mut summary = Reconciliation::default();
+    // Asked once, rather than two filesystem calls per note that almost always
+    // delete nothing.
+    let preserved = conflicts::preserved_identities(root);
+    let transaction = connection
+        .transaction()
+        .map_err(map_error("The vault could not be reconciled"))?;
 
-    let mut statement = connection
+    let mut statement = transaction
         .prepare(
             "SELECT documents.id, documents.uuid, documents.relative_path,
                     documents.content_hash, documents.revision,
-                    sync_records.projected_hash, sync_records.projected_revision
+                    documents.size_bytes, documents.mtime_millis,
+                    sync_records.projected_hash, sync_records.projected_revision,
+                    sync_records.state
              FROM documents
              LEFT JOIN sync_records ON sync_records.document_id = documents.id
              WHERE documents.is_markdown = 1 AND documents.deleted_at IS NULL",
@@ -45,23 +65,40 @@ pub(crate) fn reconcile(
         .map_err(map_error("The vault could not be reconciled"))?;
     let rows = statement
         .query_map([], |row| {
-            Ok((
-                row.get::<_, i64>(0)?,
-                row.get::<_, String>(1)?,
-                row.get::<_, String>(2)?,
-                row.get::<_, String>(3)?,
-                row.get::<_, i64>(4)?,
-                row.get::<_, Option<String>>(5)?,
-                row.get::<_, Option<i64>>(6)?,
-            ))
+            Ok(DocumentToReconcile {
+                id: row.get(0)?,
+                uuid: row.get(1)?,
+                relative_path: row.get(2)?,
+                row_hash: row.get(3)?,
+                revision: row.get(4)?,
+                row_size: row.get::<_, i64>(5)? as u64,
+                row_mtime: row.get::<_, i64>(6)? as u64,
+                projected_hash: row.get(7)?,
+                projected_revision: row.get(8)?,
+                state: row.get(9)?,
+            })
         })
         .map_err(map_error("The vault could not be reconciled"))?
         .collect::<Result<Vec<_>, _>>()
         .map_err(map_error("The vault could not be reconciled"))?;
     drop(statement);
 
-    for (id, uuid, relative_path, row_hash, revision, projected_hash, projected_revision) in rows {
-        let Ok(bytes) = std::fs::read(root.join(&relative_path)) else {
+    for note in rows {
+        let path = root.join(&note.relative_path);
+        let Ok(metadata) = std::fs::metadata(&path) else {
+            summary.missing_files += 1;
+            continue;
+        };
+
+        // The file has not been touched since the row last recorded it, so
+        // there is nothing to learn by opening it.
+        if super::file_signature(&metadata) == (note.row_size, note.row_mtime) {
+            summary.synced += 1;
+            settle(&transaction, root, &preserved, &note)?;
+            continue;
+        }
+
+        let Ok(bytes) = std::fs::read(&path) else {
             summary.missing_files += 1;
             continue;
         };
@@ -69,32 +106,82 @@ pub(crate) fn reconcile(
 
         // The file is what the row says it is, or is exactly what Anchored
         // last wrote — including the case where it died before recording it.
-        if file_hash == row_hash || Some(&file_hash) == projected_hash.as_ref() {
+        if file_hash == note.row_hash || Some(&file_hash) == note.projected_hash.as_ref() {
             summary.synced += 1;
-            documents::set_sync_state(connection, id, documents::SyncState::Synced)?;
-            conflicts::discard(root, &uuid);
+            settle(&transaction, root, &preserved, &note)?;
             continue;
         }
 
         // The file moved on. Whether that is a conflict depends on whether the
         // row also moved on since the last agreement.
-        let database_moved_on = projected_revision.is_some_and(|projected| revision != projected);
+        let database_moved_on = note
+            .projected_revision
+            .is_some_and(|projected| note.revision != projected);
         if !database_moved_on {
             summary.file_changed += 1;
-            documents::set_sync_state(connection, id, documents::SyncState::FileChanged)?;
+            record_state(&transaction, &note, documents::SyncState::FileChanged)?;
             continue;
         }
 
         // Both sides changed. Preserve them before anything else can touch
         // either, so a later mistake cannot lose the version the user wanted.
         summary.conflicts += 1;
-        let stored = stored_content(connection, id)?;
+        let stored = stored_content(&transaction, note.id)?;
         let on_disk = String::from_utf8_lossy(&bytes).into_owned();
-        conflicts::preserve(root, &uuid, &stored, &on_disk)?;
-        documents::set_sync_state(connection, id, documents::SyncState::Conflict)?;
+        conflicts::preserve(root, &note.uuid, &stored, &on_disk)?;
+        record_state(&transaction, &note, documents::SyncState::Conflict)?;
     }
 
+    transaction
+        .commit()
+        .map_err(map_error("The vault could not be reconciled"))?;
     Ok(summary)
+}
+
+/// What reconciliation needs to know about one note before it looks at the file.
+struct DocumentToReconcile {
+    id: i64,
+    uuid: String,
+    relative_path: String,
+    row_hash: String,
+    revision: i64,
+    row_size: u64,
+    row_mtime: u64,
+    projected_hash: Option<String>,
+    projected_revision: Option<i64>,
+    /// The classification recorded last time, so an unchanged one is not
+    /// written again. `None` for a note that has never been reconciled.
+    state: Option<String>,
+}
+
+/// Marks a note as agreeing with its file, and clears the copies preserved for
+/// it if it had any. A note that never conflicted has none to clear, which is
+/// almost all of them.
+fn settle(
+    connection: &Connection,
+    root: &Path,
+    preserved: &HashSet<String>,
+    note: &DocumentToReconcile,
+) -> Result<(), VaultError> {
+    if preserved.contains(&note.uuid) {
+        conflicts::discard(root, &note.uuid);
+    }
+    record_state(connection, note, documents::SyncState::Synced)
+}
+
+/// Records a note's classification, and only when it has actually changed.
+///
+/// Rewriting a row to the state it already holds is what made reconciling a
+/// large vault thousands of writes rather than none.
+fn record_state(
+    connection: &Connection,
+    note: &DocumentToReconcile,
+    state: documents::SyncState,
+) -> Result<(), VaultError> {
+    if note.state.as_deref() == Some(state.as_str()) {
+        return Ok(());
+    }
+    documents::set_sync_state(connection, note.id, state)
 }
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
@@ -362,9 +449,9 @@ mod tests {
 
     #[test]
     fn reconciles_an_untouched_vault_as_synced() {
-        let (directory, connection) = vault(&[("Harbor.md", "# Harbor\n")]);
+        let (directory, mut connection) = vault(&[("Harbor.md", "# Harbor\n")]);
 
-        let summary = super::reconcile(directory.path(), &connection).expect("reconcile");
+        let summary = super::reconcile(directory.path(), &mut connection).expect("reconcile");
 
         assert_eq!(
             summary,
@@ -375,16 +462,96 @@ mod tests {
         );
     }
 
+    /// Records the file's real size and modification time on the row, which is
+    /// what the importer does and what the fixture's bare `upsert` does not.
+    fn record_signature(
+        connection: &rusqlite::Connection,
+        root: &std::path::Path,
+        relative_path: &str,
+    ) {
+        let metadata = std::fs::metadata(root.join(relative_path)).expect("inspect note");
+        let (size, mtime) = crate::db::file_signature(&metadata);
+        connection
+            .execute(
+                "UPDATE documents SET size_bytes = ?2, mtime_millis = ?3
+                 WHERE relative_path = ?1",
+                rusqlite::params![relative_path, size as i64, mtime as i64],
+            )
+            .expect("record the file signature");
+    }
+
+    /// The whole point of recording size and time: reconciling an untouched
+    /// vault must not open a single note. Proven by making the row's hash a lie
+    /// — reaching it at all would report a change that is not there.
     #[test]
-    fn reconciles_an_edit_made_outside_anchored_as_a_file_change() {
-        let (directory, connection) = vault(&[("Harbor.md", "# Harbor\n")]);
+    fn classifies_an_unchanged_note_without_opening_it() {
+        let (directory, mut connection) = vault(&[("Harbor.md", "# Harbor\n")]);
+        record_signature(&connection, directory.path(), "Harbor.md");
+        connection
+            .execute("UPDATE documents SET content_hash = 'never read'", [])
+            .expect("make the recorded hash unusable");
+
+        let summary = super::reconcile(directory.path(), &mut connection).expect("reconcile");
+
+        assert_eq!(summary.synced, 1);
+        assert_eq!(summary.file_changed, 0);
+    }
+
+    /// A note whose classification has not moved must not be written again, or
+    /// opening a vault costs a write per note for no new information.
+    #[test]
+    fn leaves_an_unchanged_classification_alone() {
+        let (directory, mut connection) = vault(&[("Harbor.md", "# Harbor\n")]);
+        record_signature(&connection, directory.path(), "Harbor.md");
+        super::reconcile(directory.path(), &mut connection).expect("reconcile once");
+        let first: i64 = connection
+            .query_row("SELECT updated_millis FROM sync_records", [], |row| {
+                row.get(0)
+            })
+            .expect("read when the state was recorded");
+        connection
+            .execute("UPDATE sync_records SET updated_millis = -1", [])
+            .expect("mark the row so a rewrite is visible");
+
+        super::reconcile(directory.path(), &mut connection).expect("reconcile again");
+
+        let second: i64 = connection
+            .query_row("SELECT updated_millis FROM sync_records", [], |row| {
+                row.get(0)
+            })
+            .expect("read when the state was recorded");
+        assert_eq!(second, -1, "an unchanged note must not be written again");
+        assert!(first >= 0, "the first pass does record the state");
+    }
+
+    /// The fast path must not swallow a real edit. An editor that saves changes
+    /// the file's size and time, which is exactly what it keys on.
+    #[test]
+    fn still_sees_an_external_edit_after_the_signature_was_recorded() {
+        let (directory, mut connection) = vault(&[("Harbor.md", "# Harbor\n")]);
+        record_signature(&connection, directory.path(), "Harbor.md");
         std::fs::write(
             directory.path().join("Harbor.md"),
             "# Harbor\n\nEdited elsewhere\n",
         )
         .expect("edit the note outside Anchored");
 
-        let summary = super::reconcile(directory.path(), &connection).expect("reconcile");
+        let summary = super::reconcile(directory.path(), &mut connection).expect("reconcile");
+
+        assert_eq!(summary.file_changed, 1);
+        assert_eq!(summary.synced, 0);
+    }
+
+    #[test]
+    fn reconciles_an_edit_made_outside_anchored_as_a_file_change() {
+        let (directory, mut connection) = vault(&[("Harbor.md", "# Harbor\n")]);
+        std::fs::write(
+            directory.path().join("Harbor.md"),
+            "# Harbor\n\nEdited elsewhere\n",
+        )
+        .expect("edit the note outside Anchored");
+
+        let summary = super::reconcile(directory.path(), &mut connection).expect("reconcile");
 
         assert_eq!(summary.file_changed, 1);
         assert_eq!(summary.conflicts, 0);
@@ -399,15 +566,19 @@ mod tests {
     /// synced, not a conflict.
     #[test]
     fn treats_a_write_recorded_but_never_re_read_as_synced() {
-        let (directory, connection) = vault(&[("Harbor.md", "# Harbor\n")]);
+        let (directory, mut connection) = vault(&[("Harbor.md", "# Harbor\n")]);
         project_pending_identities(directory.path(), &connection).expect("project");
         // The row still describes the pre-projection bytes, as it would if the
-        // process had died before updating itself.
+        // process had died before updating itself: the signature it recorded is
+        // stale too, which is what sends this down the hashing path at all.
         connection
-            .execute("UPDATE documents SET content_hash = 'stale'", [])
+            .execute(
+                "UPDATE documents SET content_hash = 'stale', mtime_millis = 0, size_bytes = 0",
+                [],
+            )
             .expect("simulate a crash after writing but before recording");
 
-        let summary = super::reconcile(directory.path(), &connection).expect("reconcile");
+        let summary = super::reconcile(directory.path(), &mut connection).expect("reconcile");
 
         assert_eq!(
             summary.synced, 1,
@@ -564,7 +735,7 @@ mod tests {
     /// The guarantee that matters: when both sides changed, neither is lost.
     #[test]
     fn preserves_both_sides_of_a_conflict_and_lists_it() {
-        let (directory, connection) = vault(&[("Harbor.md", "# Harbor\n")]);
+        let (directory, mut connection) = vault(&[("Harbor.md", "# Harbor\n")]);
         project_pending_identities(directory.path(), &connection).expect("project");
         connection
             .execute(
@@ -575,7 +746,7 @@ mod tests {
         std::fs::write(directory.path().join("Harbor.md"), "# Written on disk\n")
             .expect("simulate a change on disk");
 
-        super::reconcile(directory.path(), &connection).expect("reconcile");
+        super::reconcile(directory.path(), &mut connection).expect("reconcile");
 
         let listed = crate::db::conflicts::list(&connection).expect("list conflicts");
         assert_eq!(listed.len(), 1);
@@ -599,7 +770,7 @@ mod tests {
 
     #[test]
     fn clears_preserved_copies_once_a_note_agrees_again() {
-        let (directory, connection) = vault(&[("Harbor.md", "# Harbor\n")]);
+        let (directory, mut connection) = vault(&[("Harbor.md", "# Harbor\n")]);
         project_pending_identities(directory.path(), &connection).expect("project");
         let uuid: String = connection
             .query_row("SELECT uuid FROM documents", [], |row| row.get(0))
@@ -608,7 +779,7 @@ mod tests {
             .expect("preserve a conflict");
 
         // The note now matches what Anchored last wrote, so it is settled.
-        super::reconcile(directory.path(), &connection).expect("reconcile");
+        super::reconcile(directory.path(), &mut connection).expect("reconcile");
 
         assert_eq!(
             std::fs::read_dir(crate::db::conflicts::conflicts_directory(directory.path()))
@@ -624,10 +795,10 @@ mod tests {
 
     #[test]
     fn reports_a_note_whose_file_has_gone_missing() {
-        let (directory, connection) = vault(&[("Harbor.md", "# Harbor\n")]);
+        let (directory, mut connection) = vault(&[("Harbor.md", "# Harbor\n")]);
         std::fs::remove_file(directory.path().join("Harbor.md")).expect("delete the note");
 
-        let summary = super::reconcile(directory.path(), &connection).expect("reconcile");
+        let summary = super::reconcile(directory.path(), &mut connection).expect("reconcile");
 
         assert_eq!(summary.missing_files, 1);
         assert_eq!(summary.synced, 0);
@@ -637,7 +808,7 @@ mod tests {
     /// automatically — the note is flagged and left exactly as it is.
     #[test]
     fn flags_a_conflict_without_touching_either_version() {
-        let (directory, connection) = vault(&[("Harbor.md", "# Harbor\n")]);
+        let (directory, mut connection) = vault(&[("Harbor.md", "# Harbor\n")]);
         project_pending_identities(directory.path(), &connection).expect("project");
         connection
             .execute(
@@ -648,7 +819,7 @@ mod tests {
         std::fs::write(directory.path().join("Harbor.md"), "# Changed on disk\n")
             .expect("simulate a change on disk");
 
-        let summary = super::reconcile(directory.path(), &connection).expect("reconcile");
+        let summary = super::reconcile(directory.path(), &mut connection).expect("reconcile");
 
         assert_eq!(summary.conflicts, 1);
         assert_eq!(

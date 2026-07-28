@@ -6,6 +6,25 @@ Git commit. The format follows [Keep a Changelog], and releases follow
 
 ## [Unreleased]
 
+## [0.1.9-alpha] - 2026-07-28
+
+### Fixed
+
+- Opening a vault no longer reads and hashes every note to conclude that
+  nothing has changed. Reconciliation classifies a note from its size and
+  modification time when those still match what was recorded, runs as one
+  transaction rather than a write per note, and leaves an unchanged
+  classification alone. On a vault of several thousand notes this was the
+  difference between minutes and moments.
+- The note list renders only the rows near the viewport, so a folder holding
+  thousands of notes costs a screenful rather than the whole list on every
+  scroll frame. Rows are a fixed height, so an excerpt arriving no longer
+  shifts the rows beneath it.
+- An excerpt arriving now re-renders its own row instead of the entire list,
+  and no more than six notes are read at once. Scrolling quickly past a note
+  cancels its unread excerpt rather than queueing it.
+- Opening a vault reports how long each stage took.
+
 ## [0.1.8-alpha] - 2026-07-27
 
 ### Changed

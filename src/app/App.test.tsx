@@ -2457,6 +2457,13 @@ describe("App", () => {
       warnings: noWarnings,
     });
     mockedReadVaultFile
+      // The list pane reads each visible note once for its row excerpt, so the
+      // editor's attempt is the second read of this file and the retry third.
+      .mockResolvedValueOnce({
+        content: "# Broken\n",
+        relativePath: "Notes/Broken.md",
+        sizeBytes: 9,
+      })
       .mockRejectedValueOnce({
         message: "This Markdown file is not valid UTF-8.",
       })
@@ -2481,7 +2488,7 @@ describe("App", () => {
         name: "Broken.md Markdown editor",
       }),
     ).toHaveTextContent("# Recovered");
-    expect(mockedReadVaultFile).toHaveBeenCalledTimes(2);
+    expect(mockedReadVaultFile).toHaveBeenCalledTimes(3);
   });
 
   it("opens an empty Markdown file at the vault root", async () => {
@@ -2552,6 +2559,12 @@ describe("App", () => {
       warnings: noWarnings,
     });
     mockedReadVaultFile
+      // The first read is the list pane filling in the row's excerpt.
+      .mockResolvedValueOnce({
+        content: "# Old Name\n",
+        relativePath: "Notes/Old Name.md",
+        sizeBytes: 11,
+      })
       .mockResolvedValueOnce({
         content: "# Old Name\n",
         relativePath: "Notes/Old Name.md",

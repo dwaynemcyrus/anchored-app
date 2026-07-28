@@ -1159,18 +1159,24 @@ fn timestamp_migration_outcome(
 
 fn build_vault_snapshot(app: &AppHandle, root: &Path) -> Result<VaultSnapshot, VaultError> {
     let _ = app;
+    let mut stages = OpenTimings::default();
     let vault_id = ensure_vault_identity(root)?;
     recover_rename_transaction(root)?;
     let mut snapshot = scan_vault(root)?;
     snapshot.vault_id = vault_id;
+    stages.record("scan");
 
     // The directory walk stays: it is the only thing that knows about folders
     // with no notes in them, which the index has no row for. What the index
     // replaces is opening every file to read its metadata.
     import_vault_snapshot(root, &snapshot)?;
+    stages.record("import");
     reconcile_vault_state(root);
+    stages.record("reconcile");
     project_vault_identities(root);
+    stages.record("project");
     if enrich_vault_metadata_from_index(root, &mut snapshot.files)? {
+        stages.report("index", snapshot.files.len());
         return Ok(snapshot);
     }
 
@@ -1178,7 +1184,49 @@ fn build_vault_snapshot(app: &AppHandle, root: &Path) -> Result<VaultSnapshot, V
     // go through a JSON cache alongside the vault; the index replaced it, and
     // keeping a second store in step with the first was its own hazard.
     enrich_vault_metadata(root, &mut snapshot.files)?;
+    stages.report("files", snapshot.files.len());
     Ok(snapshot)
+}
+
+/// How long each stage of opening a vault took.
+///
+/// Opening a large vault was once minutes, and finding out which stage was
+/// responsible meant guessing. One line per open is cheap enough to leave in
+/// and is the first thing worth having when a vault opens slowly again.
+struct OpenTimings {
+    started: std::time::Instant,
+    stages: Vec<(&'static str, u128)>,
+}
+
+impl Default for OpenTimings {
+    fn default() -> Self {
+        Self {
+            started: std::time::Instant::now(),
+            stages: Vec::new(),
+        }
+    }
+}
+
+impl OpenTimings {
+    fn record(&mut self, stage: &'static str) {
+        let elapsed = self.started.elapsed().as_millis();
+        let already: u128 = self.stages.iter().map(|(_, millis)| millis).sum();
+        self.stages.push((stage, elapsed.saturating_sub(already)));
+    }
+
+    fn report(&mut self, metadata_from: &'static str, files: usize) {
+        self.record("metadata");
+        let total = self.started.elapsed().as_millis();
+        let stages = self
+            .stages
+            .iter()
+            .map(|(stage, millis)| format!("{stage} {millis}ms"))
+            .collect::<Vec<_>>()
+            .join(", ");
+        eprintln!(
+            "Vault opened in {total}ms ({files} notes, metadata from the {metadata_from}): {stages}."
+        );
+    }
 }
 
 /// Records how each note's row and file stand when the vault opens. Reporting

@@ -8,6 +8,7 @@
 //! Copies live under `.anchored/` rather than beside the note so a conflict
 //! never litters the vault the user browses.
 
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
 use rusqlite::Connection;
@@ -132,6 +133,31 @@ pub(crate) fn versions_for(
 
     rows.collect::<Result<_, _>>()
         .map_err(map_error("Note versions could not be read"))
+}
+
+/// The identities that currently have copies preserved on disk, read in one
+/// pass over the directory.
+///
+/// Reconciliation clears the copies of every note it finds settled. Asking the
+/// filesystem to delete two files per note to discover that neither exists is
+/// two calls per note; asking once which notes have any is one call per vault.
+/// A directory that cannot be read yields nothing, which is also what an
+/// absent one means.
+pub(crate) fn preserved_identities(root: &Path) -> HashSet<String> {
+    let Ok(entries) = std::fs::read_dir(conflicts_directory(root)) else {
+        return HashSet::new();
+    };
+    entries
+        .flatten()
+        .filter_map(|entry| {
+            let name = entry.file_name().into_string().ok()?;
+            let stem = name.strip_suffix(".md")?;
+            let uuid = stem
+                .strip_suffix("_database")
+                .or_else(|| stem.strip_suffix("_file"))?;
+            Some(uuid.to_owned())
+        })
+        .collect()
 }
 
 /// Clears the preserved copies for a note once it is no longer in conflict.
