@@ -210,6 +210,26 @@ describe("WorkspaceEditor tab menu", () => {
     ).toHaveAttribute("aria-checked", "true");
   });
 
+  /// A pinned reference and a pinned tab are easily confused, so the menu shows
+  /// both and this checks the reference one reaches the reference.
+  it("pins a document as a reference without pinning its tab", async () => {
+    const user = userEvent.setup();
+    setup(withDocuments("harbor"));
+
+    const menu = await openTabMenu("harbor");
+    await user.click(
+      menu.getByRole("menuitemcheckbox", { name: "Pin as reference" }),
+    );
+
+    // The tab itself is untouched: no pin marker, so its name is unchanged.
+    expect(screen.getByRole("tab")).toHaveAccessibleName("harbor");
+
+    const reopened = await openTabMenu("harbor");
+    expect(
+      reopened.getByRole("menuitemcheckbox", { name: "Unpin as reference" }),
+    ).toHaveAttribute("aria-checked", "true");
+  });
+
   it("closes on Escape", async () => {
     const user = userEvent.setup();
     setup(withDocuments("harbor"));

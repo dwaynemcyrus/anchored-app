@@ -15,6 +15,7 @@ import {
   closeTabsToRight,
   moveTab,
   resizeSplit,
+  setPinnedReference,
   setTabPinned,
   splitGroup,
   type TabAddress,
@@ -221,6 +222,21 @@ export function WorkspaceEditor({
             }}
           >
             {menuTab.pinned ? "Unpin tab" : "Pin tab"}
+          </button>
+          <button
+            aria-checked={menuTab.documentId === workspace.pinnedReferenceId}
+            role="menuitemcheckbox"
+            type="button"
+            onClick={() => {
+              change((current) =>
+                setPinnedReference(current, menuTab.documentId),
+              );
+              setMenu(undefined);
+            }}
+          >
+            {menuTab.documentId === workspace.pinnedReferenceId
+              ? "Unpin as reference"
+              : "Pin as reference"}
           </button>
           <hr />
           <button

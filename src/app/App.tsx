@@ -18,11 +18,12 @@ import { WorkspaceEditor } from "./components/WorkspaceEditor";
 import {
   activateGroup,
   activeDocumentId as workspaceActiveDocumentId,
-  openDocumentIds,
   activeLeaf,
   closeTab,
   createWorkspace,
   openDocument,
+  openDocumentIds,
+  setPinnedReference,
   splitGroup,
   stepHistory,
   type Workspace,
@@ -2925,8 +2926,14 @@ export function App() {
           <InspectorPane
             backlinks={backlinks}
             hasDocument={Boolean(activeDocument)}
+            pinnedReference={documents.find(
+              (document) => document.id === workspace.pinnedReferenceId,
+            )}
             showFileExtensions={markdownSettings.showFileExtensions}
             onOpen={(documentId) => void selectDocument(documentId)}
+            onUnpinReference={() =>
+              setWorkspace((current) => setPinnedReference(current, undefined))
+            }
           />
         </div>
       )}

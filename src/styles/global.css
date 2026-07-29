@@ -2842,3 +2842,20 @@ body[data-resizing-pane="true"] {
 .note-row.is-active .note-row__open {
   background: var(--color-text);
 }
+
+/* The pinned reference sits above backlinks, separated by a rule rather than a
+   card so the pane keeps its one-pixel language. */
+.inspector__reference {
+  flex: 0 0 auto;
+  border-bottom: 1px solid var(--color-rule);
+}
+
+.inspector__reference .inspector__header {
+  border-bottom: 0;
+  min-height: 36px;
+}
+
+.inspector__reference .inspector__row {
+  border-bottom: 0;
+  color: var(--color-text);
+}
