@@ -50,6 +50,14 @@ export type WorkspaceNode = WorkspaceLeaf | WorkspaceSplit;
 export type Workspace = {
   root: WorkspaceNode;
   activeGroupId: string;
+  /// A document promoted above the workspace, kept reachable no matter where
+  /// you navigate.
+  ///
+  /// Not the same thing as a pinned tab: a pinned tab resists being replaced
+  /// inside its own group, while a pinned reference outlives closing every tab
+  /// and changing collection. It is what you are consulting rather than what
+  /// you are working on.
+  pinnedReferenceId?: string;
   /// Next id to hand out. On the workspace rather than in a module variable so
   /// a test can replay a sequence of operations and get the same ids twice.
   sequence: number;
@@ -171,7 +179,12 @@ function withRoot(
   }
 
   const groupStillThere = findLeaf(next, workspace.activeGroupId);
+  // Spread rather than rebuilt field by field. Anything on the workspace that
+  // is not about the tree — the pinned reference, and whatever joins it — must
+  // survive a change to the tree, and an optional field dropped here is a
+  // change TypeScript cannot see.
   return {
+    ...workspace,
     root: next,
     activeGroupId: groupStillThere?.id ?? leaves(next)[0].id,
     sequence: nextSequence,
@@ -447,6 +460,20 @@ export function resizeSplit(
       : node,
   );
   return withRoot(workspace, root);
+}
+
+/// Promotes a document to the pinned reference, or clears it with `undefined`.
+///
+/// Pinning the document already pinned unpins it, so the one command in the tab
+/// menu is a toggle rather than a pair of nearly identical items.
+export function setPinnedReference(
+  workspace: Workspace,
+  documentId: string | undefined,
+): Workspace {
+  const next =
+    documentId === workspace.pinnedReferenceId ? undefined : documentId;
+  if (next === workspace.pinnedReferenceId) return workspace;
+  return { ...workspace, pinnedReferenceId: next };
 }
 
 export type TabAddress = { groupId: string; index: number };

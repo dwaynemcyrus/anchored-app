@@ -19,6 +19,7 @@ import {
   openDocument,
   openDocumentIds,
   resizeSplit,
+  setPinnedReference,
   setTabPinned,
   splitGroup,
   stepHistory,
@@ -389,6 +390,73 @@ describe("moving tabs", () => {
         },
       ),
     ).toBe(workspace);
+  });
+});
+
+/// A pinned reference is what you are consulting; a pinned tab is what you are
+/// working on. The tests below are mostly about keeping those two apart.
+describe("pinned reference", () => {
+  it("starts with nothing pinned", () => {
+    expect(createWorkspace().pinnedReferenceId).toBeUndefined();
+  });
+
+  it("promotes a document above the workspace", () => {
+    const workspace = setPinnedReference(
+      openDocument(createWorkspace(), "harbor"),
+      "harbor",
+    );
+
+    expect(workspace.pinnedReferenceId).toBe("harbor");
+  });
+
+  it("survives closing every tab", () => {
+    let workspace = openDocument(createWorkspace(), "harbor");
+    workspace = setPinnedReference(workspace, "harbor");
+
+    workspace = closeGroup(workspace, groupId(workspace));
+
+    expect(activeDocumentId(workspace)).toBe("");
+    expect(workspace.pinnedReferenceId).toBe("harbor");
+  });
+
+  it("is not the same thing as a pinned tab", () => {
+    let workspace = openDocument(createWorkspace(), "harbor");
+    workspace = setPinnedReference(workspace, "harbor");
+
+    // Pinning as a reference does not pin the tab, so a navigation still
+    // replaces it — the reference is what keeps the document reachable.
+    expect(leaves(workspace.root)[0].tabs[0].pinned).toBe(false);
+    workspace = openDocument(workspace, "field-notes");
+    expect(documentIds(workspace)).toEqual(["field-notes"]);
+    expect(workspace.pinnedReferenceId).toBe("harbor");
+  });
+
+  it("unpins when the same document is pinned again", () => {
+    let workspace = setPinnedReference(createWorkspace(), "harbor");
+    workspace = setPinnedReference(workspace, "harbor");
+
+    expect(workspace.pinnedReferenceId).toBeUndefined();
+  });
+
+  it("replaces the reference when a different document is pinned", () => {
+    let workspace = setPinnedReference(createWorkspace(), "harbor");
+    workspace = setPinnedReference(workspace, "field-notes");
+
+    expect(workspace.pinnedReferenceId).toBe("field-notes");
+  });
+
+  it("clears on request", () => {
+    const workspace = setPinnedReference(
+      setPinnedReference(createWorkspace(), "harbor"),
+      undefined,
+    );
+
+    expect(workspace.pinnedReferenceId).toBeUndefined();
+  });
+
+  it("returns the same workspace when nothing changed", () => {
+    const workspace = createWorkspace();
+    expect(setPinnedReference(workspace, undefined)).toBe(workspace);
   });
 });
 

@@ -10,11 +10,12 @@ which application it comes from, what it buys, and whether `OVERVIEW.md`
 already places it inside or outside the first release.
 
 - **Status:** reference
-- **Last reviewed:** 2026-07-27
+- **Last reviewed:** 2026-07-28
 - **Measured against:** `docs/prototypes/four-pane-shell.html`, `src/app/App.tsx`
 
-Rows marked **[prototyped]** now exist in
-`docs/prototypes/four-pane-shell.html`. Nothing on this list exists in `src/`.
+Rows marked **[prototyped]** exist in
+`docs/prototypes/four-pane-shell.html`; rows marked **[shipped]** exist in
+`src/` and are in a release.
 
 ## How to read the scope column
 
@@ -33,13 +34,13 @@ than one document at a time.
 
 | # | Capability | From | Why it matters | Scope |
 | --- | --- | --- | --- | --- |
-| A1 | **[prototyped] Tabs** — several documents open in one pane, drag-reorderable within and between panes, with a new-tab affordance | Obsidian | Following a wikilink currently costs you the note you were reading. Tabs are what make link-following non-destructive. | **MVP** |
-| A2 | **[prototyped] Splits** — divide the editor into panes, horizontally or vertically, each with its own tab strip, each resizable | Obsidian | Writing while reading a source is the core two-document task. Today it is impossible. | **MVP** |
-| A3 | **[prototyped] The same document in more than one tab or split**, with no imposed limit | Obsidian | Comparing two parts of one long note; editing the top while reading the bottom. Both views must stay in sync on every keystroke. | **Near** |
-| A4 | **[prototyped] Tab-group menu** — the chevron at the right of each strip: Stack tabs, Bookmark _n_ tabs, Close all, then the open tabs with a tick on the active one. Not purely an overflow list; it is always present and carries commands, with the tab list solving overflow as a side effect. | Obsidian | Without it, a wide session hides its own tabs, and the group-level commands have nowhere to live. | **Near** |
+| A1 | **[shipped] Tabs** — several documents open in one pane, drag-reorderable within and between panes, with a new-tab affordance | Obsidian | Following a wikilink currently costs you the note you were reading. Tabs are what make link-following non-destructive. | **MVP** |
+| A2 | **[shipped] Splits** — divide the editor into panes, horizontally or vertically, each with its own tab strip, each resizable | Obsidian | Writing while reading a source is the core two-document task. Today it is impossible. | **MVP** |
+| A3 | **[shipped] The same document in more than one tab or split**, with no imposed limit | Obsidian | Comparing two parts of one long note; editing the top while reading the bottom. Both views must stay in sync on every keystroke. | **Near** |
+| A4 | **[part-shipped] Tab-group menu** — the chevron at the right of each strip: Stack tabs, Bookmark _n_ tabs, Close all, then the open tabs with a tick on the active one. Not purely an overflow list; it is always present and carries commands, with the tab list solving overflow as a side effect. | Obsidian | Without it, a wide session hides its own tabs, and the group-level commands have nowhere to live. | **Near** |
 | A5 | **[prototyped] Pop-out window** — drag a tab out into its own OS window | Obsidian | Multi-monitor work, and keeping one reference visible over other applications. Tauri multi-window plumbing already exists: `openScratchpadWindow` in `src/app/App.tsx` opens a second window today. | **Near** |
-| A6 | **[prototyped] Pinned tab** — resists being replaced by a navigation and survives close-others | Obsidian | The cheap version of "keep this open". | **Near** |
-| A7 | **[prototyped] Back / forward history** — per tab, not per pane, so a tab keeps its own trail | Obsidian, Bear | After following three wikilinks there is no way back. `recentDocuments.ts` records recency but nothing exposes a history stack. | **MVP** |
+| A6 | **[shipped] Pinned tab** — resists being replaced by a navigation and survives close-others | Obsidian | The cheap version of "keep this open". | **Near** |
+| A7 | **[shipped] Back / forward history** — per tab, not per pane, so a tab keeps its own trail | Obsidian, Bear | After following three wikilinks there is no way back. `recentDocuments.ts` records recency but nothing exposes a history stack. | **MVP** |
 | A8 | **Linked panes** — one pane follows the other's scroll or selection | Obsidian | Source-and-translation, outline-and-body. Narrow but powerful. | **Near** |
 | A9 | **Stacked tabs** — the card-deck tab mode | Obsidian | Handsome, rarely load-bearing. Present as an inert item in the prototype's group menu so the menu matches the reference; recommend skipping the behaviour. | **Near** |
 
@@ -54,7 +55,7 @@ than one document at a time.
 
 | # | Capability | From | Why it matters | Scope |
 | --- | --- | --- | --- | --- |
-| C1 | **Real sort control** — modified, created, title, manual | Bear, Things 3 | The prototype's `Recent ⌄` is inert. `WorkbenchSort` in `src/app/fileRailPreferences.ts` already models six orders but only applies to the Workbench collection. Generalising it is mostly wiring. | **MVP** |
+| C1 | **[shipped] Real sort control** — modified, created, title, manual | Bear, Things 3 | The prototype's `Recent ⌄` is inert. `WorkbenchSort` in `src/app/fileRailPreferences.ts` already models six orders but only applies to the Workbench collection. Generalising it is mostly wiring. | **MVP** |
 | C2 | **Date grouping** — Today / Yesterday / Previous 7 days headers | Bear, Apple Notes | Turns a long flat list into something scannable without a search. | **Near** |
 | C3 | **Multi-select with batch archive, move, trash** | Apple Notes, Things 3 | Every bulk operation is currently one note at a time. | **Near** |
 | C4 | **Row swipe actions** | Apple Notes, Things 3 | Trackpad-native archive and trash. Note the same SC 2.5.1 caveat as the pane swipe. | **Near** |
@@ -103,16 +104,26 @@ Listed so they are not re-proposed. Each is a stated non-goal in
 
 Judged on what unblocks daily use against what it costs:
 
-1. **A1 Tabs** and **A2 Splits** — the same architectural change. One open
-   document becomes a tree of panes, each holding an ordered tab list with one
-   active tab. Everything else in section A hangs off that model, so it is
-   worth getting right once rather than retrofitting.
-2. **A7 Back / forward** — nearly free once panes own their own state, and it
-   removes a real daily frustration.
-3. **C1 Sort** — small, and the data model already exists.
+1. ~~**A1 Tabs** and **A2 Splits**~~ — shipped in 0.1.11-alpha. The editor is a
+   tree of panes in `src/app/workspaceTree.ts`; everything else in section A
+   hangs off that model.
+2. ~~**A7 Back / forward**~~ — shipped in 0.1.11-alpha, per tab rather than per
+   pane, so a tab dragged between panes takes its trail with it.
+3. ~~**C1 Sort**~~ — shipped in 0.1.8-alpha with the note list pane.
 4. **B1 Pin as reference** and **A5 Pop-out window** — both build on the tab
-   model; neither makes sense before it.
+   model; neither made sense before it. **Current work.**
 5. **D1 Focus mode** — the most distinctive thing on this list, and
    independent of everything above.
+
+### What A4 and A3 still owe
+
+A4's chevron menu ships with Close all and the tab list, which is what makes a
+tab scrolled out of sight reachable. Stack tabs and Bookmark _n_ tabs do not
+ship: there are no bookmarks to make, and A9 recommends skipping stacking.
+
+A3 works — the same note opens in as many panes as asked, and editing one
+updates the others, because every pane renders from the same document state
+rather than a copy. Verified by hand on a real vault rather than by test; two
+live CodeMirror instances are not something jsdom can speak to.
 
 Sections C to E are otherwise independent and can be taken in any order.
