@@ -2707,6 +2707,9 @@ changelog changes that describe a chunk ship in the same commit.
      after focus moved, external rename, and refresh after a path change.
    - Expected files: `src/app/workspaceTree.ts` and tests, `src/app/App.tsx`,
      targeted component tests, `CHANGELOG.md`, `PLANS.md`.
+   - **Status:** completed 2026-08-01 — path-derived IDs now remap every tab,
+     history entry, focused document, activity record, and active workspace
+     reference during save, refresh, and move flows.
 
 4. **Make identity projection concurrency-safe**
    - Pass the source hash/revision used to construct the projection into the

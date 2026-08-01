@@ -23,6 +23,7 @@ import {
   closeTab,
   createWorkspace,
   openDocument,
+  remapDocumentId,
   splitGroup,
   stepHistory,
   type Workspace,
@@ -326,6 +327,41 @@ export function App() {
     setFocusDocumentId(documentId);
   }, []);
 
+  const remapDocumentIdentity = useCallback(
+    (fromDocumentId: string, toDocumentId: string) => {
+      if (!fromDocumentId || fromDocumentId === toDocumentId) return;
+      if (activeDocumentIdRef.current === fromDocumentId) {
+        activeDocumentIdRef.current = toDocumentId;
+      }
+      setWorkspace((current) =>
+        remapDocumentId(current, fromDocumentId, toDocumentId),
+      );
+      if (focusDocumentIdRef.current === fromDocumentId) {
+        setFocusDocument(toDocumentId);
+      }
+      setDocumentActivity((current) => {
+        const activity = current.get(fromDocumentId);
+        if (!activity) return current;
+        const existing = current.get(toDocumentId);
+        const next = new Map(current);
+        next.delete(fromDocumentId);
+        next.set(toDocumentId, {
+          firstSeenAt: Math.min(
+            existing?.firstSeenAt ?? activity.firstSeenAt,
+            activity.firstSeenAt,
+          ),
+          lastActiveAt: Math.max(
+            existing?.lastActiveAt ?? 0,
+            activity.lastActiveAt,
+          ),
+        });
+        return next;
+      });
+      clearDocumentLoad(fromDocumentId);
+    },
+    [clearDocumentLoad, setFocusDocument],
+  );
+
   const activeDocument = documents.find(
     (document) => document.id === activeDocumentId,
   );
@@ -464,8 +500,6 @@ export function App() {
           (candidate) => candidate.id === documentId,
         );
         const hasNewerEdit = currentDocument?.sourceText !== sourceAtSave;
-        const wasActive = activeDocumentIdRef.current === documentId;
-        const shouldFocus = focusDocumentIdRef.current === documentId;
 
         setDocuments((currentDocuments) =>
           currentDocuments.map((current) =>
@@ -501,10 +535,7 @@ export function App() {
               : current,
           ),
         );
-        if (wasActive) setActiveDocument(persistedDocumentId);
-        if (shouldFocus) {
-          setFocusDocument(hasNewerEdit ? undefined : persistedDocumentId);
-        }
+        remapDocumentIdentity(documentId, persistedDocumentId);
         if (folderPath) {
           sidebar.setExpandedFolders((currentFolders) =>
             new Set(currentFolders).add(folderPath),
@@ -547,8 +578,7 @@ export function App() {
     [
       notifications.addHistoryEntry,
       notifications.resolveHistorySource,
-      setActiveDocument,
-      setFocusDocument,
+      remapDocumentIdentity,
       sidebar.setExpandedFolders,
       vaultName,
     ],
@@ -1112,6 +1142,15 @@ export function App() {
         documentsRef.current,
         snapshot,
       );
+      const identityRemaps = documentsRef.current.flatMap((document) => {
+        if (!document.noteId) return [];
+        const replacement = nextDocuments.find(
+          (candidate) => candidate.noteId === document.noteId,
+        );
+        return replacement && replacement.id !== document.id
+          ? [[document.id, replacement.id] as const]
+          : [];
+      });
       const nextActiveDocumentId = activeRelativePath
         ? (nextDocuments.find(
             (document) => document.relativePath === activeRelativePath,
@@ -1120,6 +1159,9 @@ export function App() {
       const nextFolders = folderPathsFromVault(snapshot);
       documentsRef.current = nextDocuments;
       setDocuments(nextDocuments);
+      for (const [fromDocumentId, toDocumentId] of identityRemaps) {
+        remapDocumentIdentity(fromDocumentId, toDocumentId);
+      }
       if (nextActiveDocumentId !== activeDocumentIdRef.current) {
         setActiveDocument(nextActiveDocumentId);
       }
@@ -1143,6 +1185,7 @@ export function App() {
     [
       notifications.addVaultNotice,
       recordSnapshotEvents,
+      remapDocumentIdentity,
       setActiveDocument,
       sidebar.setExpandedFolders,
     ],
@@ -1506,12 +1549,7 @@ export function App() {
         );
         documentsRef.current = nextDocuments;
         setDocuments(nextDocuments);
-        if (activeDocumentIdRef.current === current.id) {
-          setActiveDocument(nextDocumentId);
-        }
-        if (focusDocumentIdRef.current === current.id) {
-          setFocusDocument(nextDocumentId);
-        }
+        remapDocumentIdentity(current.id, nextDocumentId);
       }
 
       try {
@@ -1549,8 +1587,7 @@ export function App() {
       notifications.addVaultNotice,
       checkExternalDocument,
       markdownSettings.updateTypeOnExternalMove,
-      setActiveDocument,
-      setFocusDocument,
+      remapDocumentIdentity,
       vaultName,
     ],
   );
@@ -2040,6 +2077,7 @@ export function App() {
       updatedLinks: number;
     },
     message: string,
+    previousDocumentId?: string,
   ) {
     const [snapshot, openedDocument] = await Promise.all([
       rescanVault(),
@@ -2077,8 +2115,12 @@ export function App() {
       nextFolders.forEach((folder) => nextExpanded.add(folder));
       return nextExpanded;
     });
-    setActiveDocument(relocatedDocumentId);
-    setFocusDocument(undefined);
+    if (previousDocumentId) {
+      remapDocumentIdentity(previousDocumentId, relocatedDocumentId);
+    } else {
+      setActiveDocument(relocatedDocumentId);
+      setFocusDocument(undefined);
+    }
     notifications.addVaultNotice(message, { history: { kind: "rename" } });
   }
 
@@ -2148,7 +2190,7 @@ export function App() {
       } updated across ${outcome.updatedFiles} note${
         outcome.updatedFiles === 1 ? "" : "s"
       }.`;
-      await finishRelocatedDocument(outcome, message);
+      await finishRelocatedDocument(outcome, message, document.id);
     } catch (error) {
       notifications.addVaultNotice(
         renameCompleted
@@ -2201,7 +2243,7 @@ export function App() {
       } link${outcome.updatedLinks === 1 ? "" : "s"} updated across ${
         outcome.updatedFiles
       } note${outcome.updatedFiles === 1 ? "" : "s"}.`;
-      await finishRelocatedDocument(outcome, message);
+      await finishRelocatedDocument(outcome, message, document.id);
       setMoveDocumentVisible(false);
       setMoveDocumentId(undefined);
     } catch (error) {
@@ -2264,6 +2306,7 @@ export function App() {
           updatedLinks: result.updatedLinks ?? 0,
         },
         message,
+        documentId,
       );
       return;
     }

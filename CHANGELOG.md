@@ -14,6 +14,8 @@ Git commit. The format follows [Keep a Changelog], and releases follow
   conflict resolution or retry.
 - Tabs and split panes now load notes independently, so opening another note
   no longer cancels an in-progress read for a different open document.
+- Saving, renaming, or moving a note now preserves every open copy of that
+  note and its tab history instead of leaving inactive tabs behind.
 
 ## [0.1.11-alpha] - 2026-07-28
 
