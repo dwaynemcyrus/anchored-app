@@ -2621,6 +2621,10 @@ This work addresses the seven findings from the 2026-07-31 architecture review:
 - 2026-08-01: Made watcher imports compare the incoming Markdown revision to
   SQLite's last projection agreement. External-only changes update SQLite;
   concurrent database and file changes preserve both versions as a conflict.
+- 2026-08-01: Enabled database authority only after the verified backup marker
+  is recorded. After cutover, the old scan-read and direct-Markdown-save
+  fallback paths are disabled; a missing or unreadable database is a safe,
+  recoverable error rather than an untracked file write.
 
 ### Target architecture
 

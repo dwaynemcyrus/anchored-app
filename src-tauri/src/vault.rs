@@ -1416,6 +1416,7 @@ fn import_vault_snapshot(root: &Path, snapshot: &VaultSnapshot) -> Result<(), Va
         .map(|asset| asset.relative_path.clone())
         .collect();
 
+    crate::db::require_database_restore_before_open(root)?;
     let mut connection = crate::db::open(&crate::db::database_path(root))?;
     if let Err(error) =
         crate::db::import_vault(&mut connection, root, &markdown_paths, &asset_paths)

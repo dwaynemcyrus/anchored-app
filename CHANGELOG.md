@@ -16,6 +16,9 @@ Git commit. The format follows [Keep a Changelog], and releases follow
 - Opening an indexed vault now creates one verified SQLite recovery copy before
   the database-authority transition can proceed; a failed backup blocks that
   transition without blocking access to the vault.
+- After that recovery copy succeeds, SQLite becomes the active store for
+  reads, saves, and Markdown projection. A missing or unreadable database
+  stops the save rather than falling back to a Markdown-only write.
 
 ### Fixed
 

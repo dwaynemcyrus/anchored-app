@@ -136,6 +136,8 @@ pub(crate) fn ensure_initial_database_backup(
     let backup = create_database_backup(root)?;
     let connection = open(&database_path(root))?;
     set_setting(&connection, INITIAL_BACKUP_SETTING, "on")?;
+    set_setting(&connection, PROJECTION_SETTING, "on")?;
+    set_setting(&connection, READ_SOURCE_SETTING, "database")?;
     Ok(Some(backup))
 }
 
@@ -147,6 +149,19 @@ pub(crate) fn database_storage_status(root: &Path) -> Result<DatabaseStorageStat
         backup: latest_database_backup(root)?,
         database_exists,
     })
+}
+
+/// Refuses to create a fresh database over a vault that has already cut over.
+/// A recovery copy is evidence that SQLite was authoritative, so an absent
+/// `vault.db` is a restoration problem, not a reason to re-import Markdown as
+/// a new source of truth.
+pub(crate) fn require_database_restore_before_open(root: &Path) -> Result<(), VaultError> {
+    if !database_path(root).is_file() && latest_database_backup(root)?.is_some() {
+        return Err(VaultError::state(
+            "The SQLite database is missing. Restore it from a recovery copy before opening this vault.",
+        ));
+    }
+    Ok(())
 }
 
 fn integrity_check(connection: &Connection) -> Result<(), VaultError> {
@@ -461,10 +476,11 @@ fn file_signature(metadata: &std::fs::Metadata) -> (u64, u64) {
 pub(crate) fn indexed_metadata(
     root: &Path,
 ) -> Result<Option<std::collections::HashMap<String, documents::IndexedMetadata>>, VaultError> {
+    require_database_restore_before_open(root)?;
     let Ok(connection) = open(&database_path(root)) else {
         return Ok(None);
     };
-    if read_source(&connection) == ReadSource::Scan {
+    if read_source(&connection) == ReadSource::Scan && !database_authority_enabled(&connection) {
         return Ok(None);
     }
     documents::indexed_metadata(&connection).map(Some)
@@ -511,19 +527,31 @@ pub(crate) fn restore_note(root: &Path, trash_entry_id: &str, relative_path: &st
     }
 }
 
-/// Saves a note: commits the contents and writes the file together.
+/// Saves a note through SQLite and projects it to Markdown.
 ///
-/// `Ok(false)` means the index could not be opened and the caller should write
-/// the file the old way. Saving must never be the thing that fails.
+/// `Ok(false)` remains only for a legacy vault that has not yet completed its
+/// first verified backup. After cutover, database trouble is an error: falling
+/// back to a Markdown-only write would create an untracked fork of the data.
 pub(crate) fn save_note(
     root: &Path,
     relative_path: &str,
     content: &str,
 ) -> Result<bool, VaultError> {
-    let Ok(mut connection) = open(&database_path(root)) else {
+    let path = database_path(root);
+    if !path.is_file() {
+        if latest_database_backup(root)?.is_some() {
+            return Err(VaultError::state(
+                "The SQLite database is missing. Restore it from a recovery copy before saving.",
+            ));
+        }
         return Ok(false);
+    }
+    let mut connection = match open(&path) {
+        Ok(connection) => connection,
+        Err(error) if latest_database_backup(root)?.is_some() => return Err(error),
+        Err(_) => return Ok(false),
     };
-    if read_source(&connection) == ReadSource::Scan {
+    if !database_authority_enabled(&connection) && read_source(&connection) == ReadSource::Scan {
         return Ok(false);
     }
     projection::save(&mut connection, root, relative_path, content).map(|()| true)
@@ -583,6 +611,17 @@ fn is_enabled(value: &str) -> bool {
     )
 }
 
+fn database_authority_enabled(connection: &Connection) -> bool {
+    connection
+        .query_row(
+            "SELECT value FROM settings WHERE key = ?1",
+            params![INITIAL_BACKUP_SETTING],
+            |row| row.get::<_, String>(0),
+        )
+        .ok()
+        .is_some_and(|value| is_enabled(&value))
+}
+
 pub(crate) fn set_setting(
     connection: &Connection,
     key: &str,
@@ -607,10 +646,11 @@ pub(crate) fn search_vault(
     root: &Path,
     query: &str,
 ) -> Result<Option<crate::vault::VaultSearchResult>, VaultError> {
+    require_database_restore_before_open(root)?;
     let Ok(connection) = open(&database_path(root)) else {
         return Ok(None);
     };
-    if read_source(&connection) == ReadSource::Scan {
+    if read_source(&connection) == ReadSource::Scan && !database_authority_enabled(&connection) {
         return Ok(None);
     }
     search::search(&connection, query).map(Some)
@@ -854,6 +894,34 @@ mod tests {
         assert_eq!(
             super::ensure_initial_database_backup(vault.path()).expect("read backup marker"),
             None
+        );
+        let connection = open(&super::database_path(vault.path())).expect("reopen database");
+        assert!(super::database_authority_enabled(&connection));
+        assert!(super::projection_enabled(&connection));
+        assert_eq!(super::read_source(&connection), super::ReadSource::Database);
+    }
+
+    #[test]
+    fn authority_cutover_never_falls_back_when_the_database_is_missing() {
+        let vault = tempdir().expect("create fixture vault");
+        crate::continuity::ensure_vault_identity(vault.path()).expect("create identity");
+        std::fs::write(vault.path().join("Note.md"), "# Original\n").expect("write note");
+        let mut connection = open(&super::database_path(vault.path())).expect("open database");
+        super::import_vault(&mut connection, vault.path(), &["Note.md".to_owned()], &[])
+            .expect("import note");
+        drop(connection);
+        super::ensure_initial_database_backup(vault.path()).expect("create recovery copy");
+
+        let database = super::database_path(vault.path());
+        std::fs::remove_file(&database).expect("remove database from fixture");
+        assert!(super::require_database_restore_before_open(vault.path()).is_err());
+        assert!(super::indexed_metadata(vault.path()).is_err());
+        let error = super::save_note(vault.path(), "Note.md", "# Changed\n")
+            .expect_err("authority cutover must reject a Markdown-only save");
+        assert!(error.message.contains("Restore it from a recovery copy"));
+        assert_eq!(
+            std::fs::read_to_string(vault.path().join("Note.md")).expect("read note"),
+            "# Original\n"
         );
     }
 
