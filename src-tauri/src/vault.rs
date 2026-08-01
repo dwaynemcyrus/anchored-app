@@ -1568,7 +1568,12 @@ fn index_patched_paths(root: &Path, patch: &VaultPatch, requested_paths: &[Strin
     paths.extend(patch.removed_paths.iter().cloned());
     paths.sort();
     paths.dedup();
-    index_changed_paths(root, &paths);
+    if let Err(error) = crate::db::import_watched_paths(root, &paths) {
+        eprintln!(
+            "The watched vault paths could not be indexed: {}",
+            error.message
+        );
+    }
 }
 
 #[tauri::command]

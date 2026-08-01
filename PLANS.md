@@ -2736,6 +2736,9 @@ changelog changes that describe a chunk ship in the same commit.
      Anchored self-write, rename, deletion, rapid repeated edits, and assets.
    - Expected files: `src-tauri/src/db/mod.rs`, `src-tauri/src/watcher.rs`,
      `src-tauri/src/vault.rs`, targeted tests, `PLANS.md`.
+   - **Status:** in progress — targeted watcher refreshes now force a content
+     read; warm whole-vault scans and Anchored's own writes retain their
+     signature shortcut.
 
 6. **Add database cutover preflight and recovery backup**
    - Add the migration state needed to distinguish pre-cutover, migrating,

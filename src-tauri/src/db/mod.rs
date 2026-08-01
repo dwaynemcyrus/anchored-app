@@ -122,6 +122,27 @@ pub(crate) fn import_vault(
 /// Used after Anchored changes files itself, so the index does not depend on
 /// a filesystem event making the round trip back to the app.
 pub(crate) fn import_paths(root: &Path, relative_paths: &[String]) -> Result<(), VaultError> {
+    import_paths_with_mode(root, relative_paths, false)
+}
+
+/// Re-imports paths explicitly reported by the filesystem watcher.
+///
+/// A watcher event means a file system actor says the path changed. Size and
+/// millisecond-resolution modification times are only a warm-scan shortcut;
+/// they cannot safely discard that signal because an external replacement can
+/// preserve both values.
+pub(crate) fn import_watched_paths(
+    root: &Path,
+    relative_paths: &[String],
+) -> Result<(), VaultError> {
+    import_paths_with_mode(root, relative_paths, true)
+}
+
+fn import_paths_with_mode(
+    root: &Path,
+    relative_paths: &[String],
+    force_content_read: bool,
+) -> Result<(), VaultError> {
     if relative_paths.is_empty() {
         return Ok(());
     }
@@ -141,9 +162,11 @@ pub(crate) fn import_paths(root: &Path, relative_paths: &[String]) -> Result<(),
         // before the watcher can report them, so a file matching what was
         // recorded is a write of ours coming back around, not an external edit.
         // Skipping it is what stops a projection from re-importing itself.
-        if let Ok(metadata) = std::fs::metadata(&path) {
-            if indexed.get(&keys::path_key(relative_path)) == Some(&file_signature(&metadata)) {
-                continue;
+        if !force_content_read {
+            if let Ok(metadata) = std::fs::metadata(&path) {
+                if indexed.get(&keys::path_key(relative_path)) == Some(&file_signature(&metadata)) {
+                    continue;
+                }
             }
         }
 

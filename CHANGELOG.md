@@ -19,6 +19,8 @@ Git commit. The format follows [Keep a Changelog], and releases follow
 - Identity projection now detects a Markdown edit made during its write window,
   preserves both versions, and leaves the file untouched rather than risking
   an overwrite.
+- Watcher-reported Markdown changes now read and compare file content even
+  when size and modification time happen to match the prior version.
 
 ## [0.1.11-alpha] - 2026-07-28
 
