@@ -324,7 +324,15 @@ pub(crate) fn project_pending_identities(
             continue;
         }
 
-        write_projection(connection, &path, &updated, note.id, note.revision)?;
+        write_projection(
+            connection,
+            root,
+            &path,
+            &updated,
+            note.id,
+            &note.uuid,
+            note.revision,
+        )?;
         mark_identity_in_file(connection, note.id)?;
         written += 1;
     }
@@ -337,15 +345,18 @@ pub(crate) fn project_pending_identities(
 /// an unrecorded change rather than silent divergence.
 fn write_projection(
     connection: &Connection,
+    root: &Path,
     path: &Path,
     content: &str,
     document_id: i64,
+    document_uuid: &str,
     revision: i64,
 ) -> Result<(), VaultError> {
     // Kept before the file is touched, not after. Writing an identity is a
     // small change, but it is still Anchored changing a file the user did not
     // ask it to change, and the version before it must stay recoverable.
-    let previous = std::fs::read_to_string(path).unwrap_or_default();
+    let previous = std::fs::read_to_string(path)
+        .map_err(|error| VaultError::io("The note identity could not be read", error))?;
     documents::record_version(
         connection,
         document_id,
@@ -354,6 +365,20 @@ fn write_projection(
         &import::content_hash(previous.as_bytes()),
         documents::ChangeOrigin::Anchored,
     )?;
+
+    // An external editor can save after the identity transform above and
+    // before the atomic replacement below. Re-read at the last possible
+    // moment: a mismatch is a conflict to preserve, never a reason to
+    // overwrite a newer file with a stale projection.
+    let current = std::fs::read_to_string(path)
+        .map_err(|error| VaultError::io("The note identity could not be re-read", error))?;
+    if current != previous {
+        conflicts::preserve(root, document_uuid, &previous, &current)?;
+        documents::set_sync_state(connection, document_id, documents::SyncState::Conflict)?;
+        return Err(VaultError::state(
+            "The note changed outside Anchored while its identity was being projected.",
+        ));
+    }
 
     crate::vault::write_markdown_atomically(path, content)?;
 

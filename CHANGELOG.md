@@ -16,6 +16,9 @@ Git commit. The format follows [Keep a Changelog], and releases follow
   no longer cancels an in-progress read for a different open document.
 - Saving, renaming, or moving a note now preserves every open copy of that
   note and its tab history instead of leaving inactive tabs behind.
+- Identity projection now detects a Markdown edit made during its write window,
+  preserves both versions, and leaves the file untouched rather than risking
+  an overwrite.
 
 ## [0.1.11-alpha] - 2026-07-28
 

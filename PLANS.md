@@ -2722,6 +2722,9 @@ changelog changes that describe a chunk ship in the same commit.
      malformed front matter, retry, and crash-reconciliation behavior.
    - Expected files: `src-tauri/src/db/projection.rs`, conflict repository tests,
      `CHANGELOG.md`, `PLANS.md`.
+   - **Status:** in progress — the projection now re-reads immediately before
+     replacement, preserves a detected concurrent edit as a conflict, and no
+     longer fabricates an empty prior version after a read error.
 
 5. **Treat watcher events as authoritative change signals**
    - Separate warm full-vault import from event-driven targeted import.
