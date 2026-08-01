@@ -66,6 +66,7 @@ import { useRecoveryPanel } from "./useRecoveryPanel";
 import { useTrashPanel } from "./useTrashPanel";
 import { useVaultSwitcher } from "./useVaultSwitcher";
 import { useDocumentAutosave } from "./useDocumentAutosave";
+import { useDocumentLoadStates } from "./useDocumentLoadStates";
 import { useWindowCloseGuard } from "./useWindowCloseGuard";
 import { VaultSearchPalette } from "./components/VaultSearchPalette";
 import {
@@ -156,11 +157,6 @@ import { saveConflictSnapshot } from "./conflictSnapshots";
 const ACTIVITY_REFRESH_INTERVAL_MS = 60_000;
 const FRONTMATTER_LINT_NOTIFICATION_DELAY_MS = 1_500;
 
-type DocumentLoadState =
-  | { status: "idle" }
-  | { status: "loading"; documentId: string }
-  | { status: "error"; documentId: string; message: string };
-
 type LifecycleTypeRequest = {
   action: "archive" | "workbench";
   documentId: string;
@@ -237,9 +233,6 @@ export function App() {
   >();
   const [lifecycleTypeRequest, setLifecycleTypeRequest] =
     useState<LifecycleTypeRequest>();
-  const [documentLoad, setDocumentLoad] = useState<DocumentLoadState>({
-    status: "idle",
-  });
   const [moveDocumentId, setMoveDocumentId] = useState<string | undefined>();
   const [moveDocumentVisible, setMoveDocumentVisible] = useState(false);
   const [moveFolderPath, setMoveFolderPath] = useState<string>();
@@ -265,7 +258,6 @@ export function App() {
     vaultSelected,
   );
   const searchInputRef = useRef<HTMLInputElement>(null);
-  const loadRequestRef = useRef(0);
   const rescanInFlightRef = useRef(false);
   const saveInFlightRef = useRef(new Set<string>());
   const externalCheckInFlightRef = useRef(new Set<string>());
@@ -285,6 +277,15 @@ export function App() {
   const sidebar = useSidebarState();
   const conflictResolution = useConflictResolution();
   const notifications = useNotifications({ vaultIdRef });
+  const {
+    clearDocumentLoad,
+    completeDocumentLoad,
+    documentLoadState,
+    failDocumentLoad,
+    isCurrentLoad,
+    resetDocumentLoads,
+    startDocumentLoad,
+  } = useDocumentLoadStates();
 
   /// What the active tab of the active group is showing. Derived rather than
   /// stored: the workspace is the one place a document is open, so there is no
@@ -561,7 +562,6 @@ export function App() {
     const nextDocument = createUntitledDocument();
     const nextDocuments = [...documentsRef.current, nextDocument];
 
-    loadRequestRef.current += 1;
     documentsRef.current = nextDocuments;
     setDocuments(nextDocuments);
     setActiveDocument(nextDocument.id);
@@ -580,7 +580,6 @@ export function App() {
           ),
     );
     setQuery("");
-    setDocumentLoad({ status: "idle" });
     setDocumentActivity((current) =>
       markDocumentActive(current, nextDocument.id, Date.now()),
     );
@@ -1150,10 +1149,8 @@ export function App() {
   );
 
   const onActiveDocumentTrashed = useCallback(() => {
-    loadRequestRef.current += 1;
     setActiveDocument("");
     setFocusDocument(undefined);
-    setDocumentLoad({ status: "idle" });
   }, [setActiveDocument, setFocusDocument]);
 
   const recovery = useRecoveryPanel();
@@ -1197,7 +1194,6 @@ export function App() {
       const nextDocuments = documentsFromVault(snapshot);
       const nextFolders = folderPathsFromVault(snapshot);
 
-      loadRequestRef.current += 1;
       vaultIdRef.current = snapshot.vaultId ?? "";
       documentsRef.current = nextDocuments;
       setVaultId(snapshot.vaultId ?? "");
@@ -1216,7 +1212,7 @@ export function App() {
       setWorkspace(createWorkspace());
       setFocusDocument(undefined);
       setQuery("");
-      setDocumentLoad({ status: "idle" });
+      resetDocumentLoads();
       notifications.reset();
       timestampMigration.reset();
       trash.reset();
@@ -1234,6 +1230,7 @@ export function App() {
       notifications.addVaultNotice,
       notifications.reset,
       recordSnapshotEvents,
+      resetDocumentLoads,
       setActiveDocument,
       setFocusDocument,
       timestampMigration.reset,
@@ -1668,46 +1665,42 @@ export function App() {
     vaultSelected,
     vaultId,
   ]);
-  const selectDocument = useCallback(
-    async (documentId: string, options: { newTab?: boolean } = {}) => {
+  const loadDocument = useCallback(
+    async (documentId: string, retry = false) => {
       const document = documentsRef.current.find(
         (candidate) => candidate.id === documentId,
       );
       if (!document) return;
 
       if (
-        focusDocumentIdRef.current &&
-        focusDocumentIdRef.current !== documentId
+        document.isMarkdown === false ||
+        !document.relativePath ||
+        document.sourceText !== undefined
       ) {
-        setFocusDocument(undefined);
-      }
-      setDocumentActivity((current) =>
-        markDocumentActive(current, documentId, Date.now()),
-      );
-      setActiveDocument(documentId, options);
-      setCursorPosition({ line: 1, column: 1 });
-
-      if (document.isMarkdown === false) {
-        loadRequestRef.current += 1;
-        setDocumentLoad({ status: "idle" });
+        clearDocumentLoad(documentId);
         return;
       }
 
-      if (!document.relativePath || document.sourceText !== undefined) {
-        loadRequestRef.current += 1;
-        setDocumentLoad({ status: "idle" });
-        return;
-      }
-
-      const requestId = loadRequestRef.current + 1;
-      loadRequestRef.current = requestId;
-      setDocumentLoad({ status: "loading", documentId });
+      const relativePath = document.relativePath;
+      const ticket = startDocumentLoad(documentId, retry);
+      if (!ticket) return;
 
       try {
-        const openedDocument = await readVaultFile(document.relativePath);
-        if (loadRequestRef.current !== requestId) return;
-        if (openedDocument.relativePath !== document.relativePath) {
+        const openedDocument = await readVaultFile(relativePath);
+        if (!isCurrentLoad(ticket)) return;
+        if (openedDocument.relativePath !== relativePath) {
           throw new Error("The opened file did not match the requested note.");
+        }
+        const currentDocument = documentsRef.current.find(
+          (candidate) => candidate.id === documentId,
+        );
+        if (
+          !currentDocument ||
+          currentDocument.relativePath !== relativePath ||
+          currentDocument.sourceText !== undefined
+        ) {
+          completeDocumentLoad(ticket);
+          return;
         }
 
         setDocuments((currentDocuments) =>
@@ -1731,17 +1724,48 @@ export function App() {
               : currentDocument,
           ),
         );
-        setDocumentLoad({ status: "idle" });
+        completeDocumentLoad(ticket);
       } catch (error) {
-        if (loadRequestRef.current !== requestId) return;
-        setDocumentLoad({
-          status: "error",
-          documentId,
-          message: readErrorMessage(error),
-        });
+        failDocumentLoad(ticket, readErrorMessage(error));
       }
     },
-    [setActiveDocument, setFocusDocument],
+    [
+      clearDocumentLoad,
+      completeDocumentLoad,
+      failDocumentLoad,
+      isCurrentLoad,
+      startDocumentLoad,
+    ],
+  );
+
+  useEffect(() => {
+    for (const documentId of openTabDocumentIds) {
+      void loadDocument(documentId);
+    }
+  }, [loadDocument, openTabDocumentIds]);
+
+  const selectDocument = useCallback(
+    async (documentId: string, options: { newTab?: boolean } = {}) => {
+      const document = documentsRef.current.find(
+        (candidate) => candidate.id === documentId,
+      );
+      if (!document) return;
+
+      if (
+        focusDocumentIdRef.current &&
+        focusDocumentIdRef.current !== documentId
+      ) {
+        setFocusDocument(undefined);
+      }
+      setDocumentActivity((current) =>
+        markDocumentActive(current, documentId, Date.now()),
+      );
+      setActiveDocument(documentId, options);
+      setCursorPosition({ line: 1, column: 1 });
+
+      await loadDocument(documentId);
+    },
+    [loadDocument, setActiveDocument, setFocusDocument],
   );
 
   const missingWikilink = useMissingWikilinkDialog({
@@ -2042,7 +2066,6 @@ export function App() {
       ...localDrafts,
     ];
     const nextFolders = folderPathsFromVault(snapshot);
-    loadRequestRef.current += 1;
     documentsRef.current = nextDocuments;
     setDocuments(nextDocuments);
     setDocumentActivity((current) =>
@@ -2056,7 +2079,6 @@ export function App() {
     });
     setActiveDocument(relocatedDocumentId);
     setFocusDocument(undefined);
-    setDocumentLoad({ status: "idle" });
     notifications.addVaultNotice(message, { history: { kind: "rename" } });
   }
 
@@ -2467,11 +2489,9 @@ export function App() {
   }, [openWikilink]);
 
   function closeDocument() {
-    loadRequestRef.current += 1;
     setActiveDocument("");
     setFocusDocument(undefined);
     setCursorPosition({ line: 1, column: 1 });
-    setDocumentLoad({ status: "idle" });
   }
 
   function updateDocumentContent(content: string) {
@@ -2641,7 +2661,6 @@ export function App() {
       sidebar.setExpandedFolders((current) => new Set(current).add(folderPath));
       setFocusDocument(documentId);
       setActiveDocument(documentId);
-      setDocumentLoad({ status: "idle" });
     } catch (error) {
       notifications.addVaultNotice(readErrorMessage(error), {
         persistent: true,
@@ -2838,12 +2857,7 @@ export function App() {
                     (document) => document.isMarkdown !== false,
                   )}
                   findRequest={retrieval.findRequest}
-                  loadState={
-                    documentLoad.status !== "idle" &&
-                    documentLoad.documentId === slotDocument?.id
-                      ? documentLoad
-                      : { status: "idle" }
-                  }
+                  loadState={documentLoadState(slotDocument?.id)}
                   vaultName={vaultName}
                   vaultSelected={vaultSelected}
                   wikilinkCandidates={wikilinkCandidates}
@@ -2874,7 +2888,7 @@ export function App() {
                   onOpenVault={() => void vaultSwitcher.openVault()}
                   onOpenWikilink={openWikilink}
                   onRetryDocument={() => {
-                    if (slotDocument) void selectDocument(slotDocument.id);
+                    if (slotDocument) void loadDocument(slotDocument.id, true);
                   }}
                   onRenameDocument={(name) => {
                     if (slotDocument)

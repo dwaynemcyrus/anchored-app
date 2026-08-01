@@ -2691,6 +2691,9 @@ changelog changes that describe a chunk ship in the same commit.
      tab close during loading, and two simultaneously visible split panes.
    - Expected files: `src/app/App.tsx`, a focused document-loader hook/module,
      workspace/editor integration tests, `PLANS.md`.
+   - **Status:** completed 2026-08-01 — each open document has an independent
+     request ticket and status, with an integration test for out-of-order
+     reads across two tabs.
 
 3. **Remap document identity across the whole workspace**
    - Add a pure workspace operation that replaces an old document identity in
