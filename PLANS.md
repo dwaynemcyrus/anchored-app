@@ -2560,3 +2560,295 @@ with Markdown projection; search behavior change; trash relocation; templates.
 ### Version impact
 
 None yet. This plan does not prepare a release.
+
+## Follow-up plan: stabilize workspace and storage authority
+
+### Status
+
+- **Plan status:** awaiting human approval
+- **Implementation authorization:** not yet granted
+- **Branch:** `codex/stabilize-storage-workspace`
+- **Prepared:** 2026-08-01
+
+### Outcome
+
+Stabilize the multi-tab workspace and complete the database-first transition so
+that `<vault>/.anchored/vault.db` is the single authoritative store, Markdown
+files are safe and continuously maintained projections, and an external
+Markdown edit is imported when the database has not changed or preserved as a
+conflict when both sides changed.
+
+This work addresses the seven findings from the 2026-07-31 architecture review:
+
+1. inactive notes do not continue autosaving;
+2. one global load request can strand another open tab;
+3. path-derived document ID changes remap only the active tab;
+4. identity projection can overwrite a concurrent external edit;
+5. watcher-reported edits can be skipped by a size-and-mtime shortcut;
+6. file-authoritative and database-authoritative write paths coexist;
+7. repository checks traverse tool-created `.claude/worktrees` directories.
+
+### Confirmed decisions
+
+- Existing vaults switch automatically to SQLite-authoritative mode only after
+  database validation and creation of a recoverable, SQLite-consistent backup.
+- External Markdown changes are imported automatically when SQLite has not
+  changed since the last successful projection.
+- If SQLite and Markdown both changed since their last agreement, neither side
+  wins automatically. Both versions are preserved and the conflict is shown to
+  the user.
+- Planning, implementation, tests, changelog, and relevant documentation stay
+  in focused commits on this one branch. More than seven commits are acceptable
+  where the database cutover needs smaller rollback boundaries.
+- No production vault is used for migration or destructive verification. All
+  native data tests run against temporary or disposable vault copies.
+
+### Target architecture
+
+#### Authority and identity
+
+- SQLite owns document identity, current content, revision, lifecycle metadata,
+  link relationships, history, and projection state.
+- A workspace tab refers to one stable document identity. File paths are
+  mutable attributes and never serve as the durable identity of an open tab.
+- Frontend state may use a temporary draft identity before creation, but the
+  draft-to-persisted transition must remap every reference atomically.
+
+#### Canonical save and projection protocol
+
+Every authored mutation follows one native coordinator:
+
+1. Validate the command, selected vault, path, expected document revision, and
+   current synchronization state.
+2. In one SQLite transaction, preserve the previous revision, commit the new
+   canonical content, and mark the document `pending_projection`.
+3. Commit the database transaction before touching Markdown.
+4. Before projection, compare the Markdown file with the last successfully
+   projected hash. If it changed externally, stop and reconcile rather than
+   overwrite it.
+5. Write the projection through a sibling temporary file, flush it, and
+   atomically replace the destination.
+6. Record the projected hash, file signature, projected revision, and `synced`
+   state in a second SQLite transaction.
+
+A crash after step 3 leaves durable canonical data and a pending projection.
+Startup reconciliation retries it only when the file still matches the prior
+projection; otherwise it creates a conflict. A database failure never falls
+back to an unrecorded direct Markdown write.
+
+#### External-edit protocol
+
+1. A watcher-reported Markdown path is read and hashed even when size and
+   modification time appear unchanged.
+2. If its hash equals the last projected hash, it is Anchored's own completed
+   projection and no import occurs.
+3. If SQLite remains at the last projected revision, the external content is
+   imported as a new canonical revision with origin `external`, and the file is
+   already its synchronized projection.
+4. If SQLite advanced independently, preserve the database and file versions,
+   mark a conflict, and require an explicit resolution.
+
+#### Startup, migration, and corruption behavior
+
+- Before enabling database authority for an existing vault, run SQLite
+  integrity and schema-version checks and create a consistent backup under the
+  internal `.anchored/` recovery area.
+- Apply only append-only, retry-safe schema migrations inside transactions.
+- Record completion of the authority cutover durably so an interrupted launch
+  can resume without making a second incompatible backup or migration.
+- A missing database may be bootstrapped from existing Markdown only through
+  the defined vault-import path. A corrupt or newer-version database blocks
+  writes, preserves the database and Markdown files, and reports recovery
+  instructions instead of silently selecting a different authority.
+- Rebuilding every Markdown projection from a validated SQLite database is an
+  integration-tested recovery operation. It never rewrites an externally
+  changed file without first preserving a conflict.
+
+### Implementation sequence and commit boundaries
+
+Each chunk is committed only after its listed checks pass. Documentation and
+changelog changes that describe a chunk ship in the same commit.
+
+1. **Keep every dirty document autosaving**
+   - Replace the active-document-only timer with per-document autosave
+     scheduling keyed by stable document identity.
+   - Keep one in-flight save per document and reschedule when newer edits arrive.
+   - Add a main-window close guard that attempts safe saves and prevents close
+     while unsaved, conflicted, or failed documents still require attention.
+   - Tests: two dirty tabs, split panes, switching before the one-second delay,
+     edits during an in-flight save, save failure, conflict, and quit/retry.
+   - Expected files: `src/app/App.tsx`, a focused autosave hook/module and tests,
+     main-window lifecycle bridge if needed, `CHANGELOG.md`, `PLANS.md`.
+
+2. **Make loading state document-scoped**
+   - Replace the global request counter and single load state with keyed request
+     generations and keyed loading/error state.
+   - Ensure every visible unloaded tab starts or resumes its own read.
+   - Activating a tab must never be the only way to complete another pane's load.
+   - Tests: overlapping reads resolving in either order, rejected reads, retry,
+     tab close during loading, and two simultaneously visible split panes.
+   - Expected files: `src/app/App.tsx`, a focused document-loader hook/module,
+     workspace/editor integration tests, `PLANS.md`.
+
+3. **Remap document identity across the whole workspace**
+   - Add a pure workspace operation that replaces an old document identity in
+     every tab and every tab-history entry while preserving group, active tab,
+     pin, and split state.
+   - Use it for draft persistence, Save As, internal rename/move, external move,
+     trash/restore, and snapshot adoption wherever identity changes.
+   - Remap focus, load, save, activity, notification, and dialog references in
+     the same state transition or keep them keyed by the permanent UUID.
+   - Tests: inactive tab, duplicate tabs, history, nested splits, save finishing
+     after focus moved, external rename, and refresh after a path change.
+   - Expected files: `src/app/workspaceTree.ts` and tests, `src/app/App.tsx`,
+     targeted component tests, `CHANGELOG.md`, `PLANS.md`.
+
+4. **Make identity projection concurrency-safe**
+   - Pass the source hash/revision used to construct the projection into the
+     writer and re-read immediately before replacement.
+   - If the file no longer matches, preserve both versions and mark a conflict;
+     never write the stale identity projection.
+   - Remove `unwrap_or_default` from preservation paths so a failed read cannot
+     become a fabricated empty prior version.
+   - Tests: external edit between read and write, deletion, unreadable file,
+     malformed front matter, retry, and crash-reconciliation behavior.
+   - Expected files: `src-tauri/src/db/projection.rs`, conflict repository tests,
+     `CHANGELOG.md`, `PLANS.md`.
+
+5. **Treat watcher events as authoritative change signals**
+   - Separate warm full-vault import from event-driven targeted import.
+   - Keep the size/mtime optimization for a cold scan, but force content reads
+     and hashes for watcher-reported paths.
+   - Deduplicate a watcher batch without losing rename pairs or delete/create
+     ordering needed for move reconciliation.
+   - Tests: same-size same-millisecond replacement, preserved timestamps,
+     Anchored self-write, rename, deletion, rapid repeated edits, and assets.
+   - Expected files: `src-tauri/src/db/mod.rs`, `src-tauri/src/watcher.rs`,
+     `src-tauri/src/vault.rs`, targeted tests, `PLANS.md`.
+
+6. **Add database cutover preflight and recovery backup**
+   - Add the migration state needed to distinguish pre-cutover, migrating,
+     authoritative, pending-projection, and blocked-recovery states.
+   - Validate the database, create a consistent backup, apply migrations, and
+     record cutover completion before enabling authoritative writes.
+   - Surface a typed blocked-recovery result to the interface rather than
+     silently falling back to file authority.
+   - Tests: existing populated database, empty vault, interrupted preflight,
+     corrupt database, newer schema, backup failure, and idempotent relaunch.
+   - Expected files: `src-tauri/src/db/schema.rs`, a focused migration/recovery
+     module, Tauri bridge types, app recovery state, `PROJECT.md`, `OVERVIEW.md`,
+     `CHANGELOG.md`, `PLANS.md`.
+
+7. **Route authored saves through the canonical coordinator**
+   - Implement the database-first, pending-projection protocol for normal save,
+     creation, Save As, Scratchpad, lifecycle transitions, and conflict
+     resolution.
+   - Remove the direct-file fallback from database-authoritative vaults.
+   - Serialize mutations per document and use SQLite revision checks instead of
+     frontend file-content equality as the authoritative concurrency token.
+   - Tests: write failure after database commit, retry, crash before projection,
+     concurrent commands, newer frontend revision, and exact Markdown bytes.
+   - Expected files: `src-tauri/src/db/projection.rs`, document repositories,
+     mutation commands or a focused coordinator module, TypeScript bridge,
+     affected frontend save flows, `CHANGELOG.md`, `PLANS.md`.
+
+8. **Route external edits through canonical reconciliation**
+   - Implement the confirmed import-or-conflict rule using projected hash and
+     projected revision.
+   - Ensure conflicts are visible in snapshots and recovery UI without reading
+     arbitrary conflict files in React.
+   - Apply the same rule at startup, from watcher batches, and after the app
+     regains focus.
+   - Tests: database-only edit, file-only edit, both changed, own projection,
+     conflict resolution, app crash at every protocol boundary, and restart.
+   - Expected files: database reconciliation/conflict modules, vault/watcher
+     command wiring, recovery UI state and tests, `CHANGELOG.md`, `PLANS.md`.
+
+9. **Finish database-backed reads and remove authority kill switches**
+   - Serve document snapshots, note reads, search, backlinks, and recovery data
+     from SQLite after successful cutover.
+   - Remove `reads.source`, `writes.projection`, and their environment-variable
+     authority switches from normal operation. A recovery mode may disable
+     writes, but it cannot silently make Markdown authoritative.
+   - Retain filesystem traversal only for discovering external files, folders,
+     and assets that have not yet been reconciled.
+   - Tests: database/Markdown parity, stale projection, database-only recovery,
+     full Markdown rebuild, search/backlinks after rename, and missing database.
+   - Expected files: `src-tauri/src/db/`, `src-tauri/src/vault.rs`, typed bridge,
+     project/storage documentation, `CHANGELOG.md`, `PLANS.md`.
+
+10. **Put every path-changing operation behind the coordinator**
+    - Move rename, move, folder move, archive, restore, trash, and link rewrites
+      onto the same revision/projection protocol.
+    - Replace or retire the older file-first rename journal only after equivalent
+      crash tests prove the database protocol can recover every boundary.
+    - Tests: multi-file rollback/recovery, ambiguous links, path collisions,
+      external move races, nested folder operations, and case-only renames.
+    - Expected files: native vault/link/continuity modules, database repositories,
+      integration tests, `CHANGELOG.md`, `PLANS.md`.
+
+11. **Confine repository quality gates to the repository**
+    - Ignore `.claude/` and other tool-owned nested worktrees in Prettier,
+      ESLint, Vitest, and file-watching configuration without deleting them.
+    - Prefer explicit source/test includes so unrelated nested package installs
+      cannot introduce duplicate React runtimes or generated artifacts.
+    - Tests: root format, lint, type-check, and test commands complete with the
+      existing `.claude/worktrees` directory present.
+    - Expected files: `.gitignore`, `.prettierignore`, `eslint.config.js`,
+      `vite.config.ts`, package scripts only if needed, `PLANS.md`.
+
+12. **Run end-to-end recovery and release-readiness verification**
+    - Exercise the whole protocol on a disposable representative vault through
+      clean launch, migration, edit, autosave, external edit, conflict, rename,
+      crash/restart, database-only Markdown rebuild, and quit/relaunch.
+    - Verify multiple tabs and nested splits throughout the workflow.
+    - Inspect database integrity and projection state after each destructive
+      fault injection.
+    - Record native macOS results and remaining seven-day observation work.
+    - Expected files: integration fixtures/tests, manual QA documentation,
+      `CHANGELOG.md`, `PLANS.md`. No version change or release is authorized.
+
+### Quality gates per implementation chunk
+
+- Prettier check over tracked project sources.
+- ESLint with zero warnings.
+- TypeScript type-check.
+- Targeted Vitest tests, then the full frontend suite when the chunk changes
+  shared application state.
+- `cargo fmt --check` and strict Clippy for native changes.
+- Targeted Rust tests, then the full Rust suite for database, filesystem, link,
+  watcher, or migration changes.
+- Production frontend build for bridge, routing, or composition changes.
+- Native disposable-vault verification for migrations, projection, external
+  reconciliation, or recovery changes.
+
+### Commit and rollback policy
+
+- Use Conventional Commit subjects of at most 44 characters.
+- Stage only the files belonging to the current chunk, including its tests,
+  changelog entry, and plan progress.
+- Inspect the staged diff and rerun the relevant gates before every commit.
+- Each commit must leave existing vaults readable by that commit; no commit may
+  depend on an uncommitted later chunk for data safety.
+- A migration commit is append-only. Rollback means returning to the previous
+  application commit and restoring the pre-cutover database backup, never
+  editing an applied migration or guessing from partially projected files.
+- Do not push, merge, tag, release, or deploy without separate authorization.
+
+### Completion criteria
+
+- Every dirty document autosaves regardless of active tab or pane.
+- Concurrent note loads cannot cancel or blank one another.
+- No tab, history entry, focus target, or pending operation keeps a stale
+  document identity after creation, rename, move, trash, or restore.
+- No projection overwrites a file changed since its source was read.
+- Every watcher-reported Markdown change is hashed and reconciled.
+- SQLite is the only write authority after migration; direct-file fallback and
+  authority kill switches are removed from normal operation.
+- External-only edits import, dual-sided edits conflict, and both behaviors
+  survive restart.
+- Markdown can be rebuilt from a validated authoritative database without
+  changing unsupported user-authored syntax beyond managed fields.
+- Root quality commands pass while `.claude/worktrees` exists.
+- Relevant automated gates and disposable native QA pass, and the final diff
+  contains no debug output, secrets, generated artifacts, or unrelated files.
