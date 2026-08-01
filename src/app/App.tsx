@@ -126,6 +126,7 @@ import {
 } from "./notificationHistory";
 import {
   archiveVaultFile,
+  createVaultDatabaseBackup,
   createVaultConflictCopy,
   createUntitledVaultFile,
   createVaultFile,
@@ -148,6 +149,9 @@ import {
   restoreArchivedVaultFile,
   type VaultDocument,
   type VaultSnapshot,
+  type VaultStorageStatus,
+  vaultStorageStatus,
+  verifyVaultDatabase,
 } from "../lib/tauri/vault";
 import { openScratchpad, type ScratchpadMode } from "../lib/tauri/scratchpad";
 import { checkForUpdate, installUpdate } from "./updater";
@@ -229,6 +233,10 @@ export function App() {
   >("idle");
   const [updateError, setUpdateError] = useState<string>();
   const [vaultSelected, setVaultSelected] = useState(false);
+  const [storageStatus, setStorageStatus] = useState<VaultStorageStatus>();
+  const [storageBusy, setStorageBusy] = useState<"backup" | "verify">();
+  const [storageError, setStorageError] = useState<string>();
+  const [storageMessage, setStorageMessage] = useState<string>();
   const [transitioningDocumentId, setTransitioningDocumentId] = useState<
     string | undefined
   >();
@@ -1231,6 +1239,53 @@ export function App() {
     documentsRef,
     vaultSelected,
   });
+
+  const refreshStorageStatus = useCallback(async () => {
+    if (!vaultSelected) {
+      setStorageStatus(undefined);
+      return;
+    }
+    try {
+      setStorageStatus(await vaultStorageStatus());
+      setStorageError(undefined);
+    } catch (error) {
+      setStorageError(readErrorMessage(error));
+    }
+  }, [vaultSelected]);
+
+  useEffect(() => {
+    if (!settingsVisible) return;
+    void refreshStorageStatus();
+  }, [refreshStorageStatus, settingsVisible, vaultId]);
+
+  const handleVerifyDatabase = useCallback(async () => {
+    setStorageBusy("verify");
+    setStorageError(undefined);
+    setStorageMessage(undefined);
+    try {
+      setStorageStatus(await verifyVaultDatabase());
+      setStorageMessage("SQLite integrity check passed.");
+    } catch (error) {
+      setStorageError(readErrorMessage(error));
+    } finally {
+      setStorageBusy(undefined);
+    }
+  }, []);
+
+  const handleCreateDatabaseBackup = useCallback(async () => {
+    setStorageBusy("backup");
+    setStorageError(undefined);
+    setStorageMessage(undefined);
+    try {
+      const status = await createVaultDatabaseBackup();
+      setStorageStatus(status);
+      setStorageMessage("A SQLite recovery copy was created.");
+    } catch (error) {
+      setStorageError(readErrorMessage(error));
+    } finally {
+      setStorageBusy(undefined);
+    }
+  }, []);
 
   const activateVaultSnapshot = useCallback(
     (snapshot: VaultSnapshot) => {
@@ -3105,6 +3160,10 @@ export function App() {
           excerptLines={paneLayout.excerptLines}
           markdownSettings={markdownSettings}
           reloading={reloadingApp}
+          storageBusy={storageBusy}
+          storageError={storageError}
+          storageMessage={storageMessage}
+          storageStatus={storageStatus}
           timestampMigrationBlocked={documents.some(
             (document) =>
               document.saveState === "saving" ||
@@ -3139,6 +3198,8 @@ export function App() {
             void timestampMigration.previewTimestampMigration()
           }
           onReload={() => void reloadApp()}
+          onCreateDatabaseBackup={() => void handleCreateDatabaseBackup()}
+          onVerifyDatabase={() => void handleVerifyDatabase()}
         />
       ) : null}
       {folderDialogs.createFolderVisible ? (

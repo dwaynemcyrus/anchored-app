@@ -2609,6 +2609,9 @@ This work addresses the seven findings from the 2026-07-31 architecture review:
   status, SQLite `integrity_check`, and atomic SQLite backup copies in
   `.anchored/recovery/`. The future automatic authority cutover and Settings
   controls will use these same operations.
+- 2026-08-01: Added the Storage & Recovery Settings controls. They show the
+  current SQLite and latest backup locations, surface errors, and expose
+  explicit verify and create-backup actions without rewriting Markdown.
 
 ### Target architecture
 

@@ -56,6 +56,7 @@ const appWindowClose = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
 vi.mock("../lib/tauri/vault", () => ({
   applyVaultTimestampMigration: vi.fn(),
   archiveVaultFile: vi.fn(),
+  createVaultDatabaseBackup: vi.fn(),
   createVaultConflictCopy: vi.fn(),
   createVault: vi.fn(),
   createVaultFolder: vi.fn(),
@@ -87,6 +88,8 @@ vi.mock("../lib/tauri/vault", () => ({
   watchVaultFile: vi.fn(),
   watchVaultTree: vi.fn(),
   watchVault: vi.fn(),
+  vaultStorageStatus: vi.fn(),
+  verifyVaultDatabase: vi.fn(),
   restoreVaultFileFromTrash: vi.fn(),
   restoreArchivedVaultFile: vi.fn(),
 }));

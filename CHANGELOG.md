@@ -11,6 +11,8 @@ Git commit. The format follows [Keep a Changelog], and releases follow
 - SQLite storage now supports integrity checks and SQLite-consistent recovery
   copies under `.anchored/recovery/`, avoiding unsafe file-level copies while
   the database is using WAL mode.
+- Settings now shows the SQLite database and latest recovery-copy locations,
+  and lets the vault owner verify the database or create a recovery copy.
 
 ### Fixed
 
