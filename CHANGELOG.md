@@ -6,6 +6,13 @@ Git commit. The format follows [Keep a Changelog], and releases follow
 
 ## [Unreleased]
 
+### Fixed
+
+- Every open note now keeps its own autosave timer, so changing tabs or working
+  in split panes cannot leave an inactive dirty note unsaved. Closing Anchored
+  now saves safe changes first and keeps the window open when a note needs
+  conflict resolution or retry.
+
 ## [0.1.11-alpha] - 2026-07-28
 
 ### Added

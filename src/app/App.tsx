@@ -65,6 +65,8 @@ import { useTimestampMigration } from "./useTimestampMigration";
 import { useRecoveryPanel } from "./useRecoveryPanel";
 import { useTrashPanel } from "./useTrashPanel";
 import { useVaultSwitcher } from "./useVaultSwitcher";
+import { useDocumentAutosave } from "./useDocumentAutosave";
+import { useWindowCloseGuard } from "./useWindowCloseGuard";
 import { VaultSearchPalette } from "./components/VaultSearchPalette";
 import {
   applyVaultPatch,
@@ -1450,23 +1452,16 @@ export function App() {
     clearSessionState(window.localStorage);
   }, [activeDocument?.relativePath, vaultId, vaultSelected]);
 
-  useEffect(() => {
-    if (
-      !activeDocument?.relativePath ||
-      activeDocument.sourceText === undefined ||
-      activeDocument.savedSourceText === undefined ||
-      activeDocument.sourceText === activeDocument.savedSourceText ||
-      saveState !== "unsaved"
-    ) {
-      return;
-    }
+  useDocumentAutosave(documents, saveDocument);
 
-    const timeout = window.setTimeout(() => {
-      void saveDocument(activeDocument.id);
-    }, 1_000);
-
-    return () => window.clearTimeout(timeout);
-  }, [activeDocument, saveDocument, saveState]);
+  useWindowCloseGuard({
+    documents,
+    onBlocked: (message) =>
+      notifications.addVaultNotice(message, {
+        persistent: true,
+      }),
+    saveDocument,
+  });
 
   useEffect(() => {
     const scheduleRefresh = () => {

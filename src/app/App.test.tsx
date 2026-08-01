@@ -51,6 +51,7 @@ import { saveSessionState } from "./sessionState";
 import { reloadAnchoredWindow } from "./windowActions";
 
 const eventHandlers = vi.hoisted(() => new Map());
+const appWindowClose = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
 
 vi.mock("../lib/tauri/vault", () => ({
   applyVaultTimestampMigration: vi.fn(),
@@ -94,6 +95,13 @@ vi.mock("@tauri-apps/api/event", () => ({
   listen: vi.fn(async (event, handler) => {
     eventHandlers.set(event, handler);
     return () => eventHandlers.delete(event);
+  }),
+}));
+
+vi.mock("@tauri-apps/api/window", () => ({
+  getCurrentWindow: () => ({
+    close: appWindowClose,
+    onCloseRequested: vi.fn().mockResolvedValue(vi.fn()),
   }),
 }));
 

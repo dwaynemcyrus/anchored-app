@@ -2565,8 +2565,8 @@ None yet. This plan does not prepare a release.
 
 ### Status
 
-- **Plan status:** awaiting human approval
-- **Implementation authorization:** not yet granted
+- **Plan status:** in progress
+- **Implementation authorization:** granted 2026-08-01
 - **Branch:** `codex/stabilize-storage-workspace`
 - **Prepared:** 2026-08-01
 
@@ -2679,6 +2679,8 @@ changelog changes that describe a chunk ship in the same commit.
      edits during an in-flight save, save failure, conflict, and quit/retry.
    - Expected files: `src/app/App.tsx`, a focused autosave hook/module and tests,
      main-window lifecycle bridge if needed, `CHANGELOG.md`, `PLANS.md`.
+   - **Status:** completed 2026-08-01 — document-keyed timers and the
+     main-window close guard are covered by focused lifecycle and app tests.
 
 2. **Make loading state document-scoped**
    - Replace the global request counter and single load state with keyed request
