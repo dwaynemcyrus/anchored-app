@@ -22,6 +22,76 @@ pub(crate) struct Upserted {
     pub created: bool,
 }
 
+/// Whether an externally observed file can safely update a Markdown row.
+pub(crate) enum ExternalChange {
+    /// No row exists yet, or the database has not moved since the last file
+    /// agreement, so the external file may be imported.
+    Import,
+    /// The file already carries exactly the content held in the database.
+    /// Re-importing it would only create a revision and watcher churn.
+    Unchanged,
+    /// The database and file both changed since their last agreement. Neither
+    /// version is allowed to overwrite the other automatically.
+    Conflict {
+        document_id: i64,
+        stored_content: String,
+        uuid: String,
+    },
+}
+
+/// Classifies a watcher-reported Markdown change before an import can replace
+/// a database row. The projected revision is the last agreement point: if the
+/// row advanced beyond it and the file content is different, both sides have
+/// edited the note and must be preserved as a conflict.
+pub(crate) fn classify_external_change(
+    connection: &Connection,
+    relative_path: &str,
+    incoming_hash: &str,
+) -> Result<ExternalChange, VaultError> {
+    let existing = connection
+        .query_row(
+            "SELECT documents.id, documents.uuid, documents.content_hash,
+                    documents.frontmatter_text || documents.body,
+                    documents.revision, sync_records.projected_revision
+             FROM documents
+             LEFT JOIN sync_records ON sync_records.document_id = documents.id
+             WHERE documents.path_key = ?1
+               AND documents.deleted_at IS NULL
+               AND documents.is_markdown = 1",
+            params![super::keys::path_key(relative_path)],
+            |row| {
+                Ok((
+                    row.get::<_, i64>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, String>(2)?,
+                    row.get::<_, String>(3)?,
+                    row.get::<_, i64>(4)?,
+                    row.get::<_, Option<i64>>(5)?,
+                ))
+            },
+        )
+        .optional()
+        .map_err(map_error(
+            "The externally changed note could not be compared",
+        ))?;
+    let Some((document_id, uuid, stored_hash, stored_content, revision, projected_revision)) =
+        existing
+    else {
+        return Ok(ExternalChange::Import);
+    };
+    if stored_hash == incoming_hash {
+        return Ok(ExternalChange::Unchanged);
+    }
+    if projected_revision.is_some_and(|projected| revision != projected) {
+        return Ok(ExternalChange::Conflict {
+            document_id,
+            stored_content,
+            uuid,
+        });
+    }
+    Ok(ExternalChange::Import)
+}
+
 /// Writes a document and its derived alias and link rows.
 ///
 /// A row is found by path first: the file at a path is the thing being

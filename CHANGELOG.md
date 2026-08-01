@@ -32,6 +32,10 @@ Git commit. The format follows [Keep a Changelog], and releases follow
   an overwrite.
 - Watcher-reported Markdown changes now read and compare file content even
   when size and modification time happen to match the prior version.
+- A Finder or external-editor change now imports into SQLite only when the
+  database has not advanced since the last projection; if both changed, the
+  two versions are preserved as a conflict instead of silently overwriting the
+  database version.
 
 ## [0.1.11-alpha] - 2026-07-28
 

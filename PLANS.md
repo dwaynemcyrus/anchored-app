@@ -2618,6 +2618,9 @@ This work addresses the seven findings from the 2026-07-31 architecture review:
 - 2026-08-01: Integrated the automatic one-time recovery backup into vault
   opening after the index refresh. Its completion marker is written only after
   SQLite verifies the recovery copy; a failure leaves authority cutover gated.
+- 2026-08-01: Made watcher imports compare the incoming Markdown revision to
+  SQLite's last projection agreement. External-only changes update SQLite;
+  concurrent database and file changes preserve both versions as a conflict.
 
 ### Target architecture
 

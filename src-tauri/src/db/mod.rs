@@ -363,6 +363,31 @@ fn import_paths_with_mode(
 
         match std::fs::read(&path) {
             Ok(bytes) => {
+                let content_hash = import::content_hash(&bytes);
+                if force_content_read && is_markdown_path(relative_path) {
+                    match documents::classify_external_change(
+                        &transaction,
+                        relative_path,
+                        &content_hash,
+                    )? {
+                        documents::ExternalChange::Unchanged => continue,
+                        documents::ExternalChange::Conflict {
+                            document_id,
+                            stored_content,
+                            uuid,
+                        } => {
+                            let external_content = String::from_utf8_lossy(&bytes).into_owned();
+                            conflicts::preserve(root, &uuid, &stored_content, &external_content)?;
+                            documents::set_sync_state(
+                                &transaction,
+                                document_id,
+                                documents::SyncState::Conflict,
+                            )?;
+                            continue;
+                        }
+                        documents::ExternalChange::Import => {}
+                    }
+                }
                 let mut document = if is_markdown_path(relative_path) {
                     import::import_note(relative_path, &bytes)
                 } else {
@@ -372,6 +397,25 @@ fn import_paths_with_mode(
                     .map(|metadata| file_signature(&metadata).1)
                     .unwrap_or_default();
                 let upserted = documents::upsert(&transaction, &document)?;
+                if force_content_read && document.is_markdown {
+                    let revision: i64 = transaction
+                        .query_row(
+                            "SELECT revision FROM documents WHERE id = ?1",
+                            params![upserted.id],
+                            |row| row.get(0),
+                        )
+                        .map_err(map_error(
+                            "The externally changed note could not be recorded",
+                        ))?;
+                    documents::record_synced(
+                        &transaction,
+                        upserted.id,
+                        &document.content_hash,
+                        document.size_bytes,
+                        document.mtime_millis,
+                        revision,
+                    )?;
+                }
                 document_set_changed |= upserted.created;
                 touched.push(upserted.id);
             }
@@ -810,6 +854,72 @@ mod tests {
         assert_eq!(
             super::ensure_initial_database_backup(vault.path()).expect("read backup marker"),
             None
+        );
+    }
+
+    #[test]
+    fn watcher_imports_an_external_edit_when_database_is_unchanged() {
+        let vault = tempdir().expect("create fixture vault");
+        crate::continuity::ensure_vault_identity(vault.path()).expect("create identity");
+        std::fs::write(vault.path().join("Note.md"), "# Original\n").expect("write note");
+        let mut connection = open(&super::database_path(vault.path())).expect("open database");
+        super::import_vault(&mut connection, vault.path(), &["Note.md".to_owned()], &[])
+            .expect("import note");
+        drop(connection);
+
+        std::fs::write(vault.path().join("Note.md"), "# External\n").expect("edit externally");
+        super::import_watched_paths(vault.path(), &["Note.md".to_owned()])
+            .expect("import external change");
+
+        let connection = open(&super::database_path(vault.path())).expect("reopen database");
+        assert_eq!(
+            connection
+                .query_row(
+                    "SELECT frontmatter_text || body FROM documents WHERE relative_path = 'Note.md'",
+                    [],
+                    |row| row.get::<_, String>(0),
+                )
+                .expect("read imported note"),
+            "# External\n"
+        );
+    }
+
+    #[test]
+    fn watcher_preserves_a_conflict_when_database_also_changed() {
+        let vault = tempdir().expect("create fixture vault");
+        crate::continuity::ensure_vault_identity(vault.path()).expect("create identity");
+        std::fs::write(vault.path().join("Note.md"), "# Original\n").expect("write note");
+        let mut connection = open(&super::database_path(vault.path())).expect("open database");
+        super::import_vault(&mut connection, vault.path(), &["Note.md".to_owned()], &[])
+            .expect("import note");
+        super::projection::save(&mut connection, vault.path(), "Note.md", "# Original\n")
+            .expect("record initial agreement");
+        let mut database_change = super::import::import_note("Note.md", b"# Database\n");
+        database_change.origin = super::documents::ChangeOrigin::Anchored;
+        super::documents::upsert(&connection, &database_change)
+            .expect("commit an unprojected database change");
+        drop(connection);
+
+        std::fs::write(vault.path().join("Note.md"), "# External\n").expect("edit externally");
+        super::import_watched_paths(vault.path(), &["Note.md".to_owned()])
+            .expect("record watcher conflict");
+
+        let connection = open(&super::database_path(vault.path())).expect("reopen database");
+        assert_eq!(
+            connection
+                .query_row(
+                    "SELECT frontmatter_text || body FROM documents WHERE relative_path = 'Note.md'",
+                    [],
+                    |row| row.get::<_, String>(0),
+                )
+                .expect("read preserved database note"),
+            "# Database\n"
+        );
+        assert_eq!(
+            super::list_conflicts(vault.path())
+                .expect("list conflicts")
+                .len(),
+            1
         );
     }
 
