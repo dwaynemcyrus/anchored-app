@@ -547,7 +547,7 @@ fn mark_identity_in_file(connection: &Connection, document_id: i64) -> Result<()
 mod tests {
     use tempfile::TempDir;
 
-    use super::project_pending_identities;
+    use super::{project_pending_identities, rebuild_markdown};
     use crate::db::{documents, import::import_note, open};
     use crate::metadata::{inspect_note_identity, NoteIdentityStatus};
 
@@ -1081,5 +1081,47 @@ mod tests {
             .query_row("SELECT state FROM sync_records", [], |row| row.get(0))
             .expect("read sync state");
         assert_eq!(state, "synced");
+    }
+
+    #[test]
+    fn rebuild_recreates_a_missing_markdown_projection() {
+        let (directory, connection) = vault(&[("Harbor.md", "# Harbor\n")]);
+        let path = directory.path().join("Harbor.md");
+        std::fs::remove_file(&path).expect("remove projection");
+
+        let result = rebuild_markdown(directory.path(), &connection).expect("rebuild");
+
+        assert_eq!(result.created, 1);
+        assert_eq!(
+            std::fs::read_to_string(path).expect("read rebuilt note"),
+            "# Harbor\n"
+        );
+    }
+
+    #[test]
+    fn rebuild_preserves_a_differing_markdown_projection() {
+        let (directory, connection) = vault(&[("Harbor.md", "# On disk\n")]);
+        documents::upsert(&connection, &import_note("Harbor.md", b"# From SQLite\n"))
+            .expect("store canonical content");
+        let uuid: String = connection
+            .query_row("SELECT uuid FROM documents", [], |row| row.get(0))
+            .expect("read note identity");
+
+        let result = rebuild_markdown(directory.path(), &connection).expect("rebuild");
+
+        assert_eq!(result.updated, 1);
+        assert_eq!(result.preserved, 1);
+        assert_eq!(
+            std::fs::read_to_string(directory.path().join("Harbor.md")).expect("read rebuilt note"),
+            "# From SQLite\n"
+        );
+        assert_eq!(
+            std::fs::read_to_string(
+                crate::db::conflicts::conflicts_directory(directory.path())
+                    .join(format!("{uuid}_file.md")),
+            )
+            .expect("read preserved Markdown"),
+            "# On disk\n"
+        );
     }
 }
