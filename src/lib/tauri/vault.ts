@@ -67,6 +67,17 @@ export type VaultPatch = {
   vaultId: string;
 };
 
+export type VaultDatabaseBackup = {
+  createdMillis: number;
+  relativePath: string;
+};
+
+export type VaultStorageStatus = {
+  databaseExists: boolean;
+  databaseRelativePath: string;
+  latestBackup?: VaultDatabaseBackup;
+};
+
 export type TimestampMigrationTarget = {
   expectedModifiedMillis: number;
   expectedSizeBytes: number;
@@ -304,6 +315,18 @@ export function rescanVaultPaths(
   return invokeVault<VaultPatch | null>("rescan_vault_paths", {
     relativePaths,
   });
+}
+
+export function vaultStorageStatus(): Promise<VaultStorageStatus> {
+  return invokeVault<VaultStorageStatus>("vault_storage_status");
+}
+
+export function verifyVaultDatabase(): Promise<VaultStorageStatus> {
+  return invokeVault<VaultStorageStatus>("verify_vault_database");
+}
+
+export function createVaultDatabaseBackup(): Promise<VaultStorageStatus> {
+  return invokeVault<VaultStorageStatus>("create_vault_database_backup");
 }
 
 export function reconcileVaultFileMove(

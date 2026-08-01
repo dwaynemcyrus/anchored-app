@@ -2603,6 +2603,13 @@ This work addresses the seven findings from the 2026-07-31 architecture review:
 - No production vault is used for migration or destructive verification. All
   native data tests run against temporary or disposable vault copies.
 
+### Progress log
+
+- 2026-08-01: Added the native recovery foundation: non-mutating storage
+  status, SQLite `integrity_check`, and atomic SQLite backup copies in
+  `.anchored/recovery/`. The future automatic authority cutover and Settings
+  controls will use these same operations.
+
 ### Target architecture
 
 #### Authority and identity

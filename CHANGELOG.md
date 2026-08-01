@@ -6,6 +6,12 @@ Git commit. The format follows [Keep a Changelog], and releases follow
 
 ## [Unreleased]
 
+### Added
+
+- SQLite storage now supports integrity checks and SQLite-consistent recovery
+  copies under `.anchored/recovery/`, avoiding unsafe file-level copies while
+  the database is using WAL mode.
+
 ### Fixed
 
 - Every open note now keeps its own autosave timer, so changing tabs or working

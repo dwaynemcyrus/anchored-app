@@ -319,6 +319,22 @@ pub struct TrashMutationResult {
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
+pub struct VaultDatabaseBackup {
+    pub created_millis: u64,
+    pub relative_path: String,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct VaultStorageStatus {
+    pub database_exists: bool,
+    pub database_relative_path: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub latest_backup: Option<VaultDatabaseBackup>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct VaultError {
     pub(crate) code: &'static str,
     pub(crate) message: String,
@@ -625,6 +641,45 @@ pub async fn rescan_vault_paths(
     .map_err(|error| VaultError::state(format!("Vault refresh could not finish: {error}")))?
 }
 
+/// Reports the current SQLite recovery state without creating a database.
+#[tauri::command]
+pub async fn vault_storage_status(
+    state: State<'_, VaultState>,
+) -> Result<VaultStorageStatus, VaultError> {
+    let root = selected_vault_root(&state, "viewing storage recovery")?;
+    storage_status(&root)
+}
+
+/// Runs SQLite's full integrity check for the selected vault database.
+#[tauri::command]
+pub async fn verify_vault_database(
+    state: State<'_, VaultState>,
+) -> Result<VaultStorageStatus, VaultError> {
+    let root = selected_vault_root(&state, "verifying the SQLite database")?;
+    tauri::async_runtime::spawn_blocking(move || {
+        crate::db::verify_database(&root)?;
+        storage_status(&root)
+    })
+    .await
+    .map_err(|error| {
+        VaultError::state(format!("Database verification could not finish: {error}"))
+    })?
+}
+
+/// Creates a recoverable, SQLite-consistent copy beneath `.anchored/recovery`.
+#[tauri::command]
+pub async fn create_vault_database_backup(
+    state: State<'_, VaultState>,
+) -> Result<VaultStorageStatus, VaultError> {
+    let root = selected_vault_root(&state, "creating a SQLite backup")?;
+    tauri::async_runtime::spawn_blocking(move || {
+        crate::db::create_database_backup(&root)?;
+        storage_status(&root)
+    })
+    .await
+    .map_err(|error| VaultError::state(format!("Database backup could not finish: {error}")))?
+}
+
 #[tauri::command]
 pub async fn reconcile_vault_file_move(
     state: State<'_, VaultState>,
@@ -735,6 +790,26 @@ fn selected_vault_root(
         .map_err(|_| VaultError::state("The selected vault state could not be read."))?
         .clone()
         .ok_or_else(|| VaultError::state(format!("Select a vault before {operation}.")))
+}
+
+fn storage_status(root: &Path) -> Result<VaultStorageStatus, VaultError> {
+    let status = crate::db::database_storage_status(root)?;
+    let database_path = crate::db::database_path(root);
+    Ok(VaultStorageStatus {
+        database_exists: status.database_exists,
+        database_relative_path: vault_relative_display_path(root, &database_path),
+        latest_backup: status.backup.map(|backup| VaultDatabaseBackup {
+            created_millis: backup.created_millis,
+            relative_path: vault_relative_display_path(root, &backup.path),
+        }),
+    })
+}
+
+fn vault_relative_display_path(root: &Path, path: &Path) -> String {
+    path.strip_prefix(root)
+        .unwrap_or(path)
+        .to_string_lossy()
+        .into_owned()
 }
 
 #[cfg(test)]

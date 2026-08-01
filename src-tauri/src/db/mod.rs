@@ -12,13 +12,30 @@ mod search;
 
 pub(crate) use conflicts::{NoteVersion, VaultConflict};
 
-use std::path::Path;
+use std::{
+    fs,
+    path::{Path, PathBuf},
+    time::{Duration, SystemTime, UNIX_EPOCH},
+};
 
-use rusqlite::{params, Connection};
+use rusqlite::{backup::Backup, params, Connection};
 
 use crate::vault::VaultError;
 
 pub(crate) const DATABASE_NAME: &str = "vault.db";
+const RECOVERY_DIRECTORY_NAME: &str = "recovery";
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct DatabaseBackup {
+    pub path: PathBuf,
+    pub created_millis: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct DatabaseStorageStatus {
+    pub backup: Option<DatabaseBackup>,
+    pub database_exists: bool,
+}
 
 fn map_error(context: &'static str) -> impl FnOnce(rusqlite::Error) -> VaultError {
     move |error| VaultError::state(format!("{context}: {error}"))
@@ -36,6 +53,152 @@ pub(crate) fn database_path(root: &Path) -> std::path::PathBuf {
         .unwrap_or_else(|_| root.to_path_buf())
         .join(crate::continuity::INTERNAL_DIRECTORY_NAME)
         .join(DATABASE_NAME)
+}
+
+/// Verifies that the current SQLite database can be read as a whole.
+///
+/// This asks SQLite itself rather than trusting that the file can merely be
+/// opened. It is deliberately usable before a future authority cutover and by
+/// the recovery controls, so each one applies the same definition of healthy.
+pub(crate) fn verify_database(root: &Path) -> Result<(), VaultError> {
+    let connection = open(&database_path(root))?;
+    integrity_check(&connection)
+}
+
+/// Creates a SQLite-consistent recovery copy of the current database.
+///
+/// Copying `vault.db` at the file-system level is unsafe while WAL mode is in
+/// use because recent committed pages can live in the companion WAL file. The
+/// SQLite backup API provides one coherent snapshot without pausing the app.
+pub(crate) fn create_database_backup(root: &Path) -> Result<DatabaseBackup, VaultError> {
+    let source = open(&database_path(root))?;
+    integrity_check(&source)?;
+
+    let recovery_directory = recovery_directory(root);
+    fs::create_dir_all(&recovery_directory).map_err(|error| {
+        VaultError::io("The database recovery folder could not be created", error)
+    })?;
+
+    let created_millis = now_millis();
+    let filename = format!("vault-{created_millis}-{}.db", uuid::Uuid::now_v7());
+    let path = recovery_directory.join(filename);
+    let temporary_path = path.with_extension("db.partial");
+    let result = (|| {
+        let mut destination = Connection::open(&temporary_path)
+            .map_err(map_error("The database recovery copy could not be created"))?;
+        let backup = Backup::new(&source, &mut destination)
+            .map_err(map_error("The database recovery copy could not be started"))?;
+        backup
+            .run_to_completion(64, Duration::from_millis(10), None)
+            .map_err(map_error(
+                "The database recovery copy could not be completed",
+            ))?;
+        drop(backup);
+        integrity_check(&destination)?;
+        drop(destination);
+        fs::rename(&temporary_path, &path).map_err(|error| {
+            VaultError::io("The database recovery copy could not be finalized", error)
+        })?;
+        Ok(DatabaseBackup {
+            path,
+            created_millis,
+        })
+    })();
+
+    if result.is_err() {
+        let _ = fs::remove_file(&temporary_path);
+    }
+    result
+}
+
+/// Returns storage state without creating a database, so merely opening
+/// Settings never changes an unopened vault.
+pub(crate) fn database_storage_status(root: &Path) -> Result<DatabaseStorageStatus, VaultError> {
+    let database_exists = database_path(root).is_file();
+    Ok(DatabaseStorageStatus {
+        backup: latest_database_backup(root)?,
+        database_exists,
+    })
+}
+
+fn integrity_check(connection: &Connection) -> Result<(), VaultError> {
+    let result = connection
+        .query_row("PRAGMA integrity_check", [], |row| row.get::<_, String>(0))
+        .map_err(map_error(
+            "The vault database integrity could not be checked",
+        ))?;
+    if result.eq_ignore_ascii_case("ok") {
+        Ok(())
+    } else {
+        Err(VaultError::state(format!(
+            "The vault database integrity check reported: {result}."
+        )))
+    }
+}
+
+fn recovery_directory(root: &Path) -> PathBuf {
+    database_path(root)
+        .parent()
+        .expect("a database path always has an internal-data parent")
+        .join(RECOVERY_DIRECTORY_NAME)
+}
+
+fn latest_database_backup(root: &Path) -> Result<Option<DatabaseBackup>, VaultError> {
+    let directory = recovery_directory(root);
+    let entries = match fs::read_dir(&directory) {
+        Ok(entries) => entries,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(error) => {
+            return Err(VaultError::io(
+                "The database recovery folder could not be read",
+                error,
+            ));
+        }
+    };
+
+    let mut newest = None;
+    for entry in entries {
+        let entry = entry
+            .map_err(|error| VaultError::io("A database recovery copy could not be read", error))?;
+        let path = entry.path();
+        let name = entry.file_name();
+        let Some(name) = name.to_str() else {
+            continue;
+        };
+        if !name.starts_with("vault-") || path.extension().is_none_or(|extension| extension != "db")
+        {
+            continue;
+        }
+        let metadata = entry.metadata().map_err(|error| {
+            VaultError::io("A database recovery copy could not be inspected", error)
+        })?;
+        if !metadata.is_file() {
+            continue;
+        }
+        let created_millis = metadata
+            .modified()
+            .ok()
+            .and_then(|modified| modified.duration_since(UNIX_EPOCH).ok())
+            .map(|duration| duration.as_millis().min(u128::from(u64::MAX)) as u64)
+            .unwrap_or_default();
+        let candidate = DatabaseBackup {
+            path,
+            created_millis,
+        };
+        if newest.as_ref().is_none_or(|current: &DatabaseBackup| {
+            candidate.created_millis > current.created_millis
+        }) {
+            newest = Some(candidate);
+        }
+    }
+    Ok(newest)
+}
+
+fn now_millis() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_millis().min(u128::from(u64::MAX)) as u64)
+        .unwrap_or_default()
 }
 
 /// Imports every file in the vault in one transaction, then resolves links and
@@ -568,6 +731,43 @@ mod tests {
         connection
             .execute_batch("CREATE VIRTUAL TABLE probe USING fts5(body)")
             .expect("FTS5 must be compiled into the bundled SQLite");
+    }
+
+    #[test]
+    fn backup_is_a_verified_snapshot_of_the_database() {
+        let vault = tempdir().expect("create fixture vault");
+        crate::continuity::ensure_vault_identity(vault.path()).expect("create identity");
+        let connection = open(&super::database_path(vault.path())).expect("create database");
+        connection
+            .execute(
+                "INSERT INTO settings (key, value, updated_millis) VALUES ('backup-probe', 'saved', 0)",
+                [],
+            )
+            .expect("seed database");
+        drop(connection);
+
+        let backup = super::create_database_backup(vault.path()).expect("create recovery copy");
+        assert!(backup.path.is_file());
+        super::verify_database(vault.path()).expect("verify source database");
+
+        let copy = Connection::open(&backup.path).expect("open recovery copy");
+        assert_eq!(
+            copy.query_row(
+                "SELECT value FROM settings WHERE key = 'backup-probe'",
+                [],
+                |row| row.get::<_, String>(0),
+            )
+            .expect("read recovery copy"),
+            "saved"
+        );
+        assert_eq!(
+            super::database_storage_status(vault.path())
+                .expect("read storage status")
+                .backup
+                .expect("find latest backup")
+                .path,
+            backup.path
+        );
     }
 
     #[test]
