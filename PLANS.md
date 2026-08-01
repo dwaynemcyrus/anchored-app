@@ -2612,6 +2612,9 @@ This work addresses the seven findings from the 2026-07-31 architecture review:
 - 2026-08-01: Added the Storage & Recovery Settings controls. They show the
   current SQLite and latest backup locations, surface errors, and expose
   explicit verify and create-backup actions without rewriting Markdown.
+- 2026-08-01: Excluded tool-owned `.claude` worktrees from repository-wide
+  formatting, linting, and Vitest discovery so checks cover this repository
+  rather than nested repositories with their own dependency trees.
 
 ### Target architecture
 
