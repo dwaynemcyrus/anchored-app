@@ -13,6 +13,9 @@ Git commit. The format follows [Keep a Changelog], and releases follow
   the database is using WAL mode.
 - Settings now shows the SQLite database and latest recovery-copy locations,
   and lets the vault owner verify the database or create a recovery copy.
+- Opening an indexed vault now creates one verified SQLite recovery copy before
+  the database-authority transition can proceed; a failed backup blocks that
+  transition without blocking access to the vault.
 
 ### Fixed
 

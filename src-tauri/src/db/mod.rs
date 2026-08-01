@@ -24,6 +24,7 @@ use crate::vault::VaultError;
 
 pub(crate) const DATABASE_NAME: &str = "vault.db";
 const RECOVERY_DIRECTORY_NAME: &str = "recovery";
+const INITIAL_BACKUP_SETTING: &str = "storage.initial_backup";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct DatabaseBackup {
@@ -109,6 +110,33 @@ pub(crate) fn create_database_backup(root: &Path) -> Result<DatabaseBackup, Vaul
         let _ = fs::remove_file(&temporary_path);
     }
     result
+}
+
+/// Makes the one recovery copy required before a vault can become
+/// SQLite-authoritative. The marker is recorded only after the backup has
+/// passed SQLite's integrity check, so a crash or failure simply retries on
+/// the next safe vault open.
+pub(crate) fn ensure_initial_database_backup(
+    root: &Path,
+) -> Result<Option<DatabaseBackup>, VaultError> {
+    let connection = open(&database_path(root))?;
+    let prepared = connection
+        .query_row(
+            "SELECT value FROM settings WHERE key = ?1",
+            params![INITIAL_BACKUP_SETTING],
+            |row| row.get::<_, String>(0),
+        )
+        .ok()
+        .is_some_and(|value| is_enabled(&value));
+    if prepared {
+        return Ok(None);
+    }
+    drop(connection);
+
+    let backup = create_database_backup(root)?;
+    let connection = open(&database_path(root))?;
+    set_setting(&connection, INITIAL_BACKUP_SETTING, "on")?;
+    Ok(Some(backup))
 }
 
 /// Returns storage state without creating a database, so merely opening
@@ -511,7 +539,6 @@ fn is_enabled(value: &str) -> bool {
     )
 }
 
-#[cfg(test)]
 pub(crate) fn set_setting(
     connection: &Connection,
     key: &str,
@@ -767,6 +794,22 @@ mod tests {
                 .expect("find latest backup")
                 .path,
             backup.path
+        );
+    }
+
+    #[test]
+    fn automatic_backup_is_made_once_before_authority_cutover() {
+        let vault = tempdir().expect("create fixture vault");
+        crate::continuity::ensure_vault_identity(vault.path()).expect("create identity");
+        drop(open(&super::database_path(vault.path())).expect("create database"));
+
+        let first = super::ensure_initial_database_backup(vault.path())
+            .expect("create required backup")
+            .expect("the first backup is created");
+        assert!(first.path.is_file());
+        assert_eq!(
+            super::ensure_initial_database_backup(vault.path()).expect("read backup marker"),
+            None
         );
     }
 

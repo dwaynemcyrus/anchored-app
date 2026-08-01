@@ -1246,6 +1246,8 @@ fn build_vault_snapshot(app: &AppHandle, root: &Path) -> Result<VaultSnapshot, V
     // replaces is opening every file to read its metadata.
     import_vault_snapshot(root, &snapshot)?;
     stages.record("import");
+    ensure_database_recovery(root);
+    stages.record("backup");
     reconcile_vault_state(root);
     stages.record("reconcile");
     project_vault_identities(root);
@@ -1261,6 +1263,23 @@ fn build_vault_snapshot(app: &AppHandle, root: &Path) -> Result<VaultSnapshot, V
     enrich_vault_metadata(root, &mut snapshot.files)?;
     stages.report("files", snapshot.files.len());
     Ok(snapshot)
+}
+
+/// Creates the one verified recovery copy required before the future
+/// SQLite-authoritative save path is enabled. A failure is reported but does
+/// not make a vault unopenable while Markdown remains the active authority.
+fn ensure_database_recovery(root: &Path) {
+    match crate::db::ensure_initial_database_backup(root) {
+        Ok(Some(backup)) => eprintln!(
+            "Anchored created a SQLite recovery copy at {}.",
+            backup.path.display()
+        ),
+        Ok(None) => {}
+        Err(error) => eprintln!(
+            "A required SQLite recovery copy could not be created: {}",
+            error.message
+        ),
+    }
 }
 
 /// How long each stage of opening a vault took.

@@ -2615,6 +2615,9 @@ This work addresses the seven findings from the 2026-07-31 architecture review:
 - 2026-08-01: Excluded tool-owned `.claude` worktrees from repository-wide
   formatting, linting, and Vitest discovery so checks cover this repository
   rather than nested repositories with their own dependency trees.
+- 2026-08-01: Integrated the automatic one-time recovery backup into vault
+  opening after the index refresh. Its completion marker is written only after
+  SQLite verifies the recovery copy; a failure leaves authority cutover gated.
 
 ### Target architecture
 
