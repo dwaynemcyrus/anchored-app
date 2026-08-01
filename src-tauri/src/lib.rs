@@ -51,6 +51,7 @@ pub fn run() {
             vault::vault_storage_status,
             vault::verify_vault_database,
             vault::create_vault_database_backup,
+            vault::rebuild_vault_markdown_from_database,
             vault::reconcile_vault_file_move,
             vault::preview_vault_timestamp_migration,
             vault::apply_vault_timestamp_migration,

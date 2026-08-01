@@ -20,7 +20,7 @@ type SettingsModalProps = {
   excerptLines: ExcerptLines;
   markdownSettings: MarkdownSettings;
   reloading: boolean;
-  storageBusy?: "backup" | "verify";
+  storageBusy?: "backup" | "rebuild" | "verify";
   storageError?: string;
   storageMessage?: string;
   storageStatus?: VaultStorageStatus;
@@ -45,6 +45,7 @@ type SettingsModalProps = {
   onReload: () => void;
   onCreateDatabaseBackup?: () => void;
   onVerifyDatabase?: () => void;
+  onRebuildMarkdown?: () => void;
 };
 
 export function SettingsModal({
@@ -75,6 +76,7 @@ export function SettingsModal({
   onReload,
   onCreateDatabaseBackup,
   onVerifyDatabase,
+  onRebuildMarkdown,
 }: SettingsModalProps) {
   const closeButtonRef = useRef<HTMLButtonElement>(null);
   const { dialogRef, onDialogKeyDown } = useModalDialog<HTMLElement>({
@@ -491,6 +493,16 @@ export function SettingsModal({
               {storageBusy === "backup"
                 ? "Creating backup…"
                 : "Create backup now"}
+            </button>
+            <button
+              className="continuity-panel__danger"
+              disabled={!vaultSelected || storageBusy !== undefined}
+              type="button"
+              onClick={onRebuildMarkdown}
+            >
+              {storageBusy === "rebuild"
+                ? "Rebuilding Markdown…"
+                : "Rebuild Markdown from SQLite"}
             </button>
           </div>
           {storageError ? <p role="alert">{storageError}</p> : null}

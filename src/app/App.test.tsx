@@ -57,6 +57,7 @@ vi.mock("../lib/tauri/vault", () => ({
   applyVaultTimestampMigration: vi.fn(),
   archiveVaultFile: vi.fn(),
   createVaultDatabaseBackup: vi.fn(),
+  rebuildVaultMarkdownFromDatabase: vi.fn(),
   createVaultConflictCopy: vi.fn(),
   createVault: vi.fn(),
   createVaultFolder: vi.fn(),

@@ -11,6 +11,7 @@ mod schema;
 mod search;
 
 pub(crate) use conflicts::{NoteVersion, VaultConflict};
+pub(crate) use projection::MarkdownRebuild;
 
 use std::{
     fs,
@@ -64,6 +65,12 @@ pub(crate) fn database_path(root: &Path) -> std::path::PathBuf {
 pub(crate) fn verify_database(root: &Path) -> Result<(), VaultError> {
     let connection = open(&database_path(root))?;
     integrity_check(&connection)
+}
+
+pub(crate) fn rebuild_markdown_from_database(root: &Path) -> Result<MarkdownRebuild, VaultError> {
+    verify_database(root)?;
+    let connection = open(&database_path(root))?;
+    projection::rebuild_markdown(root, &connection)
 }
 
 /// Creates a SQLite-consistent recovery copy of the current database.

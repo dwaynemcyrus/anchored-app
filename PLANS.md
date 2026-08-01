@@ -2625,6 +2625,9 @@ This work addresses the seven findings from the 2026-07-31 architecture review:
   is recorded. After cutover, the old scan-read and direct-Markdown-save
   fallback paths are disabled; a missing or unreadable database is a safe,
   recoverable error rather than an untracked file write.
+- 2026-08-01: Added the confirmed recovery action to rebuild Markdown from a
+  verified SQLite database. It recreates missing projections atomically and
+  preserves changed Markdown in the conflicts area before replacement.
 
 ### Target architecture
 

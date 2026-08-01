@@ -78,6 +78,12 @@ export type VaultStorageStatus = {
   latestBackup?: VaultDatabaseBackup;
 };
 
+export type MarkdownRebuild = {
+  created: number;
+  preserved: number;
+  updated: number;
+};
+
 export type TimestampMigrationTarget = {
   expectedModifiedMillis: number;
   expectedSizeBytes: number;
@@ -327,6 +333,10 @@ export function verifyVaultDatabase(): Promise<VaultStorageStatus> {
 
 export function createVaultDatabaseBackup(): Promise<VaultStorageStatus> {
   return invokeVault<VaultStorageStatus>("create_vault_database_backup");
+}
+
+export function rebuildVaultMarkdownFromDatabase(): Promise<MarkdownRebuild> {
+  return invokeVault<MarkdownRebuild>("rebuild_vault_markdown_from_database");
 }
 
 export function reconcileVaultFileMove(

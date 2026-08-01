@@ -681,6 +681,16 @@ pub async fn create_vault_database_backup(
 }
 
 #[tauri::command]
+pub async fn rebuild_vault_markdown_from_database(
+    state: State<'_, VaultState>,
+) -> Result<crate::db::MarkdownRebuild, VaultError> {
+    let root = selected_vault_root(&state, "rebuilding Markdown from SQLite")?;
+    tauri::async_runtime::spawn_blocking(move || crate::db::rebuild_markdown_from_database(&root))
+        .await
+        .map_err(|error| VaultError::state(format!("Markdown rebuild could not finish: {error}")))?
+}
+
+#[tauri::command]
 pub async fn reconcile_vault_file_move(
     state: State<'_, VaultState>,
     old_relative_path: String,
@@ -4513,6 +4523,18 @@ pub(crate) fn write_markdown_atomically(
         .map_err(|error| VaultError::io("The Markdown file could not be inspected", error))?;
     let temporary_path = temporary_sibling_path(destination)?;
     let result = write_atomically(&temporary_path, destination, content, &metadata);
+    if result.is_err() {
+        let _ = fs::remove_file(&temporary_path);
+    }
+    result
+}
+
+pub(crate) fn write_new_markdown_atomically(
+    destination: &Path,
+    content: &str,
+) -> Result<(), VaultError> {
+    let temporary_path = temporary_sibling_path(destination)?;
+    let result = write_new_atomically(&temporary_path, destination, content);
     if result.is_err() {
         let _ = fs::remove_file(&temporary_path);
     }

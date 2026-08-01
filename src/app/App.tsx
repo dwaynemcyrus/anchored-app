@@ -127,6 +127,7 @@ import {
 import {
   archiveVaultFile,
   createVaultDatabaseBackup,
+  rebuildVaultMarkdownFromDatabase,
   createVaultConflictCopy,
   createUntitledVaultFile,
   createVaultFile,
@@ -234,7 +235,9 @@ export function App() {
   const [updateError, setUpdateError] = useState<string>();
   const [vaultSelected, setVaultSelected] = useState(false);
   const [storageStatus, setStorageStatus] = useState<VaultStorageStatus>();
-  const [storageBusy, setStorageBusy] = useState<"backup" | "verify">();
+  const [storageBusy, setStorageBusy] = useState<
+    "backup" | "rebuild" | "verify"
+  >();
   const [storageError, setStorageError] = useState<string>();
   const [storageMessage, setStorageMessage] = useState<string>();
   const [transitioningDocumentId, setTransitioningDocumentId] = useState<
@@ -1280,6 +1283,29 @@ export function App() {
       const status = await createVaultDatabaseBackup();
       setStorageStatus(status);
       setStorageMessage("A SQLite recovery copy was created.");
+    } catch (error) {
+      setStorageError(readErrorMessage(error));
+    } finally {
+      setStorageBusy(undefined);
+    }
+  }, []);
+
+  const handleRebuildMarkdown = useCallback(async () => {
+    if (
+      !window.confirm(
+        "Rebuild every Markdown projection from SQLite? Differing Markdown files will be preserved under .anchored/conflicts first.",
+      )
+    ) {
+      return;
+    }
+    setStorageBusy("rebuild");
+    setStorageError(undefined);
+    setStorageMessage(undefined);
+    try {
+      const result = await rebuildVaultMarkdownFromDatabase();
+      setStorageMessage(
+        `Rebuilt ${result.created + result.updated} Markdown file${result.created + result.updated === 1 ? "" : "s"}; preserved ${result.preserved} differing file${result.preserved === 1 ? "" : "s"}.`,
+      );
     } catch (error) {
       setStorageError(readErrorMessage(error));
     } finally {
@@ -3200,6 +3226,7 @@ export function App() {
           onReload={() => void reloadApp()}
           onCreateDatabaseBackup={() => void handleCreateDatabaseBackup()}
           onVerifyDatabase={() => void handleVerifyDatabase()}
+          onRebuildMarkdown={() => void handleRebuildMarkdown()}
         />
       ) : null}
       {folderDialogs.createFolderVisible ? (

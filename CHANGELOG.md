@@ -19,6 +19,9 @@ Git commit. The format follows [Keep a Changelog], and releases follow
 - After that recovery copy succeeds, SQLite becomes the active store for
   reads, saves, and Markdown projection. A missing or unreadable database
   stops the save rather than falling back to a Markdown-only write.
+- Settings can now rebuild Markdown from verified SQLite content after an
+  explicit confirmation; differing files are preserved under
+  `.anchored/conflicts/` before replacement.
 
 ### Fixed
 
