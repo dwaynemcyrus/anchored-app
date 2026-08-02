@@ -10,13 +10,20 @@ import {
 import type { ExcerptLines } from "../paneLayout";
 import { THEME_OPTIONS } from "../theme/palettes";
 import type { ThemeId } from "../theme/types";
-import type { TimestampMigrationPreview } from "../../lib/tauri/vault";
+import type {
+  TimestampMigrationPreview,
+  VaultStorageStatus,
+} from "../../lib/tauri/vault";
 import { useModalDialog } from "./useModalDialog";
 
 type SettingsModalProps = {
   excerptLines: ExcerptLines;
   markdownSettings: MarkdownSettings;
   reloading: boolean;
+  storageBusy?: "backup" | "rebuild" | "verify";
+  storageError?: string;
+  storageMessage?: string;
+  storageStatus?: VaultStorageStatus;
   timestampMigrationBlocked: boolean;
   timestampMigrationBusy: boolean;
   timestampMigrationError?: string;
@@ -36,12 +43,19 @@ type SettingsModalProps = {
   onMarkdownSettingsChange: (settings: MarkdownSettings) => void;
   onPreviewTimestampMigration: () => void;
   onReload: () => void;
+  onCreateDatabaseBackup?: () => void;
+  onVerifyDatabase?: () => void;
+  onRebuildMarkdown?: () => void;
 };
 
 export function SettingsModal({
   excerptLines,
   markdownSettings,
   reloading,
+  storageBusy,
+  storageError,
+  storageMessage,
+  storageStatus,
   timestampMigrationBlocked,
   timestampMigrationBusy,
   timestampMigrationError,
@@ -60,6 +74,9 @@ export function SettingsModal({
   onMarkdownSettingsChange,
   onPreviewTimestampMigration,
   onReload,
+  onCreateDatabaseBackup,
+  onVerifyDatabase,
+  onRebuildMarkdown,
 }: SettingsModalProps) {
   const closeButtonRef = useRef<HTMLButtonElement>(null);
   const { dialogRef, onDialogKeyDown } = useModalDialog<HTMLElement>({
@@ -428,6 +445,68 @@ export function SettingsModal({
           {timestampMigrationMessage ? (
             <p role="status">{timestampMigrationMessage}</p>
           ) : null}
+        </section>
+        <section className="settings-section">
+          <h3>Storage &amp; recovery</h3>
+          <p>
+            SQLite keeps Anchored&apos;s durable data. A healthy database can
+            rebuild Markdown projections; creating or verifying a backup never
+            changes your notes.
+          </p>
+          {vaultSelected && storageStatus ? (
+            <div aria-live="polite">
+              <p>
+                Database: <code>{storageStatus.databaseRelativePath}</code>
+              </p>
+              {storageStatus.latestBackup ? (
+                <p>
+                  Latest recovery copy:{" "}
+                  <code>{storageStatus.latestBackup.relativePath}</code>
+                  {" · "}
+                  {new Date(
+                    storageStatus.latestBackup.createdMillis,
+                  ).toLocaleString()}
+                </p>
+              ) : (
+                <p>No recovery copy has been created yet.</p>
+              )}
+            </div>
+          ) : null}
+          {!vaultSelected ? (
+            <p>Open a vault to view its SQLite storage and recovery copies.</p>
+          ) : null}
+          <div className="settings-choice">
+            <button
+              disabled={!vaultSelected || storageBusy !== undefined}
+              type="button"
+              onClick={onVerifyDatabase}
+            >
+              {storageBusy === "verify"
+                ? "Verifying database…"
+                : "Verify database"}
+            </button>
+            <button
+              disabled={!vaultSelected || storageBusy !== undefined}
+              type="button"
+              onClick={onCreateDatabaseBackup}
+            >
+              {storageBusy === "backup"
+                ? "Creating backup…"
+                : "Create backup now"}
+            </button>
+            <button
+              className="continuity-panel__danger"
+              disabled={!vaultSelected || storageBusy !== undefined}
+              type="button"
+              onClick={onRebuildMarkdown}
+            >
+              {storageBusy === "rebuild"
+                ? "Rebuilding Markdown…"
+                : "Rebuild Markdown from SQLite"}
+            </button>
+          </div>
+          {storageError ? <p role="alert">{storageError}</p> : null}
+          {storageMessage ? <p role="status">{storageMessage}</p> : null}
         </section>
         <section className="settings-section">
           <h3>Updates</h3>

@@ -319,6 +319,22 @@ pub struct TrashMutationResult {
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
+pub struct VaultDatabaseBackup {
+    pub created_millis: u64,
+    pub relative_path: String,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct VaultStorageStatus {
+    pub database_exists: bool,
+    pub database_relative_path: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub latest_backup: Option<VaultDatabaseBackup>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct VaultError {
     pub(crate) code: &'static str,
     pub(crate) message: String,
@@ -625,6 +641,55 @@ pub async fn rescan_vault_paths(
     .map_err(|error| VaultError::state(format!("Vault refresh could not finish: {error}")))?
 }
 
+/// Reports the current SQLite recovery state without creating a database.
+#[tauri::command]
+pub async fn vault_storage_status(
+    state: State<'_, VaultState>,
+) -> Result<VaultStorageStatus, VaultError> {
+    let root = selected_vault_root(&state, "viewing storage recovery")?;
+    storage_status(&root)
+}
+
+/// Runs SQLite's full integrity check for the selected vault database.
+#[tauri::command]
+pub async fn verify_vault_database(
+    state: State<'_, VaultState>,
+) -> Result<VaultStorageStatus, VaultError> {
+    let root = selected_vault_root(&state, "verifying the SQLite database")?;
+    tauri::async_runtime::spawn_blocking(move || {
+        crate::db::verify_database(&root)?;
+        storage_status(&root)
+    })
+    .await
+    .map_err(|error| {
+        VaultError::state(format!("Database verification could not finish: {error}"))
+    })?
+}
+
+/// Creates a recoverable, SQLite-consistent copy beneath `.anchored/recovery`.
+#[tauri::command]
+pub async fn create_vault_database_backup(
+    state: State<'_, VaultState>,
+) -> Result<VaultStorageStatus, VaultError> {
+    let root = selected_vault_root(&state, "creating a SQLite backup")?;
+    tauri::async_runtime::spawn_blocking(move || {
+        crate::db::create_database_backup(&root)?;
+        storage_status(&root)
+    })
+    .await
+    .map_err(|error| VaultError::state(format!("Database backup could not finish: {error}")))?
+}
+
+#[tauri::command]
+pub async fn rebuild_vault_markdown_from_database(
+    state: State<'_, VaultState>,
+) -> Result<crate::db::MarkdownRebuild, VaultError> {
+    let root = selected_vault_root(&state, "rebuilding Markdown from SQLite")?;
+    tauri::async_runtime::spawn_blocking(move || crate::db::rebuild_markdown_from_database(&root))
+        .await
+        .map_err(|error| VaultError::state(format!("Markdown rebuild could not finish: {error}")))?
+}
+
 #[tauri::command]
 pub async fn reconcile_vault_file_move(
     state: State<'_, VaultState>,
@@ -735,6 +800,26 @@ fn selected_vault_root(
         .map_err(|_| VaultError::state("The selected vault state could not be read."))?
         .clone()
         .ok_or_else(|| VaultError::state(format!("Select a vault before {operation}.")))
+}
+
+fn storage_status(root: &Path) -> Result<VaultStorageStatus, VaultError> {
+    let status = crate::db::database_storage_status(root)?;
+    let database_path = crate::db::database_path(root);
+    Ok(VaultStorageStatus {
+        database_exists: status.database_exists,
+        database_relative_path: vault_relative_display_path(root, &database_path),
+        latest_backup: status.backup.map(|backup| VaultDatabaseBackup {
+            created_millis: backup.created_millis,
+            relative_path: vault_relative_display_path(root, &backup.path),
+        }),
+    })
+}
+
+fn vault_relative_display_path(root: &Path, path: &Path) -> String {
+    path.strip_prefix(root)
+        .unwrap_or(path)
+        .to_string_lossy()
+        .into_owned()
 }
 
 #[cfg(test)]
@@ -1171,6 +1256,8 @@ fn build_vault_snapshot(app: &AppHandle, root: &Path) -> Result<VaultSnapshot, V
     // replaces is opening every file to read its metadata.
     import_vault_snapshot(root, &snapshot)?;
     stages.record("import");
+    ensure_database_recovery(root);
+    stages.record("backup");
     reconcile_vault_state(root);
     stages.record("reconcile");
     project_vault_identities(root);
@@ -1186,6 +1273,23 @@ fn build_vault_snapshot(app: &AppHandle, root: &Path) -> Result<VaultSnapshot, V
     enrich_vault_metadata(root, &mut snapshot.files)?;
     stages.report("files", snapshot.files.len());
     Ok(snapshot)
+}
+
+/// Creates the one verified recovery copy required before the future
+/// SQLite-authoritative save path is enabled. A failure is reported but does
+/// not make a vault unopenable while Markdown remains the active authority.
+fn ensure_database_recovery(root: &Path) {
+    match crate::db::ensure_initial_database_backup(root) {
+        Ok(Some(backup)) => eprintln!(
+            "Anchored created a SQLite recovery copy at {}.",
+            backup.path.display()
+        ),
+        Ok(None) => {}
+        Err(error) => eprintln!(
+            "A required SQLite recovery copy could not be created: {}",
+            error.message
+        ),
+    }
 }
 
 /// How long each stage of opening a vault took.
@@ -1322,6 +1426,7 @@ fn import_vault_snapshot(root: &Path, snapshot: &VaultSnapshot) -> Result<(), Va
         .map(|asset| asset.relative_path.clone())
         .collect();
 
+    crate::db::require_database_restore_before_open(root)?;
     let mut connection = crate::db::open(&crate::db::database_path(root))?;
     if let Err(error) =
         crate::db::import_vault(&mut connection, root, &markdown_paths, &asset_paths)
@@ -1568,7 +1673,12 @@ fn index_patched_paths(root: &Path, patch: &VaultPatch, requested_paths: &[Strin
     paths.extend(patch.removed_paths.iter().cloned());
     paths.sort();
     paths.dedup();
-    index_changed_paths(root, &paths);
+    if let Err(error) = crate::db::import_watched_paths(root, &paths) {
+        eprintln!(
+            "The watched vault paths could not be indexed: {}",
+            error.message
+        );
+    }
 }
 
 #[tauri::command]
@@ -4413,6 +4523,18 @@ pub(crate) fn write_markdown_atomically(
         .map_err(|error| VaultError::io("The Markdown file could not be inspected", error))?;
     let temporary_path = temporary_sibling_path(destination)?;
     let result = write_atomically(&temporary_path, destination, content, &metadata);
+    if result.is_err() {
+        let _ = fs::remove_file(&temporary_path);
+    }
+    result
+}
+
+pub(crate) fn write_new_markdown_atomically(
+    destination: &Path,
+    content: &str,
+) -> Result<(), VaultError> {
+    let temporary_path = temporary_sibling_path(destination)?;
+    let result = write_new_atomically(&temporary_path, destination, content);
     if result.is_err() {
         let _ = fs::remove_file(&temporary_path);
     }

@@ -6,6 +6,43 @@ Git commit. The format follows [Keep a Changelog], and releases follow
 
 ## [Unreleased]
 
+### Added
+
+- SQLite storage now supports integrity checks and SQLite-consistent recovery
+  copies under `.anchored/recovery/`, avoiding unsafe file-level copies while
+  the database is using WAL mode.
+- Settings now shows the SQLite database and latest recovery-copy locations,
+  and lets the vault owner verify the database or create a recovery copy.
+- Opening an indexed vault now creates one verified SQLite recovery copy before
+  the database-authority transition can proceed; a failed backup blocks that
+  transition without blocking access to the vault.
+- After that recovery copy succeeds, SQLite becomes the active store for
+  reads, saves, and Markdown projection. A missing or unreadable database
+  stops the save rather than falling back to a Markdown-only write.
+- Settings can now rebuild Markdown from verified SQLite content after an
+  explicit confirmation; differing files are preserved under
+  `.anchored/conflicts/` before replacement.
+
+### Fixed
+
+- Every open note now keeps its own autosave timer, so changing tabs or working
+  in split panes cannot leave an inactive dirty note unsaved. Closing Anchored
+  now saves safe changes first and keeps the window open when a note needs
+  conflict resolution or retry.
+- Tabs and split panes now load notes independently, so opening another note
+  no longer cancels an in-progress read for a different open document.
+- Saving, renaming, or moving a note now preserves every open copy of that
+  note and its tab history instead of leaving inactive tabs behind.
+- Identity projection now detects a Markdown edit made during its write window,
+  preserves both versions, and leaves the file untouched rather than risking
+  an overwrite.
+- Watcher-reported Markdown changes now read and compare file content even
+  when size and modification time happen to match the prior version.
+- A Finder or external-editor change now imports into SQLite only when the
+  database has not advanced since the last projection; if both changed, the
+  two versions are preserved as a conflict instead of silently overwriting the
+  database version.
+
 ## [0.1.11-alpha] - 2026-07-28
 
 ### Added

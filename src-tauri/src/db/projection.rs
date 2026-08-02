@@ -19,6 +19,104 @@ use super::{conflicts, documents, import, map_error};
 use crate::metadata::{add_note_identity, IdentityMutationError};
 use crate::vault::VaultError;
 
+#[derive(Debug, Default, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct MarkdownRebuild {
+    pub created: usize,
+    pub preserved: usize,
+    pub updated: usize,
+}
+
+struct DocumentToRebuild {
+    id: i64,
+    uuid: String,
+    relative_path: String,
+    revision: i64,
+    content: String,
+}
+
+/// Recreates the Markdown projection from verified canonical SQLite content.
+/// Differing files are copied into the conflict area before replacement, so
+/// this deliberate recovery action never throws away an external version.
+pub(crate) fn rebuild_markdown(
+    root: &Path,
+    connection: &Connection,
+) -> Result<MarkdownRebuild, VaultError> {
+    let mut statement = connection
+        .prepare(
+            "SELECT id, uuid, relative_path, revision, frontmatter_text || body
+             FROM documents
+             WHERE is_markdown = 1 AND deleted_at IS NULL
+             ORDER BY relative_path",
+        )
+        .map_err(map_error("Markdown rebuild could not be prepared"))?;
+    let documents = statement
+        .query_map([], |row| {
+            Ok(DocumentToRebuild {
+                id: row.get(0)?,
+                uuid: row.get(1)?,
+                relative_path: row.get(2)?,
+                revision: row.get(3)?,
+                content: row.get(4)?,
+            })
+        })
+        .map_err(map_error("Markdown rebuild could not be read"))?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(map_error("Markdown rebuild could not be read"))?;
+    drop(statement);
+
+    let mut result = MarkdownRebuild::default();
+    for document in documents {
+        let path = root.join(&document.relative_path);
+        match std::fs::read_to_string(&path) {
+            Ok(existing) if existing == document.content => continue,
+            Ok(existing) => {
+                conflicts::preserve(root, &document.uuid, &document.content, &existing)?;
+                write_projection(
+                    connection,
+                    root,
+                    &path,
+                    &document.content,
+                    document.id,
+                    &document.uuid,
+                    document.revision,
+                )?;
+                result.preserved += 1;
+                result.updated += 1;
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                let parent = path.parent().ok_or_else(|| {
+                    VaultError::state("A stored Markdown path does not have a parent directory.")
+                })?;
+                std::fs::create_dir_all(parent).map_err(|error| {
+                    VaultError::io("The missing Markdown folder could not be recreated", error)
+                })?;
+                crate::vault::write_new_markdown_atomically(&path, &document.content)?;
+                let metadata = std::fs::metadata(&path).map_err(|error| {
+                    VaultError::io("The rebuilt Markdown file could not be inspected", error)
+                })?;
+                let (size_bytes, mtime_millis) = super::file_signature(&metadata);
+                documents::record_synced(
+                    connection,
+                    document.id,
+                    &import::content_hash(document.content.as_bytes()),
+                    size_bytes,
+                    mtime_millis,
+                    document.revision,
+                )?;
+                result.created += 1;
+            }
+            Err(error) => {
+                return Err(VaultError::io(
+                    "The Markdown projection could not be read",
+                    error,
+                ))
+            }
+        }
+    }
+    Ok(result)
+}
+
 /// Classifies every note by how its row and its file now stand, without
 /// changing either.
 ///
@@ -324,7 +422,15 @@ pub(crate) fn project_pending_identities(
             continue;
         }
 
-        write_projection(connection, &path, &updated, note.id, note.revision)?;
+        write_projection(
+            connection,
+            root,
+            &path,
+            &updated,
+            note.id,
+            &note.uuid,
+            note.revision,
+        )?;
         mark_identity_in_file(connection, note.id)?;
         written += 1;
     }
@@ -337,15 +443,18 @@ pub(crate) fn project_pending_identities(
 /// an unrecorded change rather than silent divergence.
 fn write_projection(
     connection: &Connection,
+    root: &Path,
     path: &Path,
     content: &str,
     document_id: i64,
+    document_uuid: &str,
     revision: i64,
 ) -> Result<(), VaultError> {
     // Kept before the file is touched, not after. Writing an identity is a
     // small change, but it is still Anchored changing a file the user did not
     // ask it to change, and the version before it must stay recoverable.
-    let previous = std::fs::read_to_string(path).unwrap_or_default();
+    let previous = std::fs::read_to_string(path)
+        .map_err(|error| VaultError::io("The note identity could not be read", error))?;
     documents::record_version(
         connection,
         document_id,
@@ -354,6 +463,20 @@ fn write_projection(
         &import::content_hash(previous.as_bytes()),
         documents::ChangeOrigin::Anchored,
     )?;
+
+    // An external editor can save after the identity transform above and
+    // before the atomic replacement below. Re-read at the last possible
+    // moment: a mismatch is a conflict to preserve, never a reason to
+    // overwrite a newer file with a stale projection.
+    let current = std::fs::read_to_string(path)
+        .map_err(|error| VaultError::io("The note identity could not be re-read", error))?;
+    if current != previous {
+        conflicts::preserve(root, document_uuid, &previous, &current)?;
+        documents::set_sync_state(connection, document_id, documents::SyncState::Conflict)?;
+        return Err(VaultError::state(
+            "The note changed outside Anchored while its identity was being projected.",
+        ));
+    }
 
     crate::vault::write_markdown_atomically(path, content)?;
 
@@ -424,7 +547,7 @@ fn mark_identity_in_file(connection: &Connection, document_id: i64) -> Result<()
 mod tests {
     use tempfile::TempDir;
 
-    use super::project_pending_identities;
+    use super::{project_pending_identities, rebuild_markdown};
     use crate::db::{documents, import::import_note, open};
     use crate::metadata::{inspect_note_identity, NoteIdentityStatus};
 
@@ -958,5 +1081,47 @@ mod tests {
             .query_row("SELECT state FROM sync_records", [], |row| row.get(0))
             .expect("read sync state");
         assert_eq!(state, "synced");
+    }
+
+    #[test]
+    fn rebuild_recreates_a_missing_markdown_projection() {
+        let (directory, connection) = vault(&[("Harbor.md", "# Harbor\n")]);
+        let path = directory.path().join("Harbor.md");
+        std::fs::remove_file(&path).expect("remove projection");
+
+        let result = rebuild_markdown(directory.path(), &connection).expect("rebuild");
+
+        assert_eq!(result.created, 1);
+        assert_eq!(
+            std::fs::read_to_string(path).expect("read rebuilt note"),
+            "# Harbor\n"
+        );
+    }
+
+    #[test]
+    fn rebuild_preserves_a_differing_markdown_projection() {
+        let (directory, connection) = vault(&[("Harbor.md", "# On disk\n")]);
+        documents::upsert(&connection, &import_note("Harbor.md", b"# From SQLite\n"))
+            .expect("store canonical content");
+        let uuid: String = connection
+            .query_row("SELECT uuid FROM documents", [], |row| row.get(0))
+            .expect("read note identity");
+
+        let result = rebuild_markdown(directory.path(), &connection).expect("rebuild");
+
+        assert_eq!(result.updated, 1);
+        assert_eq!(result.preserved, 1);
+        assert_eq!(
+            std::fs::read_to_string(directory.path().join("Harbor.md")).expect("read rebuilt note"),
+            "# From SQLite\n"
+        );
+        assert_eq!(
+            std::fs::read_to_string(
+                crate::db::conflicts::conflicts_directory(directory.path())
+                    .join(format!("{uuid}_file.md")),
+            )
+            .expect("read preserved Markdown"),
+            "# On disk\n"
+        );
     }
 }

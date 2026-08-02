@@ -132,6 +132,49 @@ export function openDocumentIds(workspace: Workspace): Set<string> {
   return open;
 }
 
+/**
+ * Replaces a document identity in every tab and every tab-history entry.
+ *
+ * A file path can change while a note is open. Tabs hold the durable document
+ * identity, so this preserves panes, pins, selection, and back/forward trails
+ * rather than reopening only the currently selected tab.
+ */
+export function remapDocumentId(
+  workspace: Workspace,
+  fromDocumentId: string,
+  toDocumentId: string,
+): Workspace {
+  if (!fromDocumentId || fromDocumentId === toDocumentId) return workspace;
+
+  const remapNode = (node: WorkspaceNode): WorkspaceNode => {
+    if (node.type === "split") {
+      const first = remapNode(node.children[0]);
+      const second = remapNode(node.children[1]);
+      return first === node.children[0] && second === node.children[1]
+        ? node
+        : { ...node, children: [first, second] };
+    }
+
+    let changed = false;
+    const tabs = node.tabs.map((tab) => {
+      const documentId =
+        tab.documentId === fromDocumentId ? toDocumentId : tab.documentId;
+      const history = tab.history.map((documentId) =>
+        documentId === fromDocumentId ? toDocumentId : documentId,
+      );
+      const tabChanged =
+        documentId !== tab.documentId ||
+        history.some((entry, index) => entry !== tab.history[index]);
+      if (tabChanged) changed = true;
+      return tabChanged ? { ...tab, documentId, history } : tab;
+    });
+    return changed ? { ...node, tabs } : node;
+  };
+
+  const root = remapNode(workspace.root);
+  return root === workspace.root ? workspace : { ...workspace, root };
+}
+
 /// Rebuilds the tree with `replace` applied to whichever node matches `id`.
 ///
 /// Returning the node unchanged is how a caller says "no change here", and the

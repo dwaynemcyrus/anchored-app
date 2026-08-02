@@ -170,4 +170,51 @@ describe("SettingsModal Markdown options", () => {
     ).toBeDisabled();
     expect(onApplyTimestampMigration).not.toHaveBeenCalled();
   });
+
+  it("shows recovery status and calls the safe storage actions", async () => {
+    const user = userEvent.setup();
+    const onCreateDatabaseBackup = vi.fn();
+    const onVerifyDatabase = vi.fn();
+
+    render(
+      <SettingsModal
+        excerptLines="two"
+        markdownSettings={DEFAULT_MARKDOWN_SETTINGS}
+        reloading={false}
+        storageStatus={{
+          databaseExists: true,
+          databaseRelativePath: ".anchored/vault.db",
+          latestBackup: {
+            createdMillis: 1_775_000_000_000,
+            relativePath: ".anchored/recovery/vault-1775000000000.db",
+          },
+        }}
+        timestampMigrationBlocked={false}
+        timestampMigrationBusy={false}
+        updateStatus="idle"
+        vaultSelected
+        onApplyTimestampMigration={vi.fn()}
+        onCheckForUpdates={vi.fn()}
+        onClose={vi.fn()}
+        onCreateDatabaseBackup={onCreateDatabaseBackup}
+        onExcerptLinesChange={vi.fn()}
+        onInstallUpdate={vi.fn()}
+        onMarkdownSettingsChange={vi.fn()}
+        onPreviewTimestampMigration={vi.fn()}
+        onReload={vi.fn()}
+        onVerifyDatabase={onVerifyDatabase}
+      />,
+    );
+
+    expect(screen.getByText("Storage & recovery")).toBeInTheDocument();
+    expect(screen.getByText(".anchored/vault.db")).toBeInTheDocument();
+    expect(
+      screen.getByText(".anchored/recovery/vault-1775000000000.db"),
+    ).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Verify database" }));
+    await user.click(screen.getByRole("button", { name: "Create backup now" }));
+    expect(onVerifyDatabase).toHaveBeenCalledOnce();
+    expect(onCreateDatabaseBackup).toHaveBeenCalledOnce();
+  });
 });

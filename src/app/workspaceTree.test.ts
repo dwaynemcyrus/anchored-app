@@ -18,6 +18,7 @@ import {
   moveTab,
   openDocument,
   openDocumentIds,
+  remapDocumentId,
   resizeSplit,
   setTabPinned,
   splitGroup,
@@ -178,6 +179,27 @@ describe("tab history", () => {
       "field-notes",
       "link-garden",
     ]);
+  });
+});
+
+describe("document identity remapping", () => {
+  it("replaces an identity in duplicate tabs, nested splits, and history", () => {
+    let workspace = openDocument(createWorkspace(), "draft", { newTab: true });
+    workspace = openDocument(workspace, "field-notes", { newTab: true });
+    workspace = openDocument(workspace, "draft");
+    workspace = splitGroup(workspace, groupId(workspace), "row");
+    workspace = splitGroup(workspace, workspace.activeGroupId, "column");
+
+    const remapped = remapDocumentId(workspace, "draft", "vault-path:Draft.md");
+
+    expect(openDocumentIds(remapped)).toContain("vault-path:Draft.md");
+    expect(openDocumentIds(remapped)).not.toContain("draft");
+    for (const leaf of leaves(remapped.root)) {
+      for (const tab of leaf.tabs) {
+        expect(tab.documentId).not.toBe("draft");
+        expect(tab.history).not.toContain("draft");
+      }
+    }
   });
 });
 

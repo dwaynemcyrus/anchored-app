@@ -11,14 +11,33 @@ mod schema;
 mod search;
 
 pub(crate) use conflicts::{NoteVersion, VaultConflict};
+pub(crate) use projection::MarkdownRebuild;
 
-use std::path::Path;
+use std::{
+    fs,
+    path::{Path, PathBuf},
+    time::{Duration, SystemTime, UNIX_EPOCH},
+};
 
-use rusqlite::{params, Connection};
+use rusqlite::{backup::Backup, params, Connection};
 
 use crate::vault::VaultError;
 
 pub(crate) const DATABASE_NAME: &str = "vault.db";
+const RECOVERY_DIRECTORY_NAME: &str = "recovery";
+const INITIAL_BACKUP_SETTING: &str = "storage.initial_backup";
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct DatabaseBackup {
+    pub path: PathBuf,
+    pub created_millis: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct DatabaseStorageStatus {
+    pub backup: Option<DatabaseBackup>,
+    pub database_exists: bool,
+}
 
 fn map_error(context: &'static str) -> impl FnOnce(rusqlite::Error) -> VaultError {
     move |error| VaultError::state(format!("{context}: {error}"))
@@ -36,6 +55,200 @@ pub(crate) fn database_path(root: &Path) -> std::path::PathBuf {
         .unwrap_or_else(|_| root.to_path_buf())
         .join(crate::continuity::INTERNAL_DIRECTORY_NAME)
         .join(DATABASE_NAME)
+}
+
+/// Verifies that the current SQLite database can be read as a whole.
+///
+/// This asks SQLite itself rather than trusting that the file can merely be
+/// opened. It is deliberately usable before a future authority cutover and by
+/// the recovery controls, so each one applies the same definition of healthy.
+pub(crate) fn verify_database(root: &Path) -> Result<(), VaultError> {
+    let connection = open(&database_path(root))?;
+    integrity_check(&connection)
+}
+
+pub(crate) fn rebuild_markdown_from_database(root: &Path) -> Result<MarkdownRebuild, VaultError> {
+    verify_database(root)?;
+    let connection = open(&database_path(root))?;
+    projection::rebuild_markdown(root, &connection)
+}
+
+/// Creates a SQLite-consistent recovery copy of the current database.
+///
+/// Copying `vault.db` at the file-system level is unsafe while WAL mode is in
+/// use because recent committed pages can live in the companion WAL file. The
+/// SQLite backup API provides one coherent snapshot without pausing the app.
+pub(crate) fn create_database_backup(root: &Path) -> Result<DatabaseBackup, VaultError> {
+    let source = open(&database_path(root))?;
+    integrity_check(&source)?;
+
+    let recovery_directory = recovery_directory(root);
+    fs::create_dir_all(&recovery_directory).map_err(|error| {
+        VaultError::io("The database recovery folder could not be created", error)
+    })?;
+
+    let created_millis = now_millis();
+    let filename = format!("vault-{created_millis}-{}.db", uuid::Uuid::now_v7());
+    let path = recovery_directory.join(filename);
+    let temporary_path = path.with_extension("db.partial");
+    let result = (|| {
+        let mut destination = Connection::open(&temporary_path)
+            .map_err(map_error("The database recovery copy could not be created"))?;
+        let backup = Backup::new(&source, &mut destination)
+            .map_err(map_error("The database recovery copy could not be started"))?;
+        backup
+            .run_to_completion(64, Duration::from_millis(10), None)
+            .map_err(map_error(
+                "The database recovery copy could not be completed",
+            ))?;
+        drop(backup);
+        integrity_check(&destination)?;
+        drop(destination);
+        fs::rename(&temporary_path, &path).map_err(|error| {
+            VaultError::io("The database recovery copy could not be finalized", error)
+        })?;
+        Ok(DatabaseBackup {
+            path,
+            created_millis,
+        })
+    })();
+
+    if result.is_err() {
+        let _ = fs::remove_file(&temporary_path);
+    }
+    result
+}
+
+/// Makes the one recovery copy required before a vault can become
+/// SQLite-authoritative. The marker is recorded only after the backup has
+/// passed SQLite's integrity check, so a crash or failure simply retries on
+/// the next safe vault open.
+pub(crate) fn ensure_initial_database_backup(
+    root: &Path,
+) -> Result<Option<DatabaseBackup>, VaultError> {
+    let connection = open(&database_path(root))?;
+    let prepared = connection
+        .query_row(
+            "SELECT value FROM settings WHERE key = ?1",
+            params![INITIAL_BACKUP_SETTING],
+            |row| row.get::<_, String>(0),
+        )
+        .ok()
+        .is_some_and(|value| is_enabled(&value));
+    if prepared {
+        return Ok(None);
+    }
+    drop(connection);
+
+    let backup = create_database_backup(root)?;
+    let connection = open(&database_path(root))?;
+    set_setting(&connection, INITIAL_BACKUP_SETTING, "on")?;
+    set_setting(&connection, PROJECTION_SETTING, "on")?;
+    set_setting(&connection, READ_SOURCE_SETTING, "database")?;
+    Ok(Some(backup))
+}
+
+/// Returns storage state without creating a database, so merely opening
+/// Settings never changes an unopened vault.
+pub(crate) fn database_storage_status(root: &Path) -> Result<DatabaseStorageStatus, VaultError> {
+    let database_exists = database_path(root).is_file();
+    Ok(DatabaseStorageStatus {
+        backup: latest_database_backup(root)?,
+        database_exists,
+    })
+}
+
+/// Refuses to create a fresh database over a vault that has already cut over.
+/// A recovery copy is evidence that SQLite was authoritative, so an absent
+/// `vault.db` is a restoration problem, not a reason to re-import Markdown as
+/// a new source of truth.
+pub(crate) fn require_database_restore_before_open(root: &Path) -> Result<(), VaultError> {
+    if !database_path(root).is_file() && latest_database_backup(root)?.is_some() {
+        return Err(VaultError::state(
+            "The SQLite database is missing. Restore it from a recovery copy before opening this vault.",
+        ));
+    }
+    Ok(())
+}
+
+fn integrity_check(connection: &Connection) -> Result<(), VaultError> {
+    let result = connection
+        .query_row("PRAGMA integrity_check", [], |row| row.get::<_, String>(0))
+        .map_err(map_error(
+            "The vault database integrity could not be checked",
+        ))?;
+    if result.eq_ignore_ascii_case("ok") {
+        Ok(())
+    } else {
+        Err(VaultError::state(format!(
+            "The vault database integrity check reported: {result}."
+        )))
+    }
+}
+
+fn recovery_directory(root: &Path) -> PathBuf {
+    database_path(root)
+        .parent()
+        .expect("a database path always has an internal-data parent")
+        .join(RECOVERY_DIRECTORY_NAME)
+}
+
+fn latest_database_backup(root: &Path) -> Result<Option<DatabaseBackup>, VaultError> {
+    let directory = recovery_directory(root);
+    let entries = match fs::read_dir(&directory) {
+        Ok(entries) => entries,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(error) => {
+            return Err(VaultError::io(
+                "The database recovery folder could not be read",
+                error,
+            ));
+        }
+    };
+
+    let mut newest = None;
+    for entry in entries {
+        let entry = entry
+            .map_err(|error| VaultError::io("A database recovery copy could not be read", error))?;
+        let path = entry.path();
+        let name = entry.file_name();
+        let Some(name) = name.to_str() else {
+            continue;
+        };
+        if !name.starts_with("vault-") || path.extension().is_none_or(|extension| extension != "db")
+        {
+            continue;
+        }
+        let metadata = entry.metadata().map_err(|error| {
+            VaultError::io("A database recovery copy could not be inspected", error)
+        })?;
+        if !metadata.is_file() {
+            continue;
+        }
+        let created_millis = metadata
+            .modified()
+            .ok()
+            .and_then(|modified| modified.duration_since(UNIX_EPOCH).ok())
+            .map(|duration| duration.as_millis().min(u128::from(u64::MAX)) as u64)
+            .unwrap_or_default();
+        let candidate = DatabaseBackup {
+            path,
+            created_millis,
+        };
+        if newest.as_ref().is_none_or(|current: &DatabaseBackup| {
+            candidate.created_millis > current.created_millis
+        }) {
+            newest = Some(candidate);
+        }
+    }
+    Ok(newest)
+}
+
+fn now_millis() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_millis().min(u128::from(u64::MAX)) as u64)
+        .unwrap_or_default()
 }
 
 /// Imports every file in the vault in one transaction, then resolves links and
@@ -122,6 +335,27 @@ pub(crate) fn import_vault(
 /// Used after Anchored changes files itself, so the index does not depend on
 /// a filesystem event making the round trip back to the app.
 pub(crate) fn import_paths(root: &Path, relative_paths: &[String]) -> Result<(), VaultError> {
+    import_paths_with_mode(root, relative_paths, false)
+}
+
+/// Re-imports paths explicitly reported by the filesystem watcher.
+///
+/// A watcher event means a file system actor says the path changed. Size and
+/// millisecond-resolution modification times are only a warm-scan shortcut;
+/// they cannot safely discard that signal because an external replacement can
+/// preserve both values.
+pub(crate) fn import_watched_paths(
+    root: &Path,
+    relative_paths: &[String],
+) -> Result<(), VaultError> {
+    import_paths_with_mode(root, relative_paths, true)
+}
+
+fn import_paths_with_mode(
+    root: &Path,
+    relative_paths: &[String],
+    force_content_read: bool,
+) -> Result<(), VaultError> {
     if relative_paths.is_empty() {
         return Ok(());
     }
@@ -141,14 +375,41 @@ pub(crate) fn import_paths(root: &Path, relative_paths: &[String]) -> Result<(),
         // before the watcher can report them, so a file matching what was
         // recorded is a write of ours coming back around, not an external edit.
         // Skipping it is what stops a projection from re-importing itself.
-        if let Ok(metadata) = std::fs::metadata(&path) {
-            if indexed.get(&keys::path_key(relative_path)) == Some(&file_signature(&metadata)) {
-                continue;
+        if !force_content_read {
+            if let Ok(metadata) = std::fs::metadata(&path) {
+                if indexed.get(&keys::path_key(relative_path)) == Some(&file_signature(&metadata)) {
+                    continue;
+                }
             }
         }
 
         match std::fs::read(&path) {
             Ok(bytes) => {
+                let content_hash = import::content_hash(&bytes);
+                if force_content_read && is_markdown_path(relative_path) {
+                    match documents::classify_external_change(
+                        &transaction,
+                        relative_path,
+                        &content_hash,
+                    )? {
+                        documents::ExternalChange::Unchanged => continue,
+                        documents::ExternalChange::Conflict {
+                            document_id,
+                            stored_content,
+                            uuid,
+                        } => {
+                            let external_content = String::from_utf8_lossy(&bytes).into_owned();
+                            conflicts::preserve(root, &uuid, &stored_content, &external_content)?;
+                            documents::set_sync_state(
+                                &transaction,
+                                document_id,
+                                documents::SyncState::Conflict,
+                            )?;
+                            continue;
+                        }
+                        documents::ExternalChange::Import => {}
+                    }
+                }
                 let mut document = if is_markdown_path(relative_path) {
                     import::import_note(relative_path, &bytes)
                 } else {
@@ -158,6 +419,25 @@ pub(crate) fn import_paths(root: &Path, relative_paths: &[String]) -> Result<(),
                     .map(|metadata| file_signature(&metadata).1)
                     .unwrap_or_default();
                 let upserted = documents::upsert(&transaction, &document)?;
+                if force_content_read && document.is_markdown {
+                    let revision: i64 = transaction
+                        .query_row(
+                            "SELECT revision FROM documents WHERE id = ?1",
+                            params![upserted.id],
+                            |row| row.get(0),
+                        )
+                        .map_err(map_error(
+                            "The externally changed note could not be recorded",
+                        ))?;
+                    documents::record_synced(
+                        &transaction,
+                        upserted.id,
+                        &document.content_hash,
+                        document.size_bytes,
+                        document.mtime_millis,
+                        revision,
+                    )?;
+                }
                 document_set_changed |= upserted.created;
                 touched.push(upserted.id);
             }
@@ -203,10 +483,11 @@ fn file_signature(metadata: &std::fs::Metadata) -> (u64, u64) {
 pub(crate) fn indexed_metadata(
     root: &Path,
 ) -> Result<Option<std::collections::HashMap<String, documents::IndexedMetadata>>, VaultError> {
+    require_database_restore_before_open(root)?;
     let Ok(connection) = open(&database_path(root)) else {
         return Ok(None);
     };
-    if read_source(&connection) == ReadSource::Scan {
+    if read_source(&connection) == ReadSource::Scan && !database_authority_enabled(&connection) {
         return Ok(None);
     }
     documents::indexed_metadata(&connection).map(Some)
@@ -253,19 +534,31 @@ pub(crate) fn restore_note(root: &Path, trash_entry_id: &str, relative_path: &st
     }
 }
 
-/// Saves a note: commits the contents and writes the file together.
+/// Saves a note through SQLite and projects it to Markdown.
 ///
-/// `Ok(false)` means the index could not be opened and the caller should write
-/// the file the old way. Saving must never be the thing that fails.
+/// `Ok(false)` remains only for a legacy vault that has not yet completed its
+/// first verified backup. After cutover, database trouble is an error: falling
+/// back to a Markdown-only write would create an untracked fork of the data.
 pub(crate) fn save_note(
     root: &Path,
     relative_path: &str,
     content: &str,
 ) -> Result<bool, VaultError> {
-    let Ok(mut connection) = open(&database_path(root)) else {
+    let path = database_path(root);
+    if !path.is_file() {
+        if latest_database_backup(root)?.is_some() {
+            return Err(VaultError::state(
+                "The SQLite database is missing. Restore it from a recovery copy before saving.",
+            ));
+        }
         return Ok(false);
+    }
+    let mut connection = match open(&path) {
+        Ok(connection) => connection,
+        Err(error) if latest_database_backup(root)?.is_some() => return Err(error),
+        Err(_) => return Ok(false),
     };
-    if read_source(&connection) == ReadSource::Scan {
+    if !database_authority_enabled(&connection) && read_source(&connection) == ReadSource::Scan {
         return Ok(false);
     }
     projection::save(&mut connection, root, relative_path, content).map(|()| true)
@@ -325,7 +618,17 @@ fn is_enabled(value: &str) -> bool {
     )
 }
 
-#[cfg(test)]
+fn database_authority_enabled(connection: &Connection) -> bool {
+    connection
+        .query_row(
+            "SELECT value FROM settings WHERE key = ?1",
+            params![INITIAL_BACKUP_SETTING],
+            |row| row.get::<_, String>(0),
+        )
+        .ok()
+        .is_some_and(|value| is_enabled(&value))
+}
+
 pub(crate) fn set_setting(
     connection: &Connection,
     key: &str,
@@ -350,10 +653,11 @@ pub(crate) fn search_vault(
     root: &Path,
     query: &str,
 ) -> Result<Option<crate::vault::VaultSearchResult>, VaultError> {
+    require_database_restore_before_open(root)?;
     let Ok(connection) = open(&database_path(root)) else {
         return Ok(None);
     };
-    if read_source(&connection) == ReadSource::Scan {
+    if read_source(&connection) == ReadSource::Scan && !database_authority_enabled(&connection) {
         return Ok(None);
     }
     search::search(&connection, query).map(Some)
@@ -545,6 +849,153 @@ mod tests {
         connection
             .execute_batch("CREATE VIRTUAL TABLE probe USING fts5(body)")
             .expect("FTS5 must be compiled into the bundled SQLite");
+    }
+
+    #[test]
+    fn backup_is_a_verified_snapshot_of_the_database() {
+        let vault = tempdir().expect("create fixture vault");
+        crate::continuity::ensure_vault_identity(vault.path()).expect("create identity");
+        let connection = open(&super::database_path(vault.path())).expect("create database");
+        connection
+            .execute(
+                "INSERT INTO settings (key, value, updated_millis) VALUES ('backup-probe', 'saved', 0)",
+                [],
+            )
+            .expect("seed database");
+        drop(connection);
+
+        let backup = super::create_database_backup(vault.path()).expect("create recovery copy");
+        assert!(backup.path.is_file());
+        super::verify_database(vault.path()).expect("verify source database");
+
+        let copy = Connection::open(&backup.path).expect("open recovery copy");
+        assert_eq!(
+            copy.query_row(
+                "SELECT value FROM settings WHERE key = 'backup-probe'",
+                [],
+                |row| row.get::<_, String>(0),
+            )
+            .expect("read recovery copy"),
+            "saved"
+        );
+        assert_eq!(
+            super::database_storage_status(vault.path())
+                .expect("read storage status")
+                .backup
+                .expect("find latest backup")
+                .path,
+            backup.path
+        );
+    }
+
+    #[test]
+    fn automatic_backup_is_made_once_before_authority_cutover() {
+        let vault = tempdir().expect("create fixture vault");
+        crate::continuity::ensure_vault_identity(vault.path()).expect("create identity");
+        drop(open(&super::database_path(vault.path())).expect("create database"));
+
+        let first = super::ensure_initial_database_backup(vault.path())
+            .expect("create required backup")
+            .expect("the first backup is created");
+        assert!(first.path.is_file());
+        assert_eq!(
+            super::ensure_initial_database_backup(vault.path()).expect("read backup marker"),
+            None
+        );
+        let connection = open(&super::database_path(vault.path())).expect("reopen database");
+        assert!(super::database_authority_enabled(&connection));
+        assert!(super::projection_enabled(&connection));
+        assert_eq!(super::read_source(&connection), super::ReadSource::Database);
+    }
+
+    #[test]
+    fn authority_cutover_never_falls_back_when_the_database_is_missing() {
+        let vault = tempdir().expect("create fixture vault");
+        crate::continuity::ensure_vault_identity(vault.path()).expect("create identity");
+        std::fs::write(vault.path().join("Note.md"), "# Original\n").expect("write note");
+        let mut connection = open(&super::database_path(vault.path())).expect("open database");
+        super::import_vault(&mut connection, vault.path(), &["Note.md".to_owned()], &[])
+            .expect("import note");
+        drop(connection);
+        super::ensure_initial_database_backup(vault.path()).expect("create recovery copy");
+
+        let database = super::database_path(vault.path());
+        std::fs::remove_file(&database).expect("remove database from fixture");
+        assert!(super::require_database_restore_before_open(vault.path()).is_err());
+        assert!(super::indexed_metadata(vault.path()).is_err());
+        let error = super::save_note(vault.path(), "Note.md", "# Changed\n")
+            .expect_err("authority cutover must reject a Markdown-only save");
+        assert!(error.message.contains("Restore it from a recovery copy"));
+        assert_eq!(
+            std::fs::read_to_string(vault.path().join("Note.md")).expect("read note"),
+            "# Original\n"
+        );
+    }
+
+    #[test]
+    fn watcher_imports_an_external_edit_when_database_is_unchanged() {
+        let vault = tempdir().expect("create fixture vault");
+        crate::continuity::ensure_vault_identity(vault.path()).expect("create identity");
+        std::fs::write(vault.path().join("Note.md"), "# Original\n").expect("write note");
+        let mut connection = open(&super::database_path(vault.path())).expect("open database");
+        super::import_vault(&mut connection, vault.path(), &["Note.md".to_owned()], &[])
+            .expect("import note");
+        drop(connection);
+
+        std::fs::write(vault.path().join("Note.md"), "# External\n").expect("edit externally");
+        super::import_watched_paths(vault.path(), &["Note.md".to_owned()])
+            .expect("import external change");
+
+        let connection = open(&super::database_path(vault.path())).expect("reopen database");
+        assert_eq!(
+            connection
+                .query_row(
+                    "SELECT frontmatter_text || body FROM documents WHERE relative_path = 'Note.md'",
+                    [],
+                    |row| row.get::<_, String>(0),
+                )
+                .expect("read imported note"),
+            "# External\n"
+        );
+    }
+
+    #[test]
+    fn watcher_preserves_a_conflict_when_database_also_changed() {
+        let vault = tempdir().expect("create fixture vault");
+        crate::continuity::ensure_vault_identity(vault.path()).expect("create identity");
+        std::fs::write(vault.path().join("Note.md"), "# Original\n").expect("write note");
+        let mut connection = open(&super::database_path(vault.path())).expect("open database");
+        super::import_vault(&mut connection, vault.path(), &["Note.md".to_owned()], &[])
+            .expect("import note");
+        super::projection::save(&mut connection, vault.path(), "Note.md", "# Original\n")
+            .expect("record initial agreement");
+        let mut database_change = super::import::import_note("Note.md", b"# Database\n");
+        database_change.origin = super::documents::ChangeOrigin::Anchored;
+        super::documents::upsert(&connection, &database_change)
+            .expect("commit an unprojected database change");
+        drop(connection);
+
+        std::fs::write(vault.path().join("Note.md"), "# External\n").expect("edit externally");
+        super::import_watched_paths(vault.path(), &["Note.md".to_owned()])
+            .expect("record watcher conflict");
+
+        let connection = open(&super::database_path(vault.path())).expect("reopen database");
+        assert_eq!(
+            connection
+                .query_row(
+                    "SELECT frontmatter_text || body FROM documents WHERE relative_path = 'Note.md'",
+                    [],
+                    |row| row.get::<_, String>(0),
+                )
+                .expect("read preserved database note"),
+            "# Database\n"
+        );
+        assert_eq!(
+            super::list_conflicts(vault.path())
+                .expect("list conflicts")
+                .len(),
+            1
+        );
     }
 
     #[test]

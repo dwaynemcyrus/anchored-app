@@ -23,6 +23,7 @@ import {
   closeTab,
   createWorkspace,
   openDocument,
+  remapDocumentId,
   splitGroup,
   stepHistory,
   type Workspace,
@@ -65,6 +66,9 @@ import { useTimestampMigration } from "./useTimestampMigration";
 import { useRecoveryPanel } from "./useRecoveryPanel";
 import { useTrashPanel } from "./useTrashPanel";
 import { useVaultSwitcher } from "./useVaultSwitcher";
+import { useDocumentAutosave } from "./useDocumentAutosave";
+import { useDocumentLoadStates } from "./useDocumentLoadStates";
+import { useWindowCloseGuard } from "./useWindowCloseGuard";
 import { VaultSearchPalette } from "./components/VaultSearchPalette";
 import {
   applyVaultPatch,
@@ -122,6 +126,8 @@ import {
 } from "./notificationHistory";
 import {
   archiveVaultFile,
+  createVaultDatabaseBackup,
+  rebuildVaultMarkdownFromDatabase,
   createVaultConflictCopy,
   createUntitledVaultFile,
   createVaultFile,
@@ -144,6 +150,9 @@ import {
   restoreArchivedVaultFile,
   type VaultDocument,
   type VaultSnapshot,
+  type VaultStorageStatus,
+  vaultStorageStatus,
+  verifyVaultDatabase,
 } from "../lib/tauri/vault";
 import { openScratchpad, type ScratchpadMode } from "../lib/tauri/scratchpad";
 import { checkForUpdate, installUpdate } from "./updater";
@@ -153,11 +162,6 @@ import { saveConflictSnapshot } from "./conflictSnapshots";
 
 const ACTIVITY_REFRESH_INTERVAL_MS = 60_000;
 const FRONTMATTER_LINT_NOTIFICATION_DELAY_MS = 1_500;
-
-type DocumentLoadState =
-  | { status: "idle" }
-  | { status: "loading"; documentId: string }
-  | { status: "error"; documentId: string; message: string };
 
 type LifecycleTypeRequest = {
   action: "archive" | "workbench";
@@ -230,14 +234,17 @@ export function App() {
   >("idle");
   const [updateError, setUpdateError] = useState<string>();
   const [vaultSelected, setVaultSelected] = useState(false);
+  const [storageStatus, setStorageStatus] = useState<VaultStorageStatus>();
+  const [storageBusy, setStorageBusy] = useState<
+    "backup" | "rebuild" | "verify"
+  >();
+  const [storageError, setStorageError] = useState<string>();
+  const [storageMessage, setStorageMessage] = useState<string>();
   const [transitioningDocumentId, setTransitioningDocumentId] = useState<
     string | undefined
   >();
   const [lifecycleTypeRequest, setLifecycleTypeRequest] =
     useState<LifecycleTypeRequest>();
-  const [documentLoad, setDocumentLoad] = useState<DocumentLoadState>({
-    status: "idle",
-  });
   const [moveDocumentId, setMoveDocumentId] = useState<string | undefined>();
   const [moveDocumentVisible, setMoveDocumentVisible] = useState(false);
   const [moveFolderPath, setMoveFolderPath] = useState<string>();
@@ -263,7 +270,6 @@ export function App() {
     vaultSelected,
   );
   const searchInputRef = useRef<HTMLInputElement>(null);
-  const loadRequestRef = useRef(0);
   const rescanInFlightRef = useRef(false);
   const saveInFlightRef = useRef(new Set<string>());
   const externalCheckInFlightRef = useRef(new Set<string>());
@@ -283,6 +289,15 @@ export function App() {
   const sidebar = useSidebarState();
   const conflictResolution = useConflictResolution();
   const notifications = useNotifications({ vaultIdRef });
+  const {
+    clearDocumentLoad,
+    completeDocumentLoad,
+    documentLoadState,
+    failDocumentLoad,
+    isCurrentLoad,
+    resetDocumentLoads,
+    startDocumentLoad,
+  } = useDocumentLoadStates();
 
   /// What the active tab of the active group is showing. Derived rather than
   /// stored: the workspace is the one place a document is open, so there is no
@@ -322,6 +337,41 @@ export function App() {
     focusDocumentIdRef.current = documentId;
     setFocusDocumentId(documentId);
   }, []);
+
+  const remapDocumentIdentity = useCallback(
+    (fromDocumentId: string, toDocumentId: string) => {
+      if (!fromDocumentId || fromDocumentId === toDocumentId) return;
+      if (activeDocumentIdRef.current === fromDocumentId) {
+        activeDocumentIdRef.current = toDocumentId;
+      }
+      setWorkspace((current) =>
+        remapDocumentId(current, fromDocumentId, toDocumentId),
+      );
+      if (focusDocumentIdRef.current === fromDocumentId) {
+        setFocusDocument(toDocumentId);
+      }
+      setDocumentActivity((current) => {
+        const activity = current.get(fromDocumentId);
+        if (!activity) return current;
+        const existing = current.get(toDocumentId);
+        const next = new Map(current);
+        next.delete(fromDocumentId);
+        next.set(toDocumentId, {
+          firstSeenAt: Math.min(
+            existing?.firstSeenAt ?? activity.firstSeenAt,
+            activity.firstSeenAt,
+          ),
+          lastActiveAt: Math.max(
+            existing?.lastActiveAt ?? 0,
+            activity.lastActiveAt,
+          ),
+        });
+        return next;
+      });
+      clearDocumentLoad(fromDocumentId);
+    },
+    [clearDocumentLoad, setFocusDocument],
+  );
 
   const activeDocument = documents.find(
     (document) => document.id === activeDocumentId,
@@ -461,8 +511,6 @@ export function App() {
           (candidate) => candidate.id === documentId,
         );
         const hasNewerEdit = currentDocument?.sourceText !== sourceAtSave;
-        const wasActive = activeDocumentIdRef.current === documentId;
-        const shouldFocus = focusDocumentIdRef.current === documentId;
 
         setDocuments((currentDocuments) =>
           currentDocuments.map((current) =>
@@ -498,10 +546,7 @@ export function App() {
               : current,
           ),
         );
-        if (wasActive) setActiveDocument(persistedDocumentId);
-        if (shouldFocus) {
-          setFocusDocument(hasNewerEdit ? undefined : persistedDocumentId);
-        }
+        remapDocumentIdentity(documentId, persistedDocumentId);
         if (folderPath) {
           sidebar.setExpandedFolders((currentFolders) =>
             new Set(currentFolders).add(folderPath),
@@ -544,8 +589,7 @@ export function App() {
     [
       notifications.addHistoryEntry,
       notifications.resolveHistorySource,
-      setActiveDocument,
-      setFocusDocument,
+      remapDocumentIdentity,
       sidebar.setExpandedFolders,
       vaultName,
     ],
@@ -559,7 +603,6 @@ export function App() {
     const nextDocument = createUntitledDocument();
     const nextDocuments = [...documentsRef.current, nextDocument];
 
-    loadRequestRef.current += 1;
     documentsRef.current = nextDocuments;
     setDocuments(nextDocuments);
     setActiveDocument(nextDocument.id);
@@ -578,7 +621,6 @@ export function App() {
           ),
     );
     setQuery("");
-    setDocumentLoad({ status: "idle" });
     setDocumentActivity((current) =>
       markDocumentActive(current, nextDocument.id, Date.now()),
     );
@@ -1111,6 +1153,15 @@ export function App() {
         documentsRef.current,
         snapshot,
       );
+      const identityRemaps = documentsRef.current.flatMap((document) => {
+        if (!document.noteId) return [];
+        const replacement = nextDocuments.find(
+          (candidate) => candidate.noteId === document.noteId,
+        );
+        return replacement && replacement.id !== document.id
+          ? [[document.id, replacement.id] as const]
+          : [];
+      });
       const nextActiveDocumentId = activeRelativePath
         ? (nextDocuments.find(
             (document) => document.relativePath === activeRelativePath,
@@ -1119,6 +1170,9 @@ export function App() {
       const nextFolders = folderPathsFromVault(snapshot);
       documentsRef.current = nextDocuments;
       setDocuments(nextDocuments);
+      for (const [fromDocumentId, toDocumentId] of identityRemaps) {
+        remapDocumentIdentity(fromDocumentId, toDocumentId);
+      }
       if (nextActiveDocumentId !== activeDocumentIdRef.current) {
         setActiveDocument(nextActiveDocumentId);
       }
@@ -1142,16 +1196,15 @@ export function App() {
     [
       notifications.addVaultNotice,
       recordSnapshotEvents,
+      remapDocumentIdentity,
       setActiveDocument,
       sidebar.setExpandedFolders,
     ],
   );
 
   const onActiveDocumentTrashed = useCallback(() => {
-    loadRequestRef.current += 1;
     setActiveDocument("");
     setFocusDocument(undefined);
-    setDocumentLoad({ status: "idle" });
   }, [setActiveDocument, setFocusDocument]);
 
   const recovery = useRecoveryPanel();
@@ -1190,12 +1243,81 @@ export function App() {
     vaultSelected,
   });
 
+  const refreshStorageStatus = useCallback(async () => {
+    if (!vaultSelected) {
+      setStorageStatus(undefined);
+      return;
+    }
+    try {
+      setStorageStatus(await vaultStorageStatus());
+      setStorageError(undefined);
+    } catch (error) {
+      setStorageError(readErrorMessage(error));
+    }
+  }, [vaultSelected]);
+
+  useEffect(() => {
+    if (!settingsVisible) return;
+    void refreshStorageStatus();
+  }, [refreshStorageStatus, settingsVisible, vaultId]);
+
+  const handleVerifyDatabase = useCallback(async () => {
+    setStorageBusy("verify");
+    setStorageError(undefined);
+    setStorageMessage(undefined);
+    try {
+      setStorageStatus(await verifyVaultDatabase());
+      setStorageMessage("SQLite integrity check passed.");
+    } catch (error) {
+      setStorageError(readErrorMessage(error));
+    } finally {
+      setStorageBusy(undefined);
+    }
+  }, []);
+
+  const handleCreateDatabaseBackup = useCallback(async () => {
+    setStorageBusy("backup");
+    setStorageError(undefined);
+    setStorageMessage(undefined);
+    try {
+      const status = await createVaultDatabaseBackup();
+      setStorageStatus(status);
+      setStorageMessage("A SQLite recovery copy was created.");
+    } catch (error) {
+      setStorageError(readErrorMessage(error));
+    } finally {
+      setStorageBusy(undefined);
+    }
+  }, []);
+
+  const handleRebuildMarkdown = useCallback(async () => {
+    if (
+      !window.confirm(
+        "Rebuild every Markdown projection from SQLite? Differing Markdown files will be preserved under .anchored/conflicts first.",
+      )
+    ) {
+      return;
+    }
+    setStorageBusy("rebuild");
+    setStorageError(undefined);
+    setStorageMessage(undefined);
+    try {
+      const result = await rebuildVaultMarkdownFromDatabase();
+      setStorageMessage(
+        `Rebuilt ${result.created + result.updated} Markdown file${result.created + result.updated === 1 ? "" : "s"}; preserved ${result.preserved} differing file${result.preserved === 1 ? "" : "s"}.`,
+      );
+    } catch (error) {
+      setStorageError(readErrorMessage(error));
+    } finally {
+      setStorageBusy(undefined);
+    }
+  }, []);
+
   const activateVaultSnapshot = useCallback(
     (snapshot: VaultSnapshot) => {
       const nextDocuments = documentsFromVault(snapshot);
       const nextFolders = folderPathsFromVault(snapshot);
 
-      loadRequestRef.current += 1;
       vaultIdRef.current = snapshot.vaultId ?? "";
       documentsRef.current = nextDocuments;
       setVaultId(snapshot.vaultId ?? "");
@@ -1214,7 +1336,7 @@ export function App() {
       setWorkspace(createWorkspace());
       setFocusDocument(undefined);
       setQuery("");
-      setDocumentLoad({ status: "idle" });
+      resetDocumentLoads();
       notifications.reset();
       timestampMigration.reset();
       trash.reset();
@@ -1232,6 +1354,7 @@ export function App() {
       notifications.addVaultNotice,
       notifications.reset,
       recordSnapshotEvents,
+      resetDocumentLoads,
       setActiveDocument,
       setFocusDocument,
       timestampMigration.reset,
@@ -1450,23 +1573,16 @@ export function App() {
     clearSessionState(window.localStorage);
   }, [activeDocument?.relativePath, vaultId, vaultSelected]);
 
-  useEffect(() => {
-    if (
-      !activeDocument?.relativePath ||
-      activeDocument.sourceText === undefined ||
-      activeDocument.savedSourceText === undefined ||
-      activeDocument.sourceText === activeDocument.savedSourceText ||
-      saveState !== "unsaved"
-    ) {
-      return;
-    }
+  useDocumentAutosave(documents, saveDocument);
 
-    const timeout = window.setTimeout(() => {
-      void saveDocument(activeDocument.id);
-    }, 1_000);
-
-    return () => window.clearTimeout(timeout);
-  }, [activeDocument, saveDocument, saveState]);
+  useWindowCloseGuard({
+    documents,
+    onBlocked: (message) =>
+      notifications.addVaultNotice(message, {
+        persistent: true,
+      }),
+    saveDocument,
+  });
 
   useEffect(() => {
     const scheduleRefresh = () => {
@@ -1514,12 +1630,7 @@ export function App() {
         );
         documentsRef.current = nextDocuments;
         setDocuments(nextDocuments);
-        if (activeDocumentIdRef.current === current.id) {
-          setActiveDocument(nextDocumentId);
-        }
-        if (focusDocumentIdRef.current === current.id) {
-          setFocusDocument(nextDocumentId);
-        }
+        remapDocumentIdentity(current.id, nextDocumentId);
       }
 
       try {
@@ -1557,8 +1668,7 @@ export function App() {
       notifications.addVaultNotice,
       checkExternalDocument,
       markdownSettings.updateTypeOnExternalMove,
-      setActiveDocument,
-      setFocusDocument,
+      remapDocumentIdentity,
       vaultName,
     ],
   );
@@ -1673,46 +1783,42 @@ export function App() {
     vaultSelected,
     vaultId,
   ]);
-  const selectDocument = useCallback(
-    async (documentId: string, options: { newTab?: boolean } = {}) => {
+  const loadDocument = useCallback(
+    async (documentId: string, retry = false) => {
       const document = documentsRef.current.find(
         (candidate) => candidate.id === documentId,
       );
       if (!document) return;
 
       if (
-        focusDocumentIdRef.current &&
-        focusDocumentIdRef.current !== documentId
+        document.isMarkdown === false ||
+        !document.relativePath ||
+        document.sourceText !== undefined
       ) {
-        setFocusDocument(undefined);
-      }
-      setDocumentActivity((current) =>
-        markDocumentActive(current, documentId, Date.now()),
-      );
-      setActiveDocument(documentId, options);
-      setCursorPosition({ line: 1, column: 1 });
-
-      if (document.isMarkdown === false) {
-        loadRequestRef.current += 1;
-        setDocumentLoad({ status: "idle" });
+        clearDocumentLoad(documentId);
         return;
       }
 
-      if (!document.relativePath || document.sourceText !== undefined) {
-        loadRequestRef.current += 1;
-        setDocumentLoad({ status: "idle" });
-        return;
-      }
-
-      const requestId = loadRequestRef.current + 1;
-      loadRequestRef.current = requestId;
-      setDocumentLoad({ status: "loading", documentId });
+      const relativePath = document.relativePath;
+      const ticket = startDocumentLoad(documentId, retry);
+      if (!ticket) return;
 
       try {
-        const openedDocument = await readVaultFile(document.relativePath);
-        if (loadRequestRef.current !== requestId) return;
-        if (openedDocument.relativePath !== document.relativePath) {
+        const openedDocument = await readVaultFile(relativePath);
+        if (!isCurrentLoad(ticket)) return;
+        if (openedDocument.relativePath !== relativePath) {
           throw new Error("The opened file did not match the requested note.");
+        }
+        const currentDocument = documentsRef.current.find(
+          (candidate) => candidate.id === documentId,
+        );
+        if (
+          !currentDocument ||
+          currentDocument.relativePath !== relativePath ||
+          currentDocument.sourceText !== undefined
+        ) {
+          completeDocumentLoad(ticket);
+          return;
         }
 
         setDocuments((currentDocuments) =>
@@ -1736,17 +1842,48 @@ export function App() {
               : currentDocument,
           ),
         );
-        setDocumentLoad({ status: "idle" });
+        completeDocumentLoad(ticket);
       } catch (error) {
-        if (loadRequestRef.current !== requestId) return;
-        setDocumentLoad({
-          status: "error",
-          documentId,
-          message: readErrorMessage(error),
-        });
+        failDocumentLoad(ticket, readErrorMessage(error));
       }
     },
-    [setActiveDocument, setFocusDocument],
+    [
+      clearDocumentLoad,
+      completeDocumentLoad,
+      failDocumentLoad,
+      isCurrentLoad,
+      startDocumentLoad,
+    ],
+  );
+
+  useEffect(() => {
+    for (const documentId of openTabDocumentIds) {
+      void loadDocument(documentId);
+    }
+  }, [loadDocument, openTabDocumentIds]);
+
+  const selectDocument = useCallback(
+    async (documentId: string, options: { newTab?: boolean } = {}) => {
+      const document = documentsRef.current.find(
+        (candidate) => candidate.id === documentId,
+      );
+      if (!document) return;
+
+      if (
+        focusDocumentIdRef.current &&
+        focusDocumentIdRef.current !== documentId
+      ) {
+        setFocusDocument(undefined);
+      }
+      setDocumentActivity((current) =>
+        markDocumentActive(current, documentId, Date.now()),
+      );
+      setActiveDocument(documentId, options);
+      setCursorPosition({ line: 1, column: 1 });
+
+      await loadDocument(documentId);
+    },
+    [loadDocument, setActiveDocument, setFocusDocument],
   );
 
   const missingWikilink = useMissingWikilinkDialog({
@@ -2021,6 +2158,7 @@ export function App() {
       updatedLinks: number;
     },
     message: string,
+    previousDocumentId?: string,
   ) {
     const [snapshot, openedDocument] = await Promise.all([
       rescanVault(),
@@ -2047,7 +2185,6 @@ export function App() {
       ...localDrafts,
     ];
     const nextFolders = folderPathsFromVault(snapshot);
-    loadRequestRef.current += 1;
     documentsRef.current = nextDocuments;
     setDocuments(nextDocuments);
     setDocumentActivity((current) =>
@@ -2059,9 +2196,12 @@ export function App() {
       nextFolders.forEach((folder) => nextExpanded.add(folder));
       return nextExpanded;
     });
-    setActiveDocument(relocatedDocumentId);
-    setFocusDocument(undefined);
-    setDocumentLoad({ status: "idle" });
+    if (previousDocumentId) {
+      remapDocumentIdentity(previousDocumentId, relocatedDocumentId);
+    } else {
+      setActiveDocument(relocatedDocumentId);
+      setFocusDocument(undefined);
+    }
     notifications.addVaultNotice(message, { history: { kind: "rename" } });
   }
 
@@ -2131,7 +2271,7 @@ export function App() {
       } updated across ${outcome.updatedFiles} note${
         outcome.updatedFiles === 1 ? "" : "s"
       }.`;
-      await finishRelocatedDocument(outcome, message);
+      await finishRelocatedDocument(outcome, message, document.id);
     } catch (error) {
       notifications.addVaultNotice(
         renameCompleted
@@ -2184,7 +2324,7 @@ export function App() {
       } link${outcome.updatedLinks === 1 ? "" : "s"} updated across ${
         outcome.updatedFiles
       } note${outcome.updatedFiles === 1 ? "" : "s"}.`;
-      await finishRelocatedDocument(outcome, message);
+      await finishRelocatedDocument(outcome, message, document.id);
       setMoveDocumentVisible(false);
       setMoveDocumentId(undefined);
     } catch (error) {
@@ -2247,6 +2387,7 @@ export function App() {
           updatedLinks: result.updatedLinks ?? 0,
         },
         message,
+        documentId,
       );
       return;
     }
@@ -2472,11 +2613,9 @@ export function App() {
   }, [openWikilink]);
 
   function closeDocument() {
-    loadRequestRef.current += 1;
     setActiveDocument("");
     setFocusDocument(undefined);
     setCursorPosition({ line: 1, column: 1 });
-    setDocumentLoad({ status: "idle" });
   }
 
   function updateDocumentContent(content: string) {
@@ -2646,7 +2785,6 @@ export function App() {
       sidebar.setExpandedFolders((current) => new Set(current).add(folderPath));
       setFocusDocument(documentId);
       setActiveDocument(documentId);
-      setDocumentLoad({ status: "idle" });
     } catch (error) {
       notifications.addVaultNotice(readErrorMessage(error), {
         persistent: true,
@@ -2843,12 +2981,7 @@ export function App() {
                     (document) => document.isMarkdown !== false,
                   )}
                   findRequest={retrieval.findRequest}
-                  loadState={
-                    documentLoad.status !== "idle" &&
-                    documentLoad.documentId === slotDocument?.id
-                      ? documentLoad
-                      : { status: "idle" }
-                  }
+                  loadState={documentLoadState(slotDocument?.id)}
                   vaultName={vaultName}
                   vaultSelected={vaultSelected}
                   wikilinkCandidates={wikilinkCandidates}
@@ -2879,7 +3012,7 @@ export function App() {
                   onOpenVault={() => void vaultSwitcher.openVault()}
                   onOpenWikilink={openWikilink}
                   onRetryDocument={() => {
-                    if (slotDocument) void selectDocument(slotDocument.id);
+                    if (slotDocument) void loadDocument(slotDocument.id, true);
                   }}
                   onRenameDocument={(name) => {
                     if (slotDocument)
@@ -3053,6 +3186,10 @@ export function App() {
           excerptLines={paneLayout.excerptLines}
           markdownSettings={markdownSettings}
           reloading={reloadingApp}
+          storageBusy={storageBusy}
+          storageError={storageError}
+          storageMessage={storageMessage}
+          storageStatus={storageStatus}
           timestampMigrationBlocked={documents.some(
             (document) =>
               document.saveState === "saving" ||
@@ -3087,6 +3224,9 @@ export function App() {
             void timestampMigration.previewTimestampMigration()
           }
           onReload={() => void reloadApp()}
+          onCreateDatabaseBackup={() => void handleCreateDatabaseBackup()}
+          onVerifyDatabase={() => void handleVerifyDatabase()}
+          onRebuildMarkdown={() => void handleRebuildMarkdown()}
         />
       ) : null}
       {folderDialogs.createFolderVisible ? (

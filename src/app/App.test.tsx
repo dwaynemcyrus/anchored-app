@@ -51,10 +51,13 @@ import { saveSessionState } from "./sessionState";
 import { reloadAnchoredWindow } from "./windowActions";
 
 const eventHandlers = vi.hoisted(() => new Map());
+const appWindowClose = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
 
 vi.mock("../lib/tauri/vault", () => ({
   applyVaultTimestampMigration: vi.fn(),
   archiveVaultFile: vi.fn(),
+  createVaultDatabaseBackup: vi.fn(),
+  rebuildVaultMarkdownFromDatabase: vi.fn(),
   createVaultConflictCopy: vi.fn(),
   createVault: vi.fn(),
   createVaultFolder: vi.fn(),
@@ -86,6 +89,8 @@ vi.mock("../lib/tauri/vault", () => ({
   watchVaultFile: vi.fn(),
   watchVaultTree: vi.fn(),
   watchVault: vi.fn(),
+  vaultStorageStatus: vi.fn(),
+  verifyVaultDatabase: vi.fn(),
   restoreVaultFileFromTrash: vi.fn(),
   restoreArchivedVaultFile: vi.fn(),
 }));
@@ -94,6 +99,13 @@ vi.mock("@tauri-apps/api/event", () => ({
   listen: vi.fn(async (event, handler) => {
     eventHandlers.set(event, handler);
     return () => eventHandlers.delete(event);
+  }),
+}));
+
+vi.mock("@tauri-apps/api/window", () => ({
+  getCurrentWindow: () => ({
+    close: appWindowClose,
+    onCloseRequested: vi.fn().mockResolvedValue(vi.fn()),
   }),
 }));
 
@@ -2218,6 +2230,82 @@ describe("App", () => {
       await screen.findByRole("tab", { name: "Field Notes.md" }),
     ).toBeInTheDocument();
     expect(screen.getAllByRole("tab")).toHaveLength(1);
+  });
+
+  it("loads two open tabs even when their reads finish out of order", async () => {
+    const user = userEvent.setup();
+    const firstPath = "Knowledge/First.md";
+    const secondPath = "Knowledge/Second.md";
+    let resolveFirst:
+      | ((document: {
+          content: string;
+          relativePath: string;
+          sizeBytes: number;
+        }) => void)
+      | undefined;
+    let resolveSecond:
+      | ((document: {
+          content: string;
+          relativePath: string;
+          sizeBytes: number;
+        }) => void)
+      | undefined;
+    mockedSelectVault.mockResolvedValue({
+      files: [
+        { name: "First.md", parent: "Knowledge", relativePath: firstPath },
+        {
+          name: "Second.md",
+          parent: "Knowledge",
+          relativePath: secondPath,
+        },
+      ],
+      name: "My Vault",
+      warnings: noWarnings,
+    });
+    mockedReadVaultFile.mockImplementation(
+      (relativePath) =>
+        new Promise((resolve) => {
+          if (relativePath === firstPath) resolveFirst = resolve;
+          if (relativePath === secondPath) resolveSecond = resolve;
+        }),
+    );
+    render(<App />);
+
+    await user.click(screen.getByRole("button", { name: "Open a vault" }));
+    await user.click(screen.getByRole("button", { name: "First.md" }));
+    fireEvent.click(screen.getByRole("button", { name: "Second.md" }), {
+      metaKey: true,
+    });
+    await waitFor(() =>
+      expect(mockedReadVaultFile).toHaveBeenCalledWith(firstPath),
+    );
+    await waitFor(() =>
+      expect(mockedReadVaultFile).toHaveBeenCalledWith(secondPath),
+    );
+
+    await act(async () => {
+      resolveSecond?.({
+        content: "# Second",
+        relativePath: secondPath,
+        sizeBytes: 8,
+      });
+      resolveFirst?.({
+        content: "# First",
+        relativePath: firstPath,
+        sizeBytes: 7,
+      });
+    });
+
+    await user.click(screen.getByRole("tab", { name: "First.md" }));
+    expect(
+      await screen.findByRole("textbox", { name: "First.md Markdown editor" }),
+    ).toHaveTextContent("# First");
+    await user.click(screen.getByRole("tab", { name: "Second.md" }));
+    expect(
+      await screen.findByRole("textbox", {
+        name: "Second.md Markdown editor",
+      }),
+    ).toHaveTextContent("# Second");
   });
 
   it("walks back and forward through a tab's own history", async () => {
