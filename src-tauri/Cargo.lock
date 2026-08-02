@@ -46,7 +46,7 @@ dependencies = [
 
 [[package]]
 name = "anchored"
-version = "0.1.11-alpha"
+version = "0.1.12-alpha"
 dependencies = [
  "blake3",
  "chrono",

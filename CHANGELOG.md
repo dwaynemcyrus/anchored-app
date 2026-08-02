@@ -6,6 +6,8 @@ Git commit. The format follows [Keep a Changelog], and releases follow
 
 ## [Unreleased]
 
+## [0.1.12-alpha] - 2026-08-02
+
 ### Added
 
 - SQLite storage now supports integrity checks and SQLite-consistent recovery
